@@ -65,9 +65,9 @@ const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, op
       case url.startsWith("/v1/sessions/recording"):
         fastify.log.info("Connecting to recording events...");
         wss.handleUpgrade(request, socket, head, (ws) => {
-          const messageHandler = (payload: { event: Record<string, any> }[]) => {
+          const messageHandler = (payload: { events: Record<string, any>[] }) => {
             if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify(payload));
+              ws.send(JSON.stringify(payload.events));
             }
           };
 

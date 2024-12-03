@@ -577,7 +577,9 @@ rrwebRecord({
   },
 });
 
-const apiUrl = "http://localhost:3000/v1/events";
+const LOCAL_API_URL = "http://localhost:3000/v1/events";
+const FALLBACK_API_URL = "http://0.0.0.0:3000/v1/events"; // Need to point to 0.0.0.0 in some deploys
+let currentApiUrl = LOCAL_API_URL;
 
 function save() {
   if (snapshots.length > 0) {
@@ -585,9 +587,9 @@ function save() {
     const body = JSON.stringify({
       events: snapshots,
     });
-    snapshots = [];
-    console.log("[Recorder] Saving events to", apiUrl);
-    fetch(apiUrl, {
+
+    console.log("[Recorder] Saving events to", currentApiUrl);
+    fetch(currentApiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -604,6 +606,12 @@ function save() {
       })
       .catch((error) => {
         console.error("[Recorder] Failed to save events:", error.toString());
+        if (currentApiUrl === LOCAL_API_URL) {
+          console.log("[Recorder] Switching to fallback URL");
+          currentApiUrl = FALLBACK_API_URL;
+          // Retry with the new URL
+          save();
+        }
       });
   }
 }
