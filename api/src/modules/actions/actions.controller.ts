@@ -108,7 +108,12 @@ export const handleScrape = async (browserService: CDPService, request: ScrapeRe
 
     times.totalInstanceTime = Date.now() - startTime;
 
-    await browserService.refreshPrimaryPage();
+    if (proxy) {
+      await page.browserContext().close();
+    } else {
+      await browserService.refreshPrimaryPage();
+    }
+
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
@@ -118,6 +123,7 @@ export const handleScrape = async (browserService: CDPService, request: ScrapeRe
     if (logUrl) {
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
+    await browserService.refreshPrimaryPage();
     return reply.code(500).send({ message: error });
   }
 };
@@ -154,7 +160,12 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
 
     const screenshot = await page.screenshot({ fullPage, type: "jpeg", quality: 100 });
     times.screenshotTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
-    await page.close();
+    if (proxy) {
+      await page.browserContext().close();
+    } else {
+      await browserService.refreshPrimaryPage();
+    }
+
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
@@ -164,6 +175,7 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
     if (logUrl) {
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
+    await browserService.refreshPrimaryPage();
     return reply.code(500).send({ message: error });
   }
 };
@@ -202,7 +214,11 @@ export const handlePDF = async (browserService: CDPService, request: PDFRequest,
 
     const pdf = await page.pdf();
     times.pdfTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
-    await page.close();
+    if (proxy) {
+      await page.browserContext().close();
+    } else {
+      await browserService.refreshPrimaryPage();
+    }
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
@@ -212,6 +228,7 @@ export const handlePDF = async (browserService: CDPService, request: PDFRequest,
     if (logUrl) {
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
+    await browserService.refreshPrimaryPage();
     return reply.code(500).send({ message: error });
   }
 };

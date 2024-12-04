@@ -98,11 +98,10 @@ export class CDPService extends EventEmitter {
   }
 
   public async refreshPrimaryPage() {
-    if (!this.primaryPage) {
-      throw new Error("CDPService has not been launched yet!");
-    }
     const newPage = await this.createPage();
-    await this.primaryPage.close();
+    if (this.primaryPage) {
+      await this.primaryPage.close();
+    }
     this.primaryPage = newPage;
   }
 
