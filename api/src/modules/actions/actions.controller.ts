@@ -151,7 +151,7 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
       page = await browserService.getPrimaryPage();
     }
     times.pageTime = Date.now() - startTime;
-    await page.goto(url);
+    await page.goto(url, { timeout: 30000, waitUntil: "domcontentloaded" });
     times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
 
     if (delay) {
@@ -205,7 +205,7 @@ export const handlePDF = async (browserService: CDPService, request: PDFRequest,
       page = await browserService.getPrimaryPage();
     }
     times.pageTime = Date.now() - startTime;
-    await page.goto(url);
+    await page.goto(url, { timeout: 30000, waitUntil: "domcontentloaded" });
     times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
 
     if (delay) {

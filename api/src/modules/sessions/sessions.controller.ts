@@ -44,7 +44,7 @@ export const handleLaunchBrowserSession = async (
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
-        headless: false,
+        headless: true,
         args: [userAgent ? `--user-agent=${userAgent}` : undefined].filter(Boolean) as string[],
         proxyUrl,
       },

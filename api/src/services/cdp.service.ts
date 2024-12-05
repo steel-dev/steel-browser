@@ -48,7 +48,7 @@ export class CDPService extends EventEmitter {
     this.currentSessionConfig = null;
     this.shuttingDown = false;
     this.defaultLaunchConfig = {
-      options: { headless: false },
+      options: { headless: true },
     };
   }
 
@@ -234,9 +234,12 @@ export class CDPService extends EventEmitter {
 
         const cdpSession = await page.createCDPSession();
 
+        const currentViewport = await page.viewport();
+
         const { width, height } = this.launchConfig?.dimensions || { width: 1920, height: 1080 };
-        if (this.launchConfig?.dimensions) {
-          this.logger.info("Setting viewport to", width, height);
+
+        this.logger.info("Setting viewport to", width, height);
+        if (!currentViewport || currentViewport.width !== width || currentViewport.height !== height) {
           await page.setViewport({ width, height });
           await (
             await page.createCDPSession()
@@ -255,8 +258,6 @@ export class CDPService extends EventEmitter {
         page.on("close", async () => {
           cdpSession.removeAllListeners();
         });
-
-        // await installMouseHelper(page);
 
         const updateLocalStorage = (host: string, storage: Record<string, string>) => {
           this.localStorageData[host] = { ...this.localStorageData[host], ...storage };
@@ -370,7 +371,7 @@ export class CDPService extends EventEmitter {
 
     const finalLaunchOptions = {
       ...options,
-      defaultViewport: this.launchConfig.dimensions ? this.launchConfig.dimensions : undefined,
+      defaultViewport: this.launchConfig.dimensions ? this.launchConfig.dimensions : null,
       args: launchArgs,
       executablePath: this.chromeExecPath,
       timeout: 0,
