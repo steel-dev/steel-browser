@@ -569,54 +569,30 @@ var rrwebRecord = (function () {
 
 let snapshots = [];
 
-console.log("[Recorder] Setting up rrweb...");
 rrwebRecord({
   emit: (event) => {
-    console.log("[Recorder] Event captured:", event.type);
     snapshots.push(event);
   },
 });
 
-const LOCAL_API_URL = "http://localhost:3000/v1/events";
-const FALLBACK_API_URL = "http://0.0.0.0:3000/v1/events"; // Need to point to 0.0.0.0 in some deploys
-let currentApiUrl = LOCAL_API_URL;
-
 function save() {
   if (snapshots.length > 0) {
-    console.log(`[Recorder] Attempting to save ${snapshots.length} events`);
-    const body = JSON.stringify({
-      events: snapshots,
-    });
-
-    console.log("[Recorder] Saving events to", currentApiUrl);
-    fetch(currentApiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    // Send events to background script
+    chrome.runtime.sendMessage(
+      {
+        type: "SAVE_EVENTS",
+        events: snapshots,
       },
-      body,
-    })
-      .then((response) => {
-        console.log("[Recorder] Save response status:", response.status);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+      (response) => {
+        if (response.success) {
+          snapshots = [];
+        } else {
+          console.error("[Recorder] Failed to save events:", response.error);
         }
-        console.log("[Recorder] Events saved successfully");
-        snapshots = [];
-      })
-      .catch((error) => {
-        console.error("[Recorder] Failed to save events:", error.toString());
-        if (currentApiUrl === LOCAL_API_URL) {
-          console.log("[Recorder] Switching to fallback URL");
-          currentApiUrl = FALLBACK_API_URL;
-          // Retry with the new URL
-          save();
-        }
-      });
+      },
+    );
   }
 }
-console.log("[Recorder] Setting up save interval...");
-setInterval(save, 1000);
-console.log("[Recorder] Adding beforeunload handler...");
+
+setInterval(save, 500);
 window.addEventListener("beforeunload", save);
-console.log("[Recorder] Initialization complete");
