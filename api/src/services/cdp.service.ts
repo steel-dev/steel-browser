@@ -86,7 +86,11 @@ export class CDPService extends EventEmitter {
       if (event === EmitEvent.Log) {
         this.logEvent(payload);
       } else if (event === EmitEvent.Recording) {
-        this.logEvent({ type: BrowserEventType.Recording, text: JSON.stringify(payload), timestamp: new Date() });
+        this.logEvent({
+          type: BrowserEventType.Recording,
+          text: JSON.stringify(payload),
+          timestamp: new Date(),
+        });
       }
     } catch (error) {
       this.logger.error(`Error emitting event: ${error}`);

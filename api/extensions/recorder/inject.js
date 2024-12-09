@@ -567,32 +567,18 @@ var rrwebRecord = (function () {
   };
 })();
 
-let snapshots = [];
-
 rrwebRecord({
   emit: (event) => {
-    snapshots.push(event);
-  },
-});
-
-function save() {
-  if (snapshots.length > 0) {
-    // Send events to background script
     chrome.runtime.sendMessage(
       {
         type: "SAVE_EVENTS",
-        events: snapshots,
+        events: [event],
       },
       (response) => {
-        if (response.success) {
-          snapshots = [];
-        } else {
+        if (!response.success) {
           console.error("[Recorder] Failed to save events:", response.error);
         }
       },
     );
-  }
-}
-
-setInterval(save, 500);
-window.addEventListener("beforeunload", save);
+  },
+});

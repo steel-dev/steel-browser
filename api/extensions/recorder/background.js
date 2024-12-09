@@ -30,10 +30,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       headers: {
         "Content-Type": "application/json",
       },
-      mode: "no-cors",
-      body: JSON.stringify({
-        events: message.events,
-      }),
+      body: JSON.stringify(message),
     })
       .then((response) => {
         if (!response.ok) {

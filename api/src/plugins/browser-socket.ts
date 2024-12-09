@@ -71,14 +71,14 @@ const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, op
             }
           };
 
-          fastify.cdpService.on(`recording`, messageHandler);
+          fastify.cdpService.on(EmitEvent.Recording, messageHandler);
 
           // TODO: handle inputs to browser from client
           ws.on("message", async (message) => {});
 
           ws.on("close", () => {
             fastify.log.info("Recording WebSocket connection closed");
-            fastify.cdpService.removeListener(`recording`, messageHandler);
+            fastify.cdpService.removeListener(EmitEvent.Recording, messageHandler);
           });
 
           ws.on("error", (err) => {

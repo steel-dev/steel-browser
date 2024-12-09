@@ -37,6 +37,12 @@ const SessionDetails = z.object({
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
 });
 
+const RecordedEvents = z.object({
+  events: z.array(z.any()).describe("Events to emit"),
+});
+
+export type RecordedEvents = z.infer<typeof RecordedEvents>;
+
 const MultipleSessions = z.array(SessionDetails);
 
 export type CreateSessionBody = z.infer<typeof CreateSession>;
@@ -48,6 +54,7 @@ export const browserSchemas = {
   CreateSession,
   SessionDetails,
   MultipleSessions,
+  RecordedEvents,
 };
 
 export default browserSchemas;

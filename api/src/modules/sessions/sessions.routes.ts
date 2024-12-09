@@ -7,7 +7,7 @@ import {
   handleGetSessions,
 } from "./sessions.controller";
 import { $ref } from "../../plugins/schemas";
-import { CreateSessionRequest } from "./sessions.schema";
+import { CreateSessionRequest, RecordedEvents } from "./sessions.schema";
 import { EmitEvent } from "../../types/enums";
 
 async function routes(server: FastifyInstance) {
@@ -119,10 +119,22 @@ async function routes(server: FastifyInstance) {
       handleExitBrowserSession(server.cdpService, server.seleniumService, request, reply),
   );
 
-  server.post("/events", async (request: FastifyRequest<{ Body: { events: any[] } }>, reply: FastifyReply) => {
-    server.cdpService.customEmit(EmitEvent.Recording, request.body);
-    return reply.send({ status: "ok" });
-  });
+  server.post(
+    "/events",
+    {
+      schema: {
+        operationId: "receive_events",
+        description: "Receive recorded events from the browser",
+        tags: ["Sessions"],
+        summary: "Receive recorded events from the browser",
+        body: $ref("RecordedEvents"),
+      },
+    },
+    async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
+      server.cdpService.customEmit(EmitEvent.Recording, request.body);
+      return reply.send({ status: "ok" });
+    },
+  );
 }
 
 export default routes;
