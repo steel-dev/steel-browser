@@ -11,9 +11,9 @@ const envSchema = z.object({
   PROXY_URL: z.string().optional(),
   DEFAULT_HEADERS: z
     .string()
-    .transform((val) => (val ? JSON.parse(val) : undefined))
-    .pipe(z.record(z.string()))
-    .optional(),
+    .optional()
+    .transform((val) => (val ? JSON.parse(val) : {}))
+    .pipe(z.record(z.string()).optional().default({})),
 });
 
 export const env = envSchema.parse(process.env);
