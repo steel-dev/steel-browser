@@ -1,9 +1,17 @@
+import fs from 'fs';
 import path from "path";
 import { Page } from "puppeteer-core";
 
 export const getChromeExecutablePath = () => {
   if (process.platform === "win32") {
-    return `${process.env["ProgramFiles"]}\\Google\\Chrome\\Application\\chrome.exe`;
+    const programFilesPath = `${process.env["ProgramFiles"]}\\Google\\Chrome\\Application\\chrome.exe`;
+    const programFilesX86Path = `C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`;
+
+    if (fs.existsSync(programFilesPath)) {
+        return programFilesPath;
+    } else if (fs.existsSync(programFilesX86Path)) {
+        return programFilesX86Path;
+    }
   }
 
   if (process.platform === "darwin") {
