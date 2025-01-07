@@ -1,20 +1,17 @@
 import puppeteer, { Browser, Page, Target, BrowserContext, Protocol } from "puppeteer-core";
 import { Duplex } from "stream";
 import { EventEmitter } from "events";
-import { getChromeExecutablePath, installMouseHelper } from "../utils/browser";
+import { getChromeExecutablePath } from "../utils/browser";
 import httpProxy from "http-proxy";
 import { IncomingMessage } from "http";
 import { env } from "../env";
 const proxyChain = require("proxy-chain");
 import { getExtensionPaths } from "../utils/extensions";
 import { BrowserLauncherOptions, BrowserEvent, EmitEvent, BrowserEventType } from "../types";
-import fs from "fs";
-import path from "path";
 import { FingerprintInjector } from "fingerprint-injector";
 import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint-generator";
 import { FastifyBaseLogger } from "fastify";
-
-const recordScript = fs.readFileSync(path.join(__dirname, "../scripts/record.umd.min.cjs"), "utf8");
+import { isAdRequest } from "../utils/ads";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -25,6 +22,7 @@ export class CDPService extends EventEmitter {
   private fingerprintData: BrowserFingerprintWithHeaders | null;
   private chromeExecPath: string;
   private wsProxyServer: httpProxy;
+  private anonymizedProxyUrl: string | null;
   private primaryPage: Page | null;
   private launchConfig?: BrowserLauncherOptions;
   private localStorageData: Record<string, Record<string, string>>;
@@ -46,6 +44,7 @@ export class CDPService extends EventEmitter {
     this.primaryPage = null;
     this.localStorageData = {};
     this.currentSessionConfig = null;
+    this.anonymizedProxyUrl = null;
     this.shuttingDown = false;
     this.defaultLaunchConfig = {
       options: { headless: true },
@@ -213,6 +212,12 @@ export class CDPService extends EventEmitter {
             timestamp: new Date(),
           });
 
+          if (this.launchConfig?.blockAds && isAdRequest(request.url())) {
+            this.logger.info(`Blocked request to ad related resource: ${request.url()}`);
+            await request.abort();
+            return;
+          }
+
           if (request.url().startsWith("file://")) {
             this.logger.error(`Blocked request to file protocol: ${request.url()}`);
             page.close().catch(() => {});
@@ -297,6 +302,10 @@ export class CDPService extends EventEmitter {
       this.logger.info(`Shutting down CDPService and cleaning up resources`);
       this.removeAllHandlers();
       await this.browserInstance.close();
+      if (this.anonymizedProxyUrl) {
+        await proxyChain.closeAnonymizedProxy(this.anonymizedProxyUrl, true);
+        this.anonymizedProxyUrl = null;
+      }
       this.isActive = false;
       this.browserInstance = null;
       this.wsEndpoint = null;
@@ -329,9 +338,14 @@ export class CDPService extends EventEmitter {
     const defaultExtensions = ["recorder"];
     const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
 
-    const proxyUrl = this.launchConfig.options.proxyUrl
+    const anonymizedProxyUrl = this.launchConfig.options.proxyUrl
       ? await proxyChain.anonymizeProxy(this.launchConfig.options.proxyUrl)
       : null;
+
+    if (this.anonymizedProxyUrl) {
+      await proxyChain.closeAnonymizedProxy(this.anonymizedProxyUrl, true);
+    }
+    this.anonymizedProxyUrl = anonymizedProxyUrl;
 
     const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
 
@@ -366,7 +380,7 @@ export class CDPService extends EventEmitter {
       `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${this.launchConfig.dimensions?.height ?? 1080}`,
       `--timezone=${timezone}`,
       userAgent ? `--user-agent=${userAgent}` : "",
-      proxyUrl ? `--proxy-server=${proxyUrl}` : "",
+      anonymizedProxyUrl ? `--proxy-server=${anonymizedProxyUrl}` : "",
       ...extensionArgs,
       ...(options.args || []),
     ].filter(Boolean);

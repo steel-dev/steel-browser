@@ -8,6 +8,7 @@ export interface BrowserLauncherOptions {
   userAgent?: string;
   extensions?: string[];
   logSinkUrl?: string;
+  blockAds?: boolean;
   customHeaders?: Record<string, string>;
   timezone?: string;
   dimensions?: {

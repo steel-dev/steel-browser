@@ -30,8 +30,18 @@ export const handleLaunchBrowserSession = async (
   reply: FastifyReply,
 ) => {
   try {
-    const { sessionId, proxyUrl, userAgent, sessionContext, extensions, logSinkUrl, timezone, dimensions, isSelenium } =
-      request.body;
+    const {
+      sessionId,
+      proxyUrl,
+      userAgent,
+      sessionContext,
+      extensions,
+      logSinkUrl,
+      timezone,
+      dimensions,
+      isSelenium,
+      blockAds,
+    } = request.body;
 
     // If there's an active session, close it first
     if (activeSession) {
@@ -50,6 +60,7 @@ export const handleLaunchBrowserSession = async (
       },
       cookies: sessionContext?.cookies || [],
       userAgent: sessionContext?.userAgent,
+      blockAds,
       extensions: extensions || [],
       logSinkUrl,
       timezone: timezone || "US/Pacific",

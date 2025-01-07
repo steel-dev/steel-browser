@@ -7,6 +7,7 @@ const CreateSession = z.object({
   userAgent: z.string().optional().describe("User agent string to use for the session"),
   sessionContext: z.record(z.any()).optional().describe("Session context to use for the session"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
+  blockAds: z.boolean().optional().describe("Flag to indicate if ads should be blocked in the session"),
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
