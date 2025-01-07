@@ -4,6 +4,7 @@ import fastifyCors from "@fastify/cors";
 import openAPIPlugin from "./plugins/schemas";
 import requestLogger from "./plugins/request-logger";
 import browserInstancePlugin from "./plugins/browser";
+import browserSessionPlugin from "./plugins/browser-session";
 import browserWebSocket from "./plugins/browser-socket";
 import seleniumPlugin from "./plugins/selenium";
 import customBodyParser from "./plugins/custom-body-parser";
@@ -21,6 +22,8 @@ export default function buildFastifyServer(options?: FastifyServerOptions) {
   server.register(seleniumPlugin);
   server.register(browserWebSocket);
   server.register(customBodyParser);
+  server.register(browserSessionPlugin);
+
   // Routes
   server.register(actionsRoutes, { prefix: "/v1" });
   server.register(sessionsRoutes, { prefix: "/v1" });

@@ -24,7 +24,7 @@ const CreateSession = z.object({
 const SessionDetails = z.object({
   id: z.string().uuid().describe("Unique identifier for the session"),
   createdAt: z.string().datetime().describe("Timestamp when the session started"),
-  status: z.enum(["live", "released", "failed"]).describe("Status of the session"),
+  status: z.enum(["pending", "live", "released", "failed"]).describe("Status of the session"),
   duration: z.number().int().describe("Duration of the session in milliseconds"),
   eventCount: z.number().int().describe("Number of events processed in the session"),
   timeout: z.number().int().describe("Session timeout duration in milliseconds"),
@@ -49,7 +49,10 @@ const MultipleSessions = z.array(SessionDetails);
 export type CreateSessionBody = z.infer<typeof CreateSession>;
 export type CreateSessionRequest = FastifyRequest<{ Body: CreateSessionBody }>;
 
-export type SessionDetails = z.infer<typeof SessionDetails>;
+export type SessionDetails = z.infer<typeof SessionDetails> & {
+  completion: Promise<void>,
+  complete: (value: void) => void,
+};
 export type MultipleSessions = z.infer<typeof MultipleSessions>;
 export const browserSchemas = {
   CreateSession,

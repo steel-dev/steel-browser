@@ -58,7 +58,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => handleGetSessions(request, reply),
+    async (request: FastifyRequest, reply: FastifyReply) => handleGetSessions(server, request, reply),
   );
 
   server.get(
@@ -75,7 +75,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) =>
-      handleGetSessionDetails(request, reply),
+      handleGetSessionDetails(server, request, reply),
   );
 
   server.get(
@@ -102,7 +102,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) =>
-      handleExitBrowserSession(server.cdpService, server.seleniumService, request, reply),
+      handleExitBrowserSession(server, request, reply),
   );
 
   server.post(
@@ -116,7 +116,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) =>
-      handleExitBrowserSession(server.cdpService, server.seleniumService, request, reply),
+      handleExitBrowserSession(server, request, reply),
   );
 
   server.post(
