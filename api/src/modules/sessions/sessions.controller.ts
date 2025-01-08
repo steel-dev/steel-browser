@@ -26,7 +26,7 @@ export const handleLaunchBrowserSession = async (
     // If there's an active session, close it first
     await server.sessionService.endSession();
 
-    await server.sessionService.startSession({
+    return await server.sessionService.startSession({
       sessionId, proxyUrl, userAgent, sessionContext, extensions, logSinkUrl, timezone, dimensions, isSelenium, blockAds,
     });
 

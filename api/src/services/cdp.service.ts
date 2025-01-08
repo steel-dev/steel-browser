@@ -393,6 +393,8 @@ export class CDPService extends EventEmitter {
       args: launchArgs,
       executablePath: this.chromeExecPath,
       timeout: 0,
+      handleSIGINT: false,
+      handleSIGTERM: false,
       // dumpio: true, //uncomment this line to see logs from chromium
     };
 

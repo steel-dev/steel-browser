@@ -40,22 +40,6 @@ export class SessionService {
     }
   }
 
-  public resetSession(overrides?: Partial<SessionDetails>): SessionDetails {
-    this.activeSession.complete();
-
-    const { promise, resolve } = Promise.withResolvers<void>();
-    this.activeSession = {
-      createdAt: new Date().toISOString(),
-      id: uuidv4(),
-      ...defaultSession,
-      ...overrides,
-      completion: promise,
-      complete: resolve,
-    };
-
-    return this.activeSession;
-  }
-
   public async startSession(options: {
     sessionId?: string;
     proxyUrl?: string;
@@ -100,7 +84,7 @@ export class SessionService {
       await this.cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
       
-      return this.resetSession({
+      return this.resetSessionInfo({
         id: sessionId || uuidv4(),
         status: "live",
         websocketUrl: "",
@@ -115,7 +99,7 @@ export class SessionService {
       });
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
-      return this.resetSession({
+      return this.resetSessionInfo({
         id: sessionId || uuidv4(),
         status: "live",
         websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
@@ -138,5 +122,21 @@ export class SessionService {
     } else {
       await this.cdpService.endSession();
     }
-  }   
+  }
+
+  private resetSessionInfo(overrides?: Partial<SessionDetails>): SessionDetails {
+    this.activeSession.complete();
+
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.activeSession = {
+      createdAt: new Date().toISOString(),
+      id: uuidv4(),
+      ...defaultSession,
+      ...overrides,
+      completion: promise,
+      complete: resolve,
+    };
+
+    return this.activeSession;
+  }
 }

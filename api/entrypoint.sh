@@ -42,5 +42,8 @@ export DISPLAY=:10
 export CDP_REDIRECT_PORT=9223
 export HOST=0.0.0.0
 
-# Run the npm start command
-exec npm run start
+# Run the `npm run start` command but without npm.
+# NPM will introduce its own signal handling
+# which will prevent the container from waiting
+# for a session to be released before stopping gracefully
+exec node ./build/index.js
