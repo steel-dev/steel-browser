@@ -12,6 +12,9 @@ const browserSessionPlugin: FastifyPluginAsync = async (fastify, options) => {
   });
   fastify.decorate("sessionService", sessionService);
 
+  process.removeAllListeners("SIGINT");
+  process.removeAllListeners("SIGTERM");
+
   const gracefulOptions = {
     timeout: parseInt(env.KILL_TIMEOUT) * 1000,
   };
