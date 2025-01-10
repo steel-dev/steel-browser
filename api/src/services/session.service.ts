@@ -6,12 +6,15 @@ import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { BrowserLauncherOptions } from "../types";
 
-const defaultSession = {
-  status: "pending" as SessionDetails["status"],
+const sessionStats = {
   duration: 0,
   eventCount: 0,
   timeout: 0,
   creditsUsed: 0,
+};
+
+const defaultSession = {
+  status: "pending" as SessionDetails["status"],
   websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
   debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
   sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
@@ -19,7 +22,7 @@ const defaultSession = {
   isSelenium: false,
   proxy: "",
   solveCaptcha: false,
-}
+};
 
 export class SessionService {
   private logger: FastifyBaseLogger;
@@ -35,6 +38,7 @@ export class SessionService {
       id: uuidv4(),
       createdAt: new Date().toISOString(),
       ...defaultSession,
+      ...sessionStats,
       completion: Promise.resolve(),
       complete: () => {},
     }
@@ -122,6 +126,12 @@ export class SessionService {
     } else {
       await this.cdpService.endSession();
     }
+
+    this.resetSessionInfo({
+      ...this.activeSession,
+      id: uuidv4(),
+      status: "pending",
+    });
   }
 
   private resetSessionInfo(overrides?: Partial<SessionDetails>): SessionDetails {
@@ -129,10 +139,11 @@ export class SessionService {
 
     const { promise, resolve } = Promise.withResolvers<void>();
     this.activeSession = {
-      createdAt: new Date().toISOString(),
       id: uuidv4(),
       ...defaultSession,
       ...overrides,
+      ...sessionStats,
+      createdAt: new Date().toISOString(),
       completion: promise,
       complete: resolve,
     };
