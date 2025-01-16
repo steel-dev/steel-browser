@@ -34,6 +34,8 @@ const SessionDetails = z.object({
   sessionViewerUrl: z.string().describe("URL to view session details"),
   userAgent: z.string().optional().describe("User agent string used in the session"),
   proxy: z.string().optional().describe("Proxy server used for the session"),
+  proxyTxBytes: z.number().int().nonnegative().describe("Amount of data transmitted through the proxy"),
+  proxyRxBytes: z.number().int().nonnegative().describe("Amount of data received through the proxy"),
   solveCaptcha: z.boolean().optional().describe("Indicates if captcha solving is enabled"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
 });
@@ -49,10 +51,7 @@ const MultipleSessions = z.array(SessionDetails);
 export type CreateSessionBody = z.infer<typeof CreateSession>;
 export type CreateSessionRequest = FastifyRequest<{ Body: CreateSessionBody }>;
 
-export type SessionDetails = z.infer<typeof SessionDetails> & {
-  completion: Promise<void>,
-  complete: (value: void) => void,
-};
+export type SessionDetails = z.infer<typeof SessionDetails>;
 export type MultipleSessions = z.infer<typeof MultipleSessions>;
 export const browserSchemas = {
   CreateSession,

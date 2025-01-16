@@ -5,7 +5,7 @@ import { getChromeExecutablePath } from "../utils/browser";
 import httpProxy from "http-proxy";
 import { IncomingMessage } from "http";
 import { env } from "../env";
-const proxyChain = require("proxy-chain");
+import { ProxyServer } from "../utils/proxy";
 import { getExtensionPaths } from "../utils/extensions";
 import { BrowserLauncherOptions, BrowserEvent, EmitEvent, BrowserEventType } from "../types";
 import { FingerprintInjector } from "fingerprint-injector";
@@ -22,7 +22,7 @@ export class CDPService extends EventEmitter {
   private fingerprintData: BrowserFingerprintWithHeaders | null;
   private chromeExecPath: string;
   private wsProxyServer: httpProxy;
-  private anonymizedProxyUrl: string | null;
+  private anonymizedProxy: ProxyServer | null;
   private primaryPage: Page | null;
   private launchConfig?: BrowserLauncherOptions;
   private localStorageData: Record<string, Record<string, string>>;
@@ -44,7 +44,7 @@ export class CDPService extends EventEmitter {
     this.primaryPage = null;
     this.localStorageData = {};
     this.currentSessionConfig = null;
-    this.anonymizedProxyUrl = null;
+    this.anonymizedProxy = null;
     this.shuttingDown = false;
     this.defaultLaunchConfig = {
       options: { headless: true },
@@ -302,9 +302,9 @@ export class CDPService extends EventEmitter {
       this.logger.info(`Shutting down CDPService and cleaning up resources`);
       this.removeAllHandlers();
       await this.browserInstance.close();
-      if (this.anonymizedProxyUrl) {
-        await proxyChain.closeAnonymizedProxy(this.anonymizedProxyUrl, true);
-        this.anonymizedProxyUrl = null;
+      if (this.anonymizedProxy) {
+        await this.anonymizedProxy.close(true);
+        this.anonymizedProxy = null;
       }
       this.isActive = false;
       this.browserInstance = null;
@@ -338,14 +338,11 @@ export class CDPService extends EventEmitter {
     const defaultExtensions = ["recorder"];
     const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
 
-    const anonymizedProxyUrl = this.launchConfig.options.proxyUrl
-      ? await proxyChain.anonymizeProxy(this.launchConfig.options.proxyUrl)
+    await this.anonymizedProxy?.close(true);
+    this.anonymizedProxy = this.launchConfig.options.proxyUrl
+      ? new ProxyServer(this.launchConfig.options.proxyUrl)
       : null;
-
-    if (this.anonymizedProxyUrl) {
-      await proxyChain.closeAnonymizedProxy(this.anonymizedProxyUrl, true);
-    }
-    this.anonymizedProxyUrl = anonymizedProxyUrl;
+    await this.anonymizedProxy?.listen();
 
     const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
 
@@ -380,7 +377,7 @@ export class CDPService extends EventEmitter {
       `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${this.launchConfig.dimensions?.height ?? 1080}`,
       `--timezone=${timezone}`,
       userAgent ? `--user-agent=${userAgent}` : "",
-      anonymizedProxyUrl ? `--proxy-server=${anonymizedProxyUrl}` : "",
+      this.anonymizedProxy ? `--proxy-server=${this.anonymizedProxy.url}` : "",
       ...extensionArgs,
       ...(options.args || []),
     ].filter(Boolean);
