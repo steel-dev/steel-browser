@@ -3,7 +3,6 @@ import { ChildProcess, spawn } from "child_process";
 import { BrowserLauncherOptions, BrowserEvent, BrowserEventType } from "../types";
 import path from "path";
 import { FastifyBaseLogger } from "fastify";
-const proxyChain = require("proxy-chain");
 
 export class SeleniumService extends EventEmitter {
   private seleniumProcess: ChildProcess | null = null;
@@ -19,13 +18,12 @@ export class SeleniumService extends EventEmitter {
 
   public async getChromeArgs(): Promise<string[]> {
     const { options, userAgent } = this.launchOptions ?? {};
-    const proxyUrl = options?.proxyUrl ? await proxyChain.anonymizeProxy(options.proxyUrl) : null;
     return [
       "disable-dev-shm-usage",
       "no-sandbox",
       "enable-javascript",
       userAgent ? `user-agent=${userAgent}` : "",
-      proxyUrl ? `proxy-server=${proxyUrl}` : "",
+      options?.proxyUrl ? `proxy-server=${options.proxyUrl}` : "",
       ...(options?.args?.map((arg) => (arg.startsWith("--") ? arg.slice(2) : arg)) || []),
     ].filter(Boolean);
   }

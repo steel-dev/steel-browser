@@ -6,14 +6,15 @@ import { cleanHtml, getMarkdown, getReadabilityContent } from "../../utils/scrap
 import { ScrapeFormat } from "../../types";
 import { BrowserContext, Page } from "puppeteer-core";
 import { updateLog } from "../../utils/logging";
-const proxyChain = require("proxy-chain");
+import { getProxyServer } from "../../utils/proxy";
+import { SessionService } from "../../services/session.service";
 
-export const handleScrape = async (browserService: CDPService, request: ScrapeRequest, reply: FastifyReply) => {
+export const handleScrape = async (sessionService: SessionService, browserService: CDPService, request: ScrapeRequest, reply: FastifyReply) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, format, screenshot, pdf, proxyUrl, logUrl, delay } = request.body;
   try {
-    const proxy = proxyUrl ? await proxyChain.anonymizeProxy(proxyUrl) : null;
+    const proxy = await getProxyServer(proxyUrl, sessionService);
 
     times.proxyTime = Date.now() - startTime;
 
@@ -25,7 +26,7 @@ export const handleScrape = async (browserService: CDPService, request: ScrapeRe
     }
 
     if (proxy) {
-      context = await browserService.createBrowserContext(proxy);
+      context = await browserService.createBrowserContext(proxy.url);
       page = await context.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
     } else {
@@ -128,7 +129,7 @@ export const handleScrape = async (browserService: CDPService, request: ScrapeRe
   }
 };
 
-export const handleScreenshot = async (browserService: CDPService, request: ScreenshotRequest, reply: FastifyReply) => {
+export const handleScreenshot = async (sessionService: SessionService, browserService: CDPService, request: ScreenshotRequest, reply: FastifyReply) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay, fullPage } = request.body;
@@ -136,7 +137,7 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
     await browserService.launch();
   }
   try {
-    const proxy = proxyUrl ? await proxyChain.anonymizeProxy(proxyUrl) : null;
+    const proxy = await getProxyServer(proxyUrl, sessionService);
 
     times.proxyTime = Date.now() - startTime;
 
@@ -144,7 +145,7 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
     let context: BrowserContext;
 
     if (proxy) {
-      context = await browserService.createBrowserContext(proxy);
+      context = await browserService.createBrowserContext(proxy.url);
       page = await context.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
     } else {
@@ -180,7 +181,7 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
   }
 };
 
-export const handlePDF = async (browserService: CDPService, request: PDFRequest, reply: FastifyReply) => {
+export const handlePDF = async (sessionService: SessionService, browserService: CDPService, request: PDFRequest, reply: FastifyReply) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay } = request.body;
@@ -190,7 +191,7 @@ export const handlePDF = async (browserService: CDPService, request: PDFRequest,
   }
 
   try {
-    const proxy = proxyUrl ? await proxyChain.anonymizeProxy(proxyUrl) : null;
+    const proxy = await getProxyServer(proxyUrl, sessionService);
 
     times.proxyTime = Date.now() - startTime;
 
@@ -198,7 +199,7 @@ export const handlePDF = async (browserService: CDPService, request: PDFRequest,
     let context: BrowserContext;
 
     if (proxy) {
-      context = await browserService.createBrowserContext(proxy);
+      context = await browserService.createBrowserContext(proxy.url);
       page = await context.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
     } else {

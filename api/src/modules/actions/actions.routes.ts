@@ -18,7 +18,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: ScrapeRequest, reply: FastifyReply) => handleScrape(server.cdpService, request, reply),
+    async (request: ScrapeRequest, reply: FastifyReply) => handleScrape(server.sessionService, server.cdpService, request, reply),
   );
 
   server.post(
@@ -35,7 +35,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: ScreenshotRequest, reply: FastifyReply) => handleScreenshot(server.cdpService, request, reply),
+    async (request: ScreenshotRequest, reply: FastifyReply) => handleScreenshot(server.sessionService, server.cdpService, request, reply),
   );
 
   server.post(
@@ -52,7 +52,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: PDFRequest, reply: FastifyReply) => handlePDF(server.cdpService, request, reply),
+    async (request: PDFRequest, reply: FastifyReply) => handlePDF(server.sessionService, server.cdpService, request, reply),
   );
 }
 

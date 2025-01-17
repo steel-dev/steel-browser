@@ -5,12 +5,21 @@ import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { BrowserLauncherOptions } from "../types";
+import { ProxyServer } from "../utils/proxy";
+
+type Session = SessionDetails & {
+  completion: Promise<void>,
+  complete: (value: void) => void,
+  proxyServer: ProxyServer | undefined,
+};
 
 const sessionStats = {
   duration: 0,
   eventCount: 0,
   timeout: 0,
   creditsUsed: 0,
+  proxyTxBytes: 0,
+  proxyRxBytes: 0,
 };
 
 const defaultSession = {
@@ -28,7 +37,7 @@ export class SessionService {
   private logger: FastifyBaseLogger;
   private cdpService: CDPService;
   private seleniumService: SeleniumService;
-  public activeSession: SessionDetails;
+  public activeSession: Session;
 
   constructor(config: { cdpService: CDPService, seleniumService: SeleniumService, logger: FastifyBaseLogger }) {
     this.cdpService = config.cdpService;
@@ -41,6 +50,7 @@ export class SessionService {
       ...sessionStats,
       completion: Promise.resolve(),
       complete: () => {},
+      proxyServer: undefined,
     }
   }
 
@@ -69,11 +79,30 @@ export class SessionService {
       blockAds,
     } = options;
 
+    this.resetSessionInfo({
+      id: sessionId || uuidv4(),
+      status: "live",
+      proxy: proxyUrl,
+      solveCaptcha: false,
+      isSelenium,
+    });
+
+    if (proxyUrl) {
+      this.activeSession.proxyServer = new ProxyServer(proxyUrl);
+      this.activeSession.proxyServer.on('connectionClosed', ({ stats }) => {
+        if (stats) {
+          this.activeSession.proxyTxBytes += stats.trgTxBytes;
+          this.activeSession.proxyRxBytes += stats.trgRxBytes;
+        }
+      });
+      await this.activeSession.proxyServer.listen();
+    }
+
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: true,
         args: [userAgent ? `--user-agent=${userAgent}` : undefined].filter(Boolean) as string[],
-        proxyUrl,
+        proxyUrl: this.activeSession.proxyServer?.url,
       },
       cookies: sessionContext?.cookies || [],
       userAgent: sessionContext?.userAgent,
@@ -88,36 +117,32 @@ export class SessionService {
       await this.cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
       
-      return this.resetSessionInfo({
-        id: sessionId || uuidv4(),
-        status: "live",
+      Object.assign(this.activeSession, {
         websocketUrl: "",
         debugUrl: "",
         sessionViewerUrl: "",
         userAgent:
           sessionContext?.userAgent ||
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        proxy: proxyUrl,
-        solveCaptcha: false,
-        isSelenium,
       });
+
+      return this.activeSession;
+
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
-      return this.resetSessionInfo({
-        id: sessionId || uuidv4(),
-        status: "live",
+
+      Object.assign(this.activeSession, {
         websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
         debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
         sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
         userAgent: this.cdpService.getUserAgent(),
-        proxy: proxyUrl,
-        solveCaptcha: false,
-        isSelenium,
       });
     }
+
+    return this.activeSession;
   }
 
-  public async endSession(): Promise<void> {
+  public async endSession(): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
 
@@ -127,11 +152,16 @@ export class SessionService {
       await this.cdpService.endSession();
     }
 
+    await this.activeSession.proxyServer?.close(true);
+    this.activeSession.proxyServer = undefined;
+    const releasedSession = this.activeSession;
+
     this.resetSessionInfo({
-      ...this.activeSession,
       id: uuidv4(),
       status: "pending",
     });
+
+    return releasedSession;
   }
 
   private resetSessionInfo(overrides?: Partial<SessionDetails>): SessionDetails {
@@ -146,6 +176,7 @@ export class SessionService {
       createdAt: new Date().toISOString(),
       completion: promise,
       complete: resolve,
+      proxyServer: undefined,
     };
 
     return this.activeSession;
