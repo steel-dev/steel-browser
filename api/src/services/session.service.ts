@@ -79,11 +79,21 @@ export class SessionService {
       blockAds,
     } = options;
 
+    this.resetSessionInfo({
+      id: sessionId || uuidv4(),
+      status: "live",
+      proxy: proxyUrl,
+      solveCaptcha: false,
+      isSelenium,
+    });
+
     if (proxyUrl) {
       this.activeSession.proxyServer = new ProxyServer(proxyUrl);
       this.activeSession.proxyServer.on('connectionClosed', ({ stats }) => {
-        this.activeSession.proxyTxBytes += stats.trgTxBytes;
-        this.activeSession.proxyRxBytes += stats.trgRxBytes;
+        if (stats) {
+          this.activeSession.proxyTxBytes += stats.trgTxBytes;
+          this.activeSession.proxyRxBytes += stats.trgRxBytes;
+        }
       });
       await this.activeSession.proxyServer.listen();
     }
@@ -107,36 +117,32 @@ export class SessionService {
       await this.cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
       
-      return this.resetSessionInfo({
-        id: sessionId || uuidv4(),
-        status: "live",
+      Object.assign(this.activeSession, {
         websocketUrl: "",
         debugUrl: "",
         sessionViewerUrl: "",
         userAgent:
           sessionContext?.userAgent ||
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        proxy: this.activeSession.proxyServer?.url,
-        solveCaptcha: false,
-        isSelenium,
       });
+
+      return this.activeSession;
+
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
-      return this.resetSessionInfo({
-        id: sessionId || uuidv4(),
-        status: "live",
+
+      Object.assign(this.activeSession, {
         websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
         debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
         sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
         userAgent: this.cdpService.getUserAgent(),
-        proxy: this.activeSession.proxyServer?.url,
-        solveCaptcha: false,
-        isSelenium,
       });
     }
+
+    return this.activeSession;
   }
 
-  public async endSession(): Promise<void> {
+  public async endSession(): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
 
@@ -147,12 +153,15 @@ export class SessionService {
     }
 
     await this.activeSession.proxyServer?.close(true);
+    this.activeSession.proxyServer = undefined;
+    const releasedSession = this.activeSession;
 
     this.resetSessionInfo({
-      ...this.activeSession,
       id: uuidv4(),
       status: "pending",
     });
+
+    return releasedSession;
   }
 
   private resetSessionInfo(overrides?: Partial<SessionDetails>): SessionDetails {

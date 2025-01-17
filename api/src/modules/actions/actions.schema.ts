@@ -7,7 +7,7 @@ const ScrapeRequest = z.object({
   format: z.array(z.nativeEnum(ScrapeFormat)).optional(),
   screenshot: z.boolean().optional(),
   pdf: z.boolean().optional(),
-  proxyUrl: z.string().optional(),
+  proxyUrl: z.string().nullable().optional().describe("Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used."),
   delay: z.number().optional(),
   logUrl: z.string().optional(),
 });
@@ -38,7 +38,7 @@ const ScrapeResponse = z.object({
 
 const ScreenshotRequest = z.object({
   url: z.string(),
-  proxyUrl: z.string().optional(),
+  proxyUrl: z.string().nullable().optional().describe("Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used."),
   delay: z.number().optional(),
   fullPage: z.boolean().optional(),
   logUrl: z.string().optional(),
@@ -48,7 +48,7 @@ const ScreenshotResponse = z.any();
 
 const PDFRequest = z.object({
   url: z.string(),
-  proxyUrl: z.string().optional(),
+  proxyUrl: z.string().nullable().optional().describe("Proxy URL to use for PDF export. Provide `null` to disable proxy. If not provided, current session proxy settings will be used."),
   delay: z.number().optional(),
   logUrl: z.string().optional(),
 });

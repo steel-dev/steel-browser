@@ -1,6 +1,8 @@
-import proxyChain from "proxy-chain";
+import { SessionService } from "../services/session.service";
 
-export class ProxyServer extends proxyChain.Server {
+const ProxyChain = require('proxy-chain');
+
+export class ProxyServer extends ProxyChain.Server {
   public url: string;
   public upstreamProxyUrl: string;
   public txBytes = 0;
@@ -8,7 +10,7 @@ export class ProxyServer extends proxyChain.Server {
 
   constructor(proxyUrl: string) {
     super({
-      host: '127.0.0.1',
+      port: 0,
 
       prepareRequestFunction: () => {
         return {
@@ -19,11 +21,44 @@ export class ProxyServer extends proxyChain.Server {
     });
 
     this.on('connectionClosed', ({ stats }) => {
-      this.txBytes += stats.trgTxBytes;
-      this.rxBytes += stats.trgRxBytes;
+      if (stats) {
+        this.txBytes += stats.trgTxBytes;
+        this.rxBytes += stats.trgRxBytes;
+      }
     });
 
-    this.url = `http://127.0.0.1:${this.port}`
+    this.url = `http://127.0.0.1:${this.port}`;
     this.upstreamProxyUrl = proxyUrl;
   };
+
+  async listen(): Promise<void> {
+    await super.listen();
+    this.url = `http://127.0.0.1:${this.port}`;
+  }
+
+  async close(closeConnections: boolean): Promise<void> {
+    console.debug(`Closing proxy server ${this.url} to ${this.upstreamProxyUrl}`);
+    await super.close(closeConnections);
+  }
+}
+
+const proxyReclaimRegistry = new FinalizationRegistry((heldValue: Function) => heldValue());
+
+export async function createProxyServer(proxyUrl: string): Promise<ProxyServer> {
+  const proxy = new ProxyServer(proxyUrl);
+  await proxy.listen();
+  proxyReclaimRegistry.register(proxy, proxy.close);
+  return proxy;
+}
+
+export async function getProxyServer(proxyUrl: string | null | undefined, session: SessionService): Promise<ProxyServer | null> {
+  if (proxyUrl === null) {
+    return null;
+  }
+
+  if (proxyUrl === undefined || proxyUrl === session.activeSession.proxyServer?.upstreamProxyUrl) {
+    return session.activeSession.proxyServer ?? null;
+  }
+
+  return createProxyServer(proxyUrl);
 }

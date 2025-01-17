@@ -99,6 +99,9 @@ async function routes(server: FastifyInstance) {
         description: "Release a browser session",
         tags: ["Sessions"],
         summary: "Release a browser session",
+        response: {
+          200: $ref("SessionDetails"),
+        },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) =>
@@ -113,6 +116,9 @@ async function routes(server: FastifyInstance) {
         description: "Release browser sessions",
         tags: ["Sessions"],
         summary: "Release browser sessions",
+        response: {
+          200: $ref("SessionDetails"),
+        },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) =>

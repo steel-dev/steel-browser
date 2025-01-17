@@ -6,16 +6,15 @@ import { cleanHtml, getMarkdown, getReadabilityContent } from "../../utils/scrap
 import { ScrapeFormat } from "../../types";
 import { BrowserContext, Page } from "puppeteer-core";
 import { updateLog } from "../../utils/logging";
-import { ProxyServer } from "../../utils/proxy";
+import { getProxyServer } from "../../utils/proxy";
+import { SessionService } from "../../services/session.service";
 
-export const handleScrape = async (browserService: CDPService, request: ScrapeRequest, reply: FastifyReply) => {
+export const handleScrape = async (sessionService: SessionService, browserService: CDPService, request: ScrapeRequest, reply: FastifyReply) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, format, screenshot, pdf, proxyUrl, logUrl, delay } = request.body;
   try {
-    // TODO: Should re-use proxy server from implicit session?
-    const proxy = proxyUrl ? new ProxyServer(proxyUrl) : null;
-    await proxy?.listen();
+    const proxy = await getProxyServer(proxyUrl, sessionService);
 
     times.proxyTime = Date.now() - startTime;
 
@@ -112,7 +111,6 @@ export const handleScrape = async (browserService: CDPService, request: ScrapeRe
 
     if (proxy) {
       await page.browserContext().close();
-      await proxy.close(true);
     } else {
       await browserService.refreshPrimaryPage();
     }
@@ -131,7 +129,7 @@ export const handleScrape = async (browserService: CDPService, request: ScrapeRe
   }
 };
 
-export const handleScreenshot = async (browserService: CDPService, request: ScreenshotRequest, reply: FastifyReply) => {
+export const handleScreenshot = async (sessionService: SessionService, browserService: CDPService, request: ScreenshotRequest, reply: FastifyReply) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay, fullPage } = request.body;
@@ -139,9 +137,7 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
     await browserService.launch();
   }
   try {
-    // TODO: Should re-use proxy server from implicit session?
-    const proxy = proxyUrl ? new ProxyServer(proxyUrl) : null;
-    await proxy?.listen();
+    const proxy = await getProxyServer(proxyUrl, sessionService);
 
     times.proxyTime = Date.now() - startTime;
 
@@ -167,7 +163,6 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
     times.screenshotTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
     if (proxy) {
       await page.browserContext().close();
-      await proxy.close(true);
     } else {
       await browserService.refreshPrimaryPage();
     }
@@ -186,7 +181,7 @@ export const handleScreenshot = async (browserService: CDPService, request: Scre
   }
 };
 
-export const handlePDF = async (browserService: CDPService, request: PDFRequest, reply: FastifyReply) => {
+export const handlePDF = async (sessionService: SessionService, browserService: CDPService, request: PDFRequest, reply: FastifyReply) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay } = request.body;
@@ -196,9 +191,7 @@ export const handlePDF = async (browserService: CDPService, request: PDFRequest,
   }
 
   try {
-    // TODO: Should re-use proxy server from implicit session?
-    const proxy = proxyUrl ? new ProxyServer(proxyUrl) : null;
-    await proxy?.listen();
+    const proxy = await getProxyServer(proxyUrl, sessionService);
 
     times.proxyTime = Date.now() - startTime;
 
@@ -224,7 +217,6 @@ export const handlePDF = async (browserService: CDPService, request: PDFRequest,
     times.pdfTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
     if (proxy) {
       await page.browserContext().close();
-      await proxy.close(true);
     } else {
       await browserService.refreshPrimaryPage();
     }

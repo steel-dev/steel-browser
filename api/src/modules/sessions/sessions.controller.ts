@@ -42,9 +42,9 @@ export const handleExitBrowserSession = async (
   reply: FastifyReply,
 ) => {
   try {
-    await server.sessionService.endSession();
+    const oldSession = await server.sessionService.endSession();
 
-    reply.send({ success: true });
+    reply.send(oldSession);
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
