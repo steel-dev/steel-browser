@@ -35,11 +35,6 @@ export class ProxyServer extends ProxyChain.Server {
     await super.listen();
     this.url = `http://127.0.0.1:${this.port}`;
   }
-
-  async close(closeConnections: boolean): Promise<void> {
-    console.debug(`Closing proxy server ${this.url} to ${this.upstreamProxyUrl}`);
-    await super.close(closeConnections);
-  }
 }
 
 const proxyReclaimRegistry = new FinalizationRegistry((heldValue: Function) => heldValue());
