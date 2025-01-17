@@ -40,6 +40,8 @@ const SessionDetails = z.object({
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
 });
 
+const ReleaseSession = SessionDetails.merge(z.object({ success: z.boolean().describe("Indicates if the session was successfully released") }));
+
 const RecordedEvents = z.object({
   events: z.array(z.any()).describe("Events to emit"),
 });
@@ -58,6 +60,7 @@ export const browserSchemas = {
   SessionDetails,
   MultipleSessions,
   RecordedEvents,
+  ReleaseSession,
 };
 
 export default browserSchemas;
