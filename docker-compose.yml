@@ -14,13 +14,13 @@ services:
     networks:
       - steel-network
      environment:
-      - HOST=${HOST:-0.0.0.0}
-      - DOMAIN=${DOMAIN:-localhost}
-      - PORT=${PORT:-3000}
-      - CDP_REDIRECT_PORT=${CDP_REDIRECT_PORT:-9222}
-      - PROXY_URL=${PROXY_URL}
-      - DEFAULT_HEADERS=${DEFAULT_HEADERS:-{}}
-      - KILL_TIMEOUT=${KILL_TIMEOUT:-25}
+      - STEEL_HOST=${STEEL_HOST:-0.0.0.0}
+      - STEEL_DOMAIN=${STEEL_DOMAIN:-localhost}
+      - STEEL_PORT=${STEEL_PORT:-3000}
+      - STEEL_CDP_REDIRECT_PORT=${STEEL_CDP_REDIRECT_PORT:-9222}
+      - STEEL_PROXY_URL=${STEEL_PROXY_URL}
+      - STEEL_DEFAULT_HEADERS=${STEEL_DEFAULT_HEADERS:-{}}
+      - STEEL_KILL_TIMEOUT=${STEEL_KILL_TIMEOUT:-25}
 
   ui:
     build:
