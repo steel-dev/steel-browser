@@ -8,15 +8,19 @@ import browserSessionPlugin from "./plugins/browser-session";
 import browserWebSocket from "./plugins/browser-socket";
 import seleniumPlugin from "./plugins/selenium";
 import customBodyParser from "./plugins/custom-body-parser";
+import authPlugin from "./plugins/auth";
+import { getConfig } from "./config";
 import { sessionsRoutes, seleniumRoutes, actionsRoutes, cdpRoutes } from "./routes";
 
 export default function buildFastifyServer(options?: FastifyServerOptions) {
   const server = fastify(options);
+  const config = getConfig();
 
   // Plugins
   server.register(requestLogger);
   server.register(fastifySensible);
   server.register(fastifyCors, { origin: true });
+  server.register(authPlugin, { authToken: config.authToken });
   server.register(openAPIPlugin);
   server.register(browserInstancePlugin);
   server.register(seleniumPlugin);
