@@ -19,11 +19,13 @@ export function SessionContainer() {
   const [showConsole, setShowConsole] = useState(true);
   const [mostRecentUrl, setMostRecentUrl] = useState("about:blank");
   useEffect(() => {
+    const authEnabled = import.meta.env.VITE_AUTH_ENABLED;
+    if (authEnabled !== "true") return;
     const token = localStorage.getItem("auth_token");
-    if (!token) {
+    if (!token || isError) {
       navigate("/login");
     }
-  }, [session]);
+  }, [isError]);
 
   if (isLoading) return <div>Loading...</div>;
   if (isError || !session) return <div>Error</div>;
