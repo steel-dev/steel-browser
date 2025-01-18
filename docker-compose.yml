@@ -13,7 +13,7 @@ services:
       - ./.cache:/app/.cache
     networks:
       - steel-network
-     environment:
+    environment:
       - STEEL_HOST=${STEEL_HOST:-0.0.0.0}
       - STEEL_DOMAIN=${STEEL_DOMAIN:-localhost}
       - STEEL_PORT=${STEEL_PORT:-3000}
