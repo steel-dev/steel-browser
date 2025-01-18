@@ -13,6 +13,14 @@ services:
       - ./.cache:/app/.cache
     networks:
       - steel-network
+     environment:
+      - HOST=${HOST:-0.0.0.0}
+      - DOMAIN=${DOMAIN:-localhost}
+      - PORT=${PORT:-3000}
+      - CDP_REDIRECT_PORT=${CDP_REDIRECT_PORT:-9222}
+      - PROXY_URL=${PROXY_URL}
+      - DEFAULT_HEADERS=${DEFAULT_HEADERS:-{}}
+      - KILL_TIMEOUT=${KILL_TIMEOUT:-25}
 
   ui:
     build:
