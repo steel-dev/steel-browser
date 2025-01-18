@@ -28,6 +28,7 @@ FROM base AS build
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=tmpfs,target=/var/log/apt \
+    apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
       build-essential \
       pkg-config \
@@ -56,6 +57,7 @@ FROM base AS production
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=tmpfs,target=/var/log/apt \
+    apt-get update && \ 
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
       wget \
       nginx \
