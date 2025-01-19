@@ -15,6 +15,7 @@ const envSchema = z.object({
     .transform((val) => (val ? JSON.parse(val) : {}))
     .pipe(z.record(z.string()).optional().default({})),
   KILL_TIMEOUT: z.string().optional().default("25"), // to fit in default 30 seconds of Heroku or ECS with some margin
+  CHROME_EXECUTABLE_PATH: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

@@ -1,16 +1,27 @@
-import fs from 'fs';
+import fs from "fs";
 import path from "path";
 import { Page } from "puppeteer-core";
+import { env } from "../env";
 
 export const getChromeExecutablePath = () => {
+  if (env.CHROME_EXECUTABLE_PATH) {
+    const executablePath = env.CHROME_EXECUTABLE_PATH;
+    const normalizedPath = path.normalize(executablePath);
+    if (!fs.existsSync(normalizedPath)) {
+      console.warn(`Your custom chrome executable at ${normalizedPath} does not exist`);
+    } else {
+      return executablePath;
+    }
+  }
+
   if (process.platform === "win32") {
     const programFilesPath = `${process.env["ProgramFiles"]}\\Google\\Chrome\\Application\\chrome.exe`;
     const programFilesX86Path = `C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`;
 
     if (fs.existsSync(programFilesPath)) {
-        return programFilesPath;
+      return programFilesPath;
     } else if (fs.existsSync(programFilesX86Path)) {
-        return programFilesX86Path;
+      return programFilesX86Path;
     }
   }
 
