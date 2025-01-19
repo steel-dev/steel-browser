@@ -1,23 +1,26 @@
 {
-  "manifest_version": 2,
-  "name": "recorder",
-  "description": "The recorder extension for Steel Browser",
-  "version": "1",
-  "author": "Nasr Mohamed",
-  "browser_action": {
-    "default_icon": "icon.png",
-    "default_title": "recorder extension"
-  },
+  "manifest_version": 3,
+  "name": "Steel Recording Extension",
+  "version": "1.0",
   "permissions": [
-    "activeTab",
-    "tabs",
-    "<all_urls>"
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://0.0.0.0:3000/*"
   ],
   "background": {
-    "persistent": true,
-    "scripts": [
-      "background.js"
-    ]
+    "service_worker": "background.js"
   },
-  "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'"
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "inject.js"
+      ]
+    }
+  ]
 }
