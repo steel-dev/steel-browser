@@ -1,6 +1,6 @@
 import { SessionService } from "../services/session.service";
 
-const ProxyChain = require('proxy-chain');
+const ProxyChain = require("proxy-chain");
 
 export class ProxyServer extends ProxyChain.Server {
   public url: string;
@@ -12,7 +12,13 @@ export class ProxyServer extends ProxyChain.Server {
     super({
       port: 0,
 
-      prepareRequestFunction: () => {
+      prepareRequestFunction: ({ hostname }) => {
+        if (hostname === process.env.HOST) {
+          return {
+            requestAuthentication: false,
+            upstreamProxyUrl: null, // This will ensure that events sent back to the api are not proxied
+          };
+        }
         return {
           requestAuthentication: false,
           upstreamProxyUrl: proxyUrl,
@@ -20,7 +26,7 @@ export class ProxyServer extends ProxyChain.Server {
       },
     });
 
-    this.on('connectionClosed', ({ stats }) => {
+    this.on("connectionClosed", ({ stats }) => {
       if (stats) {
         this.txBytes += stats.trgTxBytes;
         this.rxBytes += stats.trgRxBytes;
@@ -29,7 +35,7 @@ export class ProxyServer extends ProxyChain.Server {
 
     this.url = `http://127.0.0.1:${this.port}`;
     this.upstreamProxyUrl = proxyUrl;
-  };
+  }
 
   async listen(): Promise<void> {
     await super.listen();
@@ -46,7 +52,10 @@ export async function createProxyServer(proxyUrl: string): Promise<ProxyServer> 
   return proxy;
 }
 
-export async function getProxyServer(proxyUrl: string | null | undefined, session: SessionService): Promise<ProxyServer | null> {
+export async function getProxyServer(
+  proxyUrl: string | null | undefined,
+  session: SessionService,
+): Promise<ProxyServer | null> {
   if (proxyUrl === null) {
     return null;
   }
