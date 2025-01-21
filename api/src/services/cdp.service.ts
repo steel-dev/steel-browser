@@ -73,7 +73,7 @@ export class CDPService extends EventEmitter {
   }
 
   public getDebuggerUrl() {
-    return `http://localhost:${env.CDP_REDIRECT_PORT}/devtools/devtools_app.html`;
+    return `http://localhost:${env.STEEL_CDP_REDIRECT_PORT}/devtools/devtools_app.html`;
   }
 
   public customEmit(event: EmitEvent, payload: any) {
@@ -94,7 +94,7 @@ export class CDPService extends EventEmitter {
   }
 
   public getDebuggerWsUrl(pageId?: string) {
-    return `ws://localhost:${env.CDP_REDIRECT_PORT}/devtools/page/${pageId ?? this.getTargetId(this.primaryPage!)}`;
+    return `ws://localhost:${env.STEEL_CDP_REDIRECT_PORT}/devtools/page/${pageId ?? this.getTargetId(this.primaryPage!)}`;
   }
 
   public async refreshPrimaryPage() {
@@ -136,11 +136,11 @@ export class CDPService extends EventEmitter {
 
         if (this.launchConfig?.customHeaders) {
           await page.setExtraHTTPHeaders({
-            ...env.DEFAULT_HEADERS,
+            ...env.STEEL_DEFAULT_HEADERS,
             ...this.launchConfig.customHeaders,
           });
-        } else if (env.DEFAULT_HEADERS) {
-          await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
+        } else if (env.STEEL_DEFAULT_HEADERS) {
+          await page.setExtraHTTPHeaders(env.STEEL_DEFAULT_HEADERS);
         }
 
         if (this.launchConfig?.cookies?.length) {

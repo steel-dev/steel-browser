@@ -16,7 +16,7 @@ const browserSessionPlugin: FastifyPluginAsync = async (fastify, options) => {
   process.removeAllListeners("SIGTERM");
 
   const gracefulOptions = {
-    timeout: parseInt(env.KILL_TIMEOUT) * 1000,
+    timeout: parseInt(env.STEEL_KILL_TIMEOUT) * 1000,
   };
   fastify.register(fastifyGracefulShutdown, gracefulOptions).after((err) => {
     if (err) {
