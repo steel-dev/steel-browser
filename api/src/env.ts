@@ -4,12 +4,12 @@ import { config } from "dotenv";
 config();
 
 const envSchema = z.object({
-  STEEL_HOST: z.string().optional().default("0.0.0.0"),
-  STEEL_DOMAIN: z.string().optional(),
-  STEEL_PORT: z.string().optional().default("3000"),
-  STEEL_CDP_REDIRECT_PORT: z.string().optional().default("9222"),
-  STEEL_PROXY_URL: z.string().optional(),
-  STEEL_DEFAULT_HEADERS: z
+  HOST: z.string().optional().default("0.0.0.0"),
+  DOMAIN: z.string().optional(),
+  PORT: z.string().optional().default("3000"),
+  CDP_REDIRECT_PORT: z.string().optional().default("9222"),
+  PROXY_URL: z.string().optional(),
+  DEFAULT_HEADERS: z
     .string()
     .optional()
     .transform((val) => (val ? JSON.parse(val) : {}))

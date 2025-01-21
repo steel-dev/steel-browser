@@ -24,9 +24,9 @@ const sessionStats = {
 
 const defaultSession = {
   status: "pending" as SessionDetails["status"],
-  websocketUrl: `ws://${env.STEEL_DOMAIN ?? env.STEEL_HOST}:${env.STEEL_PORT}/`,
-  debugUrl: `http://${env.STEEL_DOMAIN ?? env.STEEL_HOST}:${env.STEEL_PORT}/v1/devtools/inspector.html`,
-  sessionViewerUrl: `http://${env.STEEL_DOMAIN ?? env.STEEL_HOST}:${env.STEEL_PORT}`,
+  websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
+  debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
+  sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
   userAgent: "",
   isSelenium: false,
   proxy: "",
@@ -133,9 +133,9 @@ export class SessionService {
       return this.resetSessionInfo({
         id: sessionId || uuidv4(),
         status: "live",
-        websocketUrl: `ws://${env.STEEL_DOMAIN ?? env.STEEL_HOST}:${env.STEEL_PORT}/`,
-        debugUrl: `http://${env.STEEL_DOMAIN ?? env.STEEL_HOST}:${env.STEEL_PORT}/v1/devtools/inspector.html`,
-        sessionViewerUrl: `http://${env.STEEL_DOMAIN ?? env.STEEL_HOST}:${env.STEEL_PORT}`,
+        websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
+        debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
+        sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
         userAgent: this.cdpService.getUserAgent(),
       });
     }
