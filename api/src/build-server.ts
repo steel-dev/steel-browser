@@ -13,14 +13,12 @@ import { sessionsRoutes, seleniumRoutes, actionsRoutes, cdpRoutes } from "./rout
 
 export default function buildFastifyServer(options?: FastifyServerOptions) {
   const server = fastify(options);
-  const config = {
-    authToken: process.env.AUTH_TOKEN,
-  }
+  const authToken = process.env.AUTH_TOKEN;
   // Plugins
   server.register(requestLogger);
   server.register(fastifySensible);
   server.register(fastifyCors, { origin: true });
-  server.register(authPlugin, { authToken: config.authToken });
+  server.register(authPlugin, { authToken });
   server.register(openAPIPlugin);
   server.register(browserInstancePlugin);
   server.register(seleniumPlugin);
