@@ -1,5 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
+import { FastifyRequest } from 'fastify';
+import { env } from '../env';
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -55,3 +57,30 @@ const authPlugin: FastifyPluginAsync<AuthPluginOptions> = async (fastify, option
 export default fp(authPlugin, {
   name: "auth-plugin",
 });
+
+export async function verifyAuthToken(request: FastifyRequest): Promise<void> {
+  const authHeader = request.headers.authorization;
+  
+  if (!authHeader) {
+    throw new Error('No authorization header present');
+  }
+
+  // Bearer token format
+  const [bearer, token] = authHeader.split(' ');
+  
+  if (bearer !== 'Bearer' || !token) {
+    throw new Error('Invalid authorization header format');
+  }
+
+  if (!isValidToken(token)) {
+    throw new Error('Invalid token');
+  }
+}
+
+function isValidToken(token: string): boolean {
+  console.log(token, env.AUTH_SECRET);
+  if (token === env.AUTH_SECRET) {
+    return true;
+  }
+  return false;
+}

@@ -23,9 +23,3 @@ export const loggingConfig: LoggingConfig = {
 export type Config = {
   authToken?: string;
 };
-
-export function getConfig(): Config {
-  return {
-    authToken: process.env.AUTH_TOKEN,
-  };
-}

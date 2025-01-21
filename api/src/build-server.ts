@@ -9,13 +9,13 @@ import browserWebSocket from "./plugins/browser-socket";
 import seleniumPlugin from "./plugins/selenium";
 import customBodyParser from "./plugins/custom-body-parser";
 import authPlugin from "./plugins/auth";
-import { getConfig } from "./config";
 import { sessionsRoutes, seleniumRoutes, actionsRoutes, cdpRoutes } from "./routes";
 
 export default function buildFastifyServer(options?: FastifyServerOptions) {
   const server = fastify(options);
-  const config = getConfig();
-
+  const config = {
+    authToken: process.env.AUTH_TOKEN,
+  }
   // Plugins
   server.register(requestLogger);
   server.register(fastifySensible);

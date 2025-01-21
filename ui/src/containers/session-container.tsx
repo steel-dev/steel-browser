@@ -22,6 +22,9 @@ export function SessionContainer() {
     const authEnabled = import.meta.env.VITE_AUTH_ENABLED;
     if (authEnabled !== "true") return;
     const token = localStorage.getItem("auth_token");
+    console.log("token", token);
+    console.log("isError", isError);
+    console.log("session", session);
     if (!token || isError) {
       navigate("/login");
     }
