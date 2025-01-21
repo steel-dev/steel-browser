@@ -136,6 +136,7 @@ export class SessionService {
 
       await this.cdpService.startNewSession(browserLauncherOptions);
       return this.resetSessionInfo({
+        ...this.activeSession,
         id: sessionId || uuidv4(),
         status: "live",
         websocketUrl: `ws://${constructedUrl}/`,
