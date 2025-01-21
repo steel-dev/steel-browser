@@ -22,11 +22,15 @@ const sessionStats = {
   proxyRxBytes: 0,
 };
 
+const constructedUrl = process.env.PORT
+  ? `${env.DOMAIN ?? env.HOST}:${env.PORT}`
+  : `${env.DOMAIN ?? env.HOST}`;
+
 const defaultSession = {
   status: "pending" as SessionDetails["status"],
-  websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
-  debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
-  sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
+  websocketUrl: `ws://${constructedUrl}/`,
+  debugUrl: `http://${constructedUrl}/v1/devtools/inspector.html`,
+  sessionViewerUrl: `http://${constructedUrl}`,
   userAgent: "",
   isSelenium: false,
   proxy: "",
@@ -39,7 +43,7 @@ export class SessionService {
   private seleniumService: SeleniumService;
   public activeSession: Session;
 
-  constructor(config: { cdpService: CDPService, seleniumService: SeleniumService, logger: FastifyBaseLogger }) {
+  constructor(config: { cdpService: CDPService; seleniumService: SeleniumService; logger: FastifyBaseLogger }) {
     this.cdpService = config.cdpService;
     this.seleniumService = config.seleniumService;
     this.logger = config.logger;
@@ -129,13 +133,14 @@ export class SessionService {
       return this.activeSession;
 
     } else {
+
       await this.cdpService.startNewSession(browserLauncherOptions);
       return this.resetSessionInfo({
         id: sessionId || uuidv4(),
         status: "live",
-        websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
-        debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
-        sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
+        websocketUrl: `ws://${constructedUrl}/`,
+        debugUrl: `http://${constructedUrl}/v1/devtools/inspector.html`,
+        sessionViewerUrl: `http://${constructedUrl}`,
         userAgent: this.cdpService.getUserAgent(),
       });
     }
