@@ -21,6 +21,7 @@ export const handleLaunchBrowserSession = async (
       dimensions,
       isSelenium,
       blockAds,
+      fingerprint,
     } = request.body;
 
     // If there's an active session, close it first
@@ -37,6 +38,7 @@ export const handleLaunchBrowserSession = async (
       dimensions,
       isSelenium,
       blockAds,
+      fingerprint,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
