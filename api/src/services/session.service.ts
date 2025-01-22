@@ -31,6 +31,7 @@ const defaultSession = {
   isSelenium: false,
   proxy: "",
   solveCaptcha: false,
+  fingerprint: true,
 };
 
 export class SessionService {
@@ -65,6 +66,7 @@ export class SessionService {
     extensions?: string[];
     timezone?: string;
     dimensions?: { width: number; height: number };
+    fingerprint?: boolean;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -77,6 +79,7 @@ export class SessionService {
       dimensions,
       isSelenium,
       blockAds,
+      fingerprint,
     } = options;
 
     this.resetSessionInfo({
@@ -85,6 +88,7 @@ export class SessionService {
       proxy: proxyUrl,
       solveCaptcha: false,
       isSelenium,
+      fingerprint,
     });
 
     if (proxyUrl) {
@@ -111,6 +115,7 @@ export class SessionService {
       logSinkUrl,
       timezone: timezone || "US/Pacific",
       dimensions,
+      fingerprint,
     };
 
     if (isSelenium) {
@@ -135,7 +140,7 @@ export class SessionService {
         websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
         debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
         sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
-        userAgent: this.cdpService.getUserAgent(),
+        userAgent: await this.cdpService.getUserAgent(),
       });
     }
 
