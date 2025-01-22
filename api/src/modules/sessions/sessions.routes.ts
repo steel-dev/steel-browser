@@ -9,8 +9,27 @@ import {
 import { $ref } from "../../plugins/schemas";
 import { CreateSessionRequest, RecordedEvents } from "./sessions.schema";
 import { EmitEvent } from "../../types/enums";
+import { verifyAuthToken } from "../../plugins/auth";
 
 async function routes(server: FastifyInstance) {
+  // Add preHandler hook for all routes in this plugin
+  server.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    // Skip auth check only for health endpoint
+    if (request.routerPath === '/health') {
+      return;
+    }
+
+    try {
+      await verifyAuthToken(request);
+    } catch (error) {
+      server.log.error('Authentication failed:', error);
+      reply.status(401).send({ 
+        error: 'Unauthorized',
+        message: 'Invalid or missing authentication token'
+      });
+    }
+  });
+
   server.get(
     "/health",
     {

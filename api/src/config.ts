@@ -19,3 +19,7 @@ export const loggingConfig: LoggingConfig = {
   },
   test: false,
 };
+
+export type Config = {
+  authToken?: string;
+};

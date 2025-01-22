@@ -1,5 +1,3 @@
-import { BrowserServerOptions } from "./browser";
-
 export enum ScrapeFormat {
   HTML = "html",
   READABILITY = "readability",

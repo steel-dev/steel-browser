@@ -25,6 +25,10 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
     fastify.addSchema(schema);
   }
 
+  const constructedUrl = process.env.PORT
+    ? `${env.DOMAIN ?? env.HOST}:${env.PORT}`
+    : `${env.DOMAIN ?? env.HOST}`;
+
   await fastify.register(fastifySwagger, {
     openapi: {
       info: {
@@ -34,7 +38,7 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
       },
       servers: [
         {
-          url: `http://${env.DOMAIN ?? `${env.HOST}:${env.PORT}`}`,
+          url: `http://${constructedUrl}`,
           description: "Local server",
         },
       ],
