@@ -5,7 +5,7 @@ import { getChromeExecutablePath } from "../utils/browser";
 import httpProxy from "http-proxy";
 import { IncomingMessage } from "http";
 import { env } from "../env";
-import { getExtensionPaths } from "../utils/extensions";
+import { getExtensionPaths, defaultExtensions } from "../utils/extensions";
 import { BrowserLauncherOptions, BrowserEvent, EmitEvent, BrowserEventType } from "../types";
 import { FingerprintInjector } from "fingerprint-injector";
 import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint-generator";
@@ -428,7 +428,6 @@ export class CDPService extends EventEmitter {
 
     const { options, userAgent } = this.launchConfig;
 
-    const defaultExtensions = ["recorder"];
     const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
 
     const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
