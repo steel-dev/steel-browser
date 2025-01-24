@@ -20,7 +20,7 @@ const browserSessionPlugin: FastifyPluginAsync = async (fastify, options) => {
   };
   fastify.register(fastifyGracefulShutdown, gracefulOptions).after((err) => {
     if (err) {
-      fastify.log.error(err)
+      fastify.log.error(err);
     }
 
     fastify.gracefulShutdown(async (_signal) => {
@@ -28,7 +28,10 @@ const browserSessionPlugin: FastifyPluginAsync = async (fastify, options) => {
         fastify.log.info("Waiting for active session to be released...");
         await sessionService.activeSession.completion;
         fastify.log.info("Active session has been released...");
-      }      
+      }
+
+      await fastify.cdpService.shutdown();
+      await fastify.seleniumService.close();
     });
   });
 };

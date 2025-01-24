@@ -299,6 +299,7 @@ export class CDPService extends EventEmitter {
       this.logger.info(`Shutting down CDPService and cleaning up resources`);
       this.removeAllHandlers();
       await this.browserInstance.close();
+      await this.browserInstance.process()?.kill();
       this.isActive = false;
       this.browserInstance = null;
       this.wsEndpoint = null;
