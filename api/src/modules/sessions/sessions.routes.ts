@@ -7,7 +7,7 @@ import {
   handleGetSessions,
 } from "./sessions.controller";
 import { $ref } from "../../plugins/schemas";
-import { CreateSessionRequest, RecordedEvents } from "./sessions.schema";
+import { CreateSessionRequest, RecordedEvents, ReleaseSessionRequest } from "./sessions.schema";
 import { EmitEvent } from "../../types/enums";
 
 async function routes(server: FastifyInstance) {
@@ -99,12 +99,13 @@ async function routes(server: FastifyInstance) {
         description: "Release a browser session",
         tags: ["Sessions"],
         summary: "Release a browser session",
+        // body: $ref("ReleaseSession"), // TODO: Figure out how to make body optional
         response: {
-          200: $ref("ReleaseSession"),
+          200: $ref("ReleasedSession"),
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
+    async (request: ReleaseSessionRequest, reply: FastifyReply) =>
       handleExitBrowserSession(server, request, reply),
   );
 
@@ -116,12 +117,13 @@ async function routes(server: FastifyInstance) {
         description: "Release browser sessions",
         tags: ["Sessions"],
         summary: "Release browser sessions",
+        // body: $ref("ReleaseSession"), // TODO: Figure out how to make body optional
         response: {
-          200: $ref("ReleaseSession"),
+          200: $ref("ReleasedSession"),
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
+    async (request: ReleaseSessionRequest, reply: FastifyReply) =>
       handleExitBrowserSession(server, request, reply),
   );
 

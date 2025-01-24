@@ -682,7 +682,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasedSession"
+                }
+              }
+            }
           }
         }
       }
@@ -697,7 +704,14 @@
         "description": "Release browser sessions",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasedSession"
+                }
+              }
+            }
           }
         }
       }

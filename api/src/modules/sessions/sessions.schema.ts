@@ -40,7 +40,11 @@ const SessionDetails = z.object({
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
 });
 
-const ReleaseSession = SessionDetails.merge(z.object({ success: z.boolean().describe("Indicates if the session was successfully released") }));
+const ReleaseSession = z.object({
+  forceRestart: z.boolean().optional().default(false).describe("Force restart of the browser instance (by default it will be reused if possible)"),
+}).optional();
+
+const ReleasedSession = SessionDetails.merge(z.object({ success: z.boolean().describe("Indicates if the session was successfully released") }));
 
 const RecordedEvents = z.object({
   events: z.array(z.any()).describe("Events to emit"),
@@ -53,6 +57,9 @@ const MultipleSessions = z.array(SessionDetails);
 export type CreateSessionBody = z.infer<typeof CreateSession>;
 export type CreateSessionRequest = FastifyRequest<{ Body: CreateSessionBody }>;
 
+export type ReleaseSessionBody = z.infer<typeof ReleaseSession>;
+export type ReleaseSessionRequest = FastifyRequest<{ Body: ReleaseSessionBody }>;
+
 export type SessionDetails = z.infer<typeof SessionDetails>;
 export type MultipleSessions = z.infer<typeof MultipleSessions>;
 export const browserSchemas = {
@@ -61,6 +68,7 @@ export const browserSchemas = {
   MultipleSessions,
   RecordedEvents,
   ReleaseSession,
+  ReleasedSession,
 };
 
 export default browserSchemas;
