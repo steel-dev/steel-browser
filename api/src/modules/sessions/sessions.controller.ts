@@ -1,7 +1,7 @@
 import { CDPService } from "../../services/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
-import { CreateSessionRequest, SessionDetails } from "./sessions.schema";
+import { CreateSessionRequest } from "./sessions.schema";
 import { env } from "../../env";
 
 export const handleLaunchBrowserSession = async (
@@ -27,9 +27,17 @@ export const handleLaunchBrowserSession = async (
     await server.sessionService.endSession();
 
     return await server.sessionService.startSession({
-      sessionId, proxyUrl, userAgent, sessionContext, extensions, logSinkUrl, timezone, dimensions, isSelenium, blockAds,
+      sessionId,
+      proxyUrl,
+      userAgent,
+      sessionContext,
+      extensions,
+      logSinkUrl,
+      timezone,
+      dimensions,
+      isSelenium,
+      blockAds,
     });
-
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
