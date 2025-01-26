@@ -1,12 +1,11 @@
+import { env } from "@/env";
 import { useEffect, useState } from "react";
 
 export default function SessionDevTools() {
   const [pageId, setPageId] = useState<string | null>(null);
 
   useEffect(() => {
-    const ws = new WebSocket(
-      `${import.meta.env.VITE_API_URL}/v1/sessions/pageId`
-    );
+    const ws = new WebSocket(`${env.VITE_API_URL}/v1/sessions/pageId`);
 
     ws.onmessage = (event) => {
       setPageId(event.data.pageId);
@@ -28,7 +27,7 @@ export default function SessionDevTools() {
 
   return (
     <iframe
-      src={`${import.meta.env.VITE_API_URL}/v1/devtools/inspector.html${
+      src={`${env.VITE_API_URL}/v1/devtools/inspector.html${
         pageId ? `?pageId=${pageId}` : ""
       }`}
       className="w-full h-full"

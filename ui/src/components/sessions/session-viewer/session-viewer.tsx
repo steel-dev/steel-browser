@@ -4,6 +4,7 @@ import rrwebPlayer from "rrweb-player";
 import "./session-viewer-controls.css";
 import { LoadingSpinner } from "@/components/icons/LoadingSpinner";
 import { LiveEmptyState } from "./live-empty-state";
+import { env } from "@/env";
 
 type SessionViewerProps = {
   id: string;
@@ -98,9 +99,7 @@ export function SessionViewer({
     if (!isSessionLoading && !isSessionError) {
       if (session?.status === "live") {
         const connectWebSocket = async () => {
-          const ws = new WebSocket(
-            `${import.meta.env.VITE_WS_URL}/v1/sessions/recording`
-          );
+          const ws = new WebSocket(`${env.VITE_WS_URL}/v1/sessions/recording`);
 
           ws.onmessage = (message) => {
             const events = JSON.parse(message.data);

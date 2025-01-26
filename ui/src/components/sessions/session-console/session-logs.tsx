@@ -1,3 +1,4 @@
+import { env } from "@/env";
 import { useEffect, useState, useRef } from "react";
 
 export default function SessionLogs({ id }: { id: string }) {
@@ -5,9 +6,7 @@ export default function SessionLogs({ id }: { id: string }) {
   const consoleRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const connectWebSocket = async () => {
-      const ws = new WebSocket(
-        `${import.meta.env.VITE_WS_URL}/v1/sessions/logs`
-      );
+      const ws = new WebSocket(`${env.VITE_WS_URL}/v1/sessions/logs`);
 
       ws.onmessage = (event) => {
         const logs = JSON.parse(event.data);

@@ -2,9 +2,10 @@ import "@fontsource/inter";
 import "@radix-ui/themes/styles.css";
 import RootLayout from "@/root-layout";
 import { client } from "@/steel-client";
+import { env } from "@/env";
 
 client.setConfig({
-  baseUrl: import.meta.env.VITE_API_URL,
+  baseUrl: env.VITE_API_URL,
 });
 
 function App() {
