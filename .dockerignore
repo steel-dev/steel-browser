@@ -4,3 +4,4 @@ build/
 **/.env.local
 Dockerfile
 docker-compose.yml
+api/extensions/**/dist

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node ./build/index.js",
     "build": "tsc && mkdir -p build/scripts && cp src/scripts/record.umd.min.cjs build/scripts/",
-    "dev": "ts-node-dev --poll --exit-child ./src/index.ts",
+    "dev": "cd extensions/recorder && npm install && npm run build && cd ../.. && ts-node-dev --poll --exit-child ./src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "pretty": "prettier --write \"src/**/*.ts\"",
     "generate:openapi": "ts-node ./openapi/generate.ts"
