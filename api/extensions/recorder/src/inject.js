@@ -1,4 +1,5 @@
 import { record } from 'rrweb';
+import { pack } from '@rrweb/packer';
 
 record({
   emit: (event) => {
@@ -14,6 +15,7 @@ record({
       }
     );
   },
+  packFn: pack,
   sampling: {
     media: 800,
   },
