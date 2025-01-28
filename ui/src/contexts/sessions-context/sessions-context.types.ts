@@ -5,7 +5,7 @@ import {
   ReleaseBrowserSessionsError,
 } from "@/steel-client";
 import { ReactNode } from "react";
-import { UseMutationResult, UseQueryResult } from "react-query";
+import { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 export type SessionsContextType = {
   useReleaseSessionMutation: () => UseMutationResult<

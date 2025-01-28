@@ -12,7 +12,7 @@ import {
   ReleaseBrowserSessionsError,
   SessionDetails,
 } from "@/steel-client";
-import { useMutation, useQuery } from "react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 import { ErrorResponse } from "@remix-run/router";
 
