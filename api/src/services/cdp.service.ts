@@ -1,7 +1,7 @@
 import puppeteer, { Browser, Page, Target, BrowserContext, Protocol } from "puppeteer-core";
 import { Duplex } from "stream";
 import { EventEmitter } from "events";
-import { getChromeExecutablePath } from "../utils/browser";
+import { getBrowserExecutablePath, BrowserType } from "../utils/browser";
 import httpProxy from "http-proxy";
 import { IncomingMessage } from "http";
 import { env } from "../env";
@@ -37,7 +37,7 @@ export class CDPService extends EventEmitter {
     this.browserInstance = null;
     this.wsEndpoint = null;
     this.fingerprintData = null;
-    this.chromeExecPath = getChromeExecutablePath();
+    this.chromeExecPath = getBrowserExecutablePath(BrowserType.CHROME);
     this.wsProxyServer = httpProxy.createProxyServer();
     this.primaryPage = null;
     this.localStorageData = {};
