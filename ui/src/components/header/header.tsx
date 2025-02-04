@@ -61,7 +61,7 @@ export const Header = () => {
             Docs
           </a>
           <a
-            href="https://discord.gg/gPpvhNvc5R"
+            href="https://discord.gg/steel-dev"
             target="_blank"
             className="rounded-md opacity-90 bg-transparent flex h-10 px-4 justify-center items-center gap-3 text-primary hover:bg-[rgba(238,206,254,0.13)] font-inter text-base font-normal leading-6 cursor-pointer"
           >
