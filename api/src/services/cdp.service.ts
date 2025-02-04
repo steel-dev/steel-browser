@@ -360,7 +360,6 @@ export class CDPService extends EventEmitter {
       "--disable-setuid-sandbox",
       "--use-angle=disabled",
       "--disable-blink-features=AutomationControlled",
-      "--disable-software-rasterizer",
       "--unsafely-treat-insecure-origin-as-secure=http://0.0.0.0:3000,http://localhost:3000",
       `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${this.launchConfig.dimensions?.height ?? 1080}`,
       `--timezone=${timezone}`,
