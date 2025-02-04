@@ -95,6 +95,14 @@ The fastest way to get started is to build and run the Docker image:
 git clone https://github.com/steel-dev/steel-browser
 cd steel-browser
 docker compose up
+
+```
+
+**Note for Local Development:** When developing locally, you may need to modify the `docker-compose.yml` environment variables to use localhost instead of the service name api. For example:
+
+```bash
+VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3000}
 ```
 
 Alternatively, if you have Node.js and Chrome installed, you can run the server directly:
