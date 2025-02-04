@@ -35,4 +35,5 @@ services:
 
 networks:
   steel-network:
+    name: steel-network
     driver: bridge
