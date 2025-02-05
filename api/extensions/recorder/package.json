@@ -1,0 +1,16 @@
+{
+  "name": "steel-recording-extension",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "rrweb": "^2.0.0-alpha.4",
+    "@rrweb/packer": "^2.0.0-alpha.4"
+  },
+  "scripts": {
+    "build": "webpack"
+  },
+  "devDependencies": {
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  }
+}

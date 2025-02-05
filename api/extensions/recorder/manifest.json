@@ -11,7 +11,7 @@
     "http://0.0.0.0:3000/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "dist/background.js"
   },
   "content_scripts": [
     {
@@ -19,7 +19,7 @@
         "<all_urls>"
       ],
       "js": [
-        "inject.js"
+        "dist/inject.js"
       ]
     }
   ]

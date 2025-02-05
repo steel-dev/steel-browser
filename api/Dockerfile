@@ -36,15 +36,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       xvfb
 
 COPY --link package-lock.json package.json ./
+COPY --link extensions/recorder/package*.json ./extensions/recorder/
 
 RUN npm ci --include=dev
+RUN cd extensions/recorder && npm ci --include=dev && cd -
 
 COPY --link . .
 
 RUN npm run build
+RUN cd extensions/recorder && npm run build && cd -
 
 RUN npm prune --omit=dev
-
+RUN cd extensions/recorder && npm prune --omit=dev && cd -
 
 FROM build AS patcher
 WORKDIR /app/patcher
