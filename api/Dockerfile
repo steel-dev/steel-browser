@@ -14,6 +14,7 @@ ENV NODE_ENV="production" \
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
 # Install dependencies
+# Using --mount to speed up build with caching, see https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mount
 RUN --mount=type=cache,id=s/api-apt-cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=s/api-apt-lib,target=/var/lib/apt,sharing=locked \
     --mount=type=tmpfs,id=s/api-apt-log,target=/var/log/apt \
