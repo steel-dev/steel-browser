@@ -442,6 +442,113 @@
           "success"
         ],
         "additionalProperties": false
+      },
+      "UploadExtension": {
+        "title": "UploadExtension",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9-_]+$",
+            "description": "Name of the extension"
+          },
+          "contents": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "description": "ZIP or CRX archive with extension files"
+          }
+        },
+        "required": [
+          "name",
+          "contents"
+        ],
+        "additionalProperties": false
+      },
+      "ImportExtension": {
+        "title": "ImportExtension",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9-_]+$",
+            "description": "Name of the extension"
+          },
+          "id": {
+            "type": "string",
+            "description": "ID of the extension in the Chrome Web Store"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "ExtensionDetails": {
+        "title": "ExtensionDetails",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the extension"
+          },
+          "default": {
+            "type": "boolean",
+            "description": "Whether the extension is bundled and cannot be deleted"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the extension was uploaded"
+          }
+        },
+        "required": [
+          "name",
+          "default",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "MultipleExtensions": {
+        "title": "MultipleExtensions",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name of the extension"
+            },
+            "default": {
+              "type": "boolean",
+              "description": "Whether the extension is bundled and cannot be deleted"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Timestamp when the extension was uploaded"
+            }
+          },
+          "required": [
+            "name",
+            "default",
+            "createdAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "DeleteExtensionParams": {
+        "title": "DeleteExtensionParams",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the extension to delete"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
       }
     }
   },
@@ -698,6 +805,152 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/extensions": {
+      "post": {
+        "operationId": "upload_extension",
+        "tags": [
+          "Extensions"
+        ],
+        "description": "Upload a custom browser extension",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadExtension"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "list_extensions",
+        "tags": [
+          "Extensions"
+        ],
+        "description": "List all installed browser extensions",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipleExtensions"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "purge_extensions",
+        "tags": [
+          "Extensions"
+        ],
+        "description": "Delete all non-default browser extensions",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/extensions/import": {
+      "post": {
+        "operationId": "import_extension",
+        "tags": [
+          "Extensions"
+        ],
+        "description": "Import a browser extension from Chrome Web Store",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportExtension"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/extensions/{name}": {
+      "delete": {
+        "operationId": "delete_extension",
+        "tags": [
+          "Extensions"
+        ],
+        "description": "Delete a specific browser extension",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "description": "Name of the extension to delete"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Extension successfully deleted"
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
