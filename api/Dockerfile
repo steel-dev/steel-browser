@@ -16,9 +16,7 @@ LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browse
 
 # Install dependencies
 # Using --mount to speed up build with caching, see https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mount
-RUN --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/cache/apt,target=/var/cache/apt \
-    --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/lib/apt,target=/var/lib/apt \
-    rm -f /etc/apt/apt.conf.d/docker-clean; \
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
     apt-get update -qq && \
     DEBIAN_FRONTEND=noninteractive apt-get -yq dist-upgrade
@@ -52,9 +50,7 @@ RUN node ./scripts/patcher.js patch --packagePath /app/node_modules/puppeteer-co
 
 FROM base AS production
 # Install dependencies
-RUN --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/cache/apt,target=/var/cache/apt \
-    --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/lib/apt,target=/var/lib/apt \
-    apt-get update && \ 
+RUN apt-get update && \ 
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
     wget \
     nginx \
@@ -73,9 +69,7 @@ RUN --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/cache/apt,
     dbus-x11
 
 # Install Chrome and ChromeDriver
-RUN --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/cache/apt,target=/var/cache/apt \
-    --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/lib/apt,target=/var/lib/apt \
-    # wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+RUN # wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
     # && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' <- add this back in when supported \ 
     # && apt-get update \
     curl -o chrome.deb https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/google-chrome-stable_128.0.6613.119-1_amd64.deb \
