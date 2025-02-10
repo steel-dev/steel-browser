@@ -72,24 +72,30 @@ RUN apt-get update && \
 
 # Install Chrome and ChromeDriver
 RUN apt-get update && \
-    apt-get install -y wget gnupg2 && \
-    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
-    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && \
-    apt-get install -y google-chrome-stable && \
-    CHROME_VERSION=$(google-chrome-stable --version | awk '{print $3}' | cut -d. -f1-3) && \
-    CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION}") && \
-    wget -q "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" && \
-    mkdir -p /selenium/driver && \
-    unzip chromedriver_linux64.zip -d /selenium/driver && \
-    rm chromedriver_linux64.zip && \
-    chmod +x /selenium/driver/chromedriver && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    wget \
+    ca-certificates \
+    curl \
+    unzip \
+    # Download and install specific version of Chrome
+    && CHROME_DEB="google-chrome-stable_128.0.6613.119-1_amd64.deb" \
+    && wget -q "https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/${CHROME_DEB}" \
+    && apt-get install -y ./google-chrome-stable_*.deb \
+    && rm google-chrome-stable_*.deb \
+    # Install matching ChromeDriver
+    && mkdir -p /selenium/driver \
+    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/128.0.6613.119/linux64/chromedriver-linux64.zip" \
+    && unzip chromedriver-linux64.zip -d /tmp \
+    && mv /tmp/chromedriver-linux64/chromedriver /selenium/driver/chromedriver \
+    && rm -rf chromedriver-linux64.zip /tmp/chromedriver-linux64 \
+    && chmod +x /selenium/driver/chromedriver \
     # Verify installations
-    google-chrome-stable --version && \
-    /selenium/driver/chromedriver --version && \
+    && google-chrome-stable --version \
+    && /selenium/driver/chromedriver --version \
     # Clean up
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/*
 
 COPY --chmod=755 entrypoint.sh /app/entrypoint.sh
 

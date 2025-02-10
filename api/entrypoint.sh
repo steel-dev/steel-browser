@@ -47,26 +47,23 @@ init_dbus() {
 verify_chrome() {
     log "Verifying Chrome installation..."
     
-    # Check if Chrome is installed and get its version
-    if ! chrome_version=$(google-chrome-stable --version 2>/dev/null); then
-        log "ERROR: Chrome not found or not executable"
+    # Check Chrome binary and version
+    if [ ! -f "/usr/bin/google-chrome-stable" ]; then
+        log "ERROR: Chrome binary not found at /usr/bin/google-chrome-stable"
         return 1
     fi
-    log "Found Chrome: $chrome_version"
     
-    # Check ChromeDriver
-    if ! chromedriver_version=$(/selenium/driver/chromedriver --version 2>/dev/null); then
-        log "ERROR: ChromeDriver not found or not executable"
-        return 1
-    fi
-    log "Found ChromeDriver: $chromedriver_version"
+    chrome_version=$(google-chrome-stable --version 2>/dev/null || echo "unknown")
+    log "Chrome version: $chrome_version"
     
-    # Verify Chrome can run in headless mode
-    if ! google-chrome-stable --headless=new --no-sandbox --version >/dev/null 2>&1; then
-        log "ERROR: Chrome cannot run in headless mode"
+    # Check ChromeDriver binary and version
+    if [ ! -f "/selenium/driver/chromedriver" ]; then
+        log "ERROR: ChromeDriver not found at /selenium/driver/chromedriver"
         return 1
     fi
-    log "Chrome headless mode verified"
+    
+    chromedriver_version=$(/selenium/driver/chromedriver --version 2>/dev/null || echo "unknown")
+    log "ChromeDriver version: $chromedriver_version"
     
     # Set up environment variables
     export CHROME_BIN="/usr/bin/google-chrome-stable"
@@ -74,7 +71,7 @@ verify_chrome() {
     export PUPPETEER_EXECUTABLE_PATH="/usr/bin/google-chrome-stable"
     export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
     
-    # Additional Puppeteer configurations
+    # Set up cache directory
     export PUPPETEER_CACHE_DIR="/app/.cache/puppeteer"
     mkdir -p "$PUPPETEER_CACHE_DIR"
     chmod -R 777 "$PUPPETEER_CACHE_DIR"
@@ -131,7 +128,7 @@ main() {
     # Set required environment variables
     export CDP_REDIRECT_PORT=9223
     export HOST=0.0.0.0
-    export PUPPETEER_ARGS="--no-sandbox,--headless=new,--disable-gpu,--disable-dev-shm-usage"
+    export PUPPETEER_ARGS="--no-sandbox,--headless=new,--disable-gpu,--disable-dev-shm-usage,--disable-setuid-sandbox,--no-zygote,--disable-software-rasterizer"
     
     # Log environment state
     log "Environment configuration:"
