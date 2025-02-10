@@ -71,18 +71,25 @@ RUN apt-get update && \
     x11-xserver-utils
 
 # Install Chrome and ChromeDriver
-RUN # wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    # && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' <- add this back in when supported \ 
-    # && apt-get update \
-    curl -o chrome.deb https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/google-chrome-stable_128.0.6613.119-1_amd64.deb \
-    && apt-get install -y ./chrome.deb \
-    && rm chrome.deb \
-    && mkdir -p /selenium/driver \
-    && curl -o chromedriver.zip https://storage.googleapis.com/chrome-for-testing-public/128.0.6613.119/linux64/chromedriver-linux64.zip \
-    && unzip chromedriver.zip -d /tmp \
-    && mv /tmp/chromedriver-linux64/chromedriver /selenium/driver/chromedriver \
-    && rm -rf chromedriver.zip /tmp/chromedriver-linux64 \
-    && chmod +x /selenium/driver/chromedriver
+RUN apt-get update && \
+    apt-get install -y wget gnupg2 && \
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y google-chrome-stable && \
+    CHROME_VERSION=$(google-chrome-stable --version | awk '{print $3}' | cut -d. -f1-3) && \
+    CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION}") && \
+    wget -q "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" && \
+    mkdir -p /selenium/driver && \
+    unzip chromedriver_linux64.zip -d /selenium/driver && \
+    rm chromedriver_linux64.zip && \
+    chmod +x /selenium/driver/chromedriver && \
+    # Verify installations
+    google-chrome-stable --version && \
+    /selenium/driver/chromedriver --version && \
+    # Clean up
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --chmod=755 entrypoint.sh /app/entrypoint.sh
 

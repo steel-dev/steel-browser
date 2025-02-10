@@ -43,57 +43,45 @@ init_dbus() {
     fi
 }
 
-# # Verify Chrome and ChromeDriver installation
-# verify_chrome() {
-#     log "Verifying Chrome installation..."
+# Verify Chrome and ChromeDriver installation
+verify_chrome() {
+    log "Verifying Chrome installation..."
     
-#     # Check for Chrome binary
-#     if [ ! -f "$CHROME_BIN" ]; then
-#         log "Chrome not found at $CHROME_BIN, checking alternative locations..."
-#         # Try to find Chrome in common locations
-#         for chrome_path in \
-#             "/usr/bin/google-chrome" \
-#             "/usr/bin/google-chrome-stable" \
-#             "/usr/bin/chrome" \
-#             "$(which google-chrome 2>/dev/null)" \
-#             "$(which chrome 2>/dev/null)"
-#         do
-#             if [ -f "$chrome_path" ]; then
-#                 log "Found Chrome at $chrome_path"
-#                 export CHROME_BIN="$chrome_path"
-#                 export CHROME_PATH="$chrome_path"
-#                 break
-#             fi
-#         done
-#     fi
-
-#     # Verify ChromeDriver
-#     if [ ! -f "/selenium/driver/chromedriver" ]; then
-#         log "ERROR: ChromeDriver not found at /selenium/driver/chromedriver"
-#         return 1
-#     fi
+    # Check if Chrome is installed and get its version
+    if ! chrome_version=$(google-chrome-stable --version 2>/dev/null); then
+        log "ERROR: Chrome not found or not executable"
+        return 1
+    fi
+    log "Found Chrome: $chrome_version"
     
-#     # Get Chrome version
-#     chrome_version=$($CHROME_BIN --version 2>/dev/null || echo "unknown")
-#     chromedriver_version=$(/selenium/driver/chromedriver --version 2>/dev/null || echo "unknown")
+    # Check ChromeDriver
+    if ! chromedriver_version=$(/selenium/driver/chromedriver --version 2>/dev/null); then
+        log "ERROR: ChromeDriver not found or not executable"
+        return 1
+    fi
+    log "Found ChromeDriver: $chromedriver_version"
     
-#     log "Chrome version: $chrome_version"
-#     log "ChromeDriver version: $chromedriver_version"
+    # Verify Chrome can run in headless mode
+    if ! google-chrome-stable --headless=new --no-sandbox --version >/dev/null 2>&1; then
+        log "ERROR: Chrome cannot run in headless mode"
+        return 1
+    fi
+    log "Chrome headless mode verified"
     
-#     # Test Chrome with minimal flags
-#     if $CHROME_BIN --headless=new --no-sandbox --version >/dev/null 2>&1; then
-#         log "Chrome headless mode verified successfully"
-        
-#         # Set additional Puppeteer environment variables
-#         export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
-#         export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-        
-#         return 0
-#     else
-#         log "ERROR: Chrome headless mode verification failed"
-#         return 1
-#     fi
-# }
+    # Set up environment variables
+    export CHROME_BIN="/usr/bin/google-chrome-stable"
+    export CHROME_PATH="/usr/bin/google-chrome-stable"
+    export PUPPETEER_EXECUTABLE_PATH="/usr/bin/google-chrome-stable"
+    export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+    
+    # Additional Puppeteer configurations
+    export PUPPETEER_CACHE_DIR="/app/.cache/puppeteer"
+    mkdir -p "$PUPPETEER_CACHE_DIR"
+    chmod -R 777 "$PUPPETEER_CACHE_DIR"
+    
+    log "Chrome environment configured successfully"
+    return 0
+}
 
 # Start nginx with better error handling
 start_nginx() {
@@ -137,7 +125,7 @@ main() {
     
     # Initialize services
     init_dbus || exit 1
-    # verify_chrome || exit 1
+    verify_chrome || exit 1
     start_nginx || exit 1
     
     # Set required environment variables
