@@ -66,7 +66,9 @@ RUN apt-get update && \
     unzip \
     default-jre \
     dbus \
-    dbus-x11
+    dbus-x11 \
+    procps \
+    x11-xserver-utils
 
 # Install Chrome and ChromeDriver
 RUN # wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
