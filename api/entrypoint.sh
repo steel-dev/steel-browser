@@ -43,17 +43,51 @@ init_dbus() {
     fi
 }
 
-# Verify Chrome installation
+# Verify Chrome and ChromeDriver installation
 verify_chrome() {
     log "Verifying Chrome installation..."
+    
+    # Check for Chrome binary
     if [ ! -f "$CHROME_BIN" ]; then
-        log "ERROR: Chrome binary not found at $CHROME_BIN"
+        log "Chrome not found at $CHROME_BIN, checking alternative locations..."
+        # Try to find Chrome in common locations
+        for chrome_path in \
+            "/usr/bin/google-chrome" \
+            "/usr/bin/google-chrome-stable" \
+            "/usr/bin/chrome" \
+            "$(which google-chrome 2>/dev/null)" \
+            "$(which chrome 2>/dev/null)"
+        do
+            if [ -f "$chrome_path" ]; then
+                log "Found Chrome at $chrome_path"
+                export CHROME_BIN="$chrome_path"
+                export CHROME_PATH="$chrome_path"
+                break
+            fi
+        done
+    fi
+
+    # Verify ChromeDriver
+    if [ ! -f "/selenium/driver/chromedriver" ]; then
+        log "ERROR: ChromeDriver not found at /selenium/driver/chromedriver"
         return 1
     fi
     
-    # Test Chrome in headless mode
-    if $CHROME_BIN --headless=new --version >/dev/null 2>&1; then
+    # Get Chrome version
+    chrome_version=$($CHROME_BIN --version 2>/dev/null || echo "unknown")
+    chromedriver_version=$(/selenium/driver/chromedriver --version 2>/dev/null || echo "unknown")
+    
+    log "Chrome version: $chrome_version"
+    log "ChromeDriver version: $chromedriver_version"
+    
+    # Test Chrome with minimal flags
+    if $CHROME_BIN --headless=new --no-sandbox --version >/dev/null 2>&1; then
         log "Chrome headless mode verified successfully"
+        
+        # Set additional Puppeteer environment variables
+        export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
+        export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+        
         return 0
     else
         log "ERROR: Chrome headless mode verification failed"
@@ -109,14 +143,17 @@ main() {
     # Set required environment variables
     export CDP_REDIRECT_PORT=9223
     export HOST=0.0.0.0
+    export PUPPETEER_ARGS="--no-sandbox,--headless=new,--disable-gpu,--disable-dev-shm-usage"
     
     # Log environment state
     log "Environment configuration:"
     log "HOST=$HOST"
     log "CDP_REDIRECT_PORT=$CDP_REDIRECT_PORT"
     log "CHROME_BIN=$CHROME_BIN"
-    log "NODE_ENV=$NODE_ENV"
+    log "CHROME_PATH=$CHROME_PATH"
+    log "PUPPETEER_EXECUTABLE_PATH=$PUPPETEER_EXECUTABLE_PATH"
     log "PUPPETEER_ARGS=$PUPPETEER_ARGS"
+    log "NODE_ENV=$NODE_ENV"
     
     # Start the application
     log "Starting Node.js application..."
