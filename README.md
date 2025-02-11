@@ -146,7 +146,7 @@ npm run dev
 For more details on where this is checked look at [`api/src/utils/browser.ts`](./api/src/utils/browser.ts).
 
 ## 🏄🏽‍♂️ Usage
-> If you're looking for quick examples on how to use Steel, check out the [Cookbook](https://steel.dev/cookbook/quickstart).
+> If you're looking for quick examples on how to use Steel, check out the [Cookbook](https://github.com/steel-dev/steel-cookbook).
 
 There are two main ways to interact with the Steel browser API:
 1. [Using Sessions](#sessions)
