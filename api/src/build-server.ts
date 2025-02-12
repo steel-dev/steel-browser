@@ -1,16 +1,15 @@
-import fastify, { FastifyServerOptions } from "fastify";
-import fastifySensible from "@fastify/sensible";
 import fastifyCors from "@fastify/cors";
+import fastifySensible from "@fastify/sensible";
 import fastifyView from "@fastify/view";
-import fastifyVite from "@fastify/vite";
-import openAPIPlugin from "./plugins/schemas";
-import requestLogger from "./plugins/request-logger";
+import fastify, { FastifyServerOptions } from "fastify";
 import browserInstancePlugin from "./plugins/browser";
 import browserSessionPlugin from "./plugins/browser-session";
 import browserWebSocket from "./plugins/browser-socket/browser-socket";
-import seleniumPlugin from "./plugins/selenium";
 import customBodyParser from "./plugins/custom-body-parser";
-import { sessionsRoutes, seleniumRoutes, actionsRoutes, cdpRoutes } from "./routes";
+import requestLogger from "./plugins/request-logger";
+import openAPIPlugin from "./plugins/schemas";
+import seleniumPlugin from "./plugins/selenium";
+import { actionsRoutes, cdpRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
 import path from "node:path";
 
 export default async function buildFastifyServer(options?: FastifyServerOptions) {
@@ -38,15 +37,6 @@ export default async function buildFastifyServer(options?: FastifyServerOptions)
   server.register(sessionsRoutes, { prefix: "/v1" });
   server.register(cdpRoutes, { prefix: "/v1" });
   server.register(seleniumRoutes);
-
-  
-  // UI
-  const uiPath = path.join(process.cwd(), "../ui");
-  await server.register(fastifyVite, {
-    root: uiPath,
-    dev: true, // not sure if there's a point in not using dev
-    spa: true
-  })
 
   return server;
 }

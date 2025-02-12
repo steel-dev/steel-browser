@@ -1,5 +1,5 @@
-import fp from "fastify-plugin";
 import { type FastifyInstance, type FastifyPluginAsync } from "fastify";
+import fp from "fastify-plugin";
 import WebSocket from "ws";
 import { EmitEvent } from "../../types/enums";
 import { handleCastSession } from "./cast.handler";
