@@ -6,7 +6,8 @@
   "author": "",
   "workspaces": [
     "api",
-    "ui"
+    "ui",
+    "repl"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
@@ -14,6 +15,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   },
   "engines": {
