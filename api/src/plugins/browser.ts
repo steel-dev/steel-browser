@@ -9,4 +9,4 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, options) => {
   cdpService.launch();
 };
 
-export default fp(browserInstancePlugin, "4.x");
+export default fp(browserInstancePlugin, "5.x");

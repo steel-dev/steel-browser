@@ -36,4 +36,4 @@ const browserSessionPlugin: FastifyPluginAsync = async (fastify, options) => {
   });
 };
 
-export default fp(browserSessionPlugin, "4.x");
+export default fp(browserSessionPlugin, "5.x");
