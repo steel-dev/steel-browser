@@ -1,8 +1,7 @@
 import { SessionService } from "../services/session.service";
+import { Server } from "proxy-chain";
 
-const ProxyChain = require("proxy-chain");
-
-export class ProxyServer extends ProxyChain.Server {
+export class ProxyServer extends Server {
   public url: string;
   public upstreamProxyUrl: string;
   public txBytes = 0;
