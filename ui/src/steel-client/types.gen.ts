@@ -283,7 +283,7 @@ export type GetDevtoolsUrlError = unknown;
 export type ScrapeResponseTransformer = (data: any) => Promise<ScrapeResponse>;
 
 export type ScrapeResponseModelResponseTransformer = (
-  data: any,
+  data: any
 ) => ScrapeResponse;
 
 export const ScrapeResponseModelResponseTransformer: ScrapeResponseModelResponseTransformer =
@@ -293,25 +293,25 @@ export const ScrapeResponseModelResponseTransformer: ScrapeResponseModelResponse
     }
     if (data?.metadata?.published_timestamp) {
       data.metadata.published_timestamp = new Date(
-        data.metadata.published_timestamp,
+        data.metadata.published_timestamp
       );
     }
     return data;
   };
 
 export const ScrapeResponseTransformer: ScrapeResponseTransformer = async (
-  data,
+  data
 ) => {
   ScrapeResponseModelResponseTransformer(data);
   return data;
 };
 
 export type LaunchBrowserSessionResponseTransformer = (
-  data: any,
+  data: any
 ) => Promise<LaunchBrowserSessionResponse>;
 
 export type SessionDetailsModelResponseTransformer = (
-  data: any,
+  data: any
 ) => SessionDetails;
 
 export const SessionDetailsModelResponseTransformer: SessionDetailsModelResponseTransformer =
@@ -329,7 +329,7 @@ export const LaunchBrowserSessionResponseTransformer: LaunchBrowserSessionRespon
   };
 
 export type GetSessionsResponseTransformer = (
-  data: any,
+  data: any
 ) => Promise<GetSessionsResponse>;
 
 export const GetSessionsResponseTransformer: GetSessionsResponseTransformer =
@@ -339,7 +339,7 @@ export const GetSessionsResponseTransformer: GetSessionsResponseTransformer =
   };
 
 export type GetSessionDetailsResponseTransformer = (
-  data: any,
+  data: any
 ) => Promise<GetSessionDetailsResponse>;
 
 export const GetSessionDetailsResponseTransformer: GetSessionDetailsResponseTransformer =
