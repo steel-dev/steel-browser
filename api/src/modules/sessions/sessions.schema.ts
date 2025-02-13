@@ -64,27 +64,8 @@ const SessionStreamQuery = z.object({
 
 const SessionStreamResponse = z.string().describe("HTML content for the session streamer view");
 
-// --- Additional schemas for WebSocket responses ---
-
-const SessionLogsResponse = z
-  .array(
-    z.object({
-      pageId: z.string(),
-    }),
-  )
-  .describe("An array of log events (each with a pageId)");
-
-const SessionPageIdResponse = z
-  .object({
-    pageId: z.string(),
-  })
-  .describe("A single pageId event");
-
 const MultipleSessions = z.array(SessionDetails);
 
-const SessionRecordingResponseWS = z.array(z.any()).describe("An array of recorded events");
-
-// Exporting both the HTTP and WebSocket-related schemas
 export type RecordedEvents = z.infer<typeof RecordedEvents>;
 export type CreateSessionBody = z.infer<typeof CreateSession>;
 export type CreateSessionRequest = FastifyRequest<{ Body: CreateSessionBody }>;
