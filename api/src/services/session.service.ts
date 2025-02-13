@@ -8,9 +8,9 @@ import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
 
 type Session = SessionDetails & {
-  completion: Promise<void>,
-  complete: (value: void) => void,
-  proxyServer: ProxyServer | undefined,
+  completion: Promise<void>;
+  complete: (value: void) => void;
+  proxyServer: ProxyServer | undefined;
 };
 
 const sessionStats = {
@@ -25,8 +25,10 @@ const sessionStats = {
 const defaultSession = {
   status: "pending" as SessionDetails["status"],
   websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
-  debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
+  debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
+  debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
   sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
+  dimensions: { width: 1920, height: 1080 },
   userAgent: "",
   isSelenium: false,
   proxy: "",
@@ -39,7 +41,7 @@ export class SessionService {
   private seleniumService: SeleniumService;
   public activeSession: Session;
 
-  constructor(config: { cdpService: CDPService, seleniumService: SeleniumService, logger: FastifyBaseLogger }) {
+  constructor(config: { cdpService: CDPService; seleniumService: SeleniumService; logger: FastifyBaseLogger }) {
     this.cdpService = config.cdpService;
     this.seleniumService = config.seleniumService;
     this.logger = config.logger;
@@ -51,7 +53,7 @@ export class SessionService {
       completion: Promise.resolve(),
       complete: () => {},
       proxyServer: undefined,
-    }
+    };
   }
 
   public async startSession(options: {
@@ -84,12 +86,13 @@ export class SessionService {
       status: "live",
       proxy: proxyUrl,
       solveCaptcha: false,
+      dimensions,
       isSelenium,
     });
 
     if (proxyUrl) {
       this.activeSession.proxyServer = new ProxyServer(proxyUrl);
-      this.activeSession.proxyServer.on('connectionClosed', ({ stats }) => {
+      this.activeSession.proxyServer.on("connectionClosed", ({ stats }) => {
         if (stats) {
           this.activeSession.proxyTxBytes += stats.trgTxBytes;
           this.activeSession.proxyRxBytes += stats.trgRxBytes;
@@ -116,7 +119,7 @@ export class SessionService {
     if (isSelenium) {
       await this.cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
-      
+
       Object.assign(this.activeSession, {
         websocketUrl: "",
         debugUrl: "",
@@ -127,13 +130,13 @@ export class SessionService {
       });
 
       return this.activeSession;
-
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
 
       Object.assign(this.activeSession, {
         websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
-        debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
+        debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
+        debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
         sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
         userAgent: this.cdpService.getUserAgent(),
       });

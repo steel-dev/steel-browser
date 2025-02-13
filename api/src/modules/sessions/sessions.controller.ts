@@ -1,7 +1,7 @@
 import { CDPService } from "../../services/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
-import { CreateSessionRequest } from "./sessions.schema";
+import { CreateSessionRequest, SessionStreamRequest } from "./sessions.schema";
 import { env } from "../../env";
 
 export const handleLaunchBrowserSession = async (
@@ -85,6 +85,7 @@ export const handleGetSessionDetails = async (
       creditsUsed: 0,
       websocketUrl: `ws://${env.DOMAIN ?? env.HOST}/`,
       debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
+      debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
       sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}`,
       userAgent: "",
       isSelenium: false,
@@ -97,4 +98,19 @@ export const handleGetSessionDetails = async (
 
 export const handleGetSessions = async (server: FastifyInstance, request: FastifyRequest, reply: FastifyReply) => {
   return reply.send([server.sessionService.activeSession]);
+};
+
+export const handleGetSessionStream = async (
+  server: FastifyInstance,
+  request: SessionStreamRequest,
+  reply: FastifyReply,
+) => {
+  const { showControls, theme, interactive } = request.query;
+  return reply.view("live-session-streamer.ejs", {
+    wsUrl: `ws://${env.DOMAIN ?? `${env.HOST}:${env.PORT}`}/v1/sessions/cast`,
+    showControls,
+    theme,
+    interactive,
+    dimensions: server.sessionService.activeSession.dimensions,
+  });
 };

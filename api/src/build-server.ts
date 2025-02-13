@@ -1,22 +1,30 @@
 import fastify, { FastifyServerOptions } from "fastify";
 import fastifySensible from "@fastify/sensible";
 import fastifyCors from "@fastify/cors";
+import fastifyView from "@fastify/view";
 import openAPIPlugin from "./plugins/schemas";
 import requestLogger from "./plugins/request-logger";
 import browserInstancePlugin from "./plugins/browser";
 import browserSessionPlugin from "./plugins/browser-session";
-import browserWebSocket from "./plugins/browser-socket";
+import browserWebSocket from "./plugins/browser-socket/browser-socket";
 import seleniumPlugin from "./plugins/selenium";
 import customBodyParser from "./plugins/custom-body-parser";
 import { sessionsRoutes, seleniumRoutes, actionsRoutes, cdpRoutes } from "./routes";
+import path from "path";
 
 export default function buildFastifyServer(options?: FastifyServerOptions) {
   const server = fastify(options);
 
   // Plugins
-  server.register(requestLogger);
   server.register(fastifySensible);
   server.register(fastifyCors, { origin: true });
+  server.register(fastifyView, {
+    engine: {
+      ejs: require("ejs"),
+    },
+    root: path.join(__dirname, "templates"),
+  });
+  server.register(requestLogger);
   server.register(openAPIPlugin);
   server.register(browserInstancePlugin);
   server.register(seleniumPlugin);
