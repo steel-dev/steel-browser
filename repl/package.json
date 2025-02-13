@@ -4,7 +4,7 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "start": "tsx src/script.ts"
+    "start": "tsx ./src/script.ts"
   },
   "dependencies": {
     "puppeteer-core": "^24.2.0"
@@ -13,6 +13,6 @@
     "tsx": "*"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   }
 }
