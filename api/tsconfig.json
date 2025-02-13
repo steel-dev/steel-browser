@@ -11,6 +11,6 @@
     "noImplicitAny": false,
     "strict": true
   },
-  "include": ["./src/**/*", "workers/createWorker.ts"],
+  "include": ["src"],
   "files": ["./src/types/fastify.d.ts"]
 }

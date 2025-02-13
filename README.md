@@ -116,7 +116,7 @@ docker compose -f docker-compose.dev.yml up --build
 Alternatively, if you have Node.js and Chrome installed, you can run the server directly:
 
 ```bash
-npm run install
+npm install
 npm run dev
 ```
 
@@ -147,6 +147,8 @@ For more details on where this is checked look at [`api/src/utils/browser.ts`](.
 
 ## 🏄🏽‍♂️ Usage
 > If you're looking for quick examples on how to use Steel, check out the [Cookbook](https://github.com/steel-dev/steel-cookbook).
+>
+> Alternatively you can play with the [REPL package](./repl/README.md) too `cd repl` and `npm run start`
 
 There are two main ways to interact with the Steel browser API:
 1. [Using Sessions](#sessions)

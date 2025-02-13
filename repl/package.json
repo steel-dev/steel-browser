@@ -1,0 +1,18 @@
+{
+  "name": "@steel/repl",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "scripts": {
+    "start": "tsx ./src/script.ts"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.2.0"
+  },
+  "devDependencies": {
+    "tsx": "*"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

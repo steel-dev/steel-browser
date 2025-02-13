@@ -7,4 +7,4 @@ const seleniumPlugin: FastifyPluginAsync = async (fastify, options) => {
   fastify.decorate("seleniumService", seleniumService);
 };
 
-export default fp(seleniumPlugin, "4.x");
+export default fp(seleniumPlugin, "5.x");
