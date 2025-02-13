@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import rrwebPlayer from "rrweb-player";
 import "./session-viewer-controls.css";
 import { LoadingSpinner } from "@/components/icons/LoadingSpinner";
-import { LiveEmptyState } from "./live-empty-state";
+// import { LiveEmptyState } from "./live-empty-state";
 import { env } from "@/env";
 
 type SessionViewerProps = {
@@ -29,7 +29,7 @@ export function SessionViewer({
   const playerCreatedRef = useRef(false);
 
   const [events, setEvents] = useState<any[]>([]);
-  const [hasEvents, setHasEvents] = useState(false);
+  // const [hasEvents, setHasEvents] = useState(false);
 
   useEffect(() => {
     let hasEvents = false;
@@ -44,7 +44,7 @@ export function SessionViewer({
         }
       }
     }
-    setHasEvents(hasEvents);
+    // setHasEvents(hasEvents);
     if (firstUrl) setMostRecentUrl(firstUrl);
 
     if (
@@ -127,7 +127,7 @@ export function SessionViewer({
     }
   }, [session, id, isSessionLoading, isSessionError]);
 
-  const isLive = session?.status === "live";
+  // const isLive = session?.status === "live";
 
   if (isSessionLoading)
     return (
@@ -155,7 +155,9 @@ export function SessionViewer({
       ref={containerRef}
       className="flex flex-col w-full flex-1 border-t border-[var(--gray-6)]"
     >
-      {!hasEvents && isLive && <LiveEmptyState session={session!} />}
+      {/* {!hasEvents && isLive && <LiveEmptyState session={session!} />}
+       */}
+      <iframe src={session?.debugUrl} className="w-full h-full" />
     </div>
   );
 }
