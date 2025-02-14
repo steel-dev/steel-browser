@@ -112,6 +112,8 @@ You will also need to run it with `--build` to ensure the Docker images are re-b
 docker compose -f docker-compose.dev.yml up --build
 ```
 
+In case you run on a custom host, you need to copy .env.example to .env while changing the host or modify the environment variables used by the `docker-compose.dev.yml` to use your host.
+
 ### Node.js
 Alternatively, if you have Node.js and Chrome installed, you can run the server directly:
 

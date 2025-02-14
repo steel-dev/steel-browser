@@ -1,4 +1,4 @@
-import puppeteer, { Browser, Page, Target, BrowserContext, Protocol } from "puppeteer-core";
+import puppeteer, { Browser, Page, Target, BrowserContext, Protocol, TargetType, CDPSession } from "puppeteer-core";
 import { Duplex } from "stream";
 import { EventEmitter } from "events";
 import { getChromeExecutablePath } from "../utils/browser";
@@ -44,7 +44,7 @@ export class CDPService extends EventEmitter {
     this.currentSessionConfig = null;
     this.shuttingDown = false;
     this.defaultLaunchConfig = {
-      options: { headless: true },
+      options: { headless: env.CHROME_HEADLESS },
     };
   }
 
@@ -73,12 +73,23 @@ export class CDPService extends EventEmitter {
   }
 
   public getDebuggerUrl() {
-    return `http://localhost:${env.CDP_REDIRECT_PORT}/devtools/devtools_app.html`;
+    return `http://${env.HOST}:${env.CDP_REDIRECT_PORT}/devtools/devtools_app.html`;
+  }
+
+  public getDebuggerWsUrl(pageId?: string) {
+    return `ws://${env.HOST}:${env.CDP_REDIRECT_PORT}/devtools/page/${pageId ?? this.getTargetId(this.primaryPage!)}`;
   }
 
   public customEmit(event: EmitEvent, payload: any) {
     try {
       this.emit(event, payload);
+
+      if (env.LOG_CUSTOM_EMIT_EVENTS) {
+        this.logger.info("EmitEvent",
+          { event, payload }
+        );
+      }
+
       if (event === EmitEvent.Log) {
         this.logEvent(payload);
       } else if (event === EmitEvent.Recording) {
@@ -91,10 +102,6 @@ export class CDPService extends EventEmitter {
     } catch (error) {
       this.logger.error(`Error emitting event: ${error}`);
     }
-  }
-
-  public getDebuggerWsUrl(pageId?: string) {
-    return `ws://localhost:${env.CDP_REDIRECT_PORT}/devtools/page/${pageId ?? this.getTargetId(this.primaryPage!)}`;
   }
 
   public async refreshPrimaryPage() {
@@ -124,16 +131,13 @@ export class CDPService extends EventEmitter {
   }
 
   private async handleNewTarget(target: Target) {
-    if (target.type() === "page") {
+    if (target.type() === TargetType.PAGE) {
       const page = await target.page().catch((e) => {
         this.logger.error(`Error handling new target in CDPService: ${e}`);
         return null;
       });
 
       if (page) {
-        //@ts-ignore
-        const pageId = page.target()._targetId;
-
         if (this.launchConfig?.customHeaders) {
           await page.setExtraHTTPHeaders({
             ...env.DEFAULT_HEADERS,
@@ -151,63 +155,13 @@ export class CDPService extends EventEmitter {
         //@ts-ignore
         await fingerprintInjector.attachFingerprintToPuppeteer(page, this.fingerprintData!);
 
-        page.on("error", (err) => {
-          // this.logger.error(`Page error: ${err}`);
-          this.customEmit(EmitEvent.Log, {
-            type: BrowserEventType.Error,
-            text: JSON.stringify({ pageId, message: err.message, name: err.name }),
-            timestamp: new Date(),
-          });
-        });
-
-        page.on("pageerror", (err) => {
-          this.customEmit(EmitEvent.Log, {
-            type: BrowserEventType.PageError,
-            text: JSON.stringify({ pageId, message: err.message, name: err.name }),
-            timestamp: new Date(),
-          });
-        });
-
-        page.on("framenavigated", (frame) => {
-          if (!frame.parentFrame()) {
-            this.logger.info(`Navigated to ${frame.url()}`);
-            this.customEmit(EmitEvent.Log, {
-              type: BrowserEventType.Navigation,
-              text: JSON.stringify({ pageId, url: frame.url() }),
-              timestamp: new Date(),
-            });
-          }
-        });
-
-        page.on("console", (message) => {
-          this.logger.info(`Console message: ${message.type()}: ${message.text()}`);
-          this.customEmit(EmitEvent.Log, {
-            type: BrowserEventType.Console,
-            text: JSON.stringify({ pageId, type: message.type(), text: message.text() }),
-            timestamp: new Date(),
-          });
-        });
-
-        page.on("requestfailed", (request) => {
-          // this.logger.warn(`Request failed: "${request.failure()?.errorText}": ${request.url()}`);
-          this.customEmit(EmitEvent.Log, {
-            type: BrowserEventType.RequestFailed,
-            text: JSON.stringify({ pageId, errorText: request.failure()?.errorText, url: request.url() }),
-            timestamp: new Date(),
-          });
-        });
-
         await page.setRequestInterception(true);
+
+        await this.setupPageLogging(page, target.type());
 
         page.on("request", async (request) => {
           const headers = request.headers();
           delete headers["accept-language"]; // Patch to help with headless detection
-
-          this.customEmit(EmitEvent.Log, {
-            type: BrowserEventType.Request,
-            text: JSON.stringify({ pageId, method: request.method(), url: request.url() }),
-            timestamp: new Date(),
-          });
 
           if (this.launchConfig?.blockAds && isAdRequest(request.url())) {
             this.logger.info(`Blocked request to ad related resource: ${request.url()}`);
@@ -217,7 +171,7 @@ export class CDPService extends EventEmitter {
 
           if (request.url().startsWith("file://")) {
             this.logger.error(`Blocked request to file protocol: ${request.url()}`);
-            page.close().catch(() => {});
+            page.close().catch(() => { });
             this.shutdown();
           } else {
             await request.continue({ headers });
@@ -225,15 +179,9 @@ export class CDPService extends EventEmitter {
         });
 
         page.on("response", (response) => {
-          this.customEmit(EmitEvent.Log, {
-            type: BrowserEventType.Response,
-            text: JSON.stringify({ pageId, status: response.status(), url: response.url() }),
-            timestamp: new Date(),
-          });
-
           if (response.url().startsWith("file://")) {
             this.logger.error(`Blocked response from file protocol: ${response.url()}`);
-            page.close().catch(() => {});
+            page.close().catch(() => { });
             this.shutdown();
           }
         });
@@ -277,12 +225,148 @@ export class CDPService extends EventEmitter {
           });
         });
       }
-    } else if (target.type() === "background_page") {
+    } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       console.log("Background page created:", target.url());
       const page = await target.page();
-      page?.on("console", (message) => {
-        console.log("extension console - ", message.text());
+      await this.setupPageLogging(page, target.type());
+    } else {
+      // Handle SERVICE_WORKER, SHARED_WORKER, BROWSER, WEBVIEW and OTHER targets.
+      const session = await target.createCDPSession();
+      await this.setupCDPLogging(session, target.type());
+    }
+  }
+
+  private async setupPageLogging(page: Page | null, targetType: TargetType) {
+    try {
+      if (!page) {
+        return;
+      }
+
+      this.logger.info(`Setting up logging for page: ${page.url()}`);
+
+      //@ts-ignore
+      const pageId = page.target()._targetId;
+
+      page.on("request", (request) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Request,
+          text: JSON.stringify({ pageId, method: request.method(), url: request.url() }),
+          timestamp: new Date(),
+        });
       });
+
+      page.on("response", (response) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Response,
+          text: JSON.stringify({ pageId, status: response.status(), url: response.url() }),
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("error", (err) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Error,
+          text: JSON.stringify({ pageId, message: err.message, name: err.name }),
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("pageerror", (err) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.PageError,
+          text: JSON.stringify({ pageId, message: err.message, name: err.name }),
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("framenavigated", (frame) => {
+        if (!frame.parentFrame()) {
+          this.logger.info(`Navigated to ${frame.url()}`);
+          this.customEmit(EmitEvent.Log, {
+            type: BrowserEventType.Navigation,
+            text: JSON.stringify({ pageId, url: frame.url() }),
+            timestamp: new Date(),
+          });
+        }
+      });
+
+      page.on("console", (message) => {
+        if (targetType === TargetType.BACKGROUND_PAGE) {
+          this.logger.info(`Extension console: ${message.type()}: ${message.text()}`);
+        } else {
+          this.logger.info(`Console message: ${message.type()}: ${message.text()}`);
+        }
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Console,
+          text: JSON.stringify({ pageId, type: message.type(), text: message.text() }),
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("requestfailed", (request) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.RequestFailed,
+          text: JSON.stringify({ pageId, errorText: request.failure()?.errorText, url: request.url() }),
+          timestamp: new Date(),
+        });
+      });
+
+      //@ts-ignore
+      const session = await page.target().createCDPSession();
+      await this.setupCDPLogging(session, targetType);
+    } catch (error) {
+      this.logger.error(`Error setting up page logging: ${error}`);
+    }
+  }
+
+  private async setupCDPLogging(session: CDPSession, targetType: TargetType) {
+    try {
+      if (!env.ENABLE_CDP_LOGGING) {
+        return;
+      }
+
+      this.logger.info(
+        `[CDP] Attaching CDP logging to session ${session.id()} of target type ${targetType}`
+      );
+
+      await session.send("Runtime.enable");
+      await session.send("Log.enable");
+      await session.send("Network.enable");
+      await session.send("Console.enable");
+
+      session.on("Runtime.executionContextCreated", (event) => {
+        this.logger.info(`[CDP] Execution Context Created for ${targetType}`, { event });
+      });
+
+      session.on("Runtime.executionContextDestroyed", async () => {
+        this.logger.info(`[CDP] Execution Context Destroyed for ${targetType}`);
+      });
+
+      session.on("Runtime.consoleAPICalled", (event) => {
+        this.logger.info(`[CDP] Console API called for ${targetType}`, { event });
+      });
+
+      // Capture browser logs (security issues, CSP violations, fetch failures)
+      session.on("Log.entryAdded", (event) => {
+        this.logger.warn(`[CDP] Log entry added for ${targetType}`, { event });
+      });
+
+      // Capture JavaScript exceptions
+      session.on("Runtime.exceptionThrown", (event) => {
+        this.logger.error(`[CDP] Runtime exception thrown for ${targetType}`, { event });
+      });
+
+      // Capture failed network requests
+      session.on("Network.loadingFailed", (event) => {
+        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event });
+      });
+
+      // Capture failed fetch requests (when a fetch() call fails)
+      session.on("Network.requestFailed", (event) => {
+        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event });
+      });
+    } catch (error) {
+      this.logger.error(`[CDP] Error setting up CDP logging for ${targetType}: ${error}`);
     }
   }
 
@@ -334,6 +418,10 @@ export class CDPService extends EventEmitter {
 
     const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
 
+    const extensionArgs = extensionPaths.length
+      ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
+      : [];
+
     const fingerprintGen = new FingerprintGenerator({
       devices: ["desktop"],
       operatingSystems: ["linux"],
@@ -343,10 +431,6 @@ export class CDPService extends EventEmitter {
 
     this.fingerprintData = await fingerprintGen.getFingerprint();
 
-    const extensionArgs = extensionPaths.length
-      ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
-      : [];
-
     const timezone = "America/New_York"; // TODO: determine timezone from session config or proxy
 
     const launchArgs = [
@@ -354,13 +438,13 @@ export class CDPService extends EventEmitter {
       "--disable-dev-shm-usage",
       "--disable-gpu",
       this.launchConfig.dimensions ? "" : "--start-maximized",
-      "--remote-debugging-address=127.0.0.1",
+      `--remote-debugging-address=${env.HOST}`,
       "--remote-debugging-port=9222",
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--use-angle=disabled",
       "--disable-blink-features=AutomationControlled",
-      "--unsafely-treat-insecure-origin-as-secure=http://0.0.0.0:3000,http://localhost:3000",
+      `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
       `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${this.launchConfig.dimensions?.height ?? 1080}`,
       `--timezone=${timezone}`,
       userAgent ? `--user-agent=${userAgent}` : "",

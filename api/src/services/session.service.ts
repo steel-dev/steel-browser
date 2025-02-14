@@ -103,7 +103,7 @@ export class SessionService {
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
-        headless: true,
+        headless: env.CHROME_HEADLESS,
         args: [userAgent ? `--user-agent=${userAgent}` : undefined].filter(Boolean) as string[],
         proxyUrl: this.activeSession.proxyServer?.url,
       },
