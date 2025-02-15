@@ -163,6 +163,7 @@ h6 {
   html {
     font-family: "Geist", sans-serif;
   }
+
   :root {
     --base-1: 0 0% 98.82352941176471%;
     --base-2: 0 0% 97.6470588235294%;
@@ -203,13 +204,13 @@ h6 {
     --accent: 226.2111801242236 65.18218623481782% 51.5686274509804%;
     --accent-foreground: 0 0% 100%;
     --destructive: 10.10869565217391 73.01587301587303% 50.588235294117645%;
-    --destructive-foreground: 7.868852459016397 49.59349593495935%
-      24.11764705882353%;
+    --destructive-foreground: 7.868852459016397 49.59349593495935% 24.11764705882353%;
     --border: 0 0% 85.09803921568627%;
     --input: 0 0% 85.09803921568627%;
     --ring: 0 0% 85.09803921568627%;
     --radius: 0.5rem;
   }
+
   .dark {
     --base-1: 0 0% 6.666666666666667%;
     --base-2: 0 0% 9.803921568627452%;
@@ -256,4 +257,23 @@ h6 {
     --ring: 0 0% 22.745098039215687%;
     --radius: 0.5rem;
   }
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: #555;
+  border-radius: 10px;
+  border: 2px solid #1e1e1e;
+}
+
+.xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: #555 #1e1e1e;
 }

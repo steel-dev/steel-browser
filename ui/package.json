@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "serve dist -l 5173",
+    "start": "serve dist -l 5173 --single --config serve.json",
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -12,7 +12,6 @@
     "generate-api": "openapi-ts"
   },
   "dependencies": {
-    "serve": "^14.0.1",
     "@fontsource/inter": "^5.0.13",
     "@hey-api/client-fetch": "^0.4.0",
     "@hookform/resolvers": "^3.9.0",
@@ -31,11 +30,14 @@
     "@radix-ui/themes": "^3.0.3",
     "@tanstack/react-query": "^4.36.1",
     "@tanstack/react-table": "^8.20.5",
+    "@webcontainer/api": "^1.5.1-internal.8",
+    "@xterm/addon-fit": "^0.10.0",
     "axios": "^1.3.1",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "i": "^0.3.7",
     "jwt-decode": "^3.1.2",
+    "lodash-es": "^4.17.21",
     "lucide-react": "^0.447.0",
     "rrweb-player": "^1.0.0-alpha.4",
     "react": "^18.2.0",
@@ -44,11 +46,13 @@
     "react-router-dom": "^6.29.0",
     "react-syntax-highlighter": "^15.5.0",
     "react-top-loading-bar": "^2.3.1",
+    "serve": "^14.0.1",
     "styled-components": "^6.0.8",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "ua-parser-js": "^1.0.39",
     "usehooks-ts": "^3.1.0",
+    "xterm": "^5.3.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -70,5 +74,6 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3",
     "vite": "^4.4.5",
+    "vite-plugin-cross-origin-isolation": "^0.1.6"
   }
 }
