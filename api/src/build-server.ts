@@ -9,7 +9,7 @@ import browserSessionPlugin from "./plugins/browser-session";
 import browserWebSocket from "./plugins/browser-socket/browser-socket";
 import seleniumPlugin from "./plugins/selenium";
 import customBodyParser from "./plugins/custom-body-parser";
-import { sessionsRoutes, seleniumRoutes, actionsRoutes, cdpRoutes } from "./routes";
+import { sessionsRoutes, seleniumRoutes, actionsRoutes, cdpRoutes, playgroundRoutes } from "./routes";
 import path from "path";
 
 export default function buildFastifyServer(options?: FastifyServerOptions) {
@@ -37,6 +37,7 @@ export default function buildFastifyServer(options?: FastifyServerOptions) {
   server.register(sessionsRoutes, { prefix: "/v1" });
   server.register(cdpRoutes, { prefix: "/v1" });
   server.register(seleniumRoutes);
+  server.register(playgroundRoutes, { prefix: "/v1" });
 
   return server;
 }
