@@ -32,6 +32,12 @@ export default function buildFastifyServer(options?: FastifyServerOptions) {
   server.register(customBodyParser);
   server.register(browserSessionPlugin);
 
+  server.addHook("onSend", (request, reply, payload, done) => {
+    reply.header("Cross-Origin-Resource-Policy", "cross-origin");
+    reply.header("Cross-Origin-Embedder-Policy", "require-corp");
+    done();
+  });
+
   // Routes
   server.register(actionsRoutes, { prefix: "/v1" });
   server.register(sessionsRoutes, { prefix: "/v1" });

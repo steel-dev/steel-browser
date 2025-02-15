@@ -10,6 +10,7 @@ import { INITIAL_FILES } from '../utils/constants';
 import { Language } from '@/types/language';
 import { editor } from 'monaco-editor';
 import { env } from '@/env';
+import { useSessionsContext } from '@/hooks/use-sessions-context';
 import { PlayIcon } from '@radix-ui/react-icons';
 
 interface PythonExecutionResult {
@@ -19,6 +20,9 @@ interface PythonExecutionResult {
 }
 
 export function PlaygroundPage() {
+    const { useSession } = useSessionsContext();
+    const { data: session } = useSession("");
+
     const [selectedLanguage, setSelectedLanguage] = useState<Language>(Language.TypeScript);
     const [codeContent, setCodeContent] = useState({
         python: INITIAL_FILES['main.py'].file.contents,
@@ -42,6 +46,7 @@ export function PlaygroundPage() {
             return response.json();
         },
     });
+
     useFileSync(webContainer, currentFilePath, codeContent[selectedLanguage]);
 
     useEffect(() => {
@@ -107,6 +112,7 @@ export function PlaygroundPage() {
                                 containerRef={terminalContainerRef}
                                 shellProcess={shellProcess}
                             />
+                        </div>
                     ) : (
                         <PythonResult
                             result={runPythonMutation.data?.result}
@@ -116,6 +122,12 @@ export function PlaygroundPage() {
                         />
                     )}
                 </div>
+                <div className="p-4 flex flex-col gap-4 w-[50vw] border-t border-gray-600">
+                    <iframe
+                        src={session?.debugUrl}
+                        className="w-full h-[120vh] border-0"
+                    ></iframe>
+                    <small className="text-xs text-gray-500">Session ID: {session?.id}</small>
                 </div>
             </div>
         </div>
