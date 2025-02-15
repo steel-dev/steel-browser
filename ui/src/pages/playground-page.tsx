@@ -12,6 +12,7 @@ import { editor } from 'monaco-editor';
 import { env } from '@/env';
 import { useSessionsContext } from '@/hooks/use-sessions-context';
 import { PlayIcon } from '@radix-ui/react-icons';
+import SessionLogs from '@/components/sessions/session-console/session-logs';
 
 interface PythonExecutionResult {
     result: string;
@@ -128,6 +129,7 @@ export function PlaygroundPage() {
                         className="w-full h-[120vh] border-0"
                     ></iframe>
                     <small className="text-xs text-gray-500">Session ID: {session?.id}</small>
+                    <SessionLogs id={session?.id!} />
                 </div>
             </div>
         </div>
