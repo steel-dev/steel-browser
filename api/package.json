@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node ./build/index.js",
-    "build": "tsc && mkdir -p build/templates && cp -r src/templates/ build/templates/",
+    "build": "tsc && mkdir -p build/templates && cp -r src/templates/* build/templates/",
     "dev": "ts-node-dev --poll --exit-child ./src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "pretty": "prettier --write \"src/**/*.ts\"",

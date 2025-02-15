@@ -73,7 +73,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       unzip \
       default-jre \
       dbus \
-      dbus-x11
+      dbus-x11 \
+      python3-pip \
+      python3-venv 
+
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+RUN /app/venv/bin/pip install --no-cache-dir steel-sdk python-dotenv selenium playwright
 
 # Install Chrome and ChromeDriver
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
