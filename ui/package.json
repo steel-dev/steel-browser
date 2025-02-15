@@ -16,6 +16,7 @@
     "@fontsource/inter": "^5.0.13",
     "@hey-api/client-fetch": "^0.4.0",
     "@hookform/resolvers": "^3.9.0",
+    "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-avatar": "^1.1.1",
     "@radix-ui/react-checkbox": "^1.1.2",
     "@radix-ui/react-dialog": "^1.1.2",
@@ -40,7 +41,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.53.0",
-    "react-router-dom": "^6.16.0",
+    "react-router-dom": "^6.29.0",
     "react-syntax-highlighter": "^15.5.0",
     "react-top-loading-bar": "^2.3.1",
     "styled-components": "^6.0.8",
@@ -52,7 +53,7 @@
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.53.6",
-    "@types/node": "^20.8.4",
+    "@types/node": "^20.17.17",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@types/react-syntax-highlighter": "^15.5.8",
@@ -66,7 +67,8 @@
     "eslint-plugin-react-refresh": "^0.4.3",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
-    "typescript": "^5.0.2",
-    "vite": "^4.4.5"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3",
+    "vite": "^4.4.5",
   }
 }

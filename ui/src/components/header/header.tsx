@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { GlowingGreenDot } from "@/components/icons/GlowingGreenDot";
 import { useSessionsContext } from "@/hooks/use-sessions-context";
 import { SteelIcon } from "../icons/SessionIcon";
+import { Link } from "react-router-dom";
 
 export const Header = () => {
   const { pathname } = window.location;
@@ -53,6 +54,12 @@ export const Header = () => {
       </div>
       <nav className="flex-1 flex justify-end">
         <div className="flex gap-2 items-center">
+          <Link
+            to="/playground"
+            className="rounded-md opacity-90 bg-transparent flex h-10 px-4 justify-center items-center gap-3 text-primary hover:bg-[rgba(238,206,254,0.13)] font-inter text-base font-normal leading-6 cursor-pointer"
+          >
+            Playground
+          </Link>
           <a
             href="https://docs.steel.dev"
             target="_blank"
