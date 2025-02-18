@@ -1,4 +1,5 @@
 ARG NODE_VERSION=22.13.0
+ARG RAILWAY_SERVICE_ID
 
 FROM node:${NODE_VERSION}-slim AS base
 
@@ -15,25 +16,21 @@ LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browse
 
 # Install dependencies
 # Using --mount to speed up build with caching, see https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mount
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
-    rm -f /etc/apt/apt.conf.d/docker-clean; \
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
     apt-get update -qq && \
     DEBIAN_FRONTEND=noninteractive apt-get -yq dist-upgrade
 
 FROM base AS build
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
+RUN --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/cache/apt,target=/var/cache/apt \
+    --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/lib/apt,target=/var/lib/apt \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      build-essential \
-      pkg-config \
-      python-is-python3 \
-      xvfb
+    build-essential \
+    pkg-config \
+    python-is-python3 \
+    xvfb
 
 COPY --link package-lock.json package.json ./
 COPY --link extensions/recorder/package*.json ./extensions/recorder/
@@ -56,44 +53,52 @@ RUN node ./scripts/patcher.js patch --packagePath /app/node_modules/puppeteer-co
 
 FROM base AS production
 # Install dependencies
-# Using --mount to speed up build with caching, see https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mount
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
-    apt-get update && \ 
+RUN apt-get update && \ 
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
-      wget \
-      nginx \
-      gnupg \
-      fonts-ipafont-gothic \
-      fonts-wqy-zenhei \
-      fonts-thai-tlwg \
-      fonts-kacst \
-      fonts-freefont-ttf \
-      libxss1 \
-      xvfb \
-      curl \
-      unzip \
-      default-jre \
-      dbus \
-      dbus-x11
+    wget \
+    nginx \
+    gnupg \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-thai-tlwg \
+    fonts-kacst \
+    fonts-freefont-ttf \
+    libxss1 \
+    xvfb \
+    curl \
+    unzip \
+    default-jre \
+    dbus \
+    dbus-x11 \
+    procps \
+    x11-xserver-utils
 
 # Install Chrome and ChromeDriver
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
-    # wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    # && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' <- add this back in when supported \ 
-    # && apt-get update \
-    curl -o chrome.deb https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/google-chrome-stable_128.0.6613.119-1_amd64.deb \
-    && apt-get install -y ./chrome.deb \
-    && rm chrome.deb \
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    wget \
+    ca-certificates \
+    curl \
+    unzip \
+    # Download and install specific version of Chrome
+    && CHROME_DEB="google-chrome-stable_128.0.6613.119-1_amd64.deb" \
+    && wget -q "https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/${CHROME_DEB}" \
+    && apt-get install -y ./google-chrome-stable_*.deb \
+    && rm google-chrome-stable_*.deb \
+    # Install matching ChromeDriver
     && mkdir -p /selenium/driver \
-    && curl -o chromedriver.zip https://storage.googleapis.com/chrome-for-testing-public/128.0.6613.119/linux64/chromedriver-linux64.zip \
-    && unzip chromedriver.zip -d /tmp \
+    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/128.0.6613.119/linux64/chromedriver-linux64.zip" \
+    && unzip chromedriver-linux64.zip -d /tmp \
     && mv /tmp/chromedriver-linux64/chromedriver /selenium/driver/chromedriver \
-    && rm -rf chromedriver.zip /tmp/chromedriver-linux64 \
-    && chmod +x /selenium/driver/chromedriver
+    && rm -rf chromedriver-linux64.zip /tmp/chromedriver-linux64 \
+    && chmod +x /selenium/driver/chromedriver \
+    # Verify installations
+    && google-chrome-stable --version \
+    && /selenium/driver/chromedriver --version \
+    # Clean up
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/*
 
 COPY --chmod=755 entrypoint.sh /app/entrypoint.sh
 
