@@ -20,7 +20,8 @@
     "prettier": "3.0.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3",
-    "vite": "^6.1.0"
+    "vite": "^6.1.0",
+    "@types/json-stringify-safe": "^5.0.3"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
@@ -34,7 +35,6 @@
     "dotenv": "^16.4.7",
     "ejs": "^3.1.10",
     "fastify": "^5.2.1",
-    "@types/json-stringify-safe": "^5.0.3",
     "fastify-graceful-shutdown": "^4.0.1",
     "fastify-plugin": "^5.0.1",
     "fingerprint-generator": "^2.1.62",
