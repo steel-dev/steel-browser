@@ -22,7 +22,7 @@ export function EmptyState() {
             If you think this is an error, message us on Discord.
           </p>
           <Link
-            to="https://discord.gg/gPpvhNvc5R"
+            to="https://discord.gg/steel-dev"
             target="_blank"
             className="flex items-center py-2 gap-1 text-[var(--indigo-11)] text-sm hover:text-[var(--indigo-12)] cursor-pointer"
           >

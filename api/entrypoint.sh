@@ -21,6 +21,10 @@ else
     echo "Skipping nginx startup..."
 fi
 
+### Clean up stale lock files
+echo "Cleaning up stale lock files..."
+rm -f /run/dbus/pid /tmp/.X10-lock
+
 # Create dbus directory and start daemon
 echo "Starting dbus..."
 mkdir -p /var/run/dbus

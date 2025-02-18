@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html data-theme="<%= theme %>">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Steel Debug View</title>
+  <style>
+    /* CSS Variables for themes */
+    html[data-theme="dark"] {
+      --bg-primary: #1c1c1c;
+      --bg-secondary: #2a2a2a;
+      --border-color: #383838;
+      --text-color: #ffffff;
+    }
+
+    html[data-theme="light"] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f5f5f5;
+      --border-color: #e0e0e0;
+      --text-color: #000000;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-primary);
+      overflow: hidden;
+    }
+    .container {
+      width: 100%;
+      height: 100%;
+      background: var(--bg-primary);
+      border: none;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    .top-bar {
+      height: 40px;
+      flex: 0 0 40px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px;
+      box-sizing: border-box;
+    }
+    .url-bar {
+      width: 80%;
+      max-width: 800px;
+      height: 28px;
+      padding: 0 12px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-color);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .favicon {
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
+      margin-right: 4px;
+    }
+    .url-input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--text-color);
+      font-family: 'Geist', sans-serif;
+      font-size: 13px;
+      outline: none;
+      width: 100%;
+    }
+    .content {
+      min-height: 0;
+      flex: 1;
+      overflow: hidden;
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    #canvas {
+      position: absolute;
+      height: 100%;
+      width: auto;
+      left: 50%;
+      transform: translateX(-50%);
+      object-fit: contain;
+    }
+
+    /* Add styles for navigation buttons */
+    .nav-buttons {
+      display: flex;
+      gap: 4px;
+      margin-right: 16px;
+    }
+
+    .nav-button {
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--text-color);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      padding: 0;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+
+    .nav-button:hover {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <% if (showControls) { %>
+      <div class="top-bar">
+        <div class="nav-buttons">
+          <button class="nav-button" id="back-button">‹</button>
+          <button class="nav-button" id="forward-button">›</button>
+        </div>
+        <div class="url-bar">
+          <img id="favicon" src="/placeholder-favicon.png" class="favicon" alt="Favicon">
+          <input type="text" id="url-text" class="url-input" value="Session not connected" <%= interactive ? "" : "readonly" %>>
+        </div>
+      </div>
+    <% } %>
+    <div class="content">
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const urlText = document.getElementById('url-text');
+    const favicon = document.getElementById('favicon');
+    
+    let currentImageWidth = <%= dimensions ? dimensions.width : 1920 %>;  // Default size until we get first image
+    let currentImageHeight = <%= dimensions ? dimensions.height : 1080 %>;
+    
+    function updateCanvasSize() {
+      const container = canvas.parentElement;
+      const parentHeight = container.clientHeight;
+      
+      // Scale to height while maintaining aspect ratio
+      const targetHeight = parentHeight;
+      const targetWidth = targetHeight * (currentImageWidth / currentImageHeight);
+      
+      // Account for device pixel ratio
+      const dpr = window.devicePixelRatio || 1;
+      
+      canvas.width = targetWidth * dpr;
+      canvas.height = targetHeight * dpr;
+      
+      // Scale context to handle DPR
+      ctx.scale(dpr, dpr);
+      
+      // Set display size
+      canvas.style.height = '100%';
+      canvas.style.width = 'auto';
+    }
+    
+    window.addEventListener('resize', updateCanvasSize);
+    updateCanvasSize();
+
+    const ws = new WebSocket('<%= wsUrl %>');
+    
+    // Update mouse event calculation to better handle scaling and positioning
+    function getScaledCoordinates(e) {
+      const rect = canvas.getBoundingClientRect();
+      const canvasWidth = rect.width;
+      const canvasHeight = rect.height;
+      
+      // Calculate the actual scaling factors
+      const scaleX = currentImageWidth / canvasWidth;
+      const scaleY = currentImageHeight / canvasHeight;
+      
+      // Calculate the canvas offset from the left edge of the viewport
+      const canvasLeftOffset = rect.left;
+      
+      // Calculate scaled coordinates relative to the canvas
+      const x = Math.round((e.clientX - canvasLeftOffset) * scaleX);
+      
+      // Account for the top bar if present and calculate y coordinate
+      const topBarOffset = 0;
+      const y = Math.round((e.clientY - rect.top - topBarOffset) * scaleY);
+      
+      // Ensure coordinates are within bounds
+      return {
+        x: Math.max(0, Math.min(x, currentImageWidth)),
+        y: Math.max(0, Math.min(y, currentImageHeight))
+      };
+    } 
+
+    // Wrap all event listeners in conditional setup
+    <% if (interactive) { %>
+      canvas.addEventListener('mousedown', (e) => {
+        console.log('mousedown coords', e);
+        const coords = getScaledCoordinates(e);
+        console.log('mousedown scaled coords', coords);
+        
+        ws.send(JSON.stringify({
+          type: 'mouseEvent',
+          pageId: currentPageId,
+          event: {
+            type: 'mousePressed',
+            x: coords.x,
+            y: coords.y,
+            button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
+            modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
+            clickCount: e.detail
+          }
+        }));
+      });
+
+      canvas.addEventListener('mouseup', (e) => {
+        console.log('mouseup coords', e);
+        const coords = getScaledCoordinates(e);
+        console.log('mouseup scaled coords', coords);
+        
+        ws.send(JSON.stringify({
+          type: 'mouseEvent',
+          pageId: currentPageId,
+          event: {
+            type: 'mouseReleased',
+            x: coords.x,
+            y: coords.y,
+            button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
+            modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
+            clickCount: e.detail
+          }
+        }));
+      });
+
+      canvas.addEventListener('wheel', (e) => {
+        const coords = getScaledCoordinates(e);
+        
+        ws.send(JSON.stringify({
+          type: 'mouseEvent',
+          pageId: currentPageId,
+          event: {
+            type: 'mouseWheel',
+            x: coords.x,
+            y: coords.y,
+            button: 'none',
+            modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
+            deltaX: e.deltaX,
+            deltaY: e.deltaY,
+            clickCount: e.detail
+          }
+        }));
+      });
+
+      document.addEventListener('keydown', (e) => {
+        // Skip if URL input is focused
+        if (urlText && document.activeElement === urlText) return;
+        
+        ws.send(JSON.stringify({
+          type: 'keyEvent',
+          pageId: currentPageId,
+          event: {
+            type: 'keyDown',
+            text: e.key.length === 1 ? e.key : undefined,
+            code: e.code,
+            key: e.key,
+            keyCode: e.keyCode
+          }
+        }));
+      });
+
+      document.addEventListener('keyup', (e) => {
+        // Skip if URL input is focused
+        if (urlText && document.activeElement === urlText) return;
+        
+        ws.send(JSON.stringify({
+          type: 'keyEvent',
+          pageId: currentPageId,
+          event: {
+            type: 'keyUp',
+            text: e.key.length === 1 ? e.key : undefined,
+            code: e.code,
+            key: e.key,
+            keyCode: e.keyCode
+          }
+        }));
+      });
+
+      if (urlText) {
+        urlText.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const url = urlText.value;
+            ws.send(JSON.stringify({
+              type: 'navigation',
+              pageId: currentPageId,
+              event: {
+                url: url
+              }
+            }));
+            // Send message to parent frame about manual URL change
+            window.parent.postMessage({
+              type: 'navigation',
+              url: url
+            }, '*');
+            urlText.blur();
+          }
+        });
+      }
+
+      <% if (showControls) { %>
+        const backButton = document.getElementById('back-button');
+        const forwardButton = document.getElementById('forward-button');
+
+        backButton.addEventListener('click', () => {
+          ws.send(JSON.stringify({
+            type: 'navigation',
+            pageId: currentPageId,
+            event: { action: 'back' }
+          }));
+        });
+
+        forwardButton.addEventListener('click', () => {
+          ws.send(JSON.stringify({
+            type: 'navigation',
+            pageId: currentPageId,
+            event: { action: 'forward' }
+          }));
+        });
+      <% } %>
+    <% } %>
+
+    let currentPageId = '';
+
+    ws.onmessage = (event) => {
+      const payload = JSON.parse(event.data);
+      currentPageId = payload.pageId;
+
+      if (payload.url) {
+        if (urlText && document.activeElement !== urlText) {
+          urlText.value = payload.url;
+        }
+        // Send message to parent frame about URL change
+        window.parent.postMessage({
+          type: 'navigation',
+          url: payload.url,
+          favicon: payload.favicon
+        }, '*');
+      }
+      if (payload.favicon && favicon) {
+        favicon.src = payload.favicon;
+      }
+      
+      if (payload.data) {
+        const img = new Image();
+        img.onload = () => {
+          // Update image dimensions and resize canvas when we get a new image
+          currentImageWidth = img.naturalWidth;
+          currentImageHeight = img.naturalHeight;
+          updateCanvasSize();
+          
+          ctx.drawImage(
+            img,
+            0,
+            0,
+            Math.floor(canvas.width / window.devicePixelRatio),
+            Math.floor(canvas.height / window.devicePixelRatio)
+          );
+        };
+        img.src = 'data:image/jpeg;base64,' + payload.data;
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
+  </script>
+</body>
+</html> 

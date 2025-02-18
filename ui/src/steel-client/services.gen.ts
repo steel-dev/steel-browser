@@ -48,7 +48,7 @@ export const client = createClient(createConfig());
  * Scrape a URL
  */
 export const scrape = <ThrowOnError extends boolean = false>(
-  options?: Options<ScrapeData, ThrowOnError>,
+  options?: Options<ScrapeData, ThrowOnError>
 ) => {
   return (options?.client ?? client).post<
     ScrapeResponse2,
@@ -66,7 +66,7 @@ export const scrape = <ThrowOnError extends boolean = false>(
  * Take a screenshot
  */
 export const screenshot = <ThrowOnError extends boolean = false>(
-  options?: Options<ScreenshotData, ThrowOnError>,
+  options?: Options<ScreenshotData, ThrowOnError>
 ) => {
   return (options?.client ?? client).post<
     ScreenshotResponse2,
@@ -83,7 +83,7 @@ export const screenshot = <ThrowOnError extends boolean = false>(
  * Get the PDF content of a page
  */
 export const pdf = <ThrowOnError extends boolean = false>(
-  options?: Options<PdfData, ThrowOnError>,
+  options?: Options<PdfData, ThrowOnError>
 ) => {
   return (options?.client ?? client).post<PdfResponse, PdfError, ThrowOnError>({
     ...options,
@@ -96,7 +96,7 @@ export const pdf = <ThrowOnError extends boolean = false>(
  * Check if the server and browser are running
  */
 export const health = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>,
+  options?: Options<unknown, ThrowOnError>
 ) => {
   return (options?.client ?? client).get<
     HealthResponse,
@@ -113,7 +113,7 @@ export const health = <ThrowOnError extends boolean = false>(
  * Launch a browser session
  */
 export const launchBrowserSession = <ThrowOnError extends boolean = false>(
-  options?: Options<LaunchBrowserSessionData, ThrowOnError>,
+  options?: Options<LaunchBrowserSessionData, ThrowOnError>
 ) => {
   return (options?.client ?? client).post<
     LaunchBrowserSessionResponse,
@@ -131,7 +131,7 @@ export const launchBrowserSession = <ThrowOnError extends boolean = false>(
  * Get all sessions (only returns current session)
  */
 export const getSessions = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>,
+  options?: Options<unknown, ThrowOnError>
 ) => {
   return (options?.client ?? client).get<
     GetSessionsResponse,
@@ -149,7 +149,7 @@ export const getSessions = <ThrowOnError extends boolean = false>(
  * Get session details
  */
 export const getSessionDetails = <ThrowOnError extends boolean = false>(
-  options: Options<GetSessionDetailsData, ThrowOnError>,
+  options: Options<GetSessionDetailsData, ThrowOnError>
 ) => {
   return (options?.client ?? client).get<
     GetSessionDetailsResponse,
@@ -167,7 +167,7 @@ export const getSessionDetails = <ThrowOnError extends boolean = false>(
  * Get a browser context
  */
 export const getBrowserContext = <ThrowOnError extends boolean = false>(
-  options: Options<GetBrowserContextData, ThrowOnError>,
+  options: Options<GetBrowserContextData, ThrowOnError>
 ) => {
   return (options?.client ?? client).get<
     GetBrowserContextResponse,
@@ -184,7 +184,7 @@ export const getBrowserContext = <ThrowOnError extends boolean = false>(
  * Release a browser session
  */
 export const releaseBrowserSession = <ThrowOnError extends boolean = false>(
-  options: Options<ReleaseBrowserSessionData, ThrowOnError>,
+  options: Options<ReleaseBrowserSessionData, ThrowOnError>
 ) => {
   return (options?.client ?? client).post<
     ReleaseBrowserSessionResponse,
@@ -201,7 +201,7 @@ export const releaseBrowserSession = <ThrowOnError extends boolean = false>(
  * Release browser sessions
  */
 export const releaseBrowserSessions = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>,
+  options?: Options<unknown, ThrowOnError>
 ) => {
   return (options?.client ?? client).post<
     ReleaseBrowserSessionsResponse,
@@ -218,7 +218,7 @@ export const releaseBrowserSessions = <ThrowOnError extends boolean = false>(
  * Get the URL for the DevTools inspector
  */
 export const getDevtoolsUrl = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>,
+  options?: Options<unknown, ThrowOnError>
 ) => {
   return (options?.client ?? client).get<
     GetDevtoolsUrlResponse,

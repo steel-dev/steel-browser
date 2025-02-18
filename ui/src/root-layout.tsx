@@ -1,5 +1,5 @@
 import { ThemeProvider } from "@/components/theme-provider";
-import { QueryClientProvider } from "react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { SessionsProvider } from "./contexts/sessions-context";
 import { queryClient } from "./lib/query-client";
 import { SessionContainer } from "./containers/session-container";

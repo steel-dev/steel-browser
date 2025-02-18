@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-Issue tracker is **ONLY** used for reporting bugs. New features should be discussed in our [Discord server](https://discord.gg/gPpvhNvc5R).
+Issue tracker is **ONLY** used for reporting bugs. New features should be discussed in our [Discord server](https://discord.gg/steel-dev).
 
 **Describe the bug**
 A clear and concise description of what the bug is.
