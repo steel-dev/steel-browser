@@ -1,4 +1,4 @@
-name: Build and Push Latest Docker Image to GHCR
+name: Check Docker Build
 
 on:
   pull_request:
@@ -6,8 +6,8 @@ on:
       - main
 
 jobs:
-  push_to_registry:
-    name: Build and Push Latest Docker Image to GHCR
+  check-docker-build:
+    name: Check Docker Build
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repo
