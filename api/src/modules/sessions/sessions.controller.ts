@@ -1,7 +1,7 @@
 import { CDPService } from "../../services/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
-import { CreateSessionRequest, SessionStreamRequest } from "./sessions.schema";
+import { CreateSessionRequest, SessionStreamRequest, ReleaseSessionRequest } from "./sessions.schema";
 import { env } from "../../env";
 
 export const handleLaunchBrowserSession = async (
@@ -23,9 +23,6 @@ export const handleLaunchBrowserSession = async (
       blockAds,
     } = request.body;
 
-    // If there's an active session, close it first
-    await server.sessionService.endSession();
-
     return await server.sessionService.startSession({
       sessionId,
       proxyUrl,
@@ -46,11 +43,13 @@ export const handleLaunchBrowserSession = async (
 
 export const handleExitBrowserSession = async (
   server: FastifyInstance,
-  request: FastifyRequest,
+  request: ReleaseSessionRequest,
   reply: FastifyReply,
 ) => {
   try {
-    const sessionDetails = await server.sessionService.endSession();
+    const forceRestart = request.body?.forceRestart ?? false;
+
+    const sessionDetails = await server.sessionService.endSession(forceRestart);
 
     reply.send({ success: true, ...sessionDetails });
   } catch (e: unknown) {

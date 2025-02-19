@@ -81,6 +81,10 @@ export class SessionService {
       blockAds,
     } = options;
 
+    // Close old proxy server before resetting session info
+    await this.activeSession.proxyServer?.close(true);
+    this.activeSession.proxyServer = undefined;
+
     this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
@@ -131,7 +135,8 @@ export class SessionService {
 
       return this.activeSession;
     } else {
-      await this.cdpService.startNewSession(browserLauncherOptions);
+      this.seleniumService.close();
+      await this.cdpService.launch(browserLauncherOptions);
 
       Object.assign(this.activeSession, {
         websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
@@ -145,24 +150,29 @@ export class SessionService {
     return this.activeSession;
   }
 
-  public async endSession(): Promise<SessionDetails> {
+  public async endSession(forceRestart = false): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
 
-    if (this.activeSession.isSelenium) {
-      this.seleniumService.close();
-    } else {
-      await this.cdpService.endSession();
-    }
-
-    await this.activeSession.proxyServer?.close(true);
-    this.activeSession.proxyServer = undefined;
     const releasedSession = this.activeSession;
 
-    this.resetSessionInfo({
-      id: uuidv4(),
-      status: "pending",
-    });
+    // As there is a separate metering proxy for every session,
+    // we need to close browser instance even if not forced to.
+    if (forceRestart || this.activeSession.proxyServer) {
+      if (this.activeSession.isSelenium) {
+        this.seleniumService.close();
+      } else {
+        await this.cdpService.endSession();
+      }
+
+      await this.activeSession.proxyServer?.close(true);
+      this.activeSession.proxyServer = undefined;
+
+      this.resetSessionInfo({
+        id: uuidv4(),
+        status: "pending",
+      });
+    }
 
     return releasedSession;
   }

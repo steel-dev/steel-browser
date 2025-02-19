@@ -403,13 +403,25 @@ export class CDPService extends EventEmitter {
     return this.browserInstance.createBrowserContext({ proxyServer: proxyUrl });
   }
 
-  public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
-    this.launchConfig = config || this.defaultLaunchConfig;
+  private configEqual(config?: BrowserLauncherOptions) {
+    const { logSinkUrl: _nlsu, ...newConfig } = config || {};
+    const { logSinkUrl: _olsu, ...oldConfig } = this.launchConfig || {};
+    return JSON.stringify(newConfig) === JSON.stringify(oldConfig);
+  }
 
+  public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
     if (this.browserInstance) {
-      this.logger.info("Existing browser instance detected. Closing it before launching a new one.");
-      await this.shutdown();
+      if (this.configEqual(config)) {
+        this.logger.info("Browser configuration has not changed. Skipping re-launch.");
+        await this.refreshPrimaryPage()
+        return this.browserInstance;
+      } else {
+        this.logger.info("Existing browser instance detected. Closing it before launching a new one.");
+        await this.shutdown();
+      }
     }
+
+    this.launchConfig = config || this.defaultLaunchConfig;
 
     const { options, userAgent } = this.launchConfig;
 
@@ -563,15 +575,6 @@ export class CDPService extends EventEmitter {
 
   public async getAllPages() {
     return this.browserInstance?.pages() || [];
-  }
-
-  public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
-    if (this.browserInstance) {
-      this.logger.info("Closing existing browser before starting a new session.");
-      await this.shutdown();
-    }
-    this.currentSessionConfig = sessionConfig;
-    return this.launch(sessionConfig);
   }
 
   public async endSession(): Promise<void> {
