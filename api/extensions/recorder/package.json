@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "rrweb": "^2.0.0-alpha.4"
+    "rrweb": "^2.0.0-alpha.4",
+    "@rrweb/packer": "^2.0.0-alpha.4"
   },
   "scripts": {
     "build": "webpack"
