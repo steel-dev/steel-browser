@@ -14,7 +14,7 @@ ENV NODE_ENV="production" \
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
 # Install dependencies
-# Using --mount to speed up build with caching, see https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mount
+# Using --mount to speed up build with caching
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=tmpfs,target=/var/log/apt \
@@ -30,61 +30,64 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=tmpfs,target=/var/log/apt \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      build-essential \
-      pkg-config \
-      python-is-python3 \
-      xvfb
+    build-essential \
+    pkg-config \
+    python-is-python3 \
+    xvfb
 
-COPY --link package-lock.json package.json ./
-COPY --link extensions/recorder/package*.json ./extensions/recorder/
+# Copy root workspace files first
+COPY --link package.json package-lock.json ./
+COPY --link api/ ./api/
 
-RUN npm ci --include=dev
-RUN cd extensions/recorder && npm ci --include=dev && cd -
+# Install dependencies for api
+RUN npm ci --include=dev --workspace=api
 
-COPY --link . .
+# Install dependencies for recorder extension separately
+RUN cd api/extensions/recorder && npm ci --include=dev && cd -
 
-RUN npm run build
-RUN cd extensions/recorder && npm run build && cd -
+# Build the api package
+RUN npm run build -w api
 
-RUN npm prune --omit=dev
-RUN cd extensions/recorder && npm prune --omit=dev && cd -
+RUN cd api/extensions/recorder && \
+    npm run build && \
+    cd -
+
+# Prune dev dependencies
+RUN npm prune --omit=dev -w api
+RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
 FROM build AS patcher
-WORKDIR /app/patcher
+WORKDIR /app/api/patcher
 RUN npm i --include=dev
 RUN node ./scripts/patcher.js patch --packagePath /app/node_modules/puppeteer-core
 
 FROM base AS production
 # Install dependencies
-# Using --mount to speed up build with caching, see https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mount
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=tmpfs,target=/var/log/apt \
     apt-get update && \ 
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
-      wget \
-      nginx \
-      gnupg \
-      fonts-ipafont-gothic \
-      fonts-wqy-zenhei \
-      fonts-thai-tlwg \
-      fonts-kacst \
-      fonts-freefont-ttf \
-      libxss1 \
-      xvfb \
-      curl \
-      unzip \
-      default-jre \
-      dbus \
-      dbus-x11
+    wget \
+    nginx \
+    gnupg \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-thai-tlwg \
+    fonts-kacst \
+    fonts-freefont-ttf \
+    libxss1 \
+    xvfb \
+    curl \
+    unzip \
+    default-jre \
+    dbus \
+    dbus-x11
 
 # Install Chrome and ChromeDriver
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=tmpfs,target=/var/log/apt \
-    # wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    # && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' <- add this back in when supported \ 
-    # && apt-get update \
     curl -o chrome.deb https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/google-chrome-stable_128.0.6613.119-1_amd64.deb \
     && apt-get install -y ./chrome.deb \
     && rm chrome.deb \
@@ -95,13 +98,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf chromedriver.zip /tmp/chromedriver-linux64 \
     && chmod +x /selenium/driver/chromedriver
 
-COPY --chmod=755 entrypoint.sh /app/entrypoint.sh
+COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
 
 EXPOSE 3000 9223
 
 ENV HOST_IP=localhost \
     DBUS_SESSION_BUS_ADDRESS=autolaunch:
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/api/entrypoint.sh"]
 
 COPY --from=patcher /app /app

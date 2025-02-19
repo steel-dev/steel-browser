@@ -85,9 +85,7 @@ export class CDPService extends EventEmitter {
       this.emit(event, payload);
 
       if (env.LOG_CUSTOM_EMIT_EVENTS) {
-        this.logger.info("EmitEvent",
-          { event, payload }
-        );
+        this.logger.info("EmitEvent", { event, payload });
       }
 
       if (event === EmitEvent.Log) {
@@ -171,7 +169,7 @@ export class CDPService extends EventEmitter {
 
           if (request.url().startsWith("file://")) {
             this.logger.error(`Blocked request to file protocol: ${request.url()}`);
-            page.close().catch(() => { });
+            page.close().catch(() => {});
             this.shutdown();
           } else {
             await request.continue({ headers });
@@ -181,7 +179,7 @@ export class CDPService extends EventEmitter {
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
             this.logger.error(`Blocked response from file protocol: ${response.url()}`);
-            page.close().catch(() => { });
+            page.close().catch(() => {});
             this.shutdown();
           }
         });
@@ -325,9 +323,7 @@ export class CDPService extends EventEmitter {
         return;
       }
 
-      this.logger.info(
-        `[CDP] Attaching CDP logging to session ${session.id()} of target type ${targetType}`
-      );
+      this.logger.info(`[CDP] Attaching CDP logging to session ${session.id()} of target type ${targetType}`);
 
       await session.send("Runtime.enable");
       await session.send("Log.enable");
@@ -554,10 +550,12 @@ export class CDPService extends EventEmitter {
         body: JSON.stringify(event),
       });
       if (!response.ok) {
-        this.logger.error(`Error logging event from CDPService: ${event.type} ${response.statusText}`);
+        this.logger.error(
+          `Error logging event from CDPService: ${event.type} ${response.statusText} at URL: ${this.launchConfig.logSinkUrl}`,
+        );
       }
     } catch (error) {
-      this.logger.error(`Error logging event from CDPService: ${error}`);
+      this.logger.error(`Error logging event from CDPService: ${error} at URL: ${this.launchConfig.logSinkUrl}`);
     }
   }
 

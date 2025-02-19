@@ -2,8 +2,8 @@ services:
   api:
     platform: linux/amd64
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./api/Dockerfile
       args:
         NODE_VERSION: 22.13.0
     ports:
@@ -16,8 +16,8 @@ services:
 
   ui:
     build:
-      context: ./ui
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./ui/Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
         VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3000}

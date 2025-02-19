@@ -11,7 +11,7 @@ done
 
 if $START_NGINX; then
     echo "Starting nginx..."
-    nginx -c /app/nginx.conf
+    nginx -c /app/api/nginx.conf
     # Check if nginx started successfully
     if ! ps aux | grep nginx | grep -v grep > /dev/null; then
         echo "Failed to start nginx"
@@ -50,4 +50,4 @@ export HOST=0.0.0.0
 # NPM will introduce its own signal handling
 # which will prevent the container from waiting
 # for a session to be released before stopping gracefully
-exec node ./build/index.js
+exec node ./api/build/index.js
