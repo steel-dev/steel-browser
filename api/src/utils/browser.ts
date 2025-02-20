@@ -2,6 +2,58 @@ import fs from "fs";
 import path from "path";
 import { Page } from "puppeteer-core";
 import { env } from "../env";
+import { BrowserPaths, Platform } from "../types";
+import { UnsupportedPlatformError, InvalidBrowserTypeError, ExecutableNotFoundError } from "./errors";
+
+export enum BrowserType {
+  CHROME = "chrome",
+}
+
+const isSupportedPlatform = (platform: string): platform is Platform => {
+  return ['darwin', 'linux', 'win32'].includes(platform);
+};
+
+export const BROWSER_PATHS: Record<BrowserType, BrowserPaths> = {
+  [BrowserType.CHROME]: {
+    darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+    linux: ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"],
+    win32: [
+      `${process.env.ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+      `C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`
+    ]
+  },
+};
+
+export const getBrowserExecutablePath = (
+  browserType: BrowserType = BrowserType.CHROME,
+  platform: string = process.platform
+): string => {
+  if (!isSupportedPlatform(platform)) {
+    throw new UnsupportedPlatformError(platform);
+  }
+
+  if (!BROWSER_PATHS[browserType]) {
+    throw new InvalidBrowserTypeError(browserType);
+  }
+
+  if (browserType === BrowserType.CHROME && env.CHROME_EXECUTABLE_PATH) {
+    const customPath = path.normalize(env.CHROME_EXECUTABLE_PATH);
+    if (!fs.existsSync(customPath)) {
+      throw new ExecutableNotFoundError([customPath]);
+    }
+    return customPath;
+  }
+
+  const possiblePaths = BROWSER_PATHS[browserType][platform];
+  const validPath = possiblePaths.find(p => fs.existsSync(p));
+
+  if (!validPath) {
+    throw new ExecutableNotFoundError(possiblePaths);
+  }
+
+  return validPath;
+};
+
 
 export const getChromeExecutablePath = () => {
   if (env.CHROME_EXECUTABLE_PATH) {
