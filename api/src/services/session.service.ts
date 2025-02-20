@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
+import { Protocol } from "devtools-protocol";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -60,7 +61,10 @@ export class SessionService {
     sessionId?: string;
     proxyUrl?: string;
     userAgent?: string;
-    sessionContext?: Record<string, any>;
+    sessionContext?: {
+      cookies?: Protocol.Network.CookieParam[];
+      localStorage?: Record<string, Array<{ key: string; value: string }>>;
+    };
     isSelenium?: boolean;
     logSinkUrl?: string;
     blockAds?: boolean;
@@ -107,8 +111,8 @@ export class SessionService {
         args: [userAgent ? `--user-agent=${userAgent}` : undefined].filter(Boolean) as string[],
         proxyUrl: this.activeSession.proxyServer?.url,
       },
-      cookies: sessionContext?.cookies || [],
-      userAgent: sessionContext?.userAgent,
+      sessionContext: options.sessionContext,
+      userAgent,
       blockAds,
       extensions: extensions || [],
       logSinkUrl,
@@ -125,7 +129,7 @@ export class SessionService {
         debugUrl: "",
         sessionViewerUrl: "",
         userAgent:
-          sessionContext?.userAgent ||
+          userAgent ||
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
       });
 

@@ -136,6 +136,9 @@ export class CDPService extends EventEmitter {
       });
 
       if (page) {
+        // Inject session context first
+        await this.injectSessionContext(page, this.launchConfig?.sessionContext);
+
         if (this.launchConfig?.customHeaders) {
           await page.setExtraHTTPHeaders({
             ...env.DEFAULT_HEADERS,
@@ -143,10 +146,6 @@ export class CDPService extends EventEmitter {
           });
         } else if (env.DEFAULT_HEADERS) {
           await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
-        }
-
-        if (this.launchConfig?.cookies?.length) {
-          await page.setCookie(...this.launchConfig.cookies);
         }
 
         const fingerprintInjector = new FingerprintInjector();
@@ -425,6 +424,13 @@ export class CDPService extends EventEmitter {
       locales: ["en-US", "en"],
     });
 
+    if (this.launchConfig.sessionContext?.localStorage) {
+      this.localStorageData = this.launchConfig.sessionContext.localStorage.reduce((acc, item) => {
+        acc[item.key] = item.value;
+        return acc;
+      }, {} as Record<string, string>);
+    }
+
     this.fingerprintData = await fingerprintGen.getFingerprint();
 
     const timezone = "America/New_York"; // TODO: determine timezone from session config or proxy
@@ -432,7 +438,7 @@ export class CDPService extends EventEmitter {
     const launchArgs = [
       "--remote-allow-origins=*",
       "--disable-dev-shm-usage",
-      "--disable-gpu",
+      "--disable-gpu", 
       this.launchConfig.dimensions ? "" : "--start-maximized",
       `--remote-debugging-address=${env.HOST}`,
       "--remote-debugging-port=9222",
@@ -595,6 +601,51 @@ export class CDPService extends EventEmitter {
     } else {
       this.logger.info("Shutting down browser.");
       await this.shutdown();
+    }
+  }
+
+  private async injectSessionContext(page: Page, context?: BrowserLauncherOptions["sessionContext"]) {
+    if (!context) return;
+
+    // Set cookies if provided
+    if (context.cookies?.length) {
+      await page.setCookie(
+        ...context.cookies.map((cookie) => ({
+          ...cookie,
+          partitionKey: cookie.partitionKey ? String(cookie.partitionKey) : undefined,
+        })),
+      );
+    }
+
+    // Set localStorage if provided - we'll inject it when navigation occurs
+    if (context.localStorage) {
+      // Listen for framenavigated events to set localStorage for the correct domain
+      page.on("framenavigated", async (frame) => {
+        // Only handle main frame navigation
+        if (!frame.parentFrame()) {
+          const domain = new URL(frame.url()).hostname;
+          const storageItems = context.localStorage?.[domain];
+
+          if (storageItems?.length) {
+            await frame.evaluate((items) => {
+              items.forEach(({ key, value }) => {
+                window.localStorage.setItem(key, value);
+              });
+            }, storageItems);
+          }
+        }
+      });
+
+      // Also inject for the initial page if we're already on a domain
+      const domain = new URL(page.url()).hostname;
+      const initialStorageItems = context.localStorage[domain];
+      if (initialStorageItems?.length) {
+        await page.evaluate((items) => {
+          items.forEach(({ key, value }) => {
+            window.localStorage.setItem(key, value);
+          });
+        }, initialStorageItems);
+      }
     }
   }
 }

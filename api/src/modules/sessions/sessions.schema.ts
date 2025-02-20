@@ -5,7 +5,40 @@ const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
   proxyUrl: z.string().optional().describe("Proxy URL to use for the session"),
   userAgent: z.string().optional().describe("User agent string to use for the session"),
-  sessionContext: z.record(z.any()).optional().describe("Session context to use for the session"),
+  sessionContext: z
+    .object({
+      cookies: z
+        .array(
+          z.object({
+            name: z.string().describe("Name of the cookie"),
+            value: z.string().describe("Value of the cookie"),
+            domain: z.string().describe("Domain the cookie belongs to"),
+            path: z.string().default("/").describe("Path the cookie is valid for"),
+            expires: z.number().optional().describe("Unix timestamp when the cookie expires"),
+            httpOnly: z.boolean().optional().describe("Whether the cookie is HTTP only"),
+            secure: z.boolean().optional().describe("Whether the cookie requires HTTPS"),
+            sameSite: z.enum(["Strict", "Lax", "None"]).optional().describe("SameSite attribute of the cookie"),
+          }),
+        )
+        .optional()
+        .describe("Cookies to initialize in the session"),
+      localStorage: z
+        .record(
+          z.string(),
+          z.array(
+            z.object({
+              key: z.string().describe("Key of the localStorage item"),
+              value: z.string().describe("Value of the localStorage item"),
+            }),
+          ),
+        )
+        .optional()
+        .describe("Domain-specific localStorage items to initialize in the session"),
+    })
+    .optional()
+    .describe(
+      "Session context data to be used in the created session. Sessions will start with an empty context by default.",
+    ),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
   blockAds: z.boolean().optional().describe("Flag to indicate if ads should be blocked in the session"),
   // Specific to hosted steel
