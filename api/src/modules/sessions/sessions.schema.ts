@@ -23,15 +23,7 @@ const CreateSession = z.object({
         .optional()
         .describe("Cookies to initialize in the session"),
       localStorage: z
-        .record(
-          z.string(),
-          z.array(
-            z.object({
-              key: z.string().describe("Key of the localStorage item"),
-              value: z.string().describe("Value of the localStorage item"),
-            }),
-          ),
-        )
+        .record(z.string(), z.record(z.string(), z.any()))
         .optional()
         .describe("Domain-specific localStorage items to initialize in the session"),
     })

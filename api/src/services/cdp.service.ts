@@ -425,10 +425,7 @@ export class CDPService extends EventEmitter {
     });
 
     if (this.launchConfig.sessionContext?.localStorage) {
-      this.localStorageData = this.launchConfig.sessionContext.localStorage.reduce((acc, item) => {
-        acc[item.key] = item.value;
-        return acc;
-      }, {} as Record<string, string>);
+      this.localStorageData = this.launchConfig.sessionContext.localStorage;
     }
 
     this.fingerprintData = await fingerprintGen.getFingerprint();
@@ -624,11 +621,11 @@ export class CDPService extends EventEmitter {
         // Only handle main frame navigation
         if (!frame.parentFrame()) {
           const domain = new URL(frame.url()).hostname;
-          const storageItems = context.localStorage?.[domain];
+          const storageItems = Object.entries(context.localStorage?.[domain] || {});
 
           if (storageItems?.length) {
             await frame.evaluate((items) => {
-              items.forEach(({ key, value }) => {
+              items.forEach(([key, value]) => {
                 window.localStorage.setItem(key, value);
               });
             }, storageItems);

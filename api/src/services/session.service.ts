@@ -63,7 +63,7 @@ export class SessionService {
     userAgent?: string;
     sessionContext?: {
       cookies?: Protocol.Network.CookieParam[];
-      localStorage?: Record<string, Array<{ key: string; value: string }>>;
+      localStorage?: Record<string, Record<string, any>>;
     };
     isSelenium?: boolean;
     logSinkUrl?: string;

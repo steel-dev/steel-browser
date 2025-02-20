@@ -7,7 +7,7 @@ export interface BrowserLauncherOptions {
   stealth?: boolean;
   sessionContext?: {
     cookies?: Protocol.Network.CookieParam[];
-    localStorage?: Record<string, Array<{ key: string; value: string }>>;
+    localStorage?: Record<string, Record<string, any>>;
   };
   userAgent?: string;
   extensions?: string[];
