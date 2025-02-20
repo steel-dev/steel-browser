@@ -15,6 +15,7 @@ export interface BrowserLauncherOptions {
     width: number;
     height: number;
   } | null;
+  fingerprint?: boolean;
 }
 
 export interface BrowserServerOptions {
