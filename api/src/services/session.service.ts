@@ -24,7 +24,7 @@ const sessionStats = {
 };
 
 const defaultSession = {
-  status: "pending" as SessionDetails["status"],
+  status: "idle" as SessionDetails["status"],
   websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
   debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
   debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
@@ -84,8 +84,8 @@ export class SessionService {
       isSelenium,
       blockAds,
     } = options;
-
-    this.resetSessionInfo({
+    
+    await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
       proxy: proxyUrl,
@@ -159,20 +159,21 @@ export class SessionService {
       await this.cdpService.endSession();
     }
 
-    await this.activeSession.proxyServer?.close(true);
-    this.activeSession.proxyServer = undefined;
     const releasedSession = this.activeSession;
-
-    this.resetSessionInfo({
+    
+    await this.resetSessionInfo({
       id: uuidv4(),
-      status: "pending",
+      status: "idle",
     });
-
+    
     return releasedSession;
   }
 
-  private resetSessionInfo(overrides?: Partial<SessionDetails>): SessionDetails {
+  private async resetSessionInfo(overrides?: Partial<SessionDetails>): Promise<SessionDetails> {
     this.activeSession.complete();
+
+    await this.activeSession.proxyServer?.close(true);
+    this.activeSession.proxyServer = undefined;
 
     const { promise, resolve } = Promise.withResolvers<void>();
     this.activeSession = {
