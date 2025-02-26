@@ -23,9 +23,6 @@ export const handleLaunchBrowserSession = async (
       blockAds,
     } = request.body;
 
-    // If there's an active session, close it first
-    await server.sessionService.endSession();
-
     return await server.sessionService.startSession({
       sessionId,
       proxyUrl,

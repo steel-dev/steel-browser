@@ -49,7 +49,7 @@ const CreateSession = z.object({
 const SessionDetails = z.object({
   id: z.string().uuid().describe("Unique identifier for the session"),
   createdAt: z.string().datetime().describe("Timestamp when the session started"),
-  status: z.enum(["pending", "live", "released", "failed"]).describe("Status of the session"),
+  status: z.enum(["idle", "live", "released", "failed"]).describe("Status of the session"),
   duration: z.number().int().describe("Duration of the session in milliseconds"),
   eventCount: z.number().int().describe("Number of events processed in the session"),
   dimensions: z
