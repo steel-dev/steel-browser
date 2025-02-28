@@ -38,3 +38,11 @@ export type BrowserEvent = {
   text: string;
   timestamp: Date;
 };
+
+export type Platform = "darwin" | "linux" | "win32";
+
+export interface BrowserPaths {
+  darwin: string[];
+  linux: string[];
+  win32: string[];
+}
