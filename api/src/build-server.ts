@@ -9,7 +9,7 @@ import customBodyParser from "./plugins/custom-body-parser";
 import requestLogger from "./plugins/request-logger";
 import openAPIPlugin from "./plugins/schemas";
 import seleniumPlugin from "./plugins/selenium";
-import { actionsRoutes, cdpRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
+import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
 import path from "node:path";
 
 export default async function buildFastifyServer(options?: FastifyServerOptions) {
@@ -37,6 +37,7 @@ export default async function buildFastifyServer(options?: FastifyServerOptions)
   server.register(sessionsRoutes, { prefix: "/v1" });
   server.register(cdpRoutes, { prefix: "/v1" });
   server.register(seleniumRoutes);
+  server.register(filesRoutes, { prefix: "/v1" });
 
   return server;
 }

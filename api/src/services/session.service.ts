@@ -153,6 +153,8 @@ export class SessionService {
     this.activeSession.complete();
     this.activeSession.status = "released";
 
+    const releasedSessionId = this.activeSession.id;
+
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
     } else {
@@ -161,12 +163,24 @@ export class SessionService {
 
     const releasedSession = this.activeSession;
 
+    await this.cleanupSessionFiles(releasedSessionId);
+
     await this.resetSessionInfo({
       id: uuidv4(),
       status: "idle",
     });
 
     return releasedSession;
+  }
+
+  private async cleanupSessionFiles(sessionId: string): Promise<void> {
+    try {
+      const { fileStorage } = await import("../utils/file-storage");
+      await fileStorage.deleteSessionDirectory(sessionId);
+      this.logger.info(`Cleaned up files for session: ${sessionId}`);
+    } catch (error) {
+      this.logger.error(`Error cleaning up session files: ${error}`);
+    }
   }
 
   private async resetSessionInfo(overrides?: Partial<SessionDetails>): Promise<SessionDetails> {
@@ -188,5 +202,102 @@ export class SessionService {
     };
 
     return this.activeSession;
+  }
+
+  public async uploadFileToSession(
+    content: string,
+    options: { fileName?: string; mimeType?: string } = {},
+  ): Promise<{ id: string; fileSize: number }> {
+    const { fileStorage } = await import("../utils/file-storage");
+
+    try {
+      const { id, fileSize } = await fileStorage.saveFile(this.activeSession.id, content, {
+        fileName: options.fileName,
+        mimeType: options.mimeType,
+      });
+
+      this.logger.info(`File uploaded: ${id} (${fileSize} bytes)`);
+
+      return {
+        id,
+        fileSize,
+      };
+    } catch (error) {
+      this.logger.error(`Error uploading file: ${error}`);
+      throw error;
+    }
+  }
+
+  public async downloadFileFromSession(fileId: string): Promise<{
+    content: string;
+    fileSize: number;
+  }> {
+    const { fileStorage } = await import("../utils/file-storage");
+
+    try {
+      const { content, fileSize } = await fileStorage.getFile(this.activeSession.id, fileId);
+
+      this.logger.info(`File downloaded: ${fileId} (${fileSize} bytes)`);
+
+      return {
+        content,
+        fileSize,
+      };
+    } catch (error) {
+      this.logger.error(`Error downloading file: ${error}`);
+      throw error;
+    }
+  }
+
+  public async listSessionFiles(): Promise<{
+    items: Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      fileSize: number;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+    count: number;
+  }> {
+    const { fileStorage } = await import("../utils/file-storage");
+
+    try {
+      console.log(`Listing files in session: ${this.activeSession.id}`);
+      const { items, count } = await fileStorage.listFiles(this.activeSession.id);
+      return { items, count };
+    } catch (error) {
+      this.logger.error(`Error listing files: ${error}`);
+      throw error;
+    }
+  }
+
+  public async deleteSessionFile(fileId: string): Promise<{ success: boolean }> {
+    const { fileStorage } = await import("../utils/file-storage");
+
+    try {
+      const { success } = await fileStorage.deleteFile(this.activeSession.id, fileId);
+
+      this.logger.info(`File deleted: ${fileId}`);
+
+      return { success };
+    } catch (error) {
+      this.logger.error(`Error deleting file: ${error}`);
+      throw error;
+    }
+  }
+  public async deleteAllSessionFiles(): Promise<{ success: boolean }> {
+    const { fileStorage } = await import("../utils/file-storage");
+
+    try {
+      const { success } = await fileStorage.deleteSessionDirectory(this.activeSession.id);
+
+      this.logger.info(`All files deleted`);
+
+      return { success };
+    } catch (error) {
+      this.logger.error(`Error deleting all files: ${error}`);
+      throw error;
+    }
   }
 }
