@@ -8,31 +8,31 @@ const FileUploadRequest = z.object({
 });
 
 const FileUploadResponse = z.object({
-  id: z.string(),
-  success: z.boolean(),
-  fileSize: z.number(),
+  id: z.string().describe("Unique identifier for the file"),
+  success: z.boolean().describe("Indicates if the file upload was successful"),
+  fileSize: z.number().describe("Size of the uploaded file in bytes"),
 });
 
 const FileDownloadResponse = z.object({
-  content: z.string(),
-  fileSize: z.number(),
+  content: z.string().describe("Base64-encoded file content"),
+  fileSize: z.number().describe("Size of the downloaded file in bytes"),
 });
 
 const FileListResponse = z.object({
-  items: z.array(
+  files: z.array(
     z.object({
-      id: z.string(),
-      fileName: z.string(),
-      fileSize: z.number(),
-      mimeType: z.string().optional(),
-      createdAt: z.string().datetime(),
+      id: z.string().describe("Unique identifier for the file"),
+      fileName: z.string().describe("Name of the file"),
+      fileSize: z.number().describe("Size of the file in bytes"),
+      mimeType: z.string().optional().describe("MIME type of the file"),
+      createdAt: z.string().datetime().describe("Timestamp when the file was created"),
     }),
   ),
-  count: z.number(),
+  count: z.number().describe("Total number of files"),
 });
 
 const FileDeleteResponse = z.object({
-  success: z.boolean(),
+  success: z.boolean().describe("Indicates if the file deletion was successful"),
 });
 
 export type FileUploadRequestBody = z.infer<typeof FileUploadRequest>;

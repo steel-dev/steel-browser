@@ -50,7 +50,7 @@ export const handleFileList = async (server: FastifyInstance, _request: FastifyR
     const { items, count } = await server.sessionService.listSessionFiles();
 
     return reply.send({
-      items: items.map((item) => ({
+      files: items.map((item) => ({
         id: item.id,
         fileName: item.fileName,
         fileSize: item.fileSize,
