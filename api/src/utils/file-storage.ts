@@ -4,7 +4,7 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 
-interface FileMetadata {
+interface File {
   id: string;
   fileName: string;
   mimeType: string;
@@ -15,12 +15,12 @@ interface FileMetadata {
 
 export class FileStorageService {
   private baseDownloadPath: string;
-  private fileMetadataMap: Map<string, Map<string, FileMetadata>> = new Map();
+  private fileMap: Map<string, Map<string, File>> = new Map();
 
   constructor() {
     this.baseDownloadPath = env.DOWNLOADS_PATH || path.join(process.cwd(), "downloads");
     fs.mkdirSync(this.baseDownloadPath, { recursive: true });
-    this.fileMetadataMap = new Map();
+    this.fileMap = new Map();
   }
 
   private async ensureDirectoryExists(dirPath: string): Promise<void> {
@@ -73,11 +73,11 @@ export class FileStorageService {
     const fileName = options.fileName || fileId;
     const mimeType = options.mimeType || mime.lookup(fileName) || "application/octet-stream";
 
-    if (!this.fileMetadataMap.has(sessionId)) {
-      this.fileMetadataMap.set(sessionId, new Map());
+    if (!this.fileMap.has(sessionId)) {
+      this.fileMap.set(sessionId, new Map());
     }
 
-    const metadata: FileMetadata = {
+    const metadata: File = {
       id: fileId,
       fileName,
       mimeType,
@@ -86,7 +86,7 @@ export class FileStorageService {
       updatedAt: new Date(),
     };
 
-    this.fileMetadataMap.get(sessionId)!.set(fileId, metadata);
+    this.fileMap.get(sessionId)!.set(fileId, metadata);
 
     return {
       id: fileId,
@@ -111,7 +111,7 @@ export class FileStorageService {
     if (fileStats.isDirectory()) {
       throw new Error(`Path is a directory, not a file: ${filePath}`);
     }
-    const { fileName, mimeType, fileSize } = this.fileMetadataMap.get(sessionId)!.get(fileId)!;
+    const { fileName, mimeType, fileSize } = this.fileMap.get(sessionId)!.get(fileId)!;
 
     return {
       buffer: await fs.promises.readFile(filePath),
@@ -122,10 +122,10 @@ export class FileStorageService {
   }
 
   public async listFiles(sessionId: string): Promise<{
-    items: Array<FileMetadata>;
+    items: Array<File>;
     count: number;
   }> {
-    const sessionItems = this.fileMetadataMap.get(sessionId)!;
+    const sessionItems = this.fileMap.get(sessionId)!;
 
     if (!sessionItems) {
       return { items: [], count: 0 };
@@ -146,7 +146,7 @@ export class FileStorageService {
 
     await fs.promises.unlink(filePath);
 
-    this.fileMetadataMap.get(sessionId)!.delete(fileId);
+    this.fileMap.get(sessionId)!.delete(fileId);
 
     return { success: true };
   }
@@ -159,7 +159,7 @@ export class FileStorageService {
     const sessionPath = this.getSessionPath(sessionId);
     if (await this.exists(sessionPath)) {
       await fs.promises.rm(sessionPath, { recursive: true, force: true });
-      this.fileMetadataMap.delete(sessionId);
+      this.fileMap.delete(sessionId);
       return { success: true };
     }
     return { success: false };
