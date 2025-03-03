@@ -120,10 +120,12 @@ export const handleFileDownload = async (
       return reply.code(400).send({ success: false, message: "fileId is required" });
     }
 
-    const { buffer, fileSize, mimeType } = await server.sessionService.downloadFileFromSession(fileId);
+    const { buffer, fileName, fileSize, mimeType } = await server.sessionService.downloadFileFromSession(fileId);
 
-    reply.header("Content-Type", mimeType);
-    reply.header("Content-Length", fileSize);
+    reply
+      .header("Content-Type", mimeType)
+      .header("Content-Length", fileSize)
+      .header("Content-Disposition", `attachment; filename="${fileName}"`);
 
     return reply.send(buffer);
   } catch (e: unknown) {

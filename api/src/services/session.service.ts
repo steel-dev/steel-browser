@@ -230,18 +230,20 @@ export class SessionService {
 
   public async downloadFileFromSession(fileId: string): Promise<{
     buffer: Buffer;
+    fileName: string;
     fileSize: number;
     mimeType: string;
   }> {
     const { fileStorage } = await import("../utils/file-storage");
 
     try {
-      const { buffer, fileSize, mimeType } = await fileStorage.getFile(this.activeSession.id, fileId);
+      const { buffer, fileName, fileSize, mimeType } = await fileStorage.getFile(this.activeSession.id, fileId);
 
       this.logger.info(`File downloaded: ${fileId} (${fileSize} bytes)`);
 
       return {
         buffer,
+        fileName,
         fileSize,
         mimeType,
       };

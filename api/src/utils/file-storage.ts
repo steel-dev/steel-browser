@@ -97,7 +97,7 @@ export class FileStorageService {
   public async getFile(
     sessionId: string,
     fileId: string,
-  ): Promise<{ buffer: Buffer; fileSize: number; mimeType: string }> {
+  ): Promise<{ buffer: Buffer; fileName: string; fileSize: number; mimeType: string }> {
     fileId = this.sanitizeFileId(fileId);
     const targetDir = this.getSessionPath(sessionId);
     const filePath = path.join(targetDir, fileId);
@@ -111,11 +111,13 @@ export class FileStorageService {
     if (fileStats.isDirectory()) {
       throw new Error(`Path is a directory, not a file: ${filePath}`);
     }
+    const { fileName, mimeType, fileSize } = this.fileMetadataMap.get(sessionId)!.get(fileId)!;
 
     return {
       buffer: await fs.promises.readFile(filePath),
-      fileSize: fileStats.size,
-      mimeType: this.fileMetadataMap.get(sessionId)!.get(fileId)!.mimeType,
+      fileName,
+      fileSize,
+      mimeType,
     };
   }
 
