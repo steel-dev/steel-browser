@@ -55,7 +55,7 @@ export const handleFileList = async (server: FastifyInstance, _request: FastifyR
         fileName: item.fileName,
         fileSize: item.fileSize,
         mimeType: item.mimeType,
-        createdAt: item.createdAt.toString(),
+        createdAt: item.createdAt.toISOString(),
       })),
       count,
     });
