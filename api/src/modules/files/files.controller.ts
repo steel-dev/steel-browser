@@ -24,23 +24,23 @@ export const handleFileUpload = async (
       });
     }
 
-    let fileBuffer: Buffer | null = null;
     let fileName = "";
     let mimeType = "";
     let fileProvided = false;
     let metadata: Record<string, any> = {};
+    let fileStream: Readable | null = null;
 
     for await (const part of request.parts()) {
       if (part.type === "file") {
         const file = part as MultipartFile;
         fileName = file.filename;
         mimeType = file.mimetype;
-        fileBuffer = await streamToBuffer(file.file);
+        fileStream = file.file;
         fileProvided = true;
       } else if (part.fieldname === "fileUrl" && part.value && !fileProvided) {
         const fileUrl = part.value as string;
-        const { buffer, mimeType: fetchedMimeType, fileName: fetchedFileName } = await fetchFileFromUrl(fileUrl);
-        fileBuffer = buffer;
+        const { stream, mimeType: fetchedMimeType, fileName: fetchedFileName } = await createStreamFromUrl(fileUrl);
+        fileStream = stream;
         mimeType = fetchedMimeType;
         fileName = fetchedFileName || "downloaded-file";
       } else if (part.fieldname === "name" && part.value) {
@@ -57,14 +57,14 @@ export const handleFileUpload = async (
       }
     }
 
-    if (!fileBuffer) {
+    if (!fileStream) {
       return reply.code(400).send({
         success: false,
         message: "Either file or fileUrl must be provided",
       });
     }
 
-    const result = await server.sessionService.uploadFileToSession(fileBuffer, {
+    const result = await server.sessionService.uploadFileStreamToSession(fileStream, {
       fileName,
       mimeType,
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
@@ -89,32 +89,32 @@ async function streamToBuffer(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function fetchFileFromUrl(url: string): Promise<{ buffer: Buffer; mimeType: string; fileName?: string }> {
+async function createStreamFromUrl(url: string): Promise<{ stream: Readable; mimeType: string; fileName: string }> {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith("https") ? https : http;
+
     protocol
       .get(url, (response) => {
         if (response.statusCode !== 200) {
           return reject(new Error(`Failed to fetch file: ${response.statusCode}`));
         }
 
-        const mimeType = response.headers["content-type"] || "application/octet-stream";
-        let fileName: string | undefined;
+        const contentType = response.headers["content-type"] || "";
+        const disposition = response.headers["content-disposition"] || "";
+        let fileName = "";
 
-        if (response.headers["content-disposition"]) {
-          const match = /filename="?([^"]+)"?/.exec(response.headers["content-disposition"]!);
-          fileName = match?.[1];
+        const fileNameMatch = disposition.match(/filename="(.+)"/i);
+        if (fileNameMatch && fileNameMatch[1]) {
+          fileName = fileNameMatch[1];
+        } else {
+          fileName = url.split("/").pop() || "";
         }
 
-        if (!fileName) {
-          const urlPath = new URL(url).pathname;
-          fileName = urlPath.substring(urlPath.lastIndexOf("/") + 1) || "downloaded-file";
-        }
-
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-        response.on("end", () => resolve({ buffer: Buffer.concat(chunks), mimeType, fileName }));
-        response.on("error", reject);
+        resolve({
+          stream: response,
+          mimeType: contentType,
+          fileName: fileName,
+        });
       })
       .on("error", reject);
   });

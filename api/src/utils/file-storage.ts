@@ -3,6 +3,7 @@ import mime from "mime-types";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
+import { Readable } from "stream";
 
 interface File {
   id: string;
@@ -52,7 +53,7 @@ export class FileStorageService {
 
   public async saveFile(
     sessionId: string,
-    buffer: Buffer,
+    stream: Readable,
     options: { fileName?: string; mimeType?: string; metadata?: Record<string, any> } = {},
   ): Promise<{ id: string; fileSize: number }> {
     const targetDir = this.getSessionPath(sessionId);
@@ -68,7 +69,7 @@ export class FileStorageService {
       exists = await this.exists(fullFilePath);
     } while (exists);
 
-    await fs.promises.writeFile(fullFilePath, buffer);
+    await fs.promises.writeFile(fullFilePath, stream);
     const fileStats = await fs.promises.stat(fullFilePath);
 
     const fileName = options.fileName || fileId;

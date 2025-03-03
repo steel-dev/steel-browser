@@ -1,12 +1,13 @@
 import { FastifyBaseLogger } from "fastify";
-import { CDPService } from "./cdp.service";
-import { SeleniumService } from "./selenium.service";
-import { SessionDetails } from "../modules/sessions/sessions.schema";
+import { CookieData } from "puppeteer-core";
+import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
+import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
-import { CookieData } from "puppeteer-core";
+import { CDPService } from "./cdp.service";
+import { SeleniumService } from "./selenium.service";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -204,14 +205,14 @@ export class SessionService {
     return this.activeSession;
   }
 
-  public async uploadFileToSession(
-    content: Buffer,
+  public async uploadFileStreamToSession(
+    stream: Readable,
     options: { fileName?: string; mimeType?: string; metadata?: Record<string, any> } = {},
   ): Promise<{ id: string; fileSize: number }> {
     const { fileStorage } = await import("../utils/file-storage");
 
     try {
-      const { id, fileSize } = await fileStorage.saveFile(this.activeSession.id, content, {
+      const { id, fileSize } = await fileStorage.saveFile(this.activeSession.id, stream, {
         fileName: options.fileName,
         mimeType: options.mimeType,
         metadata: options.metadata,
