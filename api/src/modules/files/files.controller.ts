@@ -1,12 +1,60 @@
+import { MultipartFile } from "@fastify/multipart";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import http from "http";
+import https from "https";
+import { Readable } from "stream";
 import { getErrors } from "../../utils/errors";
-import { FileUploadRequest } from "./files.schema";
 
-export const handleFileUpload = async (server: FastifyInstance, request: FileUploadRequest, reply: FastifyReply) => {
+export const handleFileUpload = async (
+  server: FastifyInstance,
+  request: FastifyRequest<{ Params: { sessionId: string } }>,
+  reply: FastifyReply,
+) => {
   try {
-    const { content, fileName, mimeType } = request.body;
+    const { sessionId } = request.params;
 
-    const result = await server.sessionService.uploadFileToSession(content, {
+    if (!sessionId) {
+      return reply.code(400).send({ success: false, message: "sessionId is required" });
+    }
+
+    if (!request.isMultipart()) {
+      return reply.code(400).send({
+        success: false,
+        message: "Request must be multipart/form-data",
+      });
+    }
+
+    let fileBuffer: Buffer | null = null;
+    let fileName = "";
+    let mimeType = "";
+    let fileProvided = false;
+
+    for await (const part of request.parts()) {
+      if (part.type === "file") {
+        const file = part as MultipartFile;
+        fileName = file.filename;
+        mimeType = file.mimetype;
+        fileBuffer = await streamToBuffer(file.file);
+        fileProvided = true;
+      } else if (part.fieldname === "fileUrl" && part.value && !fileProvided) {
+        const fileUrl = part.value as string;
+        const { buffer, mimeType: fetchedMimeType, fileName: fetchedFileName } = await fetchFileFromUrl(fileUrl);
+        fileBuffer = buffer;
+        mimeType = fetchedMimeType;
+        fileName = fetchedFileName || "downloaded-file";
+      } else if (part.fieldname === "name" && part.value) {
+        fileName = part.value as string;
+      }
+    }
+
+    if (!fileBuffer) {
+      return reply.code(400).send({
+        success: false,
+        message: "Either file or fileUrl must be provided",
+      });
+    }
+
+    const result = await server.sessionService.uploadFileToSession(fileBuffer, {
       fileName,
       mimeType,
     });
@@ -21,6 +69,45 @@ export const handleFileUpload = async (server: FastifyInstance, request: FileUpl
   }
 };
 
+async function streamToBuffer(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function fetchFileFromUrl(url: string): Promise<{ buffer: Buffer; mimeType: string; fileName?: string }> {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith("https") ? https : http;
+    protocol
+      .get(url, (response) => {
+        if (response.statusCode !== 200) {
+          return reject(new Error(`Failed to fetch file: ${response.statusCode}`));
+        }
+
+        const mimeType = response.headers["content-type"] || "application/octet-stream";
+        let fileName: string | undefined;
+
+        if (response.headers["content-disposition"]) {
+          const match = /filename="?([^"]+)"?/.exec(response.headers["content-disposition"]!);
+          fileName = match?.[1];
+        }
+
+        if (!fileName) {
+          const urlPath = new URL(url).pathname;
+          fileName = urlPath.substring(urlPath.lastIndexOf("/") + 1) || "downloaded-file";
+        }
+
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        response.on("end", () => resolve({ buffer: Buffer.concat(chunks), mimeType, fileName }));
+        response.on("error", reject);
+      })
+      .on("error", reject);
+  });
+}
+
 export const handleFileDownload = async (
   server: FastifyInstance,
   request: FastifyRequest<{ Params: { fileId: string } }>,
@@ -33,12 +120,12 @@ export const handleFileDownload = async (
       return reply.code(400).send({ success: false, message: "fileId is required" });
     }
 
-    const result = await server.sessionService.downloadFileFromSession(fileId);
+    const { buffer, fileSize, mimeType } = await server.sessionService.downloadFileFromSession(fileId);
 
-    return reply.send({
-      success: true,
-      ...result,
-    });
+    reply.header("Content-Type", mimeType);
+    reply.header("Content-Length", fileSize);
+
+    return reply.send(buffer);
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });

@@ -1,4 +1,5 @@
 import fastifyCors from "@fastify/cors";
+import fastifyMultipart from "@fastify/multipart";
 import fastifySensible from "@fastify/sensible";
 import fastifyView from "@fastify/view";
 import fastify, { FastifyServerOptions } from "fastify";
@@ -12,12 +13,20 @@ import seleniumPlugin from "./plugins/selenium";
 import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
 import path from "node:path";
 
+const KB = 1024;
+const MB = 1024 * KB;
+
 export default async function buildFastifyServer(options?: FastifyServerOptions) {
   const server = fastify(options);
 
   // Plugins
   server.register(fastifySensible);
   server.register(fastifyCors, { origin: true });
+  server.register(fastifyMultipart, {
+    limits: {
+      fileSize: 100 * MB,
+    },
+  });
   server.register(fastifyView, {
     engine: {
       ejs: require("ejs"),

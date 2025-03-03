@@ -7,7 +7,6 @@ import {
   handleFileUpload,
   handleSessionFilesDelete,
 } from "./files.controller";
-import { FileUploadRequest } from "./files.schema";
 
 async function routes(server: FastifyInstance) {
   server.post(
@@ -17,13 +16,18 @@ async function routes(server: FastifyInstance) {
         operationId: "upload_file",
         description: "Upload a file to the session",
         tags: ["Files"],
-        body: $ref("FileUploadRequest"),
+        consumes: ["multipart/form-data"],
         response: {
           200: $ref("FileUploadResponse"),
         },
       },
     },
-    async (request: FileUploadRequest, reply) => handleFileUpload(server, request, reply),
+    async (
+      request: FastifyRequest<{
+        Params: { sessionId: string };
+      }>,
+      reply,
+    ) => handleFileUpload(server, request, reply),
   );
 
   server.get(
@@ -33,9 +37,6 @@ async function routes(server: FastifyInstance) {
         operationId: "download_file",
         description: "Download a file from the session",
         tags: ["Files"],
-        response: {
-          200: $ref("FileDownloadResponse"),
-        },
       },
     },
     async (request: FastifyRequest<{ Params: { fileId: string } }>, reply) =>

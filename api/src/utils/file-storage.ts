@@ -51,7 +51,7 @@ export class FileStorageService {
 
   public async saveFile(
     sessionId: string,
-    content: string,
+    buffer: Buffer,
     options: { fileName?: string; mimeType?: string } = {},
   ): Promise<{ id: string; fileSize: number }> {
     const targetDir = this.getSessionPath(sessionId);
@@ -67,8 +67,7 @@ export class FileStorageService {
       exists = await this.exists(fullFilePath);
     } while (exists);
 
-    const fileBuffer = Buffer.from(content, "base64");
-    await fs.promises.writeFile(fullFilePath, fileBuffer);
+    await fs.promises.writeFile(fullFilePath, buffer);
     const fileStats = await fs.promises.stat(fullFilePath);
 
     const fileName = options.fileName || fileId;
@@ -95,7 +94,10 @@ export class FileStorageService {
     };
   }
 
-  public async getFile(sessionId: string, fileId: string): Promise<{ content: string; fileSize: number }> {
+  public async getFile(
+    sessionId: string,
+    fileId: string,
+  ): Promise<{ buffer: Buffer; fileSize: number; mimeType: string }> {
     fileId = this.sanitizeFileId(fileId);
     const targetDir = this.getSessionPath(sessionId);
     const filePath = path.join(targetDir, fileId);
@@ -110,12 +112,10 @@ export class FileStorageService {
       throw new Error(`Path is a directory, not a file: ${filePath}`);
     }
 
-    const fileBuffer = await fs.promises.readFile(filePath);
-    const base64Content = fileBuffer.toString("base64");
-
     return {
-      content: base64Content,
+      buffer: await fs.promises.readFile(filePath),
       fileSize: fileStats.size,
+      mimeType: this.fileMetadataMap.get(sessionId)!.get(fileId)!.mimeType,
     };
   }
 

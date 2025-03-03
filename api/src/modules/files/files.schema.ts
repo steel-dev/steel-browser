@@ -1,21 +1,16 @@
-import { FastifyRequest } from "fastify";
 import { z } from "zod";
 
+// For schema generation
 const FileUploadRequest = z.object({
-  content: z.string().describe("Base64-encoded file content"),
-  fileName: z.string().optional().describe("Name of the file to be saved"),
-  mimeType: z.string().optional().describe("MIME type of the file"),
+  file: z.any().optional().describe("The file to upload (binary)"),
+  fileUrl: z.string().optional().describe("Public URL to download file from"),
+  name: z.string().optional().describe("Filename to use in session"),
 });
 
 const FileUploadResponse = z.object({
   id: z.string().describe("Unique identifier for the file"),
   success: z.boolean().describe("Indicates if the file upload was successful"),
   fileSize: z.number().describe("Size of the uploaded file in bytes"),
-});
-
-const FileDownloadResponse = z.object({
-  content: z.string().describe("Base64-encoded file content"),
-  fileSize: z.number().describe("Size of the downloaded file in bytes"),
 });
 
 const FileListResponse = z.object({
@@ -35,13 +30,9 @@ const FileDeleteResponse = z.object({
   success: z.boolean().describe("Indicates if the file deletion was successful"),
 });
 
-export type FileUploadRequestBody = z.infer<typeof FileUploadRequest>;
-export type FileUploadRequest = FastifyRequest<{ Body: FileUploadRequestBody }>;
-
 export const filesSchemas = {
   FileUploadRequest,
   FileUploadResponse,
-  FileDownloadResponse,
   FileListResponse,
   FileDeleteResponse,
 };

@@ -205,7 +205,7 @@ export class SessionService {
   }
 
   public async uploadFileToSession(
-    content: string,
+    content: Buffer,
     options: { fileName?: string; mimeType?: string } = {},
   ): Promise<{ id: string; fileSize: number }> {
     const { fileStorage } = await import("../utils/file-storage");
@@ -229,19 +229,21 @@ export class SessionService {
   }
 
   public async downloadFileFromSession(fileId: string): Promise<{
-    content: string;
+    buffer: Buffer;
     fileSize: number;
+    mimeType: string;
   }> {
     const { fileStorage } = await import("../utils/file-storage");
 
     try {
-      const { content, fileSize } = await fileStorage.getFile(this.activeSession.id, fileId);
+      const { buffer, fileSize, mimeType } = await fileStorage.getFile(this.activeSession.id, fileId);
 
       this.logger.info(`File downloaded: ${fileId} (${fileSize} bytes)`);
 
       return {
-        content,
+        buffer,
         fileSize,
+        mimeType,
       };
     } catch (error) {
       this.logger.error(`Error downloading file: ${error}`);
