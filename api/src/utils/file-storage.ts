@@ -11,6 +11,7 @@ interface File {
   fileSize: number;
   createdAt: Date;
   updatedAt: Date;
+  metadata?: Record<string, any>;
 }
 
 export class FileStorageService {
@@ -52,7 +53,7 @@ export class FileStorageService {
   public async saveFile(
     sessionId: string,
     buffer: Buffer,
-    options: { fileName?: string; mimeType?: string } = {},
+    options: { fileName?: string; mimeType?: string; metadata?: Record<string, any> } = {},
   ): Promise<{ id: string; fileSize: number }> {
     const targetDir = this.getSessionPath(sessionId);
     await this.ensureDirectoryExists(targetDir);
@@ -77,16 +78,17 @@ export class FileStorageService {
       this.fileMap.set(sessionId, new Map());
     }
 
-    const metadata: File = {
+    const file: File = {
       id: fileId,
       fileName,
       mimeType,
       fileSize: fileStats.size,
       createdAt: new Date(),
       updatedAt: new Date(),
+      ...(options.metadata && { metadata: options.metadata }),
     };
 
-    this.fileMap.get(sessionId)!.set(fileId, metadata);
+    this.fileMap.get(sessionId)!.set(fileId, file);
 
     return {
       id: fileId,
@@ -97,7 +99,7 @@ export class FileStorageService {
   public async getFile(
     sessionId: string,
     fileId: string,
-  ): Promise<{ buffer: Buffer; fileName: string; fileSize: number; mimeType: string }> {
+  ): Promise<{ buffer: Buffer; fileName: string; fileSize: number; mimeType: string; metadata?: Record<string, any> }> {
     fileId = this.sanitizeFileId(fileId);
     const targetDir = this.getSessionPath(sessionId);
     const filePath = path.join(targetDir, fileId);
@@ -111,13 +113,14 @@ export class FileStorageService {
     if (fileStats.isDirectory()) {
       throw new Error(`Path is a directory, not a file: ${filePath}`);
     }
-    const { fileName, mimeType, fileSize } = this.fileMap.get(sessionId)!.get(fileId)!;
+    const { fileName, mimeType, fileSize, metadata } = this.fileMap.get(sessionId)!.get(fileId)!;
 
     return {
       buffer: await fs.promises.readFile(filePath),
       fileName,
       fileSize,
       mimeType,
+      metadata,
     };
   }
 

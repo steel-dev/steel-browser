@@ -28,6 +28,7 @@ export const handleFileUpload = async (
     let fileName = "";
     let mimeType = "";
     let fileProvided = false;
+    let metadata: Record<string, any> = {};
 
     for await (const part of request.parts()) {
       if (part.type === "file") {
@@ -44,6 +45,15 @@ export const handleFileUpload = async (
         fileName = fetchedFileName || "downloaded-file";
       } else if (part.fieldname === "name" && part.value) {
         fileName = part.value as string;
+      } else if (part.fieldname === "metadata" && part.value) {
+        try {
+          metadata = JSON.parse(part.value as string);
+        } catch (e) {
+          return reply.code(400).send({
+            success: false,
+            message: "Invalid JSON format for metadata",
+          });
+        }
       }
     }
 
@@ -57,11 +67,13 @@ export const handleFileUpload = async (
     const result = await server.sessionService.uploadFileToSession(fileBuffer, {
       fileName,
       mimeType,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     });
 
     return reply.send({
       success: true,
       ...result,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
@@ -145,6 +157,7 @@ export const handleFileList = async (server: FastifyInstance, _request: FastifyR
         fileSize: item.fileSize,
         mimeType: item.mimeType,
         createdAt: item.createdAt.toISOString(),
+        metadata: item.metadata,
       })),
       count,
     });

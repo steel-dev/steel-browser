@@ -206,7 +206,7 @@ export class SessionService {
 
   public async uploadFileToSession(
     content: Buffer,
-    options: { fileName?: string; mimeType?: string } = {},
+    options: { fileName?: string; mimeType?: string; metadata?: Record<string, any> } = {},
   ): Promise<{ id: string; fileSize: number }> {
     const { fileStorage } = await import("../utils/file-storage");
 
@@ -214,6 +214,7 @@ export class SessionService {
       const { id, fileSize } = await fileStorage.saveFile(this.activeSession.id, content, {
         fileName: options.fileName,
         mimeType: options.mimeType,
+        metadata: options.metadata,
       });
 
       this.logger.info(`File uploaded: ${id} (${fileSize} bytes)`);
@@ -233,11 +234,15 @@ export class SessionService {
     fileName: string;
     fileSize: number;
     mimeType: string;
+    metadata?: Record<string, any>;
   }> {
     const { fileStorage } = await import("../utils/file-storage");
 
     try {
-      const { buffer, fileName, fileSize, mimeType } = await fileStorage.getFile(this.activeSession.id, fileId);
+      const { buffer, fileName, fileSize, mimeType, metadata } = await fileStorage.getFile(
+        this.activeSession.id,
+        fileId,
+      );
 
       this.logger.info(`File downloaded: ${fileId} (${fileSize} bytes)`);
 
@@ -246,6 +251,7 @@ export class SessionService {
         fileName,
         fileSize,
         mimeType,
+        metadata,
       };
     } catch (error) {
       this.logger.error(`Error downloading file: ${error}`);
@@ -261,6 +267,7 @@ export class SessionService {
       fileSize: number;
       createdAt: Date;
       updatedAt: Date;
+      metadata?: Record<string, any>;
     }>;
     count: number;
   }> {
@@ -269,6 +276,7 @@ export class SessionService {
     try {
       console.log(`Listing files in session: ${this.activeSession.id}`);
       const { items, count } = await fileStorage.listFiles(this.activeSession.id);
+      console.log(items);
       return { items, count };
     } catch (error) {
       this.logger.error(`Error listing files: ${error}`);
