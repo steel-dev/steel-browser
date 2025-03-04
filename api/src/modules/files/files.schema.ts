@@ -9,7 +9,7 @@ const FileUploadRequest = z.object({
 });
 
 const FileDetails = z.object({
-  id: z.string().describe("Unique identifier for the file"),
+  id: z.string().uuid().describe("Unique identifier for the file"),
   name: z.string().describe("Name of the file"),
   size: z.number().describe("Size of the file in bytes"),
   contentType: z.string().describe("MIME type of the file"),
