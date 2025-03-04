@@ -1,12 +1,20 @@
+import { Protocol } from "devtools-protocol";
 import { FastifyBaseLogger } from "fastify";
+<<<<<<< HEAD
 import { CookieData } from "puppeteer-core";
 import { Readable } from "stream";
+=======
+>>>>>>> 552bb73 (feat: follow more conventions)
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp.service";
+<<<<<<< HEAD
+=======
+import { FileService } from "./file.service";
+>>>>>>> 552bb73 (feat: follow more conventions)
 import { SeleniumService } from "./selenium.service";
 
 type Session = SessionDetails & {
@@ -41,11 +49,18 @@ export class SessionService {
   private logger: FastifyBaseLogger;
   private cdpService: CDPService;
   private seleniumService: SeleniumService;
+  private fileService: FileService;
   public activeSession: Session;
 
-  constructor(config: { cdpService: CDPService; seleniumService: SeleniumService; logger: FastifyBaseLogger }) {
+  constructor(config: {
+    cdpService: CDPService;
+    seleniumService: SeleniumService;
+    fileService: FileService;
+    logger: FastifyBaseLogger;
+  }) {
     this.cdpService = config.cdpService;
     this.seleniumService = config.seleniumService;
+    this.fileService = config.fileService;
     this.logger = config.logger;
     this.activeSession = {
       id: uuidv4(),
@@ -154,8 +169,6 @@ export class SessionService {
     this.activeSession.complete();
     this.activeSession.status = "released";
 
-    const releasedSessionId = this.activeSession.id;
-
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
     } else {
@@ -164,7 +177,7 @@ export class SessionService {
 
     const releasedSession = this.activeSession;
 
-    await this.cleanupSessionFiles(releasedSessionId);
+    await this.fileService.cleanupFiles(this.activeSession.id);
 
     await this.resetSessionInfo({
       id: uuidv4(),
@@ -172,16 +185,6 @@ export class SessionService {
     });
 
     return releasedSession;
-  }
-
-  private async cleanupSessionFiles(sessionId: string): Promise<void> {
-    try {
-      const { fileStorage } = await import("../utils/file-storage");
-      await fileStorage.deleteSessionDirectory(sessionId);
-      this.logger.info(`Cleaned up files for session: ${sessionId}`);
-    } catch (error) {
-      this.logger.error(`Error cleaning up session files: ${error}`);
-    }
   }
 
   private async resetSessionInfo(overrides?: Partial<SessionDetails>): Promise<SessionDetails> {
@@ -205,112 +208,133 @@ export class SessionService {
     return this.activeSession;
   }
 
-  public async uploadFileStreamToSession(
-    stream: Readable,
-    options: { fileName?: string; mimeType?: string; metadata?: Record<string, any> } = {},
-  ): Promise<{ id: string; fileSize: number }> {
-    const { fileStorage } = await import("../utils/file-storage");
+  // public async uploadFileToSession(
+  //   sessionId: string,
+  //   stream: Readable,
+  //   options: { name?: string; contentType?: string; metadata?: Record<string, any> } = {},
+  // ): Promise<FileDetails> {
+  //   const { fileStorage } = await import("../utils/file-storage");
 
-    try {
-      const { id, fileSize } = await fileStorage.saveFile(this.activeSession.id, stream, {
-        fileName: options.fileName,
-        mimeType: options.mimeType,
-        metadata: options.metadata,
-      });
+  //   try {
+  //     const file = await fileStorage.saveFile(sessionId, stream, {
+  //       name: options.name,
+  //       contentType: options.contentType,
+  //       metadata: options.metadata,
+  //     });
 
-      this.logger.info(`File uploaded: ${id} (${fileSize} bytes)`);
+  //     this.logger.info(`File uploaded: ${file.id} (${file.size} bytes)`);
 
-      return {
-        id,
-        fileSize,
-      };
-    } catch (error) {
-      this.logger.error(`Error uploading file: ${error}`);
-      throw error;
-    }
-  }
+  //     return {
+  //       id: file.id,
+  //       name: file.name,
+  //       size: file.size,
+  //       createdAt: file.createdAt.toISOString(),
+  //       updatedAt: file.updatedAt.toISOString(),
+  //       checksum: file.checksum,
+  //       metadata: file.metadata,
+  //     };
+  //   } catch (error) {
+  //     this.logger.error(`Error uploading file: ${error}`);
+  //     throw error;
+  //   }
+  // }
 
-  public async downloadFileFromSession(fileId: string): Promise<{
-    buffer: Buffer;
-    fileName: string;
-    fileSize: number;
-    mimeType: string;
-    metadata?: Record<string, any>;
-  }> {
-    const { fileStorage } = await import("../utils/file-storage");
+  // public async getFileDetails(sessionId: string, fileId: string): Promise<FileDetails> {
+  //   const { fileStorage } = await import("../utils/file-storage");
 
-    try {
-      const { buffer, fileName, fileSize, mimeType, metadata } = await fileStorage.getFile(
-        this.activeSession.id,
-        fileId,
-      );
+  //   try {
+  //     const file = await fileStorage.getFile(sessionId, fileId);
 
-      this.logger.info(`File downloaded: ${fileId} (${fileSize} bytes)`);
+  //     return {
+  //       id: file.id,
+  //       name: file.name,
+  //       size: file.size,
+  //       createdAt: file.createdAt.toISOString(),
+  //       updatedAt: file.updatedAt.toISOString(),
+  //       checksum: file.checksum,
+  //       metadata: file.metadata,
+  //     };
+  //   } catch (error) {
+  //     this.logger.error(`Error getting file details: ${error}`);
+  //     throw error;
+  //   }
+  // }
 
-      return {
-        buffer,
-        fileName,
-        fileSize,
-        mimeType,
-        metadata,
-      };
-    } catch (error) {
-      this.logger.error(`Error downloading file: ${error}`);
-      throw error;
-    }
-  }
+  // public async downloadFileFromSession(
+  //   sessionId: string,
+  //   fileId: string,
+  // ): Promise<{ stream: Readable; name: string; size: number; contentType: string }> {
+  //   const { fileStorage } = await import("../utils/file-storage");
 
-  public async listSessionFiles(): Promise<{
-    items: Array<{
-      id: string;
-      fileName: string;
-      mimeType: string;
-      fileSize: number;
-      createdAt: Date;
-      updatedAt: Date;
-      metadata?: Record<string, any>;
-    }>;
-    count: number;
-  }> {
-    const { fileStorage } = await import("../utils/file-storage");
+  //   try {
+  //     const { stream, name, size, contentType } = await fileStorage.downloadFile(sessionId, fileId);
+  //     return { stream, name, size, contentType };
+  //   } catch (error) {
+  //     this.logger.error(`Error downloading file: ${error}`);
+  //     throw error;
+  //   }
+  // }
 
-    try {
-      console.log(`Listing files in session: ${this.activeSession.id}`);
-      const { items, count } = await fileStorage.listFiles(this.activeSession.id);
-      console.log(items);
-      return { items, count };
-    } catch (error) {
-      this.logger.error(`Error listing files: ${error}`);
-      throw error;
-    }
-  }
+  // public async listSessionFiles(sessionId: string): Promise<MultipleFiles> {
+  //   const { fileStorage } = await import("../utils/file-storage");
 
-  public async deleteSessionFile(fileId: string): Promise<{ success: boolean }> {
-    const { fileStorage } = await import("../utils/file-storage");
+  //   try {
+  //     return (await fileStorage.listFiles(sessionId)).map((file) => ({
+  //       id: file.id,
+  //       name: file.name,
+  //       size: file.size,
+  //       createdAt: file.createdAt.toISOString(),
+  //       updatedAt: file.updatedAt.toISOString(),
+  //       checksum: file.checksum,
+  //       metadata: file.metadata,
+  //     }));
+  //   } catch (error) {
+  //     this.logger.error(`Error listing files: ${error}`);
+  //     throw error;
+  //   }
+  // }
 
-    try {
-      const { success } = await fileStorage.deleteFile(this.activeSession.id, fileId);
+  // public async deleteSessionFile(sessionId: string, fileId: string): Promise<DeleteFile> {
+  //   const { fileStorage } = await import("../utils/file-storage");
 
-      this.logger.info(`File deleted: ${fileId}`);
+  //   try {
+  //     const file = await fileStorage.deleteFile(sessionId, fileId);
+  //     this.logger.info(`File deleted: ${fileId}`);
+  //     return {
+  //       id: file.id,
+  //       name: file.name,
+  //       size: file.size,
+  //       createdAt: file.createdAt.toISOString(),
+  //       updatedAt: file.updatedAt.toISOString(),
+  //       checksum: file.checksum,
+  //       metadata: file.metadata,
+  //       success: true,
+  //     };
+  //   } catch (error) {
+  //     this.logger.error(`Error deleting file: ${error}`);
+  //     throw error;
+  //   }
+  // }
 
-      return { success };
-    } catch (error) {
-      this.logger.error(`Error deleting file: ${error}`);
-      throw error;
-    }
-  }
-  public async deleteAllSessionFiles(): Promise<{ success: boolean }> {
-    const { fileStorage } = await import("../utils/file-storage");
+  // public async cleanupSessionFiles(sessionId: string): Promise<DeleteFiles> {
+  //   const { fileStorage } = await import("../utils/file-storage");
+  //   try {
+  //     const files = await fileStorage.deleteSessionDirectory(sessionId);
+  //     this.logger.info(`Cleaned up files for session: ${sessionId}`);
 
-    try {
-      const { success } = await fileStorage.deleteSessionDirectory(this.activeSession.id);
-
-      this.logger.info(`All files deleted`);
-
-      return { success };
-    } catch (error) {
-      this.logger.error(`Error deleting all files: ${error}`);
-      throw error;
-    }
-  }
+  //     return files.map((file) => ({
+  //       id: file.id,
+  //       name: file.name,
+  //       size: file.size,
+  //       createdAt: file.createdAt.toISOString(),
+  //       updatedAt: file.updatedAt.toISOString(),
+  //       checksum: file.checksum,
+  //       metadata: file.metadata,
+  //       success: true,
+  //     }));
+  //   } catch (error) {
+  //     this.logger.error(`Error cleaning up session files: ${error}`);
+  //     throw error;
+  //   }
+  // }
 }

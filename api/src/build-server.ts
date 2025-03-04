@@ -3,15 +3,16 @@ import fastifyMultipart from "@fastify/multipart";
 import fastifySensible from "@fastify/sensible";
 import fastifyView from "@fastify/view";
 import fastify, { FastifyServerOptions } from "fastify";
+import path from "node:path";
 import browserInstancePlugin from "./plugins/browser";
 import browserSessionPlugin from "./plugins/browser-session";
 import browserWebSocket from "./plugins/browser-socket/browser-socket";
 import customBodyParser from "./plugins/custom-body-parser";
+import fileStoragePlugin from "./plugins/file-storage";
 import requestLogger from "./plugins/request-logger";
 import openAPIPlugin from "./plugins/schemas";
 import seleniumPlugin from "./plugins/selenium";
 import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
-import path from "node:path";
 
 const KB = 1024;
 const MB = 1024 * KB;
@@ -40,6 +41,7 @@ export default async function buildFastifyServer(options?: FastifyServerOptions)
   server.register(browserWebSocket);
   server.register(customBodyParser);
   server.register(browserSessionPlugin);
+  server.register(fileStoragePlugin);
 
   // Routes
   server.register(actionsRoutes, { prefix: "/v1" });

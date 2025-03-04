@@ -4,6 +4,7 @@ import http from "http";
 import https from "https";
 import { Readable } from "stream";
 import { getErrors } from "../../utils/errors";
+import { FileDetails } from "./files.schema";
 
 export const handleFileUpload = async (
   server: FastifyInstance,
@@ -11,12 +12,6 @@ export const handleFileUpload = async (
   reply: FastifyReply,
 ) => {
   try {
-    const { sessionId } = request.params;
-
-    if (!sessionId) {
-      return reply.code(400).send({ success: false, message: "sessionId is required" });
-    }
-
     if (!request.isMultipart()) {
       return reply.code(400).send({
         success: false,
@@ -24,28 +19,38 @@ export const handleFileUpload = async (
       });
     }
 
-    let fileName = "";
-    let mimeType = "";
-    let fileProvided = false;
-    let metadata: Record<string, any> = {};
-    let fileStream: Readable | null = null;
+    let stream: Readable | null = null;
+    let fileProvided: boolean = false;
+    let name: string | null = null;
+    let contentType: string | null = null;
+    let metadata: Record<string, any> | null = null;
+
+    let providedName: string | null = null;
 
     for await (const part of request.parts()) {
       if (part.type === "file") {
         const file = part as MultipartFile;
-        fileName = file.filename;
-        mimeType = file.mimetype;
-        fileStream = file.file;
+        name = file.filename;
+        contentType = file.mimetype;
+        stream = file.file;
         fileProvided = true;
-      } else if (part.fieldname === "fileUrl" && part.value && !fileProvided) {
-        const fileUrl = part.value as string;
-        const { stream, mimeType: fetchedMimeType, fileName: fetchedFileName } = await createStreamFromUrl(fileUrl);
-        fileStream = stream;
-        mimeType = fetchedMimeType;
-        fileName = fetchedFileName || "downloaded-file";
-      } else if (part.fieldname === "name" && part.value) {
-        fileName = part.value as string;
-      } else if (part.fieldname === "metadata" && part.value) {
+        continue;
+      }
+
+      if (part.fieldname === "fileUrl" && part.value && !fileProvided) {
+        const res = await createStreamFromUrl(part.value as string);
+        stream = res.stream;
+        contentType = res.contentType || null;
+        name = res.name;
+        continue;
+      }
+
+      if (part.fieldname === "name" && part.value) {
+        providedName = part.value as string;
+        continue;
+      }
+
+      if (part.fieldname === "metadata" && part.value) {
         try {
           metadata = JSON.parse(part.value as string);
         } catch (e) {
@@ -57,23 +62,32 @@ export const handleFileUpload = async (
       }
     }
 
-    if (!fileStream) {
+    if (!!providedName) {
+      name = providedName;
+    }
+
+    if (!stream) {
       return reply.code(400).send({
         success: false,
         message: "Either file or fileUrl must be provided",
       });
     }
 
-    const result = await server.sessionService.uploadFileStreamToSession(fileStream, {
-      fileName,
-      mimeType,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    const file = await server.fileService.saveFile(request.params.sessionId, stream, {
+      name: name!,
+      contentType: contentType!,
+      ...(metadata && { metadata }),
     });
 
     return reply.send({
-      success: true,
-      ...result,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      id: file.id,
+      name: file.name,
+      size: file.size,
+      contentType: file.contentType,
+      createdAt: file.createdAt.toISOString(),
+      updatedAt: file.updatedAt.toISOString(),
+      checksum: file.checksum,
+      metadata: file.metadata,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
@@ -81,7 +95,7 @@ export const handleFileUpload = async (
   }
 };
 
-async function createStreamFromUrl(url: string): Promise<{ stream: Readable; mimeType: string; fileName: string }> {
+async function createStreamFromUrl(url: string): Promise<{ stream: Readable; contentType?: string; name: string }> {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith("https") ? https : http;
 
@@ -91,68 +105,94 @@ async function createStreamFromUrl(url: string): Promise<{ stream: Readable; mim
           return reject(new Error(`Failed to fetch file: ${response.statusCode}`));
         }
 
-        const contentType = response.headers["content-type"] || "";
+        const contentType = response.headers["content-type"];
         const disposition = response.headers["content-disposition"] || "";
-        let fileName = "";
+        let name: string | null = null;
 
-        const fileNameMatch = disposition.match(/filename="(.+)"/i);
-        if (fileNameMatch && fileNameMatch[1]) {
-          fileName = fileNameMatch[1];
+        const nameMatch = disposition.match(/filename="(.+)"/i);
+
+        if (nameMatch && nameMatch[1]) {
+          name = nameMatch[1];
         } else {
-          fileName = url.split("/").pop() || "";
+          name = url.split("/").pop() || "downloaded-file";
         }
 
         resolve({
           stream: response,
-          mimeType: contentType,
-          fileName: fileName,
+          contentType,
+          name,
         });
       })
       .on("error", reject);
   });
 }
 
-export const handleFileDownload = async (
+export const handleGetFile = async (
   server: FastifyInstance,
-  request: FastifyRequest<{ Params: { fileId: string } }>,
+  request: FastifyRequest<{ Params: { sessionId: string; fileId: string } }>,
   reply: FastifyReply,
 ) => {
   try {
-    const { fileId } = request.params;
-
-    if (!fileId) {
-      return reply.code(400).send({ success: false, message: "fileId is required" });
-    }
-
-    const { buffer, fileName, fileSize, mimeType } = await server.sessionService.downloadFileFromSession(fileId);
-
-    reply
-      .header("Content-Type", mimeType)
-      .header("Content-Length", fileSize)
-      .header("Content-Disposition", `attachment; filename="${fileName}"`);
-
-    return reply.send(buffer);
+    const file = await server.fileService.getFile(request.params.sessionId, request.params.fileId);
+    return reply.send({
+      id: file.id,
+      name: file.name,
+      size: file.size,
+      contentType: file.contentType,
+      createdAt: file.createdAt.toISOString(),
+      updatedAt: file.updatedAt.toISOString(),
+      checksum: file.checksum,
+      metadata: file.metadata,
+    });
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
   }
 };
 
-export const handleFileList = async (server: FastifyInstance, _request: FastifyRequest, reply: FastifyReply) => {
+export const handleFileDownload = async (
+  server: FastifyInstance,
+  request: FastifyRequest<{ Params: { sessionId: string; fileId: string } }>,
+  reply: FastifyReply,
+) => {
   try {
-    const { items, count } = await server.sessionService.listSessionFiles();
+    const { stream, size, name, contentType } = await server.fileService.downloadFile(
+      request.params.sessionId,
+      request.params.fileId,
+    );
 
-    return reply.send({
-      files: items.map((item) => ({
-        id: item.id,
-        fileName: item.fileName,
-        fileSize: item.fileSize,
-        mimeType: item.mimeType,
-        createdAt: item.createdAt.toISOString(),
-        metadata: item.metadata,
+    reply
+      .header("Content-Type", contentType)
+      .header("Content-Length", size)
+      .header("Content-Disposition", `attachment; filename="${name}"`);
+
+    return reply.send(stream);
+  } catch (e: unknown) {
+    const error = getErrors(e);
+    return reply.code(500).send({ success: false, message: error });
+  }
+};
+
+export const handleFileList = async (
+  server: FastifyInstance,
+  request: FastifyRequest<{ Params: { sessionId: string } }>,
+  reply: FastifyReply,
+) => {
+  try {
+    const files = await server.fileService.listFiles(request.params.sessionId);
+
+    return reply.send(
+      files.map((file) => ({
+        id: file.id,
+        name: file.name,
+        size: file.size,
+        contentType: file.contentType,
+        createdAt: file.createdAt.toISOString(),
+        updatedAt: file.updatedAt.toISOString(),
+        checksum: file.checksum,
+        metadata: file.metadata,
       })),
-      count,
-    });
+    );
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
@@ -161,17 +201,23 @@ export const handleFileList = async (server: FastifyInstance, _request: FastifyR
 
 export const handleFileDelete = async (
   server: FastifyInstance,
-  request: FastifyRequest<{ Params: { fileId: string } }>,
+  request: FastifyRequest<{ Params: { sessionId: string; fileId: string } }>,
   reply: FastifyReply,
 ) => {
   try {
-    if (!request.params.fileId) {
-      return reply.code(400).send({ success: false, message: "fileId is required" });
-    }
+    const file = await server.fileService.deleteFile(request.params.sessionId, request.params.fileId);
 
-    const result = await server.sessionService.deleteSessionFile(request.params.fileId);
-
-    return reply.send(result);
+    return reply.send({
+      id: file.id,
+      name: file.name,
+      size: file.size,
+      contentType: file.contentType,
+      createdAt: file.createdAt.toISOString(),
+      updatedAt: file.updatedAt.toISOString(),
+      checksum: file.checksum,
+      metadata: file.metadata,
+      success: true,
+    });
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
@@ -180,13 +226,23 @@ export const handleFileDelete = async (
 
 export const handleSessionFilesDelete = async (
   server: FastifyInstance,
-  _request: FastifyRequest,
+  request: FastifyRequest<{ Params: { sessionId: string } }>,
   reply: FastifyReply,
 ) => {
   try {
-    const result = await server.sessionService.deleteAllSessionFiles();
-
-    return reply.send(result);
+    return reply.send(
+      (await server.fileService.cleanupFiles(request.params.sessionId)).map((file) => ({
+        id: file.id,
+        name: file.name,
+        size: file.size,
+        contentType: file.contentType,
+        createdAt: file.createdAt.toISOString(),
+        updatedAt: file.updatedAt.toISOString(),
+        checksum: file.checksum,
+        metadata: file.metadata,
+        success: true,
+      })),
+    );
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });

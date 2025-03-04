@@ -1,10 +1,11 @@
-import { FastifyInstance, FastifyRequest } from "fastify";
+import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { $ref } from "../../plugins/schemas";
 import {
   handleFileDelete,
   handleFileDownload,
   handleFileList,
   handleFileUpload,
+  handleGetFile,
   handleSessionFilesDelete,
 } from "./files.controller";
 
@@ -18,7 +19,7 @@ async function routes(server: FastifyInstance) {
         tags: ["Files"],
         consumes: ["multipart/form-data"],
         response: {
-          200: $ref("FileUploadResponse"),
+          200: $ref("FileDetails"),
         },
       },
     },
@@ -34,12 +35,28 @@ async function routes(server: FastifyInstance) {
     "/sessions/:sessionId/files/:fileId",
     {
       schema: {
+        operationId: "get_file_details",
+        description: "Get file details",
+        tags: ["Files"],
+        response: {
+          200: $ref("FileDetails"),
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Params: { sessionId: string; fileId: string } }>, reply: FastifyReply) =>
+      handleGetFile(server, request, reply),
+  );
+
+  server.get(
+    "/sessions/:sessionId/files/:fileId/download",
+    {
+      schema: {
         operationId: "download_file",
         description: "Download a file from the session",
         tags: ["Files"],
       },
     },
-    async (request: FastifyRequest<{ Params: { fileId: string } }>, reply) =>
+    async (request: FastifyRequest<{ Params: { sessionId: string; fileId: string } }>, reply) =>
       handleFileDownload(server, request, reply),
   );
 
@@ -51,11 +68,11 @@ async function routes(server: FastifyInstance) {
         description: "List files in the session",
         tags: ["Files"],
         response: {
-          200: $ref("FileListResponse"),
+          200: $ref("MultipleFiles"),
         },
       },
     },
-    async (request: FastifyRequest, reply) => handleFileList(server, request, reply),
+    async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) => handleFileList(server, request, reply),
   );
 
   server.delete(
@@ -66,11 +83,12 @@ async function routes(server: FastifyInstance) {
         description: "Delete a file from the session",
         tags: ["Files"],
         response: {
-          200: $ref("FileDeleteResponse"),
+          200: $ref("DeleteFile"),
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { fileId: string } }>, reply) => handleFileDelete(server, request, reply),
+    async (request: FastifyRequest<{ Params: { sessionId: string; fileId: string } }>, reply) =>
+      handleFileDelete(server, request, reply),
   );
 
   server.delete(
@@ -81,12 +99,13 @@ async function routes(server: FastifyInstance) {
         description: "Delete all files from the session",
         tags: ["Files"],
         response: {
-          200: $ref("FileDeleteResponse"),
+          200: $ref("DeleteFiles"),
         },
       },
     },
 
-    async (request: FastifyRequest, reply) => handleSessionFilesDelete(server, request, reply),
+    async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) =>
+      handleSessionFilesDelete(server, request, reply),
   );
 }
 
