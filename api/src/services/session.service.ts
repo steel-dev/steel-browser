@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
-import { Protocol } from "devtools-protocol";
+import { CookieData } from "puppeteer-core";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -62,7 +62,7 @@ export class SessionService {
     proxyUrl?: string;
     userAgent?: string;
     sessionContext?: {
-      cookies?: Protocol.Network.CookieParam[];
+      cookies?: CookieData[];
       localStorage?: Record<string, Record<string, any>>;
     };
     isSelenium?: boolean;
@@ -84,7 +84,7 @@ export class SessionService {
       isSelenium,
       blockAds,
     } = options;
-    
+
     await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
@@ -111,12 +111,12 @@ export class SessionService {
         args: [userAgent ? `--user-agent=${userAgent}` : undefined].filter(Boolean) as string[],
         proxyUrl: this.activeSession.proxyServer?.url,
       },
-      sessionContext: options.sessionContext,
+      sessionContext,
       userAgent,
       blockAds,
       extensions: extensions || [],
       logSinkUrl,
-      timezone: timezone || "US/Pacific",
+      timezone,
       dimensions,
     };
 
@@ -160,12 +160,12 @@ export class SessionService {
     }
 
     const releasedSession = this.activeSession;
-    
+
     await this.resetSessionInfo({
       id: uuidv4(),
       status: "idle",
     });
-    
+
     return releasedSession;
   }
 
