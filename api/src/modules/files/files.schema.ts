@@ -3,7 +3,7 @@ import { z } from "zod";
 // For schema generation
 const FileUploadRequest = z.object({
   file: z.any().optional().describe("The file to upload (binary)"),
-  fileUrl: z.string().optional().describe("Public URL to download file from"),
+  fileUrl: z.string().url().optional().describe("Public URL to download file from"),
   name: z.string().optional().describe("Filename to use in session"),
   metadata: z.record(z.any()).optional().describe("Custom metadata to associate with the file"),
 });
