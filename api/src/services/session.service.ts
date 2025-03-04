@@ -1,20 +1,12 @@
-import { Protocol } from "devtools-protocol";
 import { FastifyBaseLogger } from "fastify";
-<<<<<<< HEAD
 import { CookieData } from "puppeteer-core";
-import { Readable } from "stream";
-=======
->>>>>>> 552bb73 (feat: follow more conventions)
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp.service";
-<<<<<<< HEAD
-=======
 import { FileService } from "./file.service";
->>>>>>> 552bb73 (feat: follow more conventions)
 import { SeleniumService } from "./selenium.service";
 
 type Session = SessionDetails & {
