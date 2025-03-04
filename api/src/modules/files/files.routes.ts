@@ -15,7 +15,9 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "upload_file",
-        description: "Upload a file to the session",
+        summary: "Upload a file",
+        description:
+          "Uploads a file to a session via `multipart/form-data` with form fields: `file` (binary data, prioritized), `fileUrl` (remote URL), `name` (custom filename), and `metadata` (custom key-value pairs).",
         tags: ["Files"],
         consumes: ["multipart/form-data"],
         response: {
@@ -36,7 +38,8 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "get_file_details",
-        description: "Get file details",
+        summary: "Get file details",
+        description: "Get details of a file in a session",
         tags: ["Files"],
         response: {
           200: $ref("FileDetails"),
@@ -52,7 +55,8 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "download_file",
-        description: "Download a file from the session",
+        summary: "Download a file",
+        description: "Download a file from a session",
         tags: ["Files"],
       },
     },
@@ -65,7 +69,8 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "list_files",
-        description: "List files in the session",
+        summary: "List files",
+        description: "List all files from the session in descending order.",
         tags: ["Files"],
         response: {
           200: $ref("MultipleFiles"),
@@ -85,7 +90,8 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "delete_file",
-        description: "Delete a file from the session",
+        summary: "Delete a file",
+        description: "Delete a file from a session",
         tags: ["Files"],
         response: {
           200: $ref("DeleteFile"),
@@ -101,7 +107,8 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "delete_all_files",
-        description: "Delete all files from the session",
+        summary: "Delete all files",
+        description: "Delete all files from a session",
         tags: ["Files"],
         response: {
           200: $ref("DeleteFiles"),
