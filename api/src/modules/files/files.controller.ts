@@ -81,14 +81,6 @@ export const handleFileUpload = async (
   }
 };
 
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
-
 async function createStreamFromUrl(url: string): Promise<{ stream: Readable; mimeType: string; fileName: string }> {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith("https") ? https : http;
