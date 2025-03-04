@@ -15,7 +15,7 @@ import { isAdRequest } from "../utils/ads";
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
-  private isActive: boolean;
+
   private browserInstance: Browser | null;
   private wsEndpoint: string | null;
   private fingerprintData: BrowserFingerprintWithHeaders | null;
@@ -32,7 +32,7 @@ export class CDPService extends EventEmitter {
     super();
     this.logger = logger;
     const { keepAlive = true } = config;
-    this.isActive = false;
+
     this.keepAlive = keepAlive;
     this.browserInstance = null;
     this.wsEndpoint = null;
@@ -44,7 +44,9 @@ export class CDPService extends EventEmitter {
     this.currentSessionConfig = null;
     this.shuttingDown = false;
     this.defaultLaunchConfig = {
-      options: { headless: env.CHROME_HEADLESS },
+      options: { headless: env.CHROME_HEADLESS, args: [] },
+      blockAds: true,
+      extensions: [],
     };
   }
 
@@ -379,7 +381,9 @@ export class CDPService extends EventEmitter {
       this.removeAllHandlers();
       await this.browserInstance.close();
       await this.browserInstance.process()?.kill();
-      this.isActive = false;
+      this.localStorageData = {};
+      this.fingerprintData = null;
+      this.currentSessionConfig = null;
       this.browserInstance = null;
       this.wsEndpoint = null;
       this.emit("close");
@@ -398,13 +402,29 @@ export class CDPService extends EventEmitter {
     return this.browserInstance.createBrowserContext({ proxyServer: proxyUrl });
   }
 
-  public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
-    this.launchConfig = config || this.defaultLaunchConfig;
+  private isDefaultConfig(config?: BrowserLauncherOptions) {
+    if (!config) return false;
+    const { logSinkUrl: _nlsu, ...newConfig } = config || {};
+    const { logSinkUrl: _olsu, ...oldConfig } = this.defaultLaunchConfig || {};
+    return JSON.stringify(newConfig) === JSON.stringify(oldConfig);
+  }
 
-    if (this.browserInstance) {
+  public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
+    const shouldReuseInstance =
+      this.browserInstance && this.isDefaultConfig(config) && this.isDefaultConfig(this.launchConfig);
+
+    if (shouldReuseInstance) {
+      this.logger.info("Reusing existing browser instance with default configuration.");
+      this.launchConfig = config || this.defaultLaunchConfig;
+      await this.refreshPrimaryPage();
+      return this.browserInstance!;
+    } else if (this.browserInstance) {
       this.logger.info("Existing browser instance detected. Closing it before launching a new one.");
       await this.shutdown();
     }
+
+    this.launchConfig = config || this.defaultLaunchConfig;
+    this.logger.info("Launching new browser instance.");
 
     const { options, userAgent } = this.launchConfig;
 
@@ -435,7 +455,7 @@ export class CDPService extends EventEmitter {
     const launchArgs = [
       "--remote-allow-origins=*",
       "--disable-dev-shm-usage",
-      "--disable-gpu", 
+      "--disable-gpu",
       this.launchConfig.dimensions ? "" : "--start-maximized",
       `--remote-debugging-address=${env.HOST}`,
       "--remote-debugging-port=9222",
@@ -482,7 +502,6 @@ export class CDPService extends EventEmitter {
     this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
     this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
 
-    this.isActive = true;
     this.wsEndpoint = this.browserInstance.wsEndpoint();
 
     this.primaryPage = (await this.browserInstance.pages())[0];
@@ -500,6 +519,7 @@ export class CDPService extends EventEmitter {
     const onDisconnect = async () => {
       this.browserInstance?.off("close", onDisconnect);
       this.browserInstance?.process()?.off("close", onDisconnect);
+      this.browserInstance?.off("disconnected", onDisconnect);
       socket.off("close", onDisconnect);
     };
 
@@ -519,8 +539,6 @@ export class CDPService extends EventEmitter {
       (error) => {
         if (error) {
           this.logger.error(`WebSocket proxy error: ${error}`);
-          this.shutdown();
-          throw error;
         }
       },
     );
@@ -567,10 +585,6 @@ export class CDPService extends EventEmitter {
   }
 
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
-    if (this.browserInstance) {
-      this.logger.info("Closing existing browser before starting a new session.");
-      await this.shutdown();
-    }
     this.currentSessionConfig = sessionConfig;
     return this.launch(sessionConfig);
   }
