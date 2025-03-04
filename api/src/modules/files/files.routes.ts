@@ -72,7 +72,12 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) => handleFileList(server, request, reply),
+    async (
+      request: FastifyRequest<{
+        Params: { sessionId: string };
+      }>,
+      reply,
+    ) => handleFileList(server, request, reply),
   );
 
   server.delete(

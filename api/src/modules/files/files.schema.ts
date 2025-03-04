@@ -26,7 +26,10 @@ const DeleteFile = FileDetails.merge(
 );
 
 const DeleteFiles = z.array(DeleteFile);
-const MultipleFiles = z.array(FileDetails);
+
+const MultipleFiles = z.object({
+  data: z.array(FileDetails).describe("Array of files for the current page"),
+});
 
 export type FileDetails = z.infer<typeof FileDetails>;
 export type MultipleFiles = z.infer<typeof MultipleFiles>;

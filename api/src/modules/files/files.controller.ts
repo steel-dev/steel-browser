@@ -4,7 +4,6 @@ import http from "http";
 import https from "https";
 import { Readable } from "stream";
 import { getErrors } from "../../utils/errors";
-import { FileDetails } from "./files.schema";
 
 export const handleFileUpload = async (
   server: FastifyInstance,
@@ -175,14 +174,16 @@ export const handleFileDownload = async (
 
 export const handleFileList = async (
   server: FastifyInstance,
-  request: FastifyRequest<{ Params: { sessionId: string } }>,
+  request: FastifyRequest<{
+    Params: { sessionId: string };
+  }>,
   reply: FastifyReply,
 ) => {
   try {
     const files = await server.fileService.listFiles(request.params.sessionId);
 
-    return reply.send(
-      files.map((file) => ({
+    return reply.send({
+      data: files.map((file) => ({
         id: file.id,
         name: file.name,
         size: file.size,
@@ -192,7 +193,7 @@ export const handleFileList = async (
         checksum: file.checksum,
         metadata: file.metadata,
       })),
-    );
+    });
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });

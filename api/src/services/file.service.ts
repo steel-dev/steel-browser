@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import mime from "mime-types";
 import path from "path";
@@ -6,7 +7,6 @@ import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
-import { FastifyBaseLogger } from "fastify";
 
 interface File {
   name: string;
@@ -42,10 +42,10 @@ export class FileService {
     return path.join(this.baseDownloadPath, this.sanitizeId(sessionId));
   }
 
-  private async getFilePath(sessionId: string, fileId: string): Promise<string> {
+  private async getFilePath(sessionId: string, id: string): Promise<string> {
     const sessionPath = this.getSessionPath(sessionId);
     await this.ensureDirectoryExists(sessionPath);
-    return path.join(sessionPath, this.sanitizeId(fileId));
+    return path.join(sessionPath, this.sanitizeId(id));
   }
 
   private async exists(filePath: string): Promise<boolean> {
@@ -101,66 +101,69 @@ export class FileService {
     };
   }
 
-  public async getFile(sessionId: string, fileId: string): Promise<{ id: string } & File> {
-    const filePath = await this.getFilePath(sessionId, fileId);
+  public async getFile(sessionId: string, id: string): Promise<{ id: string } & File> {
+    const filePath = await this.getFilePath(sessionId, id);
 
     if (!(await this.exists(filePath))) {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    const file = this.fileMap.get(sessionId)!.get(fileId)!;
+    const file = this.fileMap.get(sessionId)!.get(id)!;
 
     return {
-      id: fileId,
+      id,
       ...file,
     };
   }
 
-  public async downloadFile(sessionId: string, fileId: string): Promise<{ id: string; stream: Readable } & File> {
-    const file = this.fileMap.get(sessionId)!.get(fileId)!;
-
-    if (!file) {
-      throw new Error(`File not found in session: ${fileId}`);
-    }
-
-    const filePath = await this.getFilePath(sessionId, fileId);
+  public async downloadFile(sessionId: string, id: string): Promise<{ id: string; stream: Readable } & File> {
+    const filePath = await this.getFilePath(sessionId, id);
 
     if (!(await this.exists(filePath))) {
       throw new Error(`File not found: ${filePath}`);
     }
 
+    const file = this.fileMap.get(sessionId)!.get(id)!;
+
+    if (!file) {
+      throw new Error(`File not found in session: ${id}`);
+    }
+
     return {
-      id: fileId,
+      id,
       stream: fs.createReadStream(filePath),
       ...file,
     };
   }
 
   public async listFiles(sessionId: string): Promise<Array<{ id: string } & File>> {
-    const sessionItems = this.fileMap.get(sessionId)!;
+    const sessionItems = this.fileMap.get(sessionId) || new Map();
 
-    if (!sessionItems) {
-      return [];
-    }
-
-    return Array.from(sessionItems.entries()).map(([id, file]) => ({
-      id,
-      ...file,
-    }));
+    return Array.from(sessionItems.entries())
+      .map(([id, file]) => ({
+        id,
+        ...file,
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  public async deleteFile(sessionId: string, fileId: string): Promise<{ id: string } & File> {
-    const filePath = await this.getFilePath(sessionId, fileId);
+  public async deleteFile(sessionId: string, id: string): Promise<{ id: string } & File> {
+    const filePath = await this.getFilePath(sessionId, id);
 
     if (!(await this.exists(filePath))) {
       throw new Error(`File not found: ${filePath}`);
     }
 
     await fs.promises.unlink(filePath);
-    const file = this.fileMap.get(sessionId)!.get(fileId)!;
-    this.fileMap.get(sessionId)!.delete(fileId);
+    const file = this.fileMap.get(sessionId)!.get(id)!;
 
-    return { id: fileId, ...file };
+    if (!file) {
+      throw new Error(`File not found in session map: ${id}`);
+    }
+
+    this.fileMap.get(sessionId)!.delete(id);
+
+    return { id, ...file };
   }
 
   public async cleanupFiles(sessionId: string): Promise<({ id: string } & File)[]> {
