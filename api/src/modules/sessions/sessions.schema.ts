@@ -44,6 +44,7 @@ const CreateSession = z.object({
     })
     .optional()
     .describe("Dimensions to use for the session"),
+  fingerprint: z.boolean().optional().default(true).describe("Flag to indicate if fingerprinting should be enabled"),
 });
 
 const SessionDetails = z.object({
@@ -71,6 +72,7 @@ const SessionDetails = z.object({
   proxyRxBytes: z.number().int().nonnegative().describe("Amount of data received through the proxy"),
   solveCaptcha: z.boolean().optional().describe("Indicates if captcha solving is enabled"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
+  fingerprint: z.boolean().optional().describe("Indicates if fingerprinting is enabled"),
 });
 
 const ReleaseSession = SessionDetails.merge(
