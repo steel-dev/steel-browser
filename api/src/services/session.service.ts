@@ -1,12 +1,13 @@
 import { FastifyBaseLogger } from "fastify";
-import { CDPService } from "./cdp.service";
-import { SeleniumService } from "./selenium.service";
-import { SessionDetails } from "../modules/sessions/sessions.schema";
+import { CookieData } from "puppeteer-core";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
+import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
-import { CookieData } from "puppeteer-core";
+import { CDPService } from "./cdp.service";
+import { FileService } from "./file.service";
+import { SeleniumService } from "./selenium.service";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -40,11 +41,18 @@ export class SessionService {
   private logger: FastifyBaseLogger;
   private cdpService: CDPService;
   private seleniumService: SeleniumService;
+  private fileService: FileService;
   public activeSession: Session;
 
-  constructor(config: { cdpService: CDPService; seleniumService: SeleniumService; logger: FastifyBaseLogger }) {
+  constructor(config: {
+    cdpService: CDPService;
+    seleniumService: SeleniumService;
+    fileService: FileService;
+    logger: FastifyBaseLogger;
+  }) {
     this.cdpService = config.cdpService;
     this.seleniumService = config.seleniumService;
+    this.fileService = config.fileService;
     this.logger = config.logger;
     this.activeSession = {
       id: uuidv4(),
@@ -160,6 +168,8 @@ export class SessionService {
     }
 
     const releasedSession = this.activeSession;
+
+    await this.fileService.cleanupFiles(this.activeSession.id);
 
     await this.resetSessionInfo({
       id: uuidv4(),
