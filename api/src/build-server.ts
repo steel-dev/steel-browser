@@ -36,12 +36,12 @@ export default async function buildFastifyServer(options?: FastifyServerOptions)
   });
   server.register(requestLogger);
   server.register(openAPIPlugin);
+  server.register(fileStoragePlugin);
   server.register(browserInstancePlugin);
   server.register(seleniumPlugin);
   server.register(browserWebSocket);
   server.register(customBodyParser);
   server.register(browserSessionPlugin);
-  server.register(fileStoragePlugin);
 
   // Routes
   server.register(actionsRoutes, { prefix: "/v1" });
