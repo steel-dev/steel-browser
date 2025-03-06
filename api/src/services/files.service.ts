@@ -6,7 +6,6 @@ import path from "path";
 import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
-import { env } from "../env";
 
 interface File {
   name: string;
@@ -15,6 +14,7 @@ interface File {
   createdAt: Date;
   updatedAt: Date;
   checksum: string;
+  path: string;
   metadata?: Record<string, any>;
 }
 
@@ -25,7 +25,8 @@ export class FileService {
 
   constructor(_config: {}, logger: FastifyBaseLogger) {
     this.logger = logger;
-    this.baseDownloadPath = env.DOWNLOADS_PATH || path.join(process.cwd(), "downloads");
+    console.log(process.env);
+    this.baseDownloadPath = process.env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
     fs.mkdirSync(this.baseDownloadPath, { recursive: true });
     this.fileMap = new Map();
   }
@@ -42,7 +43,7 @@ export class FileService {
     return path.join(this.baseDownloadPath, this.sanitizeId(sessionId));
   }
 
-  private async getFilePath(sessionId: string, id: string): Promise<string> {
+  public async getFilePath(sessionId: string, id: string): Promise<string> {
     const sessionPath = this.getSessionPath(sessionId);
     await this.ensureDirectoryExists(sessionPath);
     return path.join(sessionPath, this.sanitizeId(id));
@@ -91,6 +92,7 @@ export class FileService {
       updatedAt: currentDate,
       checksum: hash.digest("hex"),
       metadata: options.metadata,
+      path: filePath,
     };
 
     this.fileMap.get(sessionId)!.set(id, file);

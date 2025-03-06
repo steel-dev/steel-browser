@@ -20,7 +20,6 @@ const envSchema = z.object({
   ENABLE_CDP_LOGGING: z.string().optional().transform((val) => val !== "false").default("false"),
   LOG_CUSTOM_EMIT_EVENTS: z.string().optional().transform((val) => val !== "false").default("false"),
   ENABLE_VERBOSE_LOGGING: z.string().optional().transform((val) => val !== "false").default("false"),
-  DOWNLOADS_PATH: z.string().optional().default("./downloads"),
 });
 
 export const env = envSchema.parse(process.env);

@@ -6,7 +6,7 @@ import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp.service";
-import { FileService } from "./file.service";
+import { FileService } from "./files.service";
 import { SeleniumService } from "./selenium.service";
 
 type Session = SessionDetails & {

@@ -17,6 +17,7 @@ const FileDetails = z.object({
   updatedAt: z.string().datetime().describe("Timestamp when the file was last updated"),
   checksum: z.string().describe("Checksum or hash of the file content for integrity verification"),
   metadata: z.record(z.any()).optional().describe("Custom metadata associated with the file"),
+  path: z.string().describe("Path to the file in the storage system"),
 });
 
 const DeleteFile = FileDetails.merge(

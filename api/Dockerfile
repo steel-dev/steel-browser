@@ -84,6 +84,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     dbus \
     dbus-x11
 
+RUN mkdir -p /files
+
 # Install Chrome and ChromeDriver
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
