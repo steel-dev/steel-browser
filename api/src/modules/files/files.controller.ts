@@ -87,6 +87,7 @@ export const handleFileUpload = async (
       updatedAt: file.updatedAt.toISOString(),
       checksum: file.checksum,
       metadata: file.metadata,
+      path: file.path,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
@@ -142,6 +143,7 @@ export const handleGetFile = async (
       updatedAt: file.updatedAt.toISOString(),
       checksum: file.checksum,
       metadata: file.metadata,
+      path: file.path,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
@@ -192,6 +194,7 @@ export const handleFileList = async (
         updatedAt: file.updatedAt.toISOString(),
         checksum: file.checksum,
         metadata: file.metadata,
+        path: file.path,
       })),
     });
   } catch (e: unknown) {
@@ -217,6 +220,7 @@ export const handleFileDelete = async (
       updatedAt: file.updatedAt.toISOString(),
       checksum: file.checksum,
       metadata: file.metadata,
+      path: file.path,
       success: true,
     });
   } catch (e: unknown) {
@@ -232,7 +236,7 @@ export const handleSessionFilesDelete = async (
 ) => {
   try {
     return reply.send(
-      (await server.fileService.cleanupFiles(request.params.sessionId)).map((file) => ({
+      (await server.fileService.cleanupFiles(request.params.sessionId)).map(async (file) => ({
         id: file.id,
         name: file.name,
         size: file.size,
@@ -241,6 +245,7 @@ export const handleSessionFilesDelete = async (
         updatedAt: file.updatedAt.toISOString(),
         checksum: file.checksum,
         metadata: file.metadata,
+        path: file.path,
         success: true,
       })),
     );
