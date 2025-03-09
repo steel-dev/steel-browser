@@ -249,8 +249,8 @@ export const handleSessionFilesDelete = async (
   reply: FastifyReply,
 ) => {
   try {
-    return reply.send(
-      (await server.fileService.cleanupFiles({ sessionId: request.params.sessionId })).map(async (file) => ({
+    return reply.send({
+      data: (await server.fileService.cleanupFiles({ sessionId: request.params.sessionId })).map(async (file) => ({
         id: file.id,
         name: file.name,
         size: file.size,
@@ -262,7 +262,7 @@ export const handleSessionFilesDelete = async (
         path: file.path,
         success: true,
       })),
-    );
+    });
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });

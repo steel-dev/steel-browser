@@ -21,16 +21,17 @@ const FileDetails = z.object({
   path: z.string().describe("Path to the file in the storage system"),
 });
 
+const MultipleFiles = z.object({
+  data: z.array(FileDetails).describe("Array of files for the current page"),
+});
+
 const DeleteFile = FileDetails.merge(
   z.object({
     success: z.boolean().describe("Indicates if the file deletion was successful"),
   }),
 );
-
-const DeleteFiles = z.array(DeleteFile);
-
-const MultipleFiles = z.object({
-  data: z.array(FileDetails).describe("Array of files for the current page"),
+const DeleteFiles = z.object({
+  data: z.array(DeleteFile).describe("Array of deleted files"),
 });
 
 export type FileDetails = z.infer<typeof FileDetails>;
