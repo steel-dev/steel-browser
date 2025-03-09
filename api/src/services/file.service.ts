@@ -43,7 +43,7 @@ export class FileService {
     return path.join(this.baseDownloadPath, this.sanitizeId(sessionId));
   }
 
-  public async getFilePath(sessionId: string, id: string): Promise<string> {
+  public async getFilePath({ sessionId, id }: { sessionId: string; id: string }): Promise<string> {
     const sessionPath = this.getSessionPath(sessionId);
     await this.ensureDirectoryExists(sessionPath);
     return path.join(sessionPath, this.sanitizeId(id));
@@ -59,13 +59,16 @@ export class FileService {
     }
   }
 
-  public async saveFile(
-    sessionId: string,
-    stream: Readable,
-    options: { name?: string; contentType?: string; metadata?: Record<string, any> } = {},
-  ): Promise<{ id: string } & File> {
-    const id = uuidv4();
-    const filePath = await this.getFilePath(sessionId, id);
+  public async saveFile(options: {
+    sessionId: string;
+    stream: Readable;
+    id?: string;
+    name?: string;
+    contentType?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{ id: string } & File> {
+    const id = options.id || uuidv4();
+    const filePath = await this.getFilePath({ sessionId: options.sessionId, id });
 
     const hash = createHash("sha256");
 
@@ -76,10 +79,10 @@ export class FileService {
       },
     });
 
-    await pipeline(stream, hashAndPassThrough, fs.createWriteStream(filePath));
+    await pipeline(options.stream, hashAndPassThrough, fs.createWriteStream(filePath));
 
-    if (!this.fileMap.has(sessionId)) {
-      this.fileMap.set(sessionId, new Map());
+    if (!this.fileMap.has(options.sessionId)) {
+      this.fileMap.set(options.sessionId, new Map());
     }
 
     const currentDate = new Date();
@@ -95,7 +98,7 @@ export class FileService {
       path: filePath,
     };
 
-    this.fileMap.get(sessionId)!.set(id, file);
+    this.fileMap.get(options.sessionId)!.set(id, file);
 
     return {
       id,
@@ -103,8 +106,8 @@ export class FileService {
     };
   }
 
-  public async getFile(sessionId: string, id: string): Promise<{ id: string } & File> {
-    const filePath = await this.getFilePath(sessionId, id);
+  public async getFile({ sessionId, id }: { sessionId: string; id: string }): Promise<{ id: string } & File> {
+    const filePath = await this.getFilePath({ sessionId, id });
 
     if (!(await this.exists(filePath))) {
       throw new Error(`File not found: ${filePath}`);
@@ -118,8 +121,14 @@ export class FileService {
     };
   }
 
-  public async downloadFile(sessionId: string, id: string): Promise<{ id: string; stream: Readable } & File> {
-    const filePath = await this.getFilePath(sessionId, id);
+  public async downloadFile({
+    sessionId,
+    id,
+  }: {
+    sessionId: string;
+    id: string;
+  }): Promise<{ id: string; stream: Readable } & File> {
+    const filePath = await this.getFilePath({ sessionId, id });
 
     if (!(await this.exists(filePath))) {
       throw new Error(`File not found: ${filePath}`);
@@ -138,7 +147,7 @@ export class FileService {
     };
   }
 
-  public async listFiles(sessionId: string): Promise<Array<{ id: string } & File>> {
+  public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ id: string } & File>> {
     const sessionItems = this.fileMap.get(sessionId) || new Map();
 
     return Array.from(sessionItems.entries())
@@ -149,8 +158,8 @@ export class FileService {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  public async deleteFile(sessionId: string, id: string): Promise<{ id: string } & File> {
-    const filePath = await this.getFilePath(sessionId, id);
+  public async deleteFile({ sessionId, id }: { sessionId: string; id: string }): Promise<{ id: string } & File> {
+    const filePath = await this.getFilePath({ sessionId, id });
 
     if (!(await this.exists(filePath))) {
       throw new Error(`File not found: ${filePath}`);
@@ -168,7 +177,7 @@ export class FileService {
     return { id, ...file };
   }
 
-  public async cleanupFiles(sessionId: string): Promise<({ id: string } & File)[]> {
+  public async cleanupFiles({ sessionId }: { sessionId: string }): Promise<({ id: string } & File)[]> {
     const sessionPath = this.getSessionPath(sessionId);
 
     if (!(await this.exists(sessionPath))) {
