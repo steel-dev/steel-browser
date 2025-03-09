@@ -250,7 +250,7 @@ export const handleSessionFilesDelete = async (
 ) => {
   try {
     return reply.send({
-      data: (await server.fileService.cleanupFiles({ sessionId: request.params.sessionId })).map(async (file) => ({
+      data: (await server.fileService.cleanupFiles({ sessionId: request.params.sessionId })).map((file) => ({
         id: file.id,
         name: file.name,
         size: file.size,
