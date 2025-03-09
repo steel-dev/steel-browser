@@ -2,7 +2,7 @@ import { MultipartFile } from "@fastify/multipart";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import http from "http";
 import https from "https";
-import { Readable } from "stream";
+import { PassThrough, Readable } from "stream";
 import { getErrors } from "../../utils/errors";
 
 export const handleFileUpload = async (
@@ -18,6 +18,7 @@ export const handleFileUpload = async (
       });
     }
 
+    let id: string | null = null;
     let stream: Readable | null = null;
     let fileProvided: boolean = false;
     let name: string | null = null;
@@ -29,10 +30,17 @@ export const handleFileUpload = async (
     for await (const part of request.parts()) {
       if (part.type === "file") {
         const file = part as MultipartFile;
+        const passThrough = new PassThrough();
+        file.file.pipe(passThrough);
         name = file.filename;
         contentType = file.mimetype;
-        stream = file.file;
+        stream = passThrough;
         fileProvided = true;
+        continue;
+      }
+
+      if (part.fieldname === "fileId" && part.value) {
+        id = part.value as string;
         continue;
       }
 
@@ -72,9 +80,12 @@ export const handleFileUpload = async (
       });
     }
 
-    const file = await server.fileService.saveFile(request.params.sessionId, stream, {
+    const file = await server.fileService.saveFile({
+      sessionId: request.params.sessionId,
+      stream,
       name: name!,
       contentType: contentType!,
+      ...(id && { id }),
       ...(metadata && { metadata }),
     });
 
@@ -87,6 +98,7 @@ export const handleFileUpload = async (
       updatedAt: file.updatedAt.toISOString(),
       checksum: file.checksum,
       metadata: file.metadata,
+      path: file.path,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
@@ -132,7 +144,7 @@ export const handleGetFile = async (
   reply: FastifyReply,
 ) => {
   try {
-    const file = await server.fileService.getFile(request.params.sessionId, request.params.fileId);
+    const file = await server.fileService.getFile({ sessionId: request.params.sessionId, id: request.params.fileId });
     return reply.send({
       id: file.id,
       name: file.name,
@@ -142,6 +154,7 @@ export const handleGetFile = async (
       updatedAt: file.updatedAt.toISOString(),
       checksum: file.checksum,
       metadata: file.metadata,
+      path: file.path,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
@@ -155,10 +168,10 @@ export const handleFileDownload = async (
   reply: FastifyReply,
 ) => {
   try {
-    const { stream, size, name, contentType } = await server.fileService.downloadFile(
-      request.params.sessionId,
-      request.params.fileId,
-    );
+    const { stream, size, name, contentType } = await server.fileService.downloadFile({
+      sessionId: request.params.sessionId,
+      id: request.params.fileId,
+    });
 
     reply
       .header("Content-Type", contentType)
@@ -180,7 +193,7 @@ export const handleFileList = async (
   reply: FastifyReply,
 ) => {
   try {
-    const files = await server.fileService.listFiles(request.params.sessionId);
+    const files = await server.fileService.listFiles({ sessionId: request.params.sessionId });
 
     return reply.send({
       data: files.map((file) => ({
@@ -192,6 +205,7 @@ export const handleFileList = async (
         updatedAt: file.updatedAt.toISOString(),
         checksum: file.checksum,
         metadata: file.metadata,
+        path: file.path,
       })),
     });
   } catch (e: unknown) {
@@ -206,7 +220,10 @@ export const handleFileDelete = async (
   reply: FastifyReply,
 ) => {
   try {
-    const file = await server.fileService.deleteFile(request.params.sessionId, request.params.fileId);
+    const file = await server.fileService.deleteFile({
+      sessionId: request.params.sessionId,
+      id: request.params.fileId,
+    });
 
     return reply.send({
       id: file.id,
@@ -217,6 +234,7 @@ export const handleFileDelete = async (
       updatedAt: file.updatedAt.toISOString(),
       checksum: file.checksum,
       metadata: file.metadata,
+      path: file.path,
       success: true,
     });
   } catch (e: unknown) {
@@ -231,8 +249,8 @@ export const handleSessionFilesDelete = async (
   reply: FastifyReply,
 ) => {
   try {
-    return reply.send(
-      (await server.fileService.cleanupFiles(request.params.sessionId)).map((file) => ({
+    return reply.send({
+      data: (await server.fileService.cleanupFiles({ sessionId: request.params.sessionId })).map((file) => ({
         id: file.id,
         name: file.name,
         size: file.size,
@@ -241,9 +259,10 @@ export const handleSessionFilesDelete = async (
         updatedAt: file.updatedAt.toISOString(),
         checksum: file.checksum,
         metadata: file.metadata,
+        path: file.path,
         success: true,
       })),
-    );
+    });
   } catch (e: unknown) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });

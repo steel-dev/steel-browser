@@ -17,7 +17,7 @@ async function routes(server: FastifyInstance) {
         operationId: "upload_file",
         summary: "Upload a file",
         description:
-          "Uploads a file to a session via `multipart/form-data` with form fields: `file` (binary data, prioritized), `fileUrl` (remote URL), `name` (custom filename), and `metadata` (custom key-value pairs).",
+          "Uploads a file to a session via `multipart/form-data` with form fields: `file` (binary data, prioritized), `fileUrl` (remote URL), `name` (custom filename), `fileId` (custom uuid) and `metadata` (custom key-value pairs).",
         tags: ["Files"],
         consumes: ["multipart/form-data"],
         response: {
