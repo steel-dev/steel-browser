@@ -38,7 +38,23 @@ export class CDPService extends EventEmitter {
     this.wsEndpoint = null;
     this.fingerprintData = null;
     this.chromeExecPath = getChromeExecutablePath();
+
+    // Clean up any existing proxy server
+    if (this.wsProxyServer) {
+      try {
+        this.wsProxyServer.close();
+      } catch (e) {
+        // Ignore errors when closing
+      }
+    }
+
     this.wsProxyServer = httpProxy.createProxyServer();
+
+    // Add error handler to the proxy server
+    this.wsProxyServer.on("error", (err) => {
+      this.logger.error(`Proxy server error: ${err}`);
+    });
+
     this.primaryPage = null;
     this.localStorageData = {};
     this.currentSessionConfig = null;
@@ -516,18 +532,31 @@ export class CDPService extends EventEmitter {
       throw new Error(`WebSocket endpoint not available. Ensure the browser is launched first.`);
     }
 
-    const onDisconnect = async () => {
-      this.browserInstance?.off("close", onDisconnect);
-      this.browserInstance?.process()?.off("close", onDisconnect);
-      this.browserInstance?.off("disconnected", onDisconnect);
-      socket.off("close", onDisconnect);
+    // Create clean event handler with proper cleanup
+    const cleanupListeners = () => {
+      this.browserInstance?.off("close", cleanupListeners);
+      if (this.browserInstance?.process()) {
+        this.browserInstance.process()?.off("close", cleanupListeners);
+      }
+      this.browserInstance?.off("disconnected", cleanupListeners);
+      socket.off("close", cleanupListeners);
+      socket.off("error", cleanupListeners);
+      console.log("WebSocket connection listeners cleaned up");
     };
 
-    this.browserInstance?.once("close", onDisconnect);
-    this.browserInstance?.process()?.once("close", onDisconnect);
-    socket.once("close", onDisconnect);
+    // Set up all event listeners with the same cleanup function
+    this.browserInstance?.once("close", cleanupListeners);
+    if (this.browserInstance?.process()) {
+      this.browserInstance.process()?.once("close", cleanupListeners);
+    }
+    this.browserInstance?.once("disconnected", cleanupListeners);
+    socket.once("close", cleanupListeners);
+    socket.once("error", cleanupListeners);
 
-    this.browserInstance?.once("disconnected", onDisconnect);
+    // Increase max listeners
+    if (this.browserInstance?.process()) {
+      this.browserInstance.process()!.setMaxListeners(60);
+    }
 
     this.wsProxyServer.ws(
       req,
@@ -539,9 +568,20 @@ export class CDPService extends EventEmitter {
       (error) => {
         if (error) {
           this.logger.error(`WebSocket proxy error: ${error}`);
+          cleanupListeners(); // Clean up on error too
         }
       },
     );
+
+    socket.on("error", (error) => {
+      this.logger.error(`Socket error: ${error}`);
+      // Try to end the socket properly on error
+      try {
+        socket.end();
+      } catch (e) {
+        this.logger.error(`Error ending socket: ${e}`);
+      }
+    });
   }
 
   public getUserAgent() {
