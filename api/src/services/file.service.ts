@@ -25,7 +25,6 @@ export class FileService {
 
   constructor(_config: {}, logger: FastifyBaseLogger) {
     this.logger = logger;
-    console.log(process.env);
     this.baseDownloadPath = process.env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
     fs.mkdirSync(this.baseDownloadPath, { recursive: true });
     this.fileMap = new Map();
