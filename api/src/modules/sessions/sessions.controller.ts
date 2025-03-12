@@ -165,7 +165,7 @@ export const handleGetSessionLiveDetails = async (
       status: server.sessionService.activeSession.status,
       userAgent: server.sessionService.activeSession.userAgent,
       browserVersion,
-      initialDimensions: server.sessionService.activeSession.dimensions,
+      initialDimensions: server.sessionService.activeSession.dimensions || { width: 1920, height: 1080 },
       pageCount: validPagesInfo.length,
     };
 
