@@ -169,7 +169,7 @@ export class SessionService {
 
     const releasedSession = this.activeSession;
 
-    await this.fileService.cleanupFiles(this.activeSession.id);
+    await this.fileService.cleanupFiles({ sessionId: this.activeSession.id });
 
     await this.resetSessionInfo({
       id: uuidv4(),
