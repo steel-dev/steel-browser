@@ -100,7 +100,12 @@ const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, op
       // Default route to CDP Service
       default:
         fastify.log.info("Connecting to CDP...");
-        fastify.cdpService.proxyWebSocket(request, socket, head);
+        try {
+          await fastify.cdpService.proxyWebSocket(request, socket, head);
+        } catch (err) {
+          fastify.log.error("CDP WebSocket error:", err);
+          socket.destroy();
+        }
         break;
     }
   });

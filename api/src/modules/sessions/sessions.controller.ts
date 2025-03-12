@@ -111,3 +111,76 @@ export const handleGetSessionStream = async (
     dimensions: server.sessionService.activeSession.dimensions,
   });
 };
+
+export const handleGetSessionLiveDetails = async (
+  server: FastifyInstance,
+  request: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) => {
+  try {
+    const pages = await server.cdpService.getAllPages();
+
+    const pagesInfo = await Promise.all(
+      pages.map(async (page) => {
+        try {
+          const pageId = page.target()._targetId;
+
+          const title = await page.title();
+
+          let favicon: string | null = null;
+          try {
+            favicon = await page.evaluate(() => {
+              const iconLink = document.querySelector('link[rel="icon"], link[rel="shortcut icon"]');
+              if (iconLink) {
+                const href = iconLink.getAttribute("href");
+                if (href?.startsWith("http")) return href;
+                if (href?.startsWith("//")) return window.location.protocol + href;
+                if (href?.startsWith("/")) return window.location.origin + href;
+                return window.location.origin + "/" + href;
+              }
+              return null;
+            });
+          } catch (error) {
+            console.error("Error getting page favicon:", error);
+          }
+
+          return {
+            id: pageId,
+            url: page.url(),
+            title,
+            favicon,
+          };
+        } catch (error) {
+          console.error("Error collecting page info:", error);
+          return null;
+        }
+      }),
+    );
+
+    const validPagesInfo = pagesInfo.filter((page) => page !== null);
+
+    const browserVersion = await server.cdpService.getBrowserState();
+
+    const browserState = {
+      status: server.sessionService.activeSession.status,
+      userAgent: server.sessionService.activeSession.userAgent,
+      browserVersion,
+      initialDimensions: server.sessionService.activeSession.dimensions,
+      pageCount: validPagesInfo.length,
+    };
+
+    return reply.send({
+      pages: validPagesInfo,
+      browserState,
+      websocketUrl: server.sessionService.activeSession.websocketUrl,
+      sessionViewerUrl: server.sessionService.activeSession.sessionViewerUrl,
+      sessionViewerFullscreenUrl: `${server.sessionService.activeSession.sessionViewerUrl}?showControls=false`,
+    });
+  } catch (error) {
+    console.error("Error getting session state:", error);
+    return reply.code(500).send({
+      message: "Failed to get session state",
+      error: getErrors(error),
+    });
+  }
+};

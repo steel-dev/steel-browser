@@ -87,6 +87,30 @@ const SessionStreamQuery = z.object({
   interactive: z.boolean().optional().default(true).describe("Make the browser iframe interactive"),
 });
 
+const SessionLiveDetailsResponse = z.object({
+  sessionViewerUrl: z.string(),
+  sessionViewerFullscreenUrl: z.string(),
+  websocketUrl: z.string(),
+  pages: z.array(
+    z.object({
+      id: z.string(),
+      url: z.string(),
+      title: z.string(),
+      favicon: z.string().nullable(),
+    }),
+  ),
+  browserState: z.object({
+    status: z.enum(["idle", "live", "released", "failed"]),
+    userAgent: z.string(),
+    browserVersion: z.string(),
+    initialDimensions: z.object({
+      width: z.number(),
+      height: z.number(),
+    }),
+    pageCount: z.number(),
+  }),
+});
+
 const SessionStreamResponse = z.string().describe("HTML content for the session streamer view");
 
 const MultipleSessions = z.array(SessionDetails);
@@ -108,6 +132,7 @@ export const browserSchemas = {
   ReleaseSession,
   SessionStreamQuery,
   SessionStreamResponse,
+  SessionLiveDetailsResponse,
 };
 
 export default browserSchemas;

@@ -6,6 +6,7 @@ import {
   handleGetSessionDetails,
   handleGetSessions,
   handleGetSessionStream,
+  handleGetSessionLiveDetails,
 } from "./sessions.controller";
 import { $ref } from "../../plugins/schemas";
 import { CreateSessionRequest, RecordedEvents, SessionStreamRequest } from "./sessions.schema";
@@ -157,6 +158,24 @@ async function routes(server: FastifyInstance) {
       server.cdpService.customEmit(EmitEvent.Recording, request.body);
       return reply.send({ status: "ok" });
     },
+  );
+
+  server.get(
+    "/sessions/:id/live-details",
+    {
+      onRequest: [],
+      schema: {
+        operationId: "get_session_live_details",
+        description: "Returns the live state of the session, including pages, tabs, and browser state",
+        tags: ["Sessions"],
+        summary: "Get session live details",
+        response: {
+          200: $ref("SessionLiveDetailsResponse"),
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+      handleGetSessionLiveDetails(server, request, reply),
   );
 }
 
