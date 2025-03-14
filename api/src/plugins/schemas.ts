@@ -7,6 +7,7 @@ import actionSchemas from "../modules/actions/actions.schema";
 import cdpSchemas from "../modules/cdp/cdp.schemas";
 import browserSchemas from "../modules/sessions/sessions.schema";
 import seleniumSchemas from "../modules/selenium/selenium.schema";
+import extensionSchemas from "../modules/extensions/extensions.schema";
 import scalarTheme from "./scalar-theme";
 import { buildJsonSchemas } from "../utils/schema";
 import { env } from "../env";
@@ -17,6 +18,7 @@ const SCHEMAS = {
   ...browserSchemas,
   ...cdpSchemas,
   ...seleniumSchemas,
+  ...extensionSchemas,
   ...filesSchemas,
 };
 

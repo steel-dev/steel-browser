@@ -12,7 +12,7 @@ import fileStoragePlugin from "./plugins/file-storage";
 import requestLogger from "./plugins/request-logger";
 import openAPIPlugin from "./plugins/schemas";
 import seleniumPlugin from "./plugins/selenium";
-import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
+import { actionsRoutes, cdpRoutes, extensionsRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
 
 const KB = 1024;
 const MB = 1024 * KB;
@@ -46,6 +46,7 @@ export default async function buildFastifyServer(options?: FastifyServerOptions)
   // Routes
   server.register(actionsRoutes, { prefix: "/v1" });
   server.register(sessionsRoutes, { prefix: "/v1" });
+  server.register(extensionsRoutes, { prefix: "/v1" });
   server.register(cdpRoutes, { prefix: "/v1" });
   server.register(seleniumRoutes);
   server.register(filesRoutes, { prefix: "/v1" });
