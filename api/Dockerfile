@@ -59,7 +59,7 @@ RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 FROM build AS patcher
 WORKDIR /app/api/patcher
 RUN npm i --include=dev
-RUN node ./scripts/patcher.js patch --packagePath /app/node_modules/puppeteer-core
+RUN node ./scripts/patcher.js patch --packagePath /app/api/node_modules/puppeteer-core
 
 FROM base AS production
 # Install dependencies

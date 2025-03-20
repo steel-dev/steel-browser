@@ -3,6 +3,7 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
 import { CreateSessionRequest, SessionStreamRequest } from "./sessions.schema";
 import { env } from "../../env";
+import { Protocol } from "puppeteer-core";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -27,7 +28,10 @@ export const handleLaunchBrowserSession = async (
       sessionId,
       proxyUrl,
       userAgent,
-      sessionContext,
+      sessionContext: sessionContext as {
+        cookies?: Protocol.Network.Cookie[] | undefined;
+        localStorage?: Record<string, Record<string, any>> | undefined;
+      },
       extensions,
       logSinkUrl,
       timezone,
