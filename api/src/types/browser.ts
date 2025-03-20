@@ -1,12 +1,11 @@
-import { CookieData } from "puppeteer-core";
 import { BrowserEventType } from "./enums";
-
+import { Protocol } from "puppeteer-core";
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
   req?: Request;
   stealth?: boolean;
   sessionContext?: {
-    cookies?: CookieData[];
+    cookies?: Protocol.Network.Cookie[];
     localStorage?: Record<string, Record<string, any>>;
   };
   userAgent?: string;

@@ -1,5 +1,5 @@
 import { FastifyBaseLogger } from "fastify";
-import { CookieData } from "puppeteer-core";
+import { Protocol } from "puppeteer-core";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { SessionDetails } from "../modules/sessions/sessions.schema";
@@ -70,7 +70,7 @@ export class SessionService {
     proxyUrl?: string;
     userAgent?: string;
     sessionContext?: {
-      cookies?: CookieData[];
+      cookies?: Protocol.Network.Cookie[];
       localStorage?: Record<string, Record<string, any>>;
     };
     isSelenium?: boolean;
