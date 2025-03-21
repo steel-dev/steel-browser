@@ -166,9 +166,11 @@ export class CDPService extends EventEmitter {
           await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
         }
 
-        const fingerprintInjector = new FingerprintInjector();
-        //@ts-ignore
-        await fingerprintInjector.attachFingerprintToPuppeteer(page, this.fingerprintData!);
+        if (this.fingerprintData?.fingerprint) {
+          const fingerprintInjector = new FingerprintInjector();
+          //@ts-ignore
+          await fingerprintInjector.attachFingerprintToPuppeteer(page, this.fingerprintData);
+        }
 
         await page.setRequestInterception(true);
 
@@ -217,10 +219,10 @@ export class CDPService extends EventEmitter {
             screenWidth: width,
             width,
             height,
-            mobile: /phone|android|mobile/i.test(this.fingerprintData!.fingerprint.navigator.userAgent),
+            mobile: /phone|android|mobile/i.test(await this.getUserAgent()),
             screenOrientation:
               height > width ? { angle: 0, type: "portraitPrimary" } : { angle: 90, type: "landscapePrimary" },
-            deviceScaleFactor: this.fingerprintData!.fingerprint.screen.devicePixelRatio,
+            deviceScaleFactor: this.fingerprintData?.fingerprint.screen.devicePixelRatio || 0,
           });
         }
 
@@ -442,7 +444,7 @@ export class CDPService extends EventEmitter {
     this.launchConfig = config || this.defaultLaunchConfig;
     this.logger.info("Launching new browser instance.");
 
-    const { options, userAgent } = this.launchConfig;
+    const { options, userAgent, fingerprint } = this.launchConfig;
 
     const defaultExtensions = ["recorder"];
     const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
@@ -453,18 +455,21 @@ export class CDPService extends EventEmitter {
       ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
       : [];
 
-    const fingerprintGen = new FingerprintGenerator({
-      devices: ["desktop"],
-      operatingSystems: ["linux"],
-      browsers: [{ name: "chrome", minVersion: 128 }],
-      locales: ["en-US", "en"],
-    });
+    this.fingerprintData = null;
+    if (fingerprint ?? true) {
+      const fingerprintGen = new FingerprintGenerator({
+        devices: ["desktop"],
+        operatingSystems: ["linux"],
+        browsers: [{ name: "chrome", minVersion: 128 }],
+        locales: ["en-US", "en"],
+      });
 
     if (this.launchConfig.sessionContext?.localStorage) {
       this.localStorageData = this.launchConfig.sessionContext.localStorage;
     }
 
-    this.fingerprintData = await fingerprintGen.getFingerprint();
+      this.fingerprintData = await fingerprintGen.getFingerprint();
+    }
 
     const timezone = "America/New_York"; // TODO: determine timezone from session config or proxy
 
@@ -584,8 +589,9 @@ export class CDPService extends EventEmitter {
     });
   }
 
-  public getUserAgent() {
-    return this.fingerprintData?.fingerprint.navigator.userAgent;
+  public async getUserAgent() {
+    const fingerprintUA = this.fingerprintData?.fingerprint.navigator.userAgent;
+    return fingerprintUA || await this.browserInstance?.userAgent() || "";
   }
 
   public async getBrowserState(): Promise<{

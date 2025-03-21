@@ -22,6 +22,7 @@ export const handleLaunchBrowserSession = async (
       dimensions,
       isSelenium,
       blockAds,
+      fingerprint,
     } = request.body;
 
     return await server.sessionService.startSession({
@@ -38,6 +39,7 @@ export const handleLaunchBrowserSession = async (
       dimensions,
       isSelenium,
       blockAds,
+      fingerprint,
     });
   } catch (e: unknown) {
     const error = getErrors(e);
