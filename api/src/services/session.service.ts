@@ -8,6 +8,9 @@ import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp.service";
 import { FileService } from "./file.service";
 import { SeleniumService } from "./selenium.service";
+import axios, { AxiosError } from "axios";
+import { SocksProxyAgent } from "socks-proxy-agent";
+import { HttpsProxyAgent } from "https-proxy-agent";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -80,18 +83,10 @@ export class SessionService {
     timezone?: string;
     dimensions?: { width: number; height: number };
   }): Promise<SessionDetails> {
-    const {
-      sessionId,
-      proxyUrl,
-      userAgent,
-      sessionContext,
-      extensions,
-      logSinkUrl,
-      timezone,
-      dimensions,
-      isSelenium,
-      blockAds,
-    } = options;
+    const { sessionId, proxyUrl, userAgent, sessionContext, extensions, logSinkUrl, dimensions, isSelenium, blockAds } =
+      options;
+
+    let timezone = options.timezone;
 
     await this.resetSessionInfo({
       id: sessionId || uuidv4(),
@@ -111,6 +106,37 @@ export class SessionService {
         }
       });
       await this.activeSession.proxyServer.listen();
+
+      // Fetch timezone information from the proxy's location if timezone isn't already specified
+      if (!timezone) {
+        try {
+          console.log(proxyUrl);
+          const proxyUrlObj = new URL(proxyUrl);
+          console.log(proxyUrlObj);
+          const isSocks = proxyUrl.startsWith("socks");
+
+          let agent;
+          if (isSocks) {
+            agent = new SocksProxyAgent(proxyUrl);
+          } else {
+            agent = new HttpsProxyAgent(proxyUrl);
+          }
+
+          this.logger.info("Fetching timezone information based on proxy location");
+          const response = await axios.get("http://ip-api.com/json", {
+            httpAgent: agent,
+            httpsAgent: agent,
+            timeout: 5000,
+          });
+
+          if (response.data && response.data.status === "success" && response.data.timezone) {
+            timezone = response.data.timezone;
+            this.logger.info(`Setting timezone to ${timezone} based on proxy location`);
+          }
+        } catch (error: unknown) {
+          this.logger.error(`Failed to fetch timezone information: ${(error as AxiosError).message}`);
+        }
+      }
     }
 
     const browserLauncherOptions: BrowserLauncherOptions = {

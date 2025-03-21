@@ -27,6 +27,7 @@ export class CDPService extends EventEmitter {
   private defaultLaunchConfig: BrowserLauncherOptions;
   private currentSessionConfig: BrowserLauncherOptions | null;
   private shuttingDown: boolean;
+  private defaultTimezone: string;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -38,6 +39,7 @@ export class CDPService extends EventEmitter {
     this.wsEndpoint = null;
     this.fingerprintData = null;
     this.chromeExecPath = getChromeExecutablePath();
+    this.defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     // Clean up any existing proxy server
     if (this.wsProxyServer) {
@@ -156,6 +158,10 @@ export class CDPService extends EventEmitter {
       if (page) {
         // Inject session context first
         await this.injectSessionContext(page, this.launchConfig?.sessionContext);
+
+        if (this.currentSessionConfig?.timezone) {
+          await page.emulateTimezone(this.currentSessionConfig.timezone);
+        }
 
         if (this.launchConfig?.customHeaders) {
           await page.setExtraHTTPHeaders({
@@ -466,7 +472,7 @@ export class CDPService extends EventEmitter {
 
     this.fingerprintData = await fingerprintGen.getFingerprint();
 
-    const timezone = "America/New_York"; // TODO: determine timezone from session config or proxy
+    const timezone = config?.timezone || this.defaultTimezone;
 
     const launchArgs = [
       "--remote-allow-origins=*",
@@ -479,6 +485,8 @@ export class CDPService extends EventEmitter {
       "--disable-setuid-sandbox",
       "--use-angle=disabled",
       "--disable-blink-features=AutomationControlled",
+      "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--force-webrtc-ip-handling-policy",
       `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
       `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${this.launchConfig.dimensions?.height ?? 1080}`,
       `--timezone=${timezone}`,
@@ -498,6 +506,10 @@ export class CDPService extends EventEmitter {
       timeout: 0,
       handleSIGINT: false,
       handleSIGTERM: false,
+      env: {
+        TZ: timezone,
+        ...process.env,
+      },
       // dumpio: true, //uncomment this line to see logs from chromium
     };
 
