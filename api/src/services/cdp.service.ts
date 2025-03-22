@@ -27,6 +27,7 @@ export class CDPService extends EventEmitter {
   private defaultLaunchConfig: BrowserLauncherOptions;
   private currentSessionConfig: BrowserLauncherOptions | null;
   private shuttingDown: boolean;
+  private defaultTimezone: string;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -38,6 +39,7 @@ export class CDPService extends EventEmitter {
     this.wsEndpoint = null;
     this.fingerprintData = null;
     this.chromeExecPath = getChromeExecutablePath();
+    this.defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     // Clean up any existing proxy server
     if (this.wsProxyServer) {
@@ -141,8 +143,6 @@ export class CDPService extends EventEmitter {
       const pageId = page.target()._targetId;
 
       this.customEmit(EmitEvent.PageId, { pageId });
-
-      await page.setBypassCSP(true);
     }
   }
 
@@ -156,6 +156,10 @@ export class CDPService extends EventEmitter {
       if (page) {
         // Inject session context first
         await this.injectSessionContext(page, this.launchConfig?.sessionContext);
+
+        if (this.currentSessionConfig?.timezone) {
+          await page.emulateTimezone(this.currentSessionConfig.timezone);
+        }
 
         if (this.launchConfig?.customHeaders) {
           await page.setExtraHTTPHeaders({
@@ -466,7 +470,7 @@ export class CDPService extends EventEmitter {
 
     this.fingerprintData = await fingerprintGen.getFingerprint();
 
-    const timezone = "America/New_York"; // TODO: determine timezone from session config or proxy
+    const timezone = config?.timezone || this.defaultTimezone;
 
     const launchArgs = [
       "--remote-allow-origins=*",
@@ -484,6 +488,8 @@ export class CDPService extends EventEmitter {
       `--timezone=${timezone}`,
       userAgent ? `--user-agent=${userAgent}` : "",
       this.launchConfig.options.proxyUrl ? `--proxy-server=${this.launchConfig.options.proxyUrl}` : "",
+      this.launchConfig.options.proxyUrl ? "--webrtc-ip-handling-policy=disable_non_proxied_udp" : "",
+      this.launchConfig.options.proxyUrl ? "--force-webrtc-ip-handling-policy" : "",
       ...extensionArgs,
       ...(options.args || []),
     ].filter(Boolean);
@@ -498,6 +504,10 @@ export class CDPService extends EventEmitter {
       timeout: 0,
       handleSIGINT: false,
       handleSIGTERM: false,
+      env: {
+        TZ: timezone,
+        ...process.env,
+      },
       // dumpio: true, //uncomment this line to see logs from chromium
     };
 
