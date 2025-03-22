@@ -488,8 +488,8 @@ export class CDPService extends EventEmitter {
       `--timezone=${timezone}`,
       userAgent ? `--user-agent=${userAgent}` : "",
       this.launchConfig.options.proxyUrl ? `--proxy-server=${this.launchConfig.options.proxyUrl}` : "",
-      this.launchConfig.options.proxyUrl ? "--webrtc-ip-handling-policy=disable_non_proxied_udp" : "",
-      this.launchConfig.options.proxyUrl ? "--force-webrtc-ip-handling-policy" : "",
+      "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--force-webrtc-ip-handling-policy",
       ...extensionArgs,
       ...(options.args || []),
     ].filter(Boolean);
