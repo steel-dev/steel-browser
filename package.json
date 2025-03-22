@@ -11,14 +11,20 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "dev": "concurrently \"npm run dev -w api\" \"npm run dev -w ui\""
+    "dev": "concurrently \"npm run dev -w api\" \"npm run dev -w ui\"",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.7.1",
+    "@commitlint/config-conventional": "^19.7.1",
     "concurrently": "^8.2.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "husky": "^9.1.7"
   }
 }
