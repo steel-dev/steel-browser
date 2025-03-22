@@ -143,8 +143,6 @@ export class CDPService extends EventEmitter {
       const pageId = page.target()._targetId;
 
       this.customEmit(EmitEvent.PageId, { pageId });
-
-      await page.setBypassCSP(true);
     }
   }
 
