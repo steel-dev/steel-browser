@@ -84,10 +84,10 @@ export const handleGetSessionDetails = async (
       eventCount: 0,
       timeout: 0,
       creditsUsed: 0,
-      websocketUrl: `ws://${env.DOMAIN ?? env.HOST}/`,
-      debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
+      websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
+      debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
       debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
-      sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}`,
+      sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
       userAgent: "",
       isSelenium: false,
       proxy: "",
@@ -108,7 +108,7 @@ export const handleGetSessionStream = async (
 ) => {
   const { showControls, theme, interactive } = request.query;
   return reply.view("live-session-streamer.ejs", {
-    wsUrl: `ws://${env.DOMAIN ?? `${env.HOST}:${env.PORT}`}/v1/sessions/cast`,
+    wsUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/cast`,
     showControls,
     theme,
     interactive,
