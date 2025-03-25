@@ -4,10 +4,11 @@ import fp from "fastify-plugin";
 import { SessionService } from "../services/session.service";
 import { env } from "../env";
 
-const browserSessionPlugin: FastifyPluginAsync = async (fastify, options) => {
+const browserSessionPlugin: FastifyPluginAsync = async (fastify, _options) => {
   const sessionService = new SessionService({
     cdpService: fastify.cdpService,
     seleniumService: fastify.seleniumService,
+    fileService: fastify.fileService,
     logger: fastify.log,
   });
   fastify.decorate("sessionService", sessionService);
@@ -36,4 +37,4 @@ const browserSessionPlugin: FastifyPluginAsync = async (fastify, options) => {
   });
 };
 
-export default fp(browserSessionPlugin, "4.x");
+export default fp(browserSessionPlugin, "5.x");

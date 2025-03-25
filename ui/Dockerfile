@@ -1,4 +1,6 @@
-FROM node:18
+ARG NODE_VERSION=22.13.0
+
+FROM node:${NODE_VERSION} AS base
 
 WORKDIR /app
 # Set default values that can be overridden
@@ -14,20 +16,22 @@ ENV VITE_OPENAPI_URL=${VITE_OPENAPI_URL}
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
 # Copy package.json and package-lock.json first
-COPY package.json package-lock.json ./
+COPY --link package.json package-lock.json ./
+COPY --link ui/ ./ui/
 
 # Install the npm packages directly in the Docker container's working directory
-RUN npm install
-
-# Copy the rest of the application, excluding node_modules
-# .dockerignore should have an entry for node_modules to exclude it
-COPY . .
+RUN npm ci --include=dev -w ui
 
 # Build the application
-RUN npm run build
+RUN npm run build -w ui
+
+# Prune dev dependencies
+RUN npm prune --omit=dev -w ui
 
 # Expose the port your web server runs on, assuming it's 5173
 EXPOSE 5173
+
+WORKDIR /app/ui
 
 # Command to run your web server
 CMD ["npm", "run", "start"]

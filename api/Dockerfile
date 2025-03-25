@@ -15,7 +15,6 @@ ENV NODE_ENV="production" \
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
 # Install dependencies
-# Using --mount to speed up build with caching, see https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mount
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
     apt-get update -qq && \
@@ -32,21 +31,31 @@ RUN --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/cache/apt,
     python-is-python3 \
     xvfb
 
-COPY --link package-lock.json package.json ./
+# Copy root workspace files first
+COPY --link package.json package-lock.json ./
+COPY --link api/ ./api/
 
-RUN npm ci --include=dev
+# Install dependencies for api
+RUN npm ci --include=dev --workspace=api
 
-COPY --link . .
+# Install dependencies for recorder extension separately
+RUN cd api/extensions/recorder && npm ci --include=dev && cd -
 
-RUN npm run build
+# Build the api package
+RUN npm run build -w api
 
-RUN npm prune --omit=dev
+RUN cd api/extensions/recorder && \
+    npm run build && \
+    cd -
 
+# Prune dev dependencies
+RUN npm prune --omit=dev -w api
+RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
 FROM build AS patcher
-WORKDIR /app/patcher
+WORKDIR /app/api/patcher
 RUN npm i --include=dev
-RUN node ./scripts/patcher.js patch --packagePath /app/node_modules/puppeteer-core
+RUN node ./scripts/patcher.js patch --packagePath /app/api/node_modules/puppeteer-core
 
 FROM base AS production
 # Install dependencies
@@ -97,13 +106,15 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
-COPY --chmod=755 entrypoint.sh /app/entrypoint.sh
+RUN mkdir -p /files
+
+COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
 
 EXPOSE 3000 9223
 
 ENV HOST_IP=localhost \
     DBUS_SESSION_BUS_ADDRESS=autolaunch:
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/api/entrypoint.sh"]
 
 COPY --from=patcher /app /app

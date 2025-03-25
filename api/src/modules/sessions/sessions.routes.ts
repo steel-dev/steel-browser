@@ -5,9 +5,11 @@ import {
   handleExitBrowserSession,
   handleGetSessionDetails,
   handleGetSessions,
+  handleGetSessionStream,
+  handleGetSessionLiveDetails,
 } from "./sessions.controller";
 import { $ref } from "../../plugins/schemas";
-import { CreateSessionRequest, RecordedEvents } from "./sessions.schema";
+import { CreateSessionRequest, RecordedEvents, SessionStreamRequest } from "./sessions.schema";
 import { EmitEvent } from "../../types/enums";
 
 async function routes(server: FastifyInstance) {
@@ -104,8 +106,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
-      handleExitBrowserSession(server, request, reply),
+    async (request: FastifyRequest, reply: FastifyReply) => handleExitBrowserSession(server, request, reply),
   );
 
   server.post(
@@ -121,8 +122,25 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
-      handleExitBrowserSession(server, request, reply),
+    async (request: FastifyRequest, reply: FastifyReply) => handleExitBrowserSession(server, request, reply),
+  );
+
+  server.get(
+    "/sessions/debug",
+    {
+      onRequest: [],
+      schema: {
+        operationId: "get_session_debugger_stream",
+        description: "Returns an HTML page with a live debugger view of the session",
+        tags: ["Sessions"],
+        summary: "Get session debugger view",
+        querystring: $ref("SessionStreamQuery"),
+        response: {
+          200: $ref("SessionStreamResponse"),
+        },
+      },
+    },
+    async (request: SessionStreamRequest, reply: FastifyReply) => handleGetSessionStream(server, request, reply),
   );
 
   server.post(
@@ -140,6 +158,24 @@ async function routes(server: FastifyInstance) {
       server.cdpService.customEmit(EmitEvent.Recording, request.body);
       return reply.send({ status: "ok" });
     },
+  );
+
+  server.get(
+    "/sessions/:id/live-details",
+    {
+      onRequest: [],
+      schema: {
+        operationId: "get_session_live_details",
+        description: "Returns the live state of the session, including pages, tabs, and browser state",
+        tags: ["Sessions"],
+        summary: "Get session live details",
+        response: {
+          200: $ref("SessionLiveDetailsResponse"),
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+      handleGetSessionLiveDetails(server, request, reply),
   );
 }
 

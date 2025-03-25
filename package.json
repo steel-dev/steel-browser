@@ -2,25 +2,23 @@
   "name": "steel",
   "version": "1.0.0",
   "private": true,
-  "license": "ISC",
+  "license": "Apache-2.0",
   "author": "",
+  "workspaces": [
+    "api",
+    "ui",
+    "repl"
+  ],
   "scripts": {
-    "install": "npm run install:api && npm run install:ui",
-    "install:api": "cd api && npm install",
-    "install:ui": "cd ui && npm install",
-    "build": "npm run build:api && npm run build:ui",
-    "build:api": "cd api && npm run build",
-    "build:ui": "cd ui && npm run build",
-    "dev": "concurrently \"npm run dev:api\" \"npm run dev:ui\"",
-    "dev:api": "cd api && npm run dev",
-    "dev:ui": "cd ui && npm run dev",
-    "serve": "npm run serve:api",
-    "serve:api": "cd api && npm run start"
+    "build": "npm run build --workspaces",
+    "dev": "concurrently \"npm run dev -w api\" \"npm run dev -w ui\""
   },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^8.2.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   },
   "engines": {
-    "node": ">=18.12.0"
+    "node": ">=22"
   }
 }

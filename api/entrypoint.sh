@@ -141,9 +141,12 @@ main() {
     log "NODE_ENV=$NODE_ENV"
     
     # Start the application
+    # Run the `npm run start` command but without npm.
+    # NPM will introduce its own signal handling
+    # which will prevent the container from waiting
+    # for a session to be released before stopping gracefully
     log "Starting Node.js application..."
     exec node ./build/index.js
 }
 
-# Run main with all arguments
 main "$@"

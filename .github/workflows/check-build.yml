@@ -1,0 +1,25 @@
+name: Check Docker Build
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-docker-build:
+    name: Check Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the latest Steel Browser API image
+        run: |
+          docker build -t steel-browser-api -f ./api/Dockerfile .
+      - name: Build the latest Steel Browser UI image
+        run: |
+          docker build -t steel-browser-ui -f ./ui/Dockerfile .

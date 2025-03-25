@@ -1,8 +1,9 @@
 import { CDPService } from "../../services/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
-import { CreateSessionRequest } from "./sessions.schema";
+import { CreateSessionRequest, SessionStreamRequest } from "./sessions.schema";
 import { env } from "../../env";
+import { Protocol } from "puppeteer-core";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -23,14 +24,14 @@ export const handleLaunchBrowserSession = async (
       blockAds,
     } = request.body;
 
-    // If there's an active session, close it first
-    await server.sessionService.endSession();
-
     return await server.sessionService.startSession({
       sessionId,
       proxyUrl,
       userAgent,
-      sessionContext,
+      sessionContext: sessionContext as {
+        cookies?: Protocol.Network.Cookie[] | undefined;
+        localStorage?: Record<string, Record<string, any>> | undefined;
+      },
       extensions,
       logSinkUrl,
       timezone,
@@ -83,9 +84,10 @@ export const handleGetSessionDetails = async (
       eventCount: 0,
       timeout: 0,
       creditsUsed: 0,
-      websocketUrl: `ws://${env.DOMAIN ?? env.HOST}/`,
-      debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
-      sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}`,
+      websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
+      debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
+      debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
+      sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
       userAgent: "",
       isSelenium: false,
       proxy: "",
@@ -97,4 +99,92 @@ export const handleGetSessionDetails = async (
 
 export const handleGetSessions = async (server: FastifyInstance, request: FastifyRequest, reply: FastifyReply) => {
   return reply.send([server.sessionService.activeSession]);
+};
+
+export const handleGetSessionStream = async (
+  server: FastifyInstance,
+  request: SessionStreamRequest,
+  reply: FastifyReply,
+) => {
+  const { showControls, theme, interactive } = request.query;
+  return reply.view("live-session-streamer.ejs", {
+    wsUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/cast`,
+    showControls,
+    theme,
+    interactive,
+    dimensions: server.sessionService.activeSession.dimensions,
+  });
+};
+
+export const handleGetSessionLiveDetails = async (
+  server: FastifyInstance,
+  request: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) => {
+  try {
+    const pages = await server.cdpService.getAllPages();
+
+    const pagesInfo = await Promise.all(
+      pages.map(async (page) => {
+        try {
+          const pageId = page.target()._targetId;
+
+          const title = await page.title();
+
+          let favicon: string | null = null;
+          try {
+            favicon = await page.evaluate(() => {
+              const iconLink = document.querySelector('link[rel="icon"], link[rel="shortcut icon"]');
+              if (iconLink) {
+                const href = iconLink.getAttribute("href");
+                if (href?.startsWith("http")) return href;
+                if (href?.startsWith("//")) return window.location.protocol + href;
+                if (href?.startsWith("/")) return window.location.origin + href;
+                return window.location.origin + "/" + href;
+              }
+              return null;
+            });
+          } catch (error) {
+            console.error("Error getting page favicon:", error);
+          }
+
+          return {
+            id: pageId,
+            url: page.url(),
+            title,
+            favicon,
+          };
+        } catch (error) {
+          console.error("Error collecting page info:", error);
+          return null;
+        }
+      }),
+    );
+
+    const validPagesInfo = pagesInfo.filter((page) => page !== null);
+
+    const browserVersion = await server.cdpService.getBrowserState();
+
+    const browserState = {
+      status: server.sessionService.activeSession.status,
+      userAgent: server.sessionService.activeSession.userAgent,
+      browserVersion,
+      initialDimensions: server.sessionService.activeSession.dimensions || { width: 1920, height: 1080 },
+      pageCount: validPagesInfo.length,
+    };
+
+    return reply.send({
+      pages: validPagesInfo,
+      browserState,
+      websocketUrl: server.sessionService.activeSession.websocketUrl,
+      sessionViewerUrl: server.sessionService.activeSession.sessionViewerUrl,
+      sessionViewerFullscreenUrl: `${server.sessionService.activeSession.sessionViewerUrl}?showControls=false`,
+    });
+  } catch (error) {
+    console.error("Error getting session state:", error);
+    return reply.code(500).send({
+      message: "Failed to get session state",
+      error: getErrors(error),
+    });
+  }
 };

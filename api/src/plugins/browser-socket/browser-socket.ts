@@ -1,9 +1,31 @@
-import fp from "fastify-plugin";
 import { type FastifyInstance, type FastifyPluginAsync } from "fastify";
+import fp from "fastify-plugin";
 import WebSocket from "ws";
-import { EmitEvent } from "../types/enums";
+import { EmitEvent } from "../../types/enums";
+import { handleCastSession } from "./cast.handler";
 
+// WebSocket server instance
 const wss = new WebSocket.Server({ noServer: true });
+
+// WebSocket handlers
+function handleLogsWebSocket(fastify: FastifyInstance, ws: WebSocket) {
+  const messageHandler = (payload: { pageId: string }) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify([payload]));
+    }
+  };
+
+  fastify.cdpService.on(EmitEvent.Log, messageHandler);
+
+  ws.on("error", (err) => {
+    fastify.log.error("PageId WebSocket error:", err);
+  });
+
+  ws.on("close", () => {
+    fastify.log.info("PageId WebSocket connection closed");
+    fastify.cdpService.removeListener(`log`, messageHandler);
+  });
+}
 
 const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, options: any) => {
   if (!fastify.cdpService.isRunning()) {
@@ -11,32 +33,20 @@ const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, op
     await fastify.cdpService.launch();
     fastify.log.info("Browser launched successfully");
   }
+
   fastify.server.on("upgrade", async (request, socket, head) => {
     fastify.log.info("Upgrading browser socket...");
-
     const url = request.url ?? "";
 
     switch (true) {
       case url.startsWith("/v1/sessions/logs"):
         fastify.log.info("Connecting to logs...");
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          const messageHandler = (payload: { pageId: string }) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify([payload]));
-            }
-          };
+        wss.handleUpgrade(request, socket, head, (ws) => handleLogsWebSocket(fastify, ws));
+        break;
 
-          fastify.cdpService.on(EmitEvent.Log, messageHandler);
-
-          ws.on("error", (err) => {
-            fastify.log.error("PageId WebSocket error:", err);
-          });
-
-          ws.on("close", () => {
-            fastify.log.info("PageId WebSocket connection closed");
-            fastify.cdpService.removeListener(`log`, messageHandler);
-          });
-        });
+      case url.startsWith("/v1/sessions/cast"):
+        fastify.log.info("Connecting to cast...");
+        await handleCastSession(request, socket, head, wss, fastify.sessionService);
         break;
 
       case url.startsWith("/v1/sessions/pageId"):
@@ -87,10 +97,15 @@ const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, op
         });
         break;
 
-      // Default case for all other endpoints
+      // Default route to CDP Service
       default:
         fastify.log.info("Connecting to CDP...");
-        fastify.cdpService.proxyWebSocket(request, socket, head);
+        try {
+          await fastify.cdpService.proxyWebSocket(request, socket, head);
+        } catch (err) {
+          fastify.log.error("CDP WebSocket error:", err);
+          socket.destroy();
+        }
         break;
     }
   });

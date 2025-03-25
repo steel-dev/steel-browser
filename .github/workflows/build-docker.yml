@@ -26,9 +26,9 @@ jobs:
 
       - name: Build and push the latest Steel Browser API image
         run: |
-          docker build -t ghcr.io/steel-dev/steel-browser-api:latest ./api -f ./api/Dockerfile
+          docker build -t ghcr.io/steel-dev/steel-browser-api:latest . -f ./api/Dockerfile
           docker push ghcr.io/steel-dev/steel-browser-api:latest
       - name: Build and push the latest Steel Browser UI image
         run: |
-          docker build -t ghcr.io/steel-dev/steel-browser-ui:latest ./ui -f ./ui/Dockerfile
+          docker build -t ghcr.io/steel-dev/steel-browser-ui:latest . -f ./ui/Dockerfile
           docker push ghcr.io/steel-dev/steel-browser-ui:latest

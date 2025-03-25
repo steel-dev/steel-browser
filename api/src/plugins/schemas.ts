@@ -10,12 +10,14 @@ import seleniumSchemas from "../modules/selenium/selenium.schema";
 import scalarTheme from "./scalar-theme";
 import { buildJsonSchemas } from "../utils/schema";
 import { env } from "../env";
+import filesSchemas from "../modules/files/files.schema";
 
 const SCHEMAS = {
   ...actionSchemas,
   ...browserSchemas,
   ...cdpSchemas,
   ...seleniumSchemas,
+  ...filesSchemas,
 };
 
 export const { schemas, $ref } = buildJsonSchemas(SCHEMAS);
@@ -34,7 +36,7 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
       },
       servers: [
         {
-          url: `http://${env.DOMAIN ?? `${env.HOST}:${env.PORT}`}`,
+          url: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
           description: "Local server",
         },
       ],
