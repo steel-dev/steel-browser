@@ -36,6 +36,7 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val !== "false")
     .default("false"),
+  DEFAULT_TIMEZONE: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
