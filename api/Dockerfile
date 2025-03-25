@@ -14,21 +14,14 @@ ENV NODE_ENV="production" \
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
 # Install dependencies
-# Using --mount to speed up build with caching
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
-    rm -f /etc/apt/apt.conf.d/docker-clean; \
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
     apt-get update -qq && \
     DEBIAN_FRONTEND=noninteractive apt-get -yq dist-upgrade
 
 FROM base AS build
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
-    apt-get update && \
+RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
     pkg-config \
@@ -58,10 +51,7 @@ RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
 FROM base AS production
 # Install dependencies
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
-    apt-get update && \ 
+RUN apt-get update && \ 
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
     wget \
     nginx \
@@ -77,23 +67,38 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     unzip \
     default-jre \
     dbus \
-    dbus-x11
-
-RUN mkdir -p /files
+    dbus-x11 \
+    procps \
+    x11-xserver-utils
 
 # Install Chrome and ChromeDriver
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/var/log/apt \
-    curl -o chrome.deb https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/google-chrome-stable_128.0.6613.119-1_amd64.deb \
-    && apt-get install -y ./chrome.deb \
-    && rm chrome.deb \
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    wget \
+    ca-certificates \
+    curl \
+    unzip \
+    # Download and install specific version of Chrome
+    && CHROME_DEB="google-chrome-stable_128.0.6613.119-1_amd64.deb" \
+    && wget -q "https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/${CHROME_DEB}" \
+    && apt-get install -y ./google-chrome-stable_*.deb \
+    && rm google-chrome-stable_*.deb \
+    # Install matching ChromeDriver
     && mkdir -p /selenium/driver \
-    && curl -o chromedriver.zip https://storage.googleapis.com/chrome-for-testing-public/128.0.6613.119/linux64/chromedriver-linux64.zip \
-    && unzip chromedriver.zip -d /tmp \
+    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/128.0.6613.119/linux64/chromedriver-linux64.zip" \
+    && unzip chromedriver-linux64.zip -d /tmp \
     && mv /tmp/chromedriver-linux64/chromedriver /selenium/driver/chromedriver \
-    && rm -rf chromedriver.zip /tmp/chromedriver-linux64 \
-    && chmod +x /selenium/driver/chromedriver
+    && rm -rf chromedriver-linux64.zip /tmp/chromedriver-linux64 \
+    && chmod +x /selenium/driver/chromedriver \
+    # Verify installations
+    && google-chrome-stable --version \
+    && /selenium/driver/chromedriver --version \
+    # Clean up
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/*
+
+RUN mkdir -p /files
 
 COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
 
