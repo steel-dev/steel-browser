@@ -1,5 +1,4 @@
 ARG NODE_VERSION=22.13.0
-ARG RAILWAY_SERVICE_ID
 
 FROM node:${NODE_VERSION}-slim AS base
 
@@ -22,9 +21,7 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
 
 FROM base AS build
 
-RUN --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/cache/apt,target=/var/cache/apt \
-    --mount=type=cache,id=s/d7d87b8e-4d60-469f-be6f-07f75311163a-/var/lib/apt,target=/var/lib/apt \
-    apt-get update && \
+RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
     pkg-config \
