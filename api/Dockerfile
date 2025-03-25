@@ -56,11 +56,6 @@ RUN cd api/extensions/recorder && \
 RUN npm prune --omit=dev -w api
 RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
-FROM build AS patcher
-WORKDIR /app/api/patcher
-RUN npm i --include=dev
-RUN node ./scripts/patcher.js patch --packagePath /app/api/node_modules/puppeteer-core
-
 FROM base AS production
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
