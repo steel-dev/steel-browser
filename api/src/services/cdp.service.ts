@@ -40,7 +40,7 @@ export class CDPService extends EventEmitter {
     this.wsEndpoint = null;
     this.fingerprintData = null;
     this.chromeExecPath = getChromeExecutablePath();
-    this.defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    this.defaultTimezone = env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     // Clean up any existing proxy server
     if (this.wsProxyServer) {
