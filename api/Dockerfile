@@ -104,4 +104,4 @@ ENV HOST_IP=localhost \
 
 ENTRYPOINT ["/app/api/entrypoint.sh"]
 
-COPY --from=patcher /app /app
+COPY --from=build /app /app
