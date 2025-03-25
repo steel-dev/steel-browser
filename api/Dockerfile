@@ -52,11 +52,6 @@ RUN cd api/extensions/recorder && \
 RUN npm prune --omit=dev -w api
 RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
-FROM build AS patcher
-WORKDIR /app/api/patcher
-RUN npm i --include=dev
-RUN node ./scripts/patcher.js patch --packagePath /app/api/node_modules/puppeteer-core
-
 FROM base AS production
 # Install dependencies
 RUN apt-get update && \ 
@@ -117,4 +112,4 @@ ENV HOST_IP=localhost \
 
 ENTRYPOINT ["/app/api/entrypoint.sh"]
 
-COPY --from=patcher /app /app
+COPY --from=build /app /app
