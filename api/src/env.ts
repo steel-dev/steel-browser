@@ -16,10 +16,26 @@ const envSchema = z.object({
     .pipe(z.record(z.string()).optional().default({})),
   KILL_TIMEOUT: z.string().optional().default("0"),
   CHROME_EXECUTABLE_PATH: z.string().optional(),
-  CHROME_HEADLESS: z.string().optional().transform((val) => val !== "false").default("true"),
-  ENABLE_CDP_LOGGING: z.string().optional().transform((val) => val !== "false").default("false"),
-  LOG_CUSTOM_EMIT_EVENTS: z.string().optional().transform((val) => val !== "false").default("false"),
-  ENABLE_VERBOSE_LOGGING: z.string().optional().transform((val) => val !== "false").default("false"),
+  CHROME_HEADLESS: z
+    .string()
+    .optional()
+    .transform((val) => val !== "false")
+    .default("true"),
+  ENABLE_CDP_LOGGING: z
+    .string()
+    .optional()
+    .transform((val) => val !== "false")
+    .default("false"),
+  LOG_CUSTOM_EMIT_EVENTS: z
+    .string()
+    .optional()
+    .transform((val) => val !== "false")
+    .default("false"),
+  ENABLE_VERBOSE_LOGGING: z
+    .string()
+    .optional()
+    .transform((val) => val !== "false")
+    .default("false"),
 });
 
 export const env = envSchema.parse(process.env);

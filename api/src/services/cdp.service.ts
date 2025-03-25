@@ -1,7 +1,7 @@
 import puppeteer, { Browser, Page, Target, BrowserContext, Protocol, TargetType, CDPSession } from "puppeteer-core";
 import { Duplex } from "stream";
 import { EventEmitter } from "events";
-import { getChromeExecutablePath } from "../utils/browser";
+import { filterHeaders, getChromeExecutablePath } from "../utils/browser";
 import httpProxy from "http-proxy";
 import { IncomingMessage } from "http";
 import { env } from "../env";
@@ -11,6 +11,7 @@ import { FingerprintInjector } from "fingerprint-injector";
 import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint-generator";
 import { FastifyBaseLogger } from "fastify";
 import { isAdRequest } from "../utils/ads";
+import { loadFingerprintScript } from "../scripts";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -170,9 +171,8 @@ export class CDPService extends EventEmitter {
           await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
         }
 
-        const fingerprintInjector = new FingerprintInjector();
-        //@ts-ignore
-        await fingerprintInjector.attachFingerprintToPuppeteer(page, this.fingerprintData!);
+        // Use our safer fingerprint injection method instead of FingerprintInjector
+        await this.injectFingerprintSafely(page, this.fingerprintData!);
 
         await page.setRequestInterception(true);
 
@@ -205,33 +205,6 @@ export class CDPService extends EventEmitter {
           }
         });
 
-        const cdpSession = await page.createCDPSession();
-
-        const currentViewport = await page.viewport();
-
-        const { width, height } = this.launchConfig?.dimensions || { width: 1920, height: 1080 };
-
-        this.logger.info("Setting viewport to", width, height);
-        if (!currentViewport || currentViewport.width !== width || currentViewport.height !== height) {
-          await page.setViewport({ width, height });
-          await (
-            await page.createCDPSession()
-          ).send("Page.setDeviceMetricsOverride", {
-            screenHeight: height,
-            screenWidth: width,
-            width,
-            height,
-            mobile: /phone|android|mobile/i.test(this.fingerprintData!.fingerprint.navigator.userAgent),
-            screenOrientation:
-              height > width ? { angle: 0, type: "portraitPrimary" } : { angle: 90, type: "landscapePrimary" },
-            deviceScaleFactor: this.fingerprintData!.fingerprint.screen.devicePixelRatio,
-          });
-        }
-
-        page.on("close", async () => {
-          cdpSession.removeAllListeners();
-        });
-
         const updateLocalStorage = (host: string, storage: Record<string, string>) => {
           this.localStorageData[host] = { ...this.localStorageData[host], ...storage };
         };
@@ -250,8 +223,6 @@ export class CDPService extends EventEmitter {
       await this.setupPageLogging(page, target.type());
     } else {
       // Handle SERVICE_WORKER, SHARED_WORKER, BROWSER, WEBVIEW and OTHER targets.
-      const session = await target.createCDPSession();
-      await this.setupCDPLogging(session, target.type());
     }
   }
 
@@ -462,6 +433,12 @@ export class CDPService extends EventEmitter {
       operatingSystems: ["linux"],
       browsers: [{ name: "chrome", minVersion: 128 }],
       locales: ["en-US", "en"],
+      screen: {
+        minWidth: this.launchConfig.dimensions?.width ?? 1920,
+        minHeight: this.launchConfig.dimensions?.height ?? 1080,
+        maxWidth: this.launchConfig.dimensions?.width ?? 1920,
+        maxHeight: this.launchConfig.dimensions?.height ?? 1080,
+      },
     });
 
     if (this.launchConfig.sessionContext?.localStorage) {
@@ -608,6 +585,7 @@ export class CDPService extends EventEmitter {
 
     const client = await this.primaryPage.createCDPSession();
     const { cookies } = await client.send("Network.getAllCookies");
+    await client.detach().catch(() => {}); // Clean up
     return { cookies, localStorage: this.localStorageData };
   }
 
@@ -707,6 +685,84 @@ export class CDPService extends EventEmitter {
           });
         }, initialStorageItems);
       }
+    }
+  }
+
+  private async injectFingerprintSafely(page: Page, fingerprintData: BrowserFingerprintWithHeaders) {
+    try {
+      const { fingerprint, headers } = fingerprintData;
+      // TypeScript fix - access userAgent through navigator property
+      const userAgent = fingerprint.navigator.userAgent;
+      const userAgentMetadata = fingerprint.navigator.userAgentData;
+      const { screen } = fingerprint;
+
+      await page.setUserAgent(userAgent);
+
+      const session = await page.target().createCDPSession();
+
+      try {
+        await session.send("Page.setDeviceMetricsOverride", {
+          screenHeight: screen.height,
+          screenWidth: screen.width,
+          width: screen.width,
+          height: screen.height,
+          viewport: {
+            width: screen.availWidth,
+            height: screen.availHeight,
+            scale: 1,
+            x: 0,
+            y: 0,
+          },
+          mobile: /phone|android|mobile/i.test(userAgent),
+          screenOrientation:
+            screen.height > screen.width
+              ? { angle: 0, type: "portraitPrimary" }
+              : { angle: 90, type: "landscapePrimary" },
+          deviceScaleFactor: screen.devicePixelRatio,
+        });
+
+        const injectedHeaders = filterHeaders(headers);
+
+        await page.setExtraHTTPHeaders(injectedHeaders);
+
+        await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
+
+        await session.send("Emulation.setUserAgentOverride", {
+          userAgent: userAgent,
+          acceptLanguage: headers["accept-language"],
+          platform: fingerprint.navigator.platform || "Linux x86_64",
+          userAgentMetadata: {
+            brands: userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
+            fullVersionList:
+              userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
+            fullVersion: userAgentMetadata.fullVersion,
+            platform: navigator.platform,
+            platformVersion: userAgentMetadata.platformVersion,
+            architecture: userAgentMetadata.architecture,
+            model: userAgentMetadata.model,
+            mobile: userAgentMetadata.mobile as unknown as boolean,
+            bitness: userAgentMetadata.bitness,
+            wow64: userAgentMetadata.wow64 as unknown as boolean,
+          },
+        });
+      } finally {
+        // Always detach the session when done
+        await session.detach().catch(() => {});
+      }
+
+      await page.evaluateOnNewDocument(
+        loadFingerprintScript({
+          fixedVendor: fingerprint.videoCard.vendor,
+          fixedRenderer: fingerprint.videoCard.renderer,
+          fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
+          fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
+        }),
+      );
+    } catch (error) {
+      this.logger.error(`Error injecting fingerprint safely: ${error}`);
+      const fingerprintInjector = new FingerprintInjector();
+      // @ts-ignore - Ignore type mismatch between puppeteer versions
+      await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
     }
   }
 }
