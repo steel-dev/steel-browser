@@ -115,3 +115,22 @@ export async function installMouseHelper(page: Page) {
     );
   });
 }
+
+export function filterHeaders(headers: Record<string, string>) {
+  const headersToRemove = [
+    "accept-encoding",
+    "accept",
+    "cache-control",
+    "pragma",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "sec-fetch-user",
+    "upgrade-insecure-requests",
+  ];
+  const filteredHeaders = { ...headers };
+  headersToRemove.forEach((header) => {
+    delete filteredHeaders[header];
+  });
+  return filteredHeaders;
+}

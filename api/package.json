@@ -5,8 +5,11 @@
   "main": "index.js",
   "scripts": {
     "start": "node ./build/index.js",
-    "build": "tsc && mkdir -p build/templates && cp -r src/templates/* build/templates/",
-    "dev": "cd extensions/recorder && npm install && npm run build && cd ../.. && ts-node-dev --poll --exit-child ./src/index.ts",
+    "build": "tsc && npm run copy:templates && npm run copy:fingerprint",
+    "copy:templates": "mkdir -p build/templates && cp -r src/templates/* build/templates/",
+    "copy:fingerprint": "cp src/scripts/fingerprint.js build/scripts/fingerprint.js",
+    "prepare:recorder": "cd extensions/recorder && npm install && npm run build",
+    "dev": "npm run prepare:recorder && ts-node-dev --poll --exit-child ./src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "pretty": "prettier --write \"src/**/*.ts\"",
     "generate:openapi": "ts-node ./openapi/generate.ts"
