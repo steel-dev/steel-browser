@@ -10,7 +10,7 @@
     "repl"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build -w api -w ui",
     "dev": "concurrently \"npm run dev -w api\" \"npm run dev -w ui\""
   },
   "devDependencies": {
