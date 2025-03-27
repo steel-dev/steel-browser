@@ -46,14 +46,12 @@
 
 [Steel.dev](https://steel.dev) is an open-source browser API that makes it easy to build AI apps and agents that interact with the web. Instead of building automation infrastructure from scratch, you can focus on your AI application while Steel handles the complexity.
 
-**This repo is the core building block behind Steel - a production-ready, containerized browser sandbox that you can deploy anywhere.** It includes built-in stealth capabilities, text-to-markdown, session management, a web UI to view/debug sessions, and full browser control through standard automation frameworks like Puppeteer, Playwright, and Selenium.
-
 Under the hood, it manages sessions, pages, and browser processes, allowing you to perform complex browsing tasks programmatically without any of the headaches:
 - **Full Browser Control**: Uses Puppeteer and CDP for complete control over Chrome instances -- allowing you to connect using Puppeteer, Playwright, or Selenium.
 - **Session Management**: Maintains browser state, cookies, and local storage across requests
 - **Proxy Support**: Built-in proxy chain management for IP rotation
 - **Extension Support**: Load custom Chrome extensions for enhanced functionality
-- **Debugging Tools**: Built-in request logging and session recording capabilities
+- **Debugging Tools**: Built-in request logging and a UI to view/debug sessions with
 - **Anti-Detection**: Includes stealth plugins and fingerprint management
 - **Resource Management**: Automatic cleanup and browser lifecycle management
 - **Browser Tools**: Exposes APIs to quick convert pages to markdown, readability, screenshots, or PDFs.
