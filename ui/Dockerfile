@@ -20,7 +20,7 @@ COPY --link package.json package-lock.json ./
 COPY --link ui/ ./ui/
 
 # Install the npm packages directly in the Docker container's working directory
-RUN npm ci --include=dev -w ui
+RUN npm ci --include=dev -w ui --ignore-scripts
 
 # Build the application
 RUN npm run build -w ui
