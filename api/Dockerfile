@@ -33,7 +33,7 @@ COPY --link package.json package-lock.json ./
 COPY --link api/ ./api/
 
 # Install dependencies for api
-RUN npm ci --include=dev --workspace=api
+RUN npm ci --include=dev --workspace=api --ignore-scripts
 
 # Install dependencies for recorder extension separately
 RUN cd api/extensions/recorder && npm ci --include=dev && cd -

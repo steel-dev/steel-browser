@@ -79,7 +79,7 @@ verify_chrome() {
 start_nginx() {
     if [ "$START_NGINX" = "true" ]; then
         log "Starting nginx..."
-        nginx -c /app/nginx.conf
+        nginx -c /app/api/nginx.conf
         
         # Wait for nginx to start
         max_attempts=10
