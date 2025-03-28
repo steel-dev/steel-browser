@@ -171,8 +171,14 @@ export class CDPService extends EventEmitter {
           await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
         }
 
-        // Use our safer fingerprint injection method instead of FingerprintInjector
-        await this.injectFingerprintSafely(page, this.fingerprintData!);
+        // Inject fingerprint only if it's not skipped
+        if (!env.SKIP_FINGERPRINT_INJECTION) {
+          // Use our safer fingerprint injection method instead of FingerprintInjector
+          await this.injectFingerprintSafely(page, this.fingerprintData!);
+          this.logger.debug("Injected fingerprint into page");
+        } else {
+          this.logger.info("Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting");
+        }
 
         await page.setRequestInterception(true);
 
