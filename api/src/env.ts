@@ -37,6 +37,11 @@ const envSchema = z.object({
     .transform((val) => val !== "false")
     .default("false"),
   DEFAULT_TIMEZONE: z.string().optional(),
+  SKIP_FINGERPRINT_INJECTION: z
+    .string()
+    .optional()
+    .transform((val) => val !== "false" && val !== "")
+    .default("false"),
 });
 
 export const env = envSchema.parse(process.env);
