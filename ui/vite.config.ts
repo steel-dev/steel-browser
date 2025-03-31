@@ -13,12 +13,12 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: process.env.API_URL,
+        target: "http://localhost:3000",
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api/, ""),
       },
       "/ws": {
-        target: process.env.API_URL?.replace(/^http/, "ws"),
+        target: "ws://localhost:3000",
         ws: true,
         changeOrigin: true,
       },

@@ -6,12 +6,10 @@ WORKDIR /app
 # Set default values that can be overridden
 ARG VITE_API_URL=http://localhost:3000
 ARG VITE_WS_URL=ws://localhost:3000
-ARG VITE_OPENAPI_URL=http://localhost:3000/documentation/json
 
 # Make the build args available as environment variables during build
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_WS_URL=${VITE_WS_URL}
-ENV VITE_OPENAPI_URL=${VITE_OPENAPI_URL}
 
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
