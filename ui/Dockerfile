@@ -28,10 +28,11 @@ RUN npm run build -w ui
 # Prune dev dependencies
 RUN npm prune --omit=dev -w ui
 
+FROM nginx:alpine
+COPY --from=base /app/ui/dist /usr/share/nginx/html
+COPY ./ui/nginx.conf.template /etc/nginx/nginx.conf.template
+
 # Expose the port your web server runs on, assuming it's 5173
-EXPOSE 5173
+EXPOSE 80
 
-WORKDIR /app/ui
-
-# Command to run your web server
-CMD ["npm", "run", "start"]
+CMD /bin/sh -c "sed 's|__VITE_API_URL__|'"${VITE_API_URL}"'|g' /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"
