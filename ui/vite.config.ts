@@ -17,6 +17,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api/, ""),
       },
+      "/ws": {
+        target: process.env.API_URL?.replace(/^http/, "ws"),
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 });
