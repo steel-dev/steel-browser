@@ -1,7 +1,7 @@
 import { CDPService } from "../../services/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
-import { CreateSessionRequest, SessionStreamRequest } from "./sessions.schema";
+import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema";
 import { env } from "../../env";
 import { Protocol } from "puppeteer-core";
 
@@ -91,8 +91,10 @@ export const handleGetSessionDetails = async (
       userAgent: "",
       isSelenium: false,
       proxy: "",
+      proxyTxBytes: 0,
+      proxyRxBytes: 0,
       solveCaptcha: false,
-    });
+    } as SessionDetails);
   }
   return reply.send(server.sessionService.activeSession);
 };

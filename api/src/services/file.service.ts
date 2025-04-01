@@ -6,6 +6,7 @@ import path from "path";
 import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
+import { env } from "../env";
 
 interface File {
   name: string;
@@ -25,7 +26,7 @@ export class FileService {
 
   constructor(_config: {}, logger: FastifyBaseLogger) {
     this.logger = logger;
-    this.baseDownloadPath = process.env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
+    this.baseDownloadPath = env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
     fs.mkdirSync(this.baseDownloadPath, { recursive: true });
     this.fileMap = new Map();
   }
