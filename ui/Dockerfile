@@ -3,13 +3,6 @@ ARG NODE_VERSION=22.13.0
 FROM node:${NODE_VERSION} AS base
 
 WORKDIR /app
-# Set default values that can be overridden
-ARG API_URL=http://localhost:3000
-ARG WS_URL=ws://localhost:3000
-
-# Make the build args available as environment variables during build
-ENV API_URL=${API_URL}
-ENV WS_URL=${WS_URL}
 
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 

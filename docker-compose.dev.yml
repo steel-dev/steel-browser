@@ -18,8 +18,6 @@ services:
     build:
       context: .
       dockerfile: ./ui/Dockerfile
-      args:
-        API_URL: ${API_URL:-http://api:3000}
     ports:
       - "5173:80"
     environment:
