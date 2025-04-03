@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import { CDPService } from "../services/cdp.service";
+import { CDPService } from "../services/cdp/cdp.service";
 import fp from "fastify-plugin";
 
 const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {

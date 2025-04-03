@@ -1,4 +1,4 @@
-import { CDPService } from "../../services/cdp.service";
+import { CDPService } from "../../services/cdp/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema";

@@ -11,7 +11,7 @@ import { env } from "../env";
 import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
-import { CDPService } from "./cdp.service";
+import { CDPService } from "./cdp/cdp.service";
 import { FileService } from "./file.service";
 import { SeleniumService } from "./selenium.service";
 import { mkdir } from "fs/promises";
