@@ -1,17 +1,19 @@
 import puppeteer, { Browser, Page, Target, BrowserContext, Protocol, TargetType, CDPSession } from "puppeteer-core";
 import { Duplex } from "stream";
 import { EventEmitter } from "events";
-import { filterHeaders, getChromeExecutablePath } from "../utils/browser";
+import { filterHeaders, getChromeExecutablePath } from "../../utils/browser";
 import httpProxy from "http-proxy";
 import { IncomingMessage } from "http";
-import { env } from "../env";
-import { getExtensionPaths } from "../utils/extensions";
-import { BrowserLauncherOptions, BrowserEvent, EmitEvent, BrowserEventType } from "../types";
+import { env } from "../../env";
+import { getExtensionPaths } from "../../utils/extensions";
+import { BrowserLauncherOptions, BrowserEvent, EmitEvent, BrowserEventType } from "../../types";
 import { FingerprintInjector } from "fingerprint-injector";
 import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint-generator";
 import { FastifyBaseLogger } from "fastify";
-import { isAdRequest } from "../utils/ads";
-import { loadFingerprintScript } from "../scripts";
+import { isAdRequest } from "../../utils/ads";
+import { loadFingerprintScript } from "../../scripts";
+import { PluginManager } from "./plugins/core/plugin-manager";
+import { SessionPlugin, SessionManager } from "./plugins/session";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -29,6 +31,8 @@ export class CDPService extends EventEmitter {
   private currentSessionConfig: BrowserLauncherOptions | null;
   private shuttingDown: boolean;
   private defaultTimezone: string;
+  private pluginManager: PluginManager;
+  private sessionPlugin: SessionPlugin;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -67,6 +71,18 @@ export class CDPService extends EventEmitter {
       blockAds: true,
       extensions: [],
     };
+
+    // Initialize plugin manager
+    this.pluginManager = new PluginManager(this, logger);
+
+    // Register session plugin
+    this.sessionPlugin = new SessionPlugin({
+      autoRestoreSession: true,
+      autoDumpSession: true,
+      logger: this.logger,
+      debugMode: env.NODE_ENV === "development",
+    });
+    this.pluginManager.register(this.sessionPlugin);
   }
 
   private removeAllHandlers() {
@@ -126,6 +142,8 @@ export class CDPService extends EventEmitter {
   public async refreshPrimaryPage() {
     const newPage = await this.createPage();
     if (this.primaryPage) {
+      // Notify plugins before page close
+      await this.pluginManager.onBeforePageClose(this.primaryPage);
       await this.primaryPage.close();
     }
     this.primaryPage = newPage;
@@ -155,8 +173,18 @@ export class CDPService extends EventEmitter {
       });
 
       if (page) {
-        // Inject session context first
-        await this.injectSessionContext(page, this.launchConfig?.sessionContext);
+        // Notify plugins about the new page
+        await this.pluginManager.onPageCreated(page);
+
+        // Inject session context using legacy or plugin method
+        if (this.launchConfig?.sessionContext) {
+          // Legacy approach - directly inject session context
+          await this.injectSessionContext(page, this.launchConfig.sessionContext);
+
+          // Also set session data in the plugin for future use
+          const sessionData = SessionManager.convertFromSessionContext(this.launchConfig.sessionContext);
+          this.sessionPlugin.setSessionData(this.getTargetId(page), sessionData);
+        }
 
         if (this.currentSessionConfig?.timezone) {
           await page.emulateTimezone(this.currentSessionConfig.timezone);
@@ -375,16 +403,32 @@ export class CDPService extends EventEmitter {
     if (this.browserInstance) {
       this.shuttingDown = true;
       this.logger.info(`Shutting down CDPService and cleaning up resources`);
-      this.removeAllHandlers();
-      await this.browserInstance.close();
-      await this.browserInstance.process()?.kill();
-      this.localStorageData = {};
-      this.fingerprintData = null;
-      this.currentSessionConfig = null;
-      this.browserInstance = null;
-      this.wsEndpoint = null;
-      this.emit("close");
-      this.shuttingDown = false;
+
+      try {
+        if (this.browserInstance) {
+          await this.pluginManager.onBrowserClose(this.browserInstance);
+        }
+
+        await this.pluginManager.onShutdown();
+
+        this.removeAllHandlers();
+        await this.browserInstance.close();
+        await this.browserInstance.process()?.kill();
+        this.localStorageData = {};
+        this.fingerprintData = null;
+        this.currentSessionConfig = null;
+        this.browserInstance = null;
+        this.wsEndpoint = null;
+        this.emit("close");
+        this.shuttingDown = false;
+      } catch (error) {
+        this.logger.error(`Error during shutdown: ${error}`);
+        // Ensure we complete the shutdown even if plugins throw errors
+        await this.browserInstance?.close();
+        await this.browserInstance?.process()?.kill();
+        this.browserInstance = null;
+        this.shuttingDown = false;
+      }
     }
   }
 
@@ -498,6 +542,9 @@ export class CDPService extends EventEmitter {
     this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
     this.browserInstance = (await puppeteer.launch(finalLaunchOptions)) as unknown as Browser;
 
+    // Notify plugins about browser launch
+    await this.pluginManager.onBrowserLaunch(this.browserInstance);
+
     this.browserInstance.on("error", (err) => {
       this.logger.error(`Browser error: ${err}`);
       this.customEmit(EmitEvent.Log, {
@@ -589,10 +636,24 @@ export class CDPService extends EventEmitter {
       throw new Error("Browser or primary page not initialized");
     }
 
-    const client = await this.primaryPage.createCDPSession();
-    const { cookies } = await client.send("Network.getAllCookies");
-    await client.detach().catch(() => {}); // Clean up
-    return { cookies, localStorage: this.localStorageData };
+    // Also use the new session plugin to get full session data
+    const sessionManager = this.primaryPage.session;
+    let sessionData: Record<string, any> = {};
+
+    if (sessionManager) {
+      try {
+        console.log("Dumping session data");
+        sessionData = await sessionManager.dump();
+        console.log("Session data dumped", sessionData);
+      } catch (error) {
+        this.logger.error(`Error dumping session data: ${error}`);
+      }
+    }
+
+    return {
+      cookies: JSON.parse(sessionData.cookies),
+      localStorage: JSON.parse(sessionData.localStorage),
+    };
   }
 
   private async logEvent(event: BrowserEvent) {
