@@ -12,7 +12,9 @@ services:
   ui:
     image: ghcr.io/steel-dev/steel-browser-ui:latest
     ports:
-      - "5173:5173"
+      - "5173:80"
+    environment:
+      - API_URL=${API_URL:-http://api:3000}
     depends_on:
       - api
     networks:
