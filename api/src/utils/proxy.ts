@@ -6,13 +6,15 @@ export class ProxyServer extends Server {
   public upstreamProxyUrl: string;
   public txBytes = 0;
   public rxBytes = 0;
+  private hostConnections = new Set<number>();
 
   constructor(proxyUrl: string) {
     super({
       port: 0,
 
-      prepareRequestFunction: ({ hostname }) => {
+      prepareRequestFunction: ({ connectionId, hostname }) => {
         if (hostname === process.env.HOST) {
+          this.hostConnections.add(connectionId);
           return {
             requestAuthentication: false,
             upstreamProxyUrl: null, // This will ensure that events sent back to the api are not proxied
@@ -25,11 +27,12 @@ export class ProxyServer extends Server {
       },
     });
 
-    this.on("connectionClosed", ({ stats }) => {
-      if (stats) {
+    this.on("connectionClosed", ({ connectionId, stats }) => {
+      if (stats && !this.hostConnections.has(connectionId)) {
         this.txBytes += stats.trgTxBytes;
         this.rxBytes += stats.trgRxBytes;
       }
+      this.hostConnections.delete(connectionId);
     });
 
     this.url = `http://127.0.0.1:${this.port}`;
