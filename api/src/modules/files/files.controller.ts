@@ -176,7 +176,7 @@ export const handleFileDownload = async (
     reply
       .header("Content-Type", contentType)
       .header("Content-Length", size)
-      .header("Content-Disposition", `attachment; filename="${name}"`);
+      .header("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`);
 
     return reply.send(stream);
   } catch (e: unknown) {

@@ -43,15 +43,23 @@ export class FileService {
     return path.join(this.baseDownloadPath, this.sanitizeId(sessionId));
   }
 
-  public async getFilePath({ sessionId, id }: { sessionId: string; id: string }): Promise<string> {
+  private buildFileName(originalName: string, id: string): string {
+    const parsed = path.parse(originalName);
+    const safeBase = this.sanitizeId(parsed.name);
+    const safeExt = parsed.ext;
+    return `${safeBase}-${id}${safeExt}`;
+  }
+
+  public async getFilePath({ sessionId, name }: { sessionId: string; name: string }): Promise<string> {
     const sessionPath = this.getSessionPath(sessionId);
     await this.ensureDirectoryExists(sessionPath);
-    return path.join(sessionPath, this.sanitizeId(id));
+    return path.join(sessionPath, this.sanitizeId(name));
   }
 
   private async exists(filePath: string): Promise<boolean> {
     try {
       await fs.promises.stat(filePath);
+
       return true;
     } catch (err: any) {
       if (err.code === "ENOENT") return false;
@@ -68,7 +76,15 @@ export class FileService {
     metadata?: Record<string, any>;
   }): Promise<{ id: string } & File> {
     const id = options.id || uuidv4();
-    const filePath = await this.getFilePath({ sessionId: options.sessionId, id });
+    let fileName: string;
+
+    if (options.name) {
+      fileName = this.buildFileName(options.name, id);
+    } else {
+      fileName = id;
+    }
+
+    const filePath = await this.getFilePath({ sessionId: options.sessionId, name: fileName });
 
     const hash = createHash("sha256");
 
@@ -88,7 +104,7 @@ export class FileService {
     const currentDate = new Date();
 
     const file: File = {
-      name: options.name || id,
+      name: options.name || fileName,
       size: (await fs.promises.stat(filePath)).size,
       contentType: options.contentType || (options.name && mime.lookup(options.name)) || "application/octet-stream",
       createdAt: currentDate,
@@ -107,13 +123,19 @@ export class FileService {
   }
 
   public async getFile({ sessionId, id }: { sessionId: string; id: string }): Promise<{ id: string } & File> {
-    const filePath = await this.getFilePath({ sessionId, id });
-
-    if (!(await this.exists(filePath))) {
-      throw new Error(`File not found: ${filePath}`);
+    const sessionFiles = this.fileMap.get(sessionId);
+    if (!sessionFiles) {
+      throw new Error(`Session not found: ${sessionId}`);
     }
 
-    const file = this.fileMap.get(sessionId)!.get(id)!;
+    const file = sessionFiles.get(id);
+    if (!file) {
+      throw new Error(`File metadata not found: ${id}`);
+    }
+
+    if (!(await this.exists(file.path))) {
+      throw new Error(`File not found: ${file.path}`);
+    }
 
     return {
       id,
@@ -128,21 +150,23 @@ export class FileService {
     sessionId: string;
     id: string;
   }): Promise<{ id: string; stream: Readable } & File> {
-    const filePath = await this.getFilePath({ sessionId, id });
-
-    if (!(await this.exists(filePath))) {
-      throw new Error(`File not found: ${filePath}`);
+    const sessionFiles = this.fileMap.get(sessionId);
+    if (!sessionFiles) {
+      throw new Error(`Session not found: ${sessionId}`);
     }
 
-    const file = this.fileMap.get(sessionId)!.get(id)!;
-
+    const file = sessionFiles.get(id);
     if (!file) {
-      throw new Error(`File not found in session: ${id}`);
+      throw new Error(`File metadata not found: ${id}`);
+    }
+
+    if (!(await this.exists(file.path))) {
+      throw new Error(`File not found: ${file.path}`);
     }
 
     return {
       id,
-      stream: fs.createReadStream(filePath),
+      stream: fs.createReadStream(file.path),
       ...file,
     };
   }
@@ -159,18 +183,21 @@ export class FileService {
   }
 
   public async deleteFile({ sessionId, id }: { sessionId: string; id: string }): Promise<{ id: string } & File> {
-    const filePath = await this.getFilePath({ sessionId, id });
-
-    if (!(await this.exists(filePath))) {
-      throw new Error(`File not found: ${filePath}`);
+    const sessionFiles = this.fileMap.get(sessionId);
+    if (!sessionFiles) {
+      throw new Error(`Session not found: ${sessionId}`);
     }
 
-    await fs.promises.unlink(filePath);
-    const file = this.fileMap.get(sessionId)!.get(id)!;
-
+    const file = sessionFiles.get(id);
     if (!file) {
-      throw new Error(`File not found in session map: ${id}`);
+      throw new Error(`File metadata not found: ${id}`);
     }
+
+    if (!(await this.exists(file.path))) {
+      throw new Error(`File not found: ${file.path}`);
+    }
+
+    await fs.promises.unlink(file.path);
 
     this.fileMap.get(sessionId)!.delete(id);
 
