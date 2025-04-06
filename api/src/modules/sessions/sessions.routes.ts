@@ -11,6 +11,7 @@ import {
 import { $ref } from "../../plugins/schemas";
 import { CreateSessionRequest, RecordedEvents, SessionStreamRequest } from "./sessions.schema";
 import { EmitEvent } from "../../types/enums";
+import { unpack } from "@rrweb/packer"; // Importing the unpack function from rrweb/packer
 
 async function routes(server: FastifyInstance) {
   server.get(
@@ -152,11 +153,45 @@ async function routes(server: FastifyInstance) {
         tags: ["Sessions"],
         summary: "Receive recorded events from the browser",
         body: $ref("RecordedEvents"),
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              status: { type: 'string' }
+            }
+          }
+        }
       },
     },
     async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
-      server.cdpService.customEmit(EmitEvent.Recording, request.body);
-      return reply.send({ status: "ok" });
+      try {
+        // unpack the received events
+        const unpackedEvents = request.body.events.map(event => {
+          try {
+            if (typeof event === 'object') return event;
+            return unpack(event);
+          } catch (error) {
+            server.log.error(`Failed to unpack event: ${error}`);
+            return null;
+          }
+        }).filter(Boolean);
+
+        if (unpackedEvents.length === 0) {
+          server.log.info('No valid events to process');
+          return reply.send({ status: "ok" });
+        }
+        server.cdpService.customEmit(EmitEvent.Recording, {
+          events: unpackedEvents
+        });
+
+        return reply.send({ status: "ok" });
+      } catch (error) {
+        server.log.error(`Error processing events: ${error}`);
+        return reply.status(500).send({ 
+          status: "error",
+          message: "Failed to process events"
+        });
+      }
     },
   );
 

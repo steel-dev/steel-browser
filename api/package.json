@@ -33,6 +33,7 @@
     "@fastify/view": "10.0.2",
     "@fastify/vite": "^7.0.1",
     "@mozilla/readability": "^0.5.0",
+    "@rrweb/packer": "^2.0.0-alpha.18",
     "@scalar/fastify-api-reference": "^1.25.116",
     "@types/mime-types": "^2.1.4",
     "axios": "^1.8.4",
