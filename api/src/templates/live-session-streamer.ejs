@@ -1,398 +1,1523 @@
 <!DOCTYPE html>
-<html data-theme="<%= theme %>">
+  <html data-theme="<%= theme %>" <%= singlePageMode ? 'data-single-page-mode="true"' : '' %>>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Steel Debug View</title>
-  <style>
-    /* CSS Variables for themes */
-    html[data-theme="dark"] {
-      --bg-primary: #1c1c1c;
-      --bg-secondary: #2a2a2a;
-      --border-color: #383838;
-      --text-color: #ffffff;
-    }
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Steel Session Player</title>
+    <style>
+        /* CSS Variables for themes */
+        html[data-theme="dark"] {
+              --bg-primary: #272725;
+              --bg-secondary: #171717;
+              --border-color: #383838;
+              --text-color: #ffffff;
+              --tab-active-bg: #272725;
+              --tab-hover-bg: #333333;
+              --icon-color: #8a8a8a;
+              --icon-hover-color: #ffffff;
+              --error-color: #e53935;
+              --offline-indicator-color: #e53935;
+              --loading-overlay-bg: rgba(30, 30, 30, 0.8);
+              --loading-spinner-color: #ffffff;
+        }
 
-    html[data-theme="light"] {
-      --bg-primary: #ffffff;
-      --bg-secondary: #f5f5f5;
-      --border-color: #e0e0e0;
-      --text-color: #000000;
-    }
+        html[data-theme="light"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f5f5;
+            --border-color: #e0e0e0;
+            --text-color: #000000;
+              --tab-active-bg: #e8e8e8;
+              --tab-hover-bg: #efefef;
+              --icon-color: #666666;
+              --icon-hover-color: #000000;
+              --error-color: #e53935;
+              --offline-indicator-color: #e53935;
+              --loading-overlay-bg: rgba(240, 240, 240, 0.8);
+              --loading-spinner-color: #333333;
+        }
 
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--bg-primary);
-      overflow: hidden;
-    }
-    .container {
-      width: 100%;
-      height: 100%;
-      background: var(--bg-primary);
-      border: none;
-      display: flex;
-      flex-direction: column;
-      box-sizing: border-box;
-      overflow: hidden;
-    }
-    .top-bar {
-      height: 40px;
-      flex: 0 0 40px;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 6px;
-      box-sizing: border-box;
-    }
-    .url-bar {
-      width: 80%;
-      max-width: 800px;
-      height: 28px;
-      padding: 0 12px;
-      background: var(--bg-primary);
-      border-radius: 4px;
-      border: 1px solid var(--border-color);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--text-color);
-      font-family: system-ui, -apple-system, sans-serif;
-    }
-    .favicon {
-      width: 14px;
-      height: 14px;
-      object-fit: contain;
-      margin-right: 4px;
-    }
-    .url-input {
-      flex: 1;
-      border: none;
-      background: transparent;
-      color: var(--text-color);
-      font-family: 'Geist', sans-serif;
-      font-size: 13px;
-      outline: none;
-      width: 100%;
-    }
-    .content {
-      min-height: 0;
-      flex: 1;
-      overflow: hidden;
-      background: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-    }
-    #canvas {
-      position: absolute;
-      height: 100%;
-      width: auto;
-      left: 50%;
-      transform: translateX(-50%);
-      object-fit: contain;
-    }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            overflow: hidden;
+              font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+        .container {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            border: none;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .top-bar {
+            height: 40px;
+            flex: 0 0 40px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+              padding: 0;
+            box-sizing: border-box;
+        }
+        .url-bar {
+              width: 100%;
+            height: 28px;
+            padding: 0 12px;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-color);
+            font-family: system-ui, -apple-system, sans-serif;
+            &:focus-within {
+              outline: none;
+              background: var(--tab-hover-bg);
+            }
+        }
+        .favicon {
+            width: 14px;
+            height: 14px;
+            object-fit: contain;
+            margin-right: 4px;
+        }
+        .url-input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            color: var(--text-color);
+            font-family: 'Geist', sans-serif;
+            font-size: 13px;
+            outline: none;
+            width: 100%;
+        }
+        .content {
+            min-height: 0;
+            flex: 1;
+            overflow: hidden;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+          .canvas-container {
+              position: absolute;
+              height: 100%;
+              width: 100%;
+              display: none;
+          }
+          .canvas-container.active {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+          }
+          .canvas {
+            position: absolute;
+            height: 100%;
+            width: auto;
+            left: 50%;
+            transform: translateX(-50%);
+            object-fit: contain;
+          }
 
-    /* Add styles for navigation buttons */
-    .nav-buttons {
-      display: flex;
-      gap: 4px;
-      margin-right: 16px;
-    }
+          /* Tab bar styles */
+          .tab-bar {
+            display: flex;
+            padding: 6px;
+            gap: 4px;
+            height: 36px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            overflow-x: auto;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE and Edge */
+            align-items: center;
+          }
+          .tab-bar::-webkit-scrollbar {
+              display: none; /* Chrome, Safari, Opera */
+          }
+          .tab {
+              display: flex;
+              align-items: center;
+              padding: 0 12px;
+              min-width: 120px;
+              max-width: 200px;
+              height: 36px;
+              border-radius: 8px;
+              color: var(--text-color);
+              font-size: 12px;
+              cursor: <%= interactive ? "pointer" : "default" %>;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              position: relative;
+              gap: 8px;
+              transition: background-color 0.2s;
+          }
+          .tab:hover {
+              background-color: <%= interactive ? "var(--tab-hover-bg)" : "transparent" %>;
+          }
+          .tab.active {
+              background-color: var(--tab-active-bg);
+          }
+          .tab-favicon {
+              width: 16px;
+              height: 16px;
+              object-fit: contain;
+          }
+          .tab-title {
+              flex: 1;
+              overflow: hidden;
+              text-overflow: ellipsis;
+          }
+          .tab-close {
+              width: 16px;
+              height: 16px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              border-radius: 50%;
+              opacity: 0.6;
+              font-size: 14px;
+              line-height: 1;
+          }
+          .tab-close:hover {
+              background: rgba(255, 255, 255, 0.1);
+              opacity: 1;
+          }
+          .new-tab-button {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 36px;
+              min-width: 36px;
+              height: 36px;
+              color: var(--icon-color);
+              cursor: pointer;
+              font-size: 18px;
+              transition: color 0.2s;
+          }
+          .new-tab-button:hover {
+              color: var(--icon-hover-color);
+          }
+  
+          /* Navigation buttons */
+          .nav-buttons {
+              display: flex;
+              gap: 4px;
+              margin-left: 8px;
+              margin-right: 8px;
+          }
+        .nav-button {
+              width: 28px;
+              height: 28px;
+            border: none;
+            background: transparent;
+              color: var(--icon-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+              font-size: 18px;
+            padding: 0;
+              border-radius: 4px;
+              transition: all 0.2s;
+        }
+        .nav-button:hover {
+              color: var(--icon-hover-color);
+              background: rgba(255, 255, 255, 0.1);
+          }
+          .nav-button:disabled {
+              cursor: default;
+              &:hover {
+                background: transparent;
+              }
+          }
+          
+          /* Browser chrome layout */
+          .browser-chrome {
+              display: flex;
+              flex-direction: column;
+              width: 100%;
+              position: relative;
+          }
+          .address-bar {
+              display: flex;
+              align-items: center;
+              padding: 0 8px;
+              height: 40px;
+              background: var(--bg-secondary);
+              border-bottom: 1px solid var(--border-color);
+          }
+          
+          /* Icons */
+          .icon {
+              width: 16px;
+              height: 16px;
+              fill: var(--icon-color);
+          }
+          .icon-container {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+          }
+  
+          /* Offline status indicator styling - inline with tabs */
+          .connection-status {
+              display: flex;
+              align-items: center;
+              padding: 0 12px;
+              height: 36px;
+              color: var(--text-color);
+              font-family: system-ui, -apple-system, sans-serif;
+              font-size: 13px;
+              box-sizing: border-box;
+              min-width: 140px;
+              flex-shrink: 0;
+          }
+  
+          .connection-status.offline {
+              display: flex;
+          }
+  
+          .connection-status.online {
+              display: none;
+          }
+  
+          /* Initially hide the connection status until we know the state */
+          .connection-status.connecting {
+              display: none;
+          }
 
-    .nav-button {
-      width: 24px;
-      height: 24px;
-      border: none;
-      background: transparent;
-      color: var(--text-color);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      padding: 0;
-      opacity: 0.6;
-      transition: opacity 0.2s;
-    }
+          .status-indicator {
+              width: 8px;
+              height: 8px;
+              border-radius: 50%;
+              margin-right: 8px;
+              display: inline-block;
+              flex-shrink: 0;
+          }
+  
+          .status-indicator.offline {
+              background-color: var(--offline-indicator-color);
+          }
+  
+          /* Remove the margin adjustment since it's now inline */
+          .connection-status.offline + .tab-bar {
+              margin-top: 0;
+          }
+  
+          /* Add new styles for the lock icons */
+          .url-security-icon {
+              width: 18px;
+              height: 18px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+          }
+  
+          .url-security-icon svg {
+              width: 18px;
+              height: 18px;
+              fill: var(--icon-color);
+          }
+  
+          .url-security-icon.secure svg {
+              fill: #4CAF50; /* Green for secure connections */
+          }
+  
+          /* Single-page mode styles */
+          html[data-single-page-mode="true"] .tab-bar {
+              display: none !important;
+          }
+          
+          html[data-single-page-mode="true"] .content {
+              height: calc(100% - 40px); /* Only account for address bar in single-page mode */
+          }
+  
+          /* Add styles for WebSocket connection loading/error states */
+          .canvas-container.loading::before {
+              content: "Loading...";
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              color: var(--text-color);
+              font-family: system-ui, -apple-system, sans-serif;
+              font-size: 16px;
+              z-index: 5;
+          }
+          
+          .canvas-container.error::before {
+              content: "Session released";
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              color: #fff;
+              font-family: system-ui, -apple-system, sans-serif;
+              font-size: 16px;
+              z-index: 5;
+          }
 
-    .nav-button:hover {
-      opacity: 1;
-    }
-  </style>
+          /* Tab switching loading overlay */
+          .canvas-container.tab-switching::after {
+              content: "";
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: var(--loading-overlay-bg);
+              z-index: 10;
+          }
+
+          .canvas-container.tab-switching::before {
+              content: "";
+              position: absolute;
+              width: 40px;
+              height: 40px;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              border: 4px solid transparent;
+              border-top-color: var(--loading-spinner-color);
+              border-radius: 50%;
+              animation: spin 1s linear infinite;
+              z-index: 11;
+          }
+
+          @keyframes spin {
+              0% { transform: translate(-50%, -50%) rotate(0deg); }
+              100% { transform: translate(-50%, -50%) rotate(360deg); }
+          }
+
+          /* Tab loading spinner */
+          .tab-favicon-spinner {
+              width: 16px;
+              height: 16px;
+              display: none;
+              position: relative;
+          }
+          
+          .tab-favicon-spinner::after {
+              content: '';
+              position: absolute;
+              width: 12px;
+              height: 12px;
+              top: 2px;
+              left: 2px;
+              border: 2px solid var(--icon-color);
+              border-top-color: transparent;
+              border-radius: 50%;
+              animation: spinner-rotation 0.8s linear infinite;
+          }
+          
+          @keyframes spinner-rotation {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+          }
+          
+          .tab.loading .tab-favicon {
+              display: none;
+          }
+          
+          .tab.loading .tab-favicon-spinner {
+              display: block;
+          }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <% if (showControls) { %>
-      <div class="top-bar">
-        <div class="nav-buttons">
-          <button class="nav-button" id="back-button">‹</button>
-          <button class="nav-button" id="forward-button">›</button>
+    <div class="container">
+        <% if (showControls) { %>
+          <div class="browser-chrome">
+              <% if (!singlePageMode) { %>
+              <div class="tab-bar" id="tab-bar">
+                  <div class="connection-status connecting" id="connection-status">
+                      <div class="status-indicator offline"></div>
+                      <span>Session Offline</span>
+                  </div>
+                  <!-- Tabs will be dynamically added here -->
+                  <!-- New tab button commented out as requested
+                  <div class="new-tab-button" id="new-tab-button">+</div>
+                  -->
+              </div>
+              <% } %>
+              <div class="address-bar">
+                <div class="nav-buttons">
+                    <button class="nav-button" id="back-button" <%= interactive ? "" : "disabled" %>>
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                        </svg>
+                    </button>
+                    <button class="nav-button" id="forward-button" <%= interactive ? "" : "disabled" %>>
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/>
+                        </svg>
+                    </button>
+                    <button class="nav-button" id="refresh-button" <%= interactive ? "" : "disabled" %>>
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="url-bar">
+                    <div class="url-security-icon" id="url-security-icon">
+                        <svg viewBox="0 0 24 24" id="lock-icon" style="display: none;">
+                            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                        </svg>
+                        <svg viewBox="0 0 24 24" id="unlock-icon" style="display: none;">
+                            <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z"/>
+                        </svg>
+                    </div>
+                    <input type="text" id="url-text" class="url-input" value="Session connecting..." disabled <%= interactive ? "" : "readonly" %>>
+                </div>
+              </div>
+          </div>
+        <% } %>
+        <div class="content" id="content">
+            <!-- Canvas containers will be dynamically added here -->
         </div>
-        <div class="url-bar">
-          <img id="favicon" src="/placeholder-favicon.png" class="favicon" alt="Favicon">
-          <input type="text" id="url-text" class="url-input" value="Session not connected" <%= interactive ? "" : "readonly" %>>
-        </div>
-      </div>
-    <% } %>
-    <div class="content">
-      <canvas id="canvas"></canvas>
     </div>
-  </div>
 
-  <script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { alpha: false });
-    const urlText = document.getElementById('url-text');
-    const favicon = document.getElementById('favicon');
-    
-    let currentImageWidth = <%= dimensions ? dimensions.width : 1920 %>;  // Default size until we get first image
-    let currentImageHeight = <%= dimensions ? dimensions.height : 1080 %>;
-    
-    function updateCanvasSize() {
-      const container = canvas.parentElement;
-      const parentHeight = container.clientHeight;
-      
-      // Scale to height while maintaining aspect ratio
-      const targetHeight = parentHeight;
-      const targetWidth = targetHeight * (currentImageWidth / currentImageHeight);
-      
-      // Account for device pixel ratio
-      const dpr = window.devicePixelRatio || 1;
-      
-      canvas.width = targetWidth * dpr;
-      canvas.height = targetHeight * dpr;
-      
-      // Scale context to handle DPR
-      ctx.scale(dpr, dpr);
-      
-      // Set display size
-      canvas.style.height = '100%';
-      canvas.style.width = 'auto';
-    }
-    
-    window.addEventListener('resize', updateCanvasSize);
-    updateCanvasSize();
-
-    const ws = new WebSocket('<%= wsUrl %>');
-    
-    // Update mouse event calculation to better handle scaling and positioning
-    function getScaledCoordinates(e) {
-      const rect = canvas.getBoundingClientRect();
-      const canvasWidth = rect.width;
-      const canvasHeight = rect.height;
-      
-      // Calculate the actual scaling factors
-      const scaleX = currentImageWidth / canvasWidth;
-      const scaleY = currentImageHeight / canvasHeight;
-      
-      // Calculate the canvas offset from the left edge of the viewport
-      const canvasLeftOffset = rect.left;
-      
-      // Calculate scaled coordinates relative to the canvas
-      const x = Math.round((e.clientX - canvasLeftOffset) * scaleX);
-      
-      // Account for the top bar if present and calculate y coordinate
-      const topBarOffset = 0;
-      const y = Math.round((e.clientY - rect.top - topBarOffset) * scaleY);
-      
-      // Ensure coordinates are within bounds
-      return {
-        x: Math.max(0, Math.min(x, currentImageWidth)),
-        y: Math.max(0, Math.min(y, currentImageHeight))
-      };
-    } 
-
-    // Wrap all event listeners in conditional setup
-    <% if (interactive) { %>
-      canvas.addEventListener('mousedown', (e) => {
-        console.log('mousedown coords', e);
-        const coords = getScaledCoordinates(e);
-        console.log('mousedown scaled coords', coords);
-        
-        ws.send(JSON.stringify({
-          type: 'mouseEvent',
-          pageId: currentPageId,
-          event: {
-            type: 'mousePressed',
-            x: coords.x,
-            y: coords.y,
-            button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
-            modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
-            clickCount: e.detail
-          }
-        }));
-      });
-
-      canvas.addEventListener('mouseup', (e) => {
-        console.log('mouseup coords', e);
-        const coords = getScaledCoordinates(e);
-        console.log('mouseup scaled coords', coords);
-        
-        ws.send(JSON.stringify({
-          type: 'mouseEvent',
-          pageId: currentPageId,
-          event: {
-            type: 'mouseReleased',
-            x: coords.x,
-            y: coords.y,
-            button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
-            modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
-            clickCount: e.detail
-          }
-        }));
-      });
-
-      canvas.addEventListener('wheel', (e) => {
-        const coords = getScaledCoordinates(e);
-        
-        ws.send(JSON.stringify({
-          type: 'mouseEvent',
-          pageId: currentPageId,
-          event: {
-            type: 'mouseWheel',
-            x: coords.x,
-            y: coords.y,
-            button: 'none',
-            modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
-            deltaX: e.deltaX,
-            deltaY: e.deltaY,
-            clickCount: e.detail
-          }
-        }));
-      });
-
-      document.addEventListener('keydown', (e) => {
-        // Skip if URL input is focused
-        if (urlText && document.activeElement === urlText) return;
-        
-        ws.send(JSON.stringify({
-          type: 'keyEvent',
-          pageId: currentPageId,
-          event: {
-            type: 'keyDown',
-            text: e.key.length === 1 ? e.key : undefined,
-            code: e.code,
-            key: e.key,
-            keyCode: e.keyCode
-          }
-        }));
-      });
-
-      document.addEventListener('keyup', (e) => {
-        // Skip if URL input is focused
-        if (urlText && document.activeElement === urlText) return;
-        
-        ws.send(JSON.stringify({
-          type: 'keyEvent',
-          pageId: currentPageId,
-          event: {
-            type: 'keyUp',
-            text: e.key.length === 1 ? e.key : undefined,
-            code: e.code,
-            key: e.key,
-            keyCode: e.keyCode
-          }
-        }));
-      });
-
-      if (urlText) {
-        urlText.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            const url = urlText.value;
-            ws.send(JSON.stringify({
-              type: 'navigation',
-              pageId: currentPageId,
-              event: {
-                url: url
-              }
-            }));
-            // Send message to parent frame about manual URL change
-            window.parent.postMessage({
-              type: 'navigation',
-              url: url
-            }, '*');
-            urlText.blur();
-          }
-        });
-      }
-
-      <% if (showControls) { %>
-        const backButton = document.getElementById('back-button');
-        const forwardButton = document.getElementById('forward-button');
-
-        backButton.addEventListener('click', () => {
-          ws.send(JSON.stringify({
-            type: 'navigation',
-            pageId: currentPageId,
-            event: { action: 'back' }
-          }));
-        });
-
-        forwardButton.addEventListener('click', () => {
-          ws.send(JSON.stringify({
-            type: 'navigation',
-            pageId: currentPageId,
-            event: { action: 'forward' }
-          }));
-        });
-      <% } %>
-    <% } %>
-
-    let currentPageId = '';
-
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
-      currentPageId = payload.pageId;
-
-      if (payload.url) {
-        if (urlText && document.activeElement !== urlText) {
-          urlText.value = payload.url;
-        }
-        // Send message to parent frame about URL change
-        window.parent.postMessage({
-          type: 'navigation',
-          url: payload.url,
-          favicon: payload.favicon
-        }, '*');
-      }
-      if (payload.favicon && favicon) {
-        favicon.src = payload.favicon;
-      }
-      
-      if (payload.data) {
-        const img = new Image();
-        img.onload = () => {
-          // Update image dimensions and resize canvas when we get a new image
-          currentImageWidth = img.naturalWidth;
-          currentImageHeight = img.naturalHeight;
-          updateCanvasSize();
+    <script>
+          // Global flag for single page mode
+          const singlePageMode = <%= singlePageMode %>;
+          const interactive = <%= interactive %>;
           
-          ctx.drawImage(
-            img,
-            0,
-            0,
-            Math.floor(canvas.width / window.devicePixelRatio),
-            Math.floor(canvas.height / window.devicePixelRatio)
-          );
-        };
-        img.src = 'data:image/jpeg;base64,' + payload.data;
-      }
-    };
+          // Tab and page management
+          const tabBar = document.getElementById('tab-bar');
+          const contentContainer = document.getElementById('content');
+          const urlText = document.getElementById('url-text');
+          const backButton = document.getElementById('back-button');
+          const forwardButton = document.getElementById('forward-button');
+          const refreshButton = document.getElementById('refresh-button');
+          const connectionStatus = document.getElementById('connection-status');
+          
+          let tabs = {};
+          let activeTabId = null;
+          
+          // WebSocket connection management
+          const baseWsUrl = '<%= wsUrl %>';
+          let tabDiscoveryWebSocket = null; // WebSocket for discovering tabs (multi-page mode)
+          let activeConnectionRetries = {}; // Track reconnection attempts
+          
+          // Default dimensions until we get first image
+          const defaultWidth = <%= dimensions?.width || 1920 %>;
+          const defaultHeight = <%= dimensions?.width || 1080 %>;
+          
+          // Function to set connection status
+          function setConnectionStatus(online) {
+              if (connectionStatus) {
+                  if (online) {
+                      // Connected - remove both connecting and offline classes
+                      connectionStatus.classList.remove('connecting');
+                      connectionStatus.classList.remove('offline');
+                      connectionStatus.classList.add('online');
+                  } else {
+                      // Disconnected/error - show the offline status
+                      connectionStatus.classList.remove('connecting');
+                      connectionStatus.classList.remove('online');
+                      connectionStatus.classList.add('offline');
+                      updateUrlBar('Session not connected');
+                  }
+              }
+          }
+          
+          // Function to create WebSocket URL for a specific page
+          function createWebSocketUrl(pageId) {
+              // For single-page mode, the URL already includes the pageId
+              if (singlePageMode) return baseWsUrl;
+              
+              // For tab discovery, add tabInfo parameter
+              if (pageId === 'tab-discovery') {
+                  return `${baseWsUrl}?tabInfo=true`;
+              }
+              
+              // Regular tab connection
+              return `${baseWsUrl}?pageId=${encodeURIComponent(pageId)}`;
+          }
+          
+          // Function to establish WebSocket connection for a tab
+          function connectTabWebSocket(pageId) {
+              // Prevent reconnection if already in progress
+              if (tabs[pageId] && tabs[pageId].reconnecting) {
+                  console.log(`Reconnection for tab ${pageId} already in progress, ignoring duplicate request`);
+                  return;
+              }
+              
+              // If tab has an existing connection and it's open or connecting, don't create a new one
+              if (tabs[pageId] && tabs[pageId].websocket) {
+                  const ws = tabs[pageId].websocket;
+                  if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                      console.log(`Tab ${pageId} already has an active connection, not reconnecting`);
+                      return ws;
+                  }
+                  
+                  // Only attempt to close if the socket is not already closing or closed
+                  if (ws.readyState !== WebSocket.CLOSING && ws.readyState !== WebSocket.CLOSED) {
+                      try {
+                          ws.close();
+                      } catch (err) {
+                          console.error(`Error closing existing WebSocket for tab ${pageId}: ${err}`);
+                      }
+                  }
+              }
+              
+              // Mark tab as loading and reconnecting
+              if (tabs[pageId]) {
+                  tabs[pageId].canvasContainer.classList.add('loading');
+                  tabs[pageId].canvasContainer.classList.remove('error');
+                  tabs[pageId].reconnecting = true;
+              }
+              
+              // Create a new WebSocket for this tab
+              const ws = new WebSocket(createWebSocketUrl(pageId));
+              console.log(`Connecting websocket for tab ${pageId}`);
+              
+              if (tabs[pageId]) {
+                  tabs[pageId].websocket = ws;
+              }
+              
+              // Set up event handlers
+              ws.onopen = () => {
+                  console.log(`WebSocket connection opened for tab ${pageId}`);
+                  
+                  // Clear reconnection status
+                  if (tabs[pageId]) {
+                      tabs[pageId].reconnecting = false;
+                      tabs[pageId].canvasContainer.classList.remove('loading');
+                      tabs[pageId].canvasContainer.classList.remove('error');
+                      
+                      // Reset retry counter on successful connection
+                      activeConnectionRetries[pageId] = 0;
+                      
+                      if (pageId !== 'tab-discovery') {
+                          // Remove loading indicator
+                          tabs[pageId].canvasContainer.classList.remove('loading');
+                          tabs[pageId].canvasContainer.classList.remove('error');
+                          
+                          // Set up canvas event listeners immediately when connection opens
+                          if (tabs[pageId].canvas) {
+                              setupCanvasEventListeners(tabs[pageId].canvas, pageId, ws);
+                          }
+                      }
+                      
+                      // Update connection status if this is the active tab
+                      if (activeTabId === pageId) {
+                          setConnectionStatus(true);
+                      }
+                  }
+              };
+              
+              ws.onclose = () => {
+                  console.log(`WebSocket connection closed for tab ${pageId}`);
+                  
+                  if (tabs[pageId]) {
+                      // Only show error if this wasn't an intentional close
+                      if (!tabs[pageId].intentionalClose) {
+                          tabs[pageId].canvasContainer.classList.add('error');
+                          // Only set connection status to offline if this is the active tab
+                          // and it's not a normal shutdown
+                          if (activeTabId === pageId) {
+                              setConnectionStatus(false);
+                          }
+                      }
+                      tabs[pageId].reconnecting = false;
+                      tabs[pageId].intentionalClose = false;
+                  }
+              };
+              
+              // Add error handler to explicitly handle connection failures
+              ws.onerror = () => {
+                  console.log(`WebSocket connection error for tab ${pageId}`);
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+                  if(pageId === 'tab-discovery') {
+                    setConnectionStatus(false);
+                    updateUrlBar('Session not connected');
+                  }
+                  
+                  if (tabs[pageId] && activeTabId === pageId) {
+                      // Mark connection as offline on error
+                      setConnectionStatus(false);
+                  }
+              };
+              
+              ws.onmessage = (event) => {
+                  const payload = JSON.parse(event.data);
+  
+                  // Handle tab-discovery messages
+                  if (pageId === 'tab-discovery') {
+                      if (payload.type === "tabList") {
+                          handleTabList(payload.tabs, payload.firstTabId);
+                          return;
+                      } else if (payload.type === "tabClosed") {
+                          handleTabClosed(payload.pageId);
+                          return;
+                      } else if (payload.type === "activeTabChange") {
+                        // Handle tab activation from server
+                        if (tabs[payload.pageId] && activeTabId !== payload.pageId) {
+                            activateTab(payload.pageId);
+                        }
+                        return;
+                    }
+                      return;
+                  }
+  
+                  // For regular tabs, handle data
+                  if (payload.type === "tabUpdate") {
+                      updateTabInfo(pageId, payload.url, payload.title, payload.favicon);
+                      return;
+                  } else if (payload.type === "targetClosed") {
+                      handleTabClosed(pageId);
+                      return;
+                  }
+  
+                  // Handle canvas image data
+                  if (payload.data) {
+                      if (!tabs[pageId]) {
+                          // console.error(`Received data for nonexistent tab ${pageId}`);
+                          return;
+                      }
+                      
+                      // Remove tab switching indicator when we receive the first frame
+                      tabs[pageId].canvasContainer.classList.remove('tab-switching');
+                      
+                      // Mark that we've received at least one frame for this tab
+                      tabs[pageId].receivedFirstFrame = true;
+                      if(urlText) urlText.disabled = false;
+                      
+                      if (urlText && document.activeElement !== urlText){ 
+                        updateUrlBar(payload.url);
+                        updateSecurityIcon(payload.url);
+                        updateTabInfo(pageId, payload.url, payload.title, payload.favicon);
+                      }
+                      
+                      // Track frame count for loading state
+                      if (tabs[pageId].isLoading) {
+                          tabs[pageId].frameCount++;
+                          
+                          // After receiving 2 frames, turn off loading state
+                          if (tabs[pageId].frameCount >= 2) {
+                              setTabLoadingState(pageId, false);
+                          }
+                      }
+                      window.parent.postMessage({
+                          type: 'navigation',
+                          url: payload.url,
+                          favicon: payload.favicon
+                      }, '*');
+  
+                const img = new Image();
+                      const imageData = 'data:image/jpeg;base64,' + payload.data;
+                      tabs[pageId].lastImageData = imageData;
+  
+                img.onload = () => {
+                          tabs[pageId].currentImageWidth = img.naturalWidth;
+                          tabs[pageId].currentImageHeight = img.naturalHeight;
+                          updateCanvasSize(pageId);
+  
+                          tabs[pageId].ctx.drawImage(
+                        img,
+                        0,
+                        0,
+                              Math.floor(tabs[pageId].canvas.width / window.devicePixelRatio),
+                              Math.floor(tabs[pageId].canvas.height / window.devicePixelRatio)
+                          );
+                          
+                          tabs[pageId].canvasContainer.style.backgroundColor = 'var(--bg-secondary)';
+                      };
+  
+                      img.src = imageData;
+                  }
+              };
+              
+              return ws;
+          }
+          
+          // Function to create a new tab
+          function createTab(pageId, url = '', title = 'New Tab', favicon = null) {
+              if (tabs[pageId]) {
+                  console.log(`Tab ${pageId} already exists, activating it instead of creating a new one`);
+                  activateTab(pageId);
+                  return;
+              }
+              
+              // Create tab UI elements
+              const tab = document.createElement('div');
+              tab.className = 'tab';
+              tab.setAttribute('data-page-id', pageId);
+              if(!interactive) tab.setAttribute('disabled', 'true');
+              
+              // Add favicon
+              const faviconElement = document.createElement('img');
+              faviconElement.className = 'tab-favicon';
+              if (favicon) {
+                  faviconElement.src = favicon;
+              } else {
+                  faviconElement.style.display = 'none';
+              }
+              tab.appendChild(faviconElement);
+              
+              // Add loading spinner (initially hidden)
+              const spinnerElement = document.createElement('div');
+              spinnerElement.className = 'tab-favicon-spinner';
+              tab.appendChild(spinnerElement);
+              
+              // Add title
+              const titleElement = document.createElement('div');
+              titleElement.className = 'tab-title';
+              titleElement.textContent = title || 'New Tab';
+              tab.appendChild(titleElement);
+              
+              // Add close button if not in single-page mode
+              if (!singlePageMode) {
+                  const closeButton = document.createElement('div');
+                  closeButton.className = 'tab-close';
+                  closeButton.innerHTML = '&times;';
+                  closeButton.onclick = (e) => {
+                      e.stopPropagation();
+                      if(interactive) closeTab(pageId);
+                  };
+                  tab.appendChild(closeButton);
+              }
+              
+              // Add click handler to switch tabs
+              tab.onclick = () => {
+                  if(interactive) activateTab(pageId);
+              };
+              
+              // Add tab to tab bar
+              const tabBar = document.getElementById('tab-bar');
+              if (tabBar) {
+                  tabBar.appendChild(tab);
+              }
+              
+              // Create canvas container
+              const canvasContainer = document.createElement('div');
+              canvasContainer.className = 'canvas-container';
+              if (document.getElementById('content')) {
+                  document.getElementById('content').appendChild(canvasContainer);
+              }
+              
+              // Create canvas element
+              const canvas = document.createElement('canvas');
+              canvas.className = 'canvas';
+              canvasContainer.appendChild(canvas);
+              
+              // Initialize canvas context here
+              const ctx = canvas.getContext('2d');
+              
+              // Store tab information including ctx
+              tabs[pageId] = {
+                  tab,
+                  canvas,
+                  ctx,
+                  canvasContainer,
+                  url,
+                  title,
+                  favicon,
+                  websocket: null,
+                  reconnecting: false,
+                  intentionalClose: false,
+                  currentImageWidth: defaultWidth,
+                  currentImageHeight: defaultHeight,
+                  lastImageData: null,
+                  receivedFirstFrame: false,
+                  isLoading: false,
+                  frameCount: 0,
+                  lastNavigationUrl: null
+              };
+              
+              return tabs[pageId];
+          }
+          
+          // Function to activate a tab
+          function activateTab(pageId) {
+              if (!tabs[pageId]) {
+                  console.error(`Attempted to activate nonexistent tab ${pageId}`);
+                  return;
+              }
+              
+              // Deactivate the current active tab if there is one
+              if (activeTabId && tabs[activeTabId]) {
+                  tabs[activeTabId].tab.classList.remove('active');
+                  tabs[activeTabId].canvasContainer.classList.remove('active');
+                  
+                  // Intentionally close the WebSocket for the inactive tab if it exists to save resources
+                  if (tabs[activeTabId].websocket && 
+                      tabs[activeTabId].websocket.readyState === WebSocket.OPEN) {
+                      tabs[activeTabId].intentionalClose = true;
+                      tabs[activeTabId].websocket.close();
+                      tabs[activeTabId].websocket = null;
+                      console.log(`Closed WebSocket for inactive tab ${activeTabId}`);
+                  }
+              }
+              
+              // Set the new active tab
+              activeTabId = pageId;
+              tabs[pageId].tab.classList.add('active');
+              tabs[pageId].canvasContainer.classList.add('active');
+              
+              // Update URL and security status based on active tab
+              if (tabs[pageId].url) {
+                  updateUrlBar(tabs[pageId].url);
+                  updateSecurityIcon(tabs[pageId].url);
+              }
+              
+              // Don't change connection status on tab switch - maintain current status
+              // We'll update it once we confirm the actual connection state
+              
+              // Add tab-switching loading indicator if we haven't received a frame yet
+              if (!tabs[pageId].receivedFirstFrame) {
+                  tabs[pageId].canvasContainer.classList.add('tab-switching');
+              }
+              
+              // Ensure the WebSocket is connected for the newly activated tab
+              if (!tabs[pageId].websocket || 
+                  tabs[pageId].websocket.readyState === WebSocket.CLOSED || 
+                  tabs[pageId].websocket.readyState === WebSocket.CLOSING) {
+                  connectTabWebSocket(pageId);
+              } else if (tabs[pageId].websocket && tabs[pageId].websocket.readyState === WebSocket.OPEN) {
+                  // WebSocket is already open, set up canvas event listeners
+                  setupCanvasEventListeners(tabs[pageId].canvas, pageId, tabs[pageId].websocket);
+                  
+                  // Since the WebSocket is open, update the connection status to true
+                  setConnectionStatus(true);
+              }
+              
+              // Update canvas size for the active tab
+              updateCanvasSize(pageId);
+          }
+          
+          // Function to attempt reconnection for a tab WebSocket
+          function attemptReconnect(pageId) {
+              // Make sure tab still exists
+              if (!tabs[pageId]) return;
+              
+              // Prevent multiple reconnection attempts
+              if (tabs[pageId].reconnecting) {
+                  console.log(`Already attempting to reconnect tab ${pageId}, ignoring duplicate request`);
+                  return;
+              }
+              
+              // Initialize retry counter if not set
+              if (!activeConnectionRetries[pageId]) {
+                  activeConnectionRetries[pageId] = 0;
+              }
+              
+              const maxRetries = 5;
+              const retryDelay = Math.min(2000 * Math.pow(1.5, activeConnectionRetries[pageId]), 30000);
+              
+              // Add exponential backoff with jitter to prevent synchronized reconnection attempts
+              const jitter = Math.random() * 1000;
+              const delay = retryDelay + jitter;
+              
+              if (activeConnectionRetries[pageId] < maxRetries) {
+                  console.log(`Attempting to reconnect ${pageId} in ${Math.round(delay)}ms (attempt ${activeConnectionRetries[pageId] + 1}/${maxRetries})`);
+                  
+                  // Mark tab as reconnecting to prevent duplicate attempts
+                  tabs[pageId].reconnecting = true;
+                  
+                  // If this is the active tab, update the connection status to show we're offline
+                  if (activeTabId === pageId) {
+                      setConnectionStatus(false);
+                  }
+                  
+                  setTimeout(() => {
+                      activeConnectionRetries[pageId]++;
+                      
+                      // Reconnect only if the tab still exists and we should still be reconnecting
+                      if (tabs[pageId]) {
+                          connectTabWebSocket(pageId);
+                      }
+                  }, delay);
+              } else {
+                  console.error(`Maximum retry attempts (${maxRetries}) reached for ${pageId}`);
+                  
+                  // Mark tab as error state but clear reconnecting flag
+                  if (tabs[pageId]) {
+                      tabs[pageId].reconnecting = false;
+                      tabs[pageId].canvasContainer.classList.remove('loading');
+                      tabs[pageId].canvasContainer.classList.add('error');
+                      
+                      // Ensure offline status is shown after max retries
+                      if (activeTabId === pageId) {
+                          setConnectionStatus(false);
+                      }
+                  }
+              }
+          }
+          
+          // Set up WebSocket-related event listeners for a canvas
+          function setupCanvasEventListeners(canvas, pageId, ws) {
+              if (!canvas || !ws || !interactive) return;
+              
+              // Remove any existing event listeners first to prevent duplicates
+              canvas.removeEventListener('mousedown', canvas._mouseDownHandler);
+              canvas.removeEventListener('mouseup', canvas._mouseUpHandler);
+              canvas.removeEventListener('mousemove', canvas._mouseMoveHandler);
+              canvas.removeEventListener('wheel', canvas._wheelHandler);
+              
+              // Helper function for scaled coordinates
+              function getScaledCoordinates(e, canvas, pageId) {
+                  if (!tabs[pageId]) return { x: 0, y: 0 };
+                  
+                  const tabData = tabs[pageId];
+                  const rect = canvas.getBoundingClientRect();
+                  const canvasWidth = rect.width;
+                  const canvasHeight = rect.height;
+                  
+                  // Calculate scaling factors
+                  const scaleX = tabData.currentImageWidth / canvasWidth;
+                  const scaleY = tabData.currentImageHeight / canvasHeight;
+                  
+                  // Calculate the canvas offset from the left edge of the viewport
+                  const canvasLeftOffset = rect.left;
+                  
+                  // Calculate scaled coordinates relative to the canvas
+                  const x = Math.round((e.clientX - canvasLeftOffset) * scaleX);
+                  const y = Math.round((e.clientY - rect.top) * scaleY);
+                  
+                  // Ensure coordinates are within bounds
+                  return {
+                      x: Math.max(0, Math.min(x, tabData.currentImageWidth)),
+                      y: Math.max(0, Math.min(y, tabData.currentImageHeight))
+                  };
+              }
+  
+              // MouseDown event
+              canvas._mouseDownHandler = (e) => {
+                  if (ws.readyState !== WebSocket.OPEN) return;
+                  
+                  const coords = getScaledCoordinates(e, canvas, pageId);
+                
+                  ws.send(JSON.stringify({
+                      type: 'mouseEvent',
+                      pageId: pageId,
+                      event: {
+                          type: 'mousePressed',
+                          x: coords.x,
+                          y: coords.y,
+                          button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
+                          modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
+                          clickCount: e.detail
+                      }
+                  }));
+                  
+                  console.log(`Mouse down at ${coords.x},${coords.y} with button ${e.button}`);
+              };
+              canvas.addEventListener('mousedown', canvas._mouseDownHandler);
+  
+              // MouseUp event
+              canvas._mouseUpHandler = (e) => {
+                  if (ws.readyState !== WebSocket.OPEN) return;
+                  
+                  const coords = getScaledCoordinates(e, canvas, pageId);
+                
+                  ws.send(JSON.stringify({
+                      type: 'mouseEvent',
+                      pageId: pageId,
+                      event: {
+                          type: 'mouseReleased',
+                          x: coords.x,
+                          y: coords.y,
+                          button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
+                          modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
+                          clickCount: e.detail
+                      }
+                  }));
+                  
+                  console.log(`Mouse up at ${coords.x},${coords.y} with button ${e.button}`);
+              };
+              canvas.addEventListener('mouseup', canvas._mouseUpHandler);
+  
+              // MouseMove event
+              canvas._mouseMoveHandler = (e) => {
+                  if (ws.readyState !== WebSocket.OPEN) return;
+                  
+                  const coords = getScaledCoordinates(e, canvas, pageId);
+                
+                  ws.send(JSON.stringify({
+                      type: 'mouseEvent',
+                      pageId: pageId,
+                      event: {
+                          type: 'mouseMoved',
+                          x: coords.x,
+                          y: coords.y,
+                          button: 'none',
+                          modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0)
+                      }
+                  }));
+              };
+              
+              // Debounce function to limit how often events are sent
+              function debounce(func, wait) {
+                  let timeout;
+                  return function(...args) {
+                      const context = this;
+                      clearTimeout(timeout);
+                      timeout = setTimeout(() => func.apply(context, args), wait);
+                  };
+              }
+              
+              // Create debounced version of mouseMoveHandler
+              canvas._debouncedMouseMoveHandler = debounce((e) => {
+                  if (ws.readyState !== WebSocket.OPEN) return;
+                  
+                  const coords = getScaledCoordinates(e, canvas, pageId);
+                
+                  ws.send(JSON.stringify({
+                      type: 'mouseEvent',
+                      pageId: pageId,
+                      event: {
+                          type: 'mouseMoved',
+                          x: coords.x,
+                          y: coords.y,
+                          button: 'none',
+                          modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0)
+                      }
+                  }));
+              }, 20); // 20ms debounce time - adjust as needed for performance vs responsiveness
+              
+              // Attach the debounced handler to mousemove event
+              canvas.addEventListener('mousemove', canvas._debouncedMouseMoveHandler);
+  
+              // Wheel event
+              canvas._wheelHandler = (e) => {
+                  if (ws.readyState !== WebSocket.OPEN) return;
+                  
+                  const coords = getScaledCoordinates(e, canvas, pageId);
+                  
+                  ws.send(JSON.stringify({
+                      type: 'mouseEvent',
+                      pageId: pageId,
+                      event: {
+                          type: 'mouseWheel',
+                          x: coords.x,
+                          y: coords.y,
+                          button: 'none',
+                          modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0),
+                          deltaX: e.deltaX,
+                          deltaY: e.deltaY
+                      }
+                  }));
+                  
+                  // Prevent scrolling the page
+                  e.preventDefault();
+              };
+              canvas.addEventListener('wheel', canvas._wheelHandler);
+              
+              console.log(`Event listeners set up for canvas of tab ${pageId}`);
+              return true;
+          }
+  
+          // Add tab navigation and keyboard event listeners (global)
+          if (interactive) {
+              document.addEventListener('keydown', (e) => {
+                  // Skip if URL input is focused
+                  if (urlText && document.activeElement === urlText){ 
+                    console.log("URL input is focused, skipping keydown event");
+                    return;
+                  }
 
-    ws.onclose = () => {
-      console.log('WebSocket connection closed');
-    };
-  </script>
+                  if (!activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) return;
+                    
+                  const ws = tabs[activeTabId].websocket;
+                  if (ws.readyState !== WebSocket.OPEN) return;
+                  
+                  ws.send(JSON.stringify({
+                      type: 'keyEvent',
+                      pageId: activeTabId,
+                      event: {
+                          type: 'keyDown',
+                          text: e.key.length === 1 ? e.key : undefined,
+                          code: e.code,
+                          key: e.key,
+                          keyCode: e.keyCode
+                      }
+                  }));
+              });
+
+              document.addEventListener('keyup', (e) => {
+                  // Skip if URL input is focused
+                  if (urlText && document.activeElement === urlText) return;
+                  if (!activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) return;
+                  
+                  const ws = tabs[activeTabId].websocket;
+                  if (ws.readyState !== WebSocket.OPEN) return;
+                
+                  ws.send(JSON.stringify({
+                      type: 'keyEvent',
+                      pageId: activeTabId,
+                      event: {
+                          type: 'keyUp',
+                          text: e.key.length === 1 ? e.key : undefined,
+                          code: e.code,
+                          key: e.key,
+                          keyCode: e.keyCode
+                      }
+                  }));
+              });
+
+              if (urlText) {
+                  urlText.addEventListener('keydown', (e) => {
+                      if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation(); // Stop event propagation to prevent the document keydown handler from firing
+                          if (!activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) return;
+                          
+                          const url = urlText.value;
+                          updateSecurityIcon(url);
+                          
+                          const ws = tabs[activeTabId].websocket;
+                          if (ws.readyState !== WebSocket.OPEN) return;
+                          
+                          // Set tab loading state when navigation starts
+                          setTabLoadingState(activeTabId, true, url);
+                          
+                          ws.send(JSON.stringify({
+                              type: 'navigation',
+                              pageId: activeTabId,
+                              event: {
+                                  url: url
+                              }
+                          }));
+                          
+                          // Send message to parent frame about manual URL change
+                          window.parent.postMessage({
+                              type: 'navigation',
+                              url: url
+                          }, '*');
+                          
+                          urlText.blur();
+                      }
+                  });
+                  
+                  // Add keyup event listener to URL input to prevent bubbling to document
+                  urlText.addEventListener('keyup', (e) => {
+                      e.stopPropagation(); // Prevent the event from bubbling up to document
+                  });
+              }
+
+              if (backButton) {
+                  backButton.addEventListener('click', () => {
+                      if (!activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) return;
+                      
+                      const ws = tabs[activeTabId].websocket;
+                      if (ws.readyState !== WebSocket.OPEN) return;
+                      
+                      // Set tab loading state when navigation starts
+                      setTabLoadingState(activeTabId, true);
+                      
+                      ws.send(JSON.stringify({
+                          type: 'navigation',
+                          pageId: activeTabId,
+                          event: {
+                              action: 'back'
+                          }
+                      }));
+                  });
+              }
+
+              if (forwardButton) {
+                  forwardButton.addEventListener('click', () => {
+                      if (!activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) return;
+                      
+                      const ws = tabs[activeTabId].websocket;
+                      if (ws.readyState !== WebSocket.OPEN) return;
+                      
+                      // Set tab loading state when navigation starts
+                      setTabLoadingState(activeTabId, true);
+                      
+                      ws.send(JSON.stringify({
+                          type: 'navigation',
+                          pageId: activeTabId,
+                          event: {
+                              action: 'forward'
+                          }
+                      }));
+                  });
+              }
+              
+              if (refreshButton) {
+                  refreshButton.addEventListener('click', () => {
+                      if (!activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) return;
+                      
+                      const ws = tabs[activeTabId].websocket;
+                      if (ws.readyState !== WebSocket.OPEN) return;
+                      
+                      // Set tab loading state when navigation starts
+                      setTabLoadingState(activeTabId, true);
+                      
+                      ws.send(JSON.stringify({
+                          type: 'navigation',
+                          pageId: activeTabId,
+                          event: {
+                              action: 'refresh'
+                          }
+                      }));
+                  });
+              }
+          }
+          
+          // Function to handle tab list updates from server
+          function handleTabList(tabList, firstTabId = null) {
+              if (!tabList || !Array.isArray(tabList)) return;
+              
+              // console.log("Received tab list:", tabList);
+              
+              // Create any tabs that don't exist
+              tabList.forEach((tab, index) => {
+                  if (!tabs[tab.id]) {
+                      // Make sure we pass parameters in the right order: id, url, title, favicon
+                      createTab(tab.id, tab.url || '', tab.title || 'New Tab', tab.favicon || null);
+                      if (index === tabList.length - 1) {
+                          activateTab(tab.id);
+                      }
+                  } else {
+                      // Update existing tab info
+                      updateTabInfo(tab.id, tab.url, tab.title, tab.favicon);
+                  }
+              });
+              
+              // Remove tabs that are no longer present
+              const currentPageIds = tabList.map(tab => tab.id);
+              Object.keys(tabs).forEach(pageId => {
+                  if (pageId !== 'tab-discovery' && !currentPageIds.includes(pageId)) {
+                      // Only remove DOM elements, don't send closeTab message since
+                      // the server already knows this tab is closed
+                      closeTab(pageId);
+                  }
+              });
+              
+              // If no tab is active but tabs exist, activate the first tab
+              // or activate the specified firstTabId if provided
+              if ((!activeTabId || !tabs[activeTabId] || activeTabId === 'tab-discovery') && tabList.length > 0) {
+                  // If firstTabId is provided, use it; otherwise use the first tab in the list
+                  const tabToActivate = firstTabId && tabs[firstTabId] ? firstTabId : tabList[0].id;
+                  activateTab(tabToActivate);
+              }
+          }
+          
+          // Function to update tab info
+          function updateTabInfo(pageId, url, title, favicon) {
+              if (!tabs[pageId]) {
+                  console.error(`Attempted to update tab ${pageId} which doesn't exist`);
+                  return;
+              }
+              
+              // console.log(`Updating tab ${pageId}:`, {url, title, favicon});
+              
+              const tabData = tabs[pageId];
+              
+              // Update the tab's stored data
+              if (url !== undefined) tabData.url = url;
+              if (title !== undefined) tabData.title = title;
+              if (favicon !== undefined) tabData.favicon = favicon;
+              
+              // Update the tab's title element
+              const titleElem = tabData.tab.querySelector('.tab-title');
+              if (titleElem) {
+                  titleElem.textContent = tabData.title || 'New Tab';
+              }
+              
+              // Update favicon if available
+              const faviconElem = tabData.tab.querySelector('.tab-favicon');
+              if (faviconElem && tabData.favicon) {
+                  faviconElem.src = tabData.favicon;
+                  faviconElem.style.display = 'block';
+              } else if (faviconElem) {
+                  faviconElem.style.display = 'none';
+              }
+              
+              // Only update URL bar and security icon if this is the active tab
+              if (activeTabId === pageId) {
+                  updateUrlBar(tabData.url || '');
+                  updateSecurityIcon(tabData.url || '');
+              }
+          }
+          
+          // Function to handle tab closed by server
+          function handleTabClosed(pageId) {
+              if (!tabs[pageId]) return;
+              closeTab(pageId);
+          }
+          
+          // Function to close a tab manually
+          function closeTab(pageId) {
+              if (!tabs[pageId]) return;
+
+              const tabIndexes = Object.keys(tabs).filter(id => id !== 'tab-discovery');
+
+              if (tabIndexes.length <= 1) {
+                  return;
+              }
+
+              const tabIndex = tabIndexes.indexOf(pageId);
+              
+              console.log(`Closing tab ${pageId}`);
+              
+              // Intentionally close the WebSocket
+              if (tabs[pageId].websocket) {
+                  tabs[pageId].intentionalClose = true;
+                  tabs[pageId].websocket.send(JSON.stringify({
+                      type: 'closeTab',
+                      pageId: pageId
+                  }));
+                  tabs[pageId].websocket.close();
+                  tabs[pageId].websocket = null;
+              }
+              
+              // Remove tab from DOM
+              if (tabs[pageId].tab) {
+                  tabs[pageId].tab.remove();
+              }
+              
+              // Remove canvas container from DOM
+              if (tabs[pageId].canvasContainer) {
+                  tabs[pageId].canvasContainer.remove();
+              }
+              
+              // If this was the active tab, activate another tab if available
+              if (activeTabId === pageId) {
+                  const tabIds = Object.keys(tabs).filter(id => id !== 'tab-discovery');
+                  if (tabIds.length > 0) {
+                      // Activate the last available tab
+                      const tabIndex = tabIds.indexOf(pageId);
+                      activateTab(tabIds[Math.min(tabIndex + 1, tabIds.length - 1)]);
+                  } else {
+                      // No tabs left, clear active tab ID
+                      activeTabId = null;
+                      setConnectionStatus(false);
+                  }
+              }
+              
+              // Delete tab from tabs object
+              delete tabs[pageId];
+          }
+          
+          // Initialize connection - in single-page mode we have only one connection
+          if (singlePageMode) {
+              // In single-page mode, create a single tab with no ID (will use URL parameter)
+              createTab('default');
+              activateTab('default');
+          } else {
+              // In multi-page mode, first connect to the tab discovery service
+              connectTabWebSocket('tab-discovery');
+          }
+          
+          // Set initial security icon state
+          updateSecurityIcon('');
+  
+          // Function to update the URL input field
+          function updateUrlBar(url) {
+              const urlInput = document.getElementById('url-input');
+              if (urlInput && urlInput.value !== url) {
+                  urlInput.value = url || '';
+              } else {
+                  const urlText = document.getElementById('url-text');
+                  if (urlText && urlText.value !== url) {
+                      urlText.value = url || 'Session not connected';
+                  }
+              }
+          }
+  
+          // Add the updateSecurityIcon function that's being referenced but was missing
+          function updateSecurityIcon(url) {
+              const lockIcon = document.getElementById('lock-icon');
+              const unlockIcon = document.getElementById('unlock-icon');
+              const securityIcon = document.getElementById('url-security-icon');
+              
+              if (!lockIcon || !unlockIcon || !securityIcon) return;
+              
+              // Case-insensitive check for https
+              if (url && (url.toLowerCase().startsWith('https://') || url.toLowerCase().startsWith('https:'))) {
+                  lockIcon.style.display = 'block';
+                  unlockIcon.style.display = 'none';
+                  securityIcon.classList.add('secure');
+              } else {
+                  lockIcon.style.display = 'none';
+                  unlockIcon.style.display = 'block';
+                  securityIcon.classList.remove('secure');
+              }
+          }
+  
+          // Add the missing updateCanvasSize function
+          function updateCanvasSize(pageId) {
+              if (!tabs[pageId]) return;
+              
+              const tabData = tabs[pageId];
+              const container = tabData.canvasContainer;
+              const canvas = tabData.canvas;
+              const ctx = tabData.ctx;
+              
+              if (!ctx) {
+                  console.error(`Canvas context not initialized for tab ${pageId}`);
+                  return;
+              }
+  
+              const parentHeight = container.clientHeight;
+              
+              // Scale to height while maintaining aspect ratio
+              const targetHeight = parentHeight;
+              const targetWidth = targetHeight * (tabData.currentImageWidth / tabData.currentImageHeight);
+              
+              // Account for device pixel ratio
+              const dpr = window.devicePixelRatio || 1;
+              
+              canvas.width = targetWidth * dpr;
+              canvas.height = targetHeight * dpr;
+              
+              // Reset transform before scaling
+              ctx.setTransform(1, 0, 0, 1, 0, 0);
+              ctx.scale(dpr, dpr);
+              
+              // Set display size
+              canvas.style.height = '100%';
+              canvas.style.width = 'auto';
+              
+              // Redraw the last image if available
+              if (tabData.lastImageData) {
+                  const img = new Image();
+                  img.onload = () => {
+                      ctx.drawImage(
+                          img,
+                          0,
+                          0,
+                          Math.floor(canvas.width / window.devicePixelRatio),
+                          Math.floor(canvas.height / window.devicePixelRatio)
+                      );
+                  };
+                  img.src = tabData.lastImageData;
+              }
+          }
+
+          // Add a function to handle tab loading state
+          function setTabLoadingState(pageId, isLoading, navigationUrl = null) {
+              if (!tabs[pageId]) return;
+              
+              // If we're starting to load
+              if (isLoading) {
+                  tabs[pageId].isLoading = true;
+                  tabs[pageId].frameCount = 0;
+                  tabs[pageId].lastNavigationUrl = navigationUrl || tabs[pageId].url;
+                  tabs[pageId].tab.classList.add('loading');
+              } else {
+                  // If we're finishing loading
+                  tabs[pageId].isLoading = false;
+                  tabs[pageId].tab.classList.remove('loading');
+              }
+          }
+    </script>
 </body>
-</html> 
+</html>

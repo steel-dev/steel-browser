@@ -60,9 +60,7 @@ export default function SessionLogs({ id }: { id: string }) {
       ref={consoleRef}
       className="w-full h-full overflow-y-auto overflow-x-scroll bg-[var(--gray-2)] p-2 font-mono text-xs flex flex-col"
     >
-      {logs.length === 0 && (
-        <p className="text-gray-400">No logs sent yet...</p>
-      )}
+      {logs.length === 0 && <p className="text-gray-400">No new logs...</p>}
       {logs &&
         logs.slice(-40).map((log) => {
           const logBody = JSON.parse(log.text);

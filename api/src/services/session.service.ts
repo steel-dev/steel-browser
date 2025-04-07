@@ -45,6 +45,8 @@ export class SessionService {
   private cdpService: CDPService;
   private seleniumService: SeleniumService;
   private fileService: FileService;
+
+  public pastSessions: Session[] = [];
   public activeSession: Session;
 
   constructor(config: {
@@ -62,6 +64,7 @@ export class SessionService {
       createdAt: new Date().toISOString(),
       ...defaultSession,
       ...sessionStats,
+      userAgent: this.cdpService.getUserAgent() ?? "",
       completion: Promise.resolve(),
       complete: () => {},
       proxyServer: undefined,
@@ -186,6 +189,7 @@ export class SessionService {
   public async endSession(): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
+    this.activeSession.duration = new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
 
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
@@ -193,14 +197,16 @@ export class SessionService {
       await this.cdpService.endSession();
     }
 
-    const releasedSession = this.activeSession;
-
     await this.fileService.cleanupFiles({ sessionId: this.activeSession.id });
+
+    const releasedSession = this.activeSession;
 
     await this.resetSessionInfo({
       id: uuidv4(),
       status: "idle",
     });
+
+    this.pastSessions.push(releasedSession);
 
     return releasedSession;
   }
@@ -217,6 +223,7 @@ export class SessionService {
       ...defaultSession,
       ...overrides,
       ...sessionStats,
+      userAgent: this.cdpService.getUserAgent() ?? "",
       createdAt: new Date().toISOString(),
       completion: promise,
       complete: resolve,
