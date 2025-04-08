@@ -96,11 +96,23 @@ export const handleGetSessionDetails = async (
       solveCaptcha: false,
     } as SessionDetails);
   }
-  return reply.send(server.sessionService.activeSession);
+
+  const session = server.sessionService.activeSession;
+  const duration = new Date().getTime() - new Date(session.createdAt).getTime();
+  console.log("duration", duration);
+  return reply.send({
+    ...session,
+    duration,
+  });
 };
 
 export const handleGetSessions = async (server: FastifyInstance, request: FastifyRequest, reply: FastifyReply) => {
-  return reply.send([server.sessionService.activeSession]);
+  const currentSession = {
+    ...server.sessionService.activeSession,
+    duration: new Date().getTime() - new Date(server.sessionService.activeSession.createdAt).getTime(),
+  };
+  const pastSessions = server.sessionService.pastSessions;
+  return reply.send([currentSession, ...pastSessions]);
 };
 
 export const handleGetSessionStream = async (
@@ -108,13 +120,25 @@ export const handleGetSessionStream = async (
   request: SessionStreamRequest,
   reply: FastifyReply,
 ) => {
-  const { showControls, theme, interactive } = request.query;
+  const { showControls, theme, interactive, pageId, pageIndex } = request.query;
+
+  const singlePageMode = !!(pageId || pageIndex);
+
+  // Construct WebSocket URL with page parameters if present
+  let wsUrl = `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/cast`;
+  if (pageId) {
+    wsUrl += `?pageId=${encodeURIComponent(pageId)}`;
+  } else if (pageIndex) {
+    wsUrl += `?pageIndex=${encodeURIComponent(pageIndex)}`;
+  }
+
   return reply.view("live-session-streamer.ejs", {
-    wsUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/cast`,
+    wsUrl,
     showControls,
     theme,
     interactive,
     dimensions: server.sessionService.activeSession.dimensions,
+    singlePageMode,
   });
 };
 

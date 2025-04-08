@@ -2,7 +2,7 @@ import { type FastifyInstance, type FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import WebSocket from "ws";
 import { EmitEvent } from "../../types/enums";
-import { handleCastSession } from "./cast.handler";
+import { handleCastSession } from "./casting.handler";
 
 // WebSocket server instance
 const wss = new WebSocket.Server({ noServer: true });
@@ -37,6 +37,7 @@ const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, op
   fastify.server.on("upgrade", async (request, socket, head) => {
     fastify.log.info("Upgrading browser socket...");
     const url = request.url ?? "";
+    const params = Object.fromEntries(new URL(url || "", `http://${request.headers.host}`).searchParams.entries());
 
     switch (true) {
       case url.startsWith("/v1/sessions/logs"):
@@ -46,7 +47,7 @@ const browserWebSocket: FastifyPluginAsync = async (fastify: FastifyInstance, op
 
       case url.startsWith("/v1/sessions/cast"):
         fastify.log.info("Connecting to cast...");
-        await handleCastSession(request, socket, head, wss, fastify.sessionService);
+        await handleCastSession(request, socket, head, wss, fastify.sessionService, params);
         break;
 
       case url.startsWith("/v1/sessions/pageId"):
