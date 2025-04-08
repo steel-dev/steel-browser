@@ -1,10 +1,9 @@
-import { createHash } from "crypto";
 import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
+import { rename, unlink } from "fs/promises";
 import mime from "mime-types";
 import path from "path";
-import { Readable, Transform } from "stream";
-import { pipeline } from "stream/promises";
+import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 
@@ -69,7 +68,8 @@ export class FileService {
 
   public async saveFile(options: {
     sessionId: string;
-    stream: Readable;
+    filePath: string;
+    checksum: string;
     id?: string;
     name?: string;
     contentType?: string;
@@ -84,18 +84,14 @@ export class FileService {
       fileName = id;
     }
 
-    const filePath = await this.getFilePath({ sessionId: options.sessionId, name: fileName });
+    const destinationPath = await this.getFilePath({ sessionId: options.sessionId, name: fileName });
 
-    const hash = createHash("sha256");
-
-    const hashAndPassThrough = new Transform({
-      transform(chunk, _encoding, callback) {
-        hash.update(chunk);
-        callback(null, chunk);
-      },
-    });
-
-    await pipeline(options.stream, hashAndPassThrough, fs.createWriteStream(filePath));
+    try {
+      await rename(options.filePath, destinationPath);
+    } catch (error: any) {
+      await unlink(options.filePath);
+      console.error(`Error moving file: ${error.message}`);
+    }
 
     if (!this.fileMap.has(options.sessionId)) {
       this.fileMap.set(options.sessionId, new Map());
@@ -105,13 +101,13 @@ export class FileService {
 
     const file: File = {
       name: options.name || fileName,
-      size: (await fs.promises.stat(filePath)).size,
+      size: (await fs.promises.stat(destinationPath)).size,
       contentType: options.contentType || (options.name && mime.lookup(options.name)) || "application/octet-stream",
       createdAt: currentDate,
       updatedAt: currentDate,
-      checksum: hash.digest("hex"),
+      checksum: options.checksum,
       metadata: options.metadata,
-      path: filePath,
+      path: destinationPath,
     };
 
     this.fileMap.get(options.sessionId)!.set(id, file);
