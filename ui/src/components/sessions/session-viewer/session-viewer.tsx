@@ -1,6 +1,7 @@
 import { useSessionsContext } from "@/hooks/use-sessions-context";
 import { useEffect, useRef, useState } from "react";
 import rrwebPlayer from "rrweb-player";
+import { unpack } from "@rrweb/packer";
 import "./session-viewer-controls.css";
 import { LoadingSpinner } from "@/components/icons/LoadingSpinner";
 import { LiveEmptyState } from "./live-empty-state";
@@ -102,13 +103,24 @@ export function SessionViewer({
           const ws = new WebSocket(`${env.VITE_WS_URL}/v1/sessions/recording`);
 
           ws.onmessage = (message) => {
-            const events = JSON.parse(message.data);
+            const packedEvents = JSON.parse(message.data);
+            // unpack received events
+            const unpackedEvents = packedEvents.map(event => {
+              try {
+                if (typeof event === 'object') return event;
+                return unpack(event);
+              } catch (error) {
+                console.error('Failed to unpack event:', error);
+                return null;
+              }
+            }).filter(Boolean);
+
             if (playerRef.current) {
-              events.forEach((event) => {
+              unpackedEvents.forEach((event) => {
                 playerRef.current!.addEvent(event);
               });
             } else {
-              setEvents((prevEvents) => [...prevEvents, ...events]);
+              setEvents((prevEvents) => [...prevEvents, ...unpackedEvents]);
             }
           };
 

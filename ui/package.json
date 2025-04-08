@@ -27,6 +27,7 @@
     "@radix-ui/react-tabs": "^1.1.1",
     "@radix-ui/react-toast": "^1.2.2",
     "@radix-ui/themes": "^3.0.3",
+    "@rrweb/packer": "^2.0.0-alpha.18",
     "@tanstack/react-query": "^4.36.1",
     "@tanstack/react-table": "^8.20.5",
     "@vitejs/plugin-react": "^4.3.4",
