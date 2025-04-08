@@ -1,9 +1,32 @@
 import { MultipartFile } from "@fastify/multipart";
+import { createHash } from "crypto";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { createWriteStream } from "fs";
+import { unlink } from "fs/promises";
 import http from "http";
 import https from "https";
-import { PassThrough, Readable } from "stream";
+import { tmpdir } from "os";
+import { join } from "path";
+import { Readable, Transform } from "stream";
+import { pipeline } from "stream/promises";
 import { getErrors } from "../../utils/errors";
+
+async function saveWithChecksum(
+  inputStream: NodeJS.ReadableStream,
+  destination: string,
+): Promise<{ checksum: string }> {
+  const hash = createHash("sha256");
+  const hashStream = new Transform({
+    transform(chunk, _encoding, callback) {
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+
+  await pipeline(inputStream, hashStream, createWriteStream(destination));
+  const checksum = hash.digest("hex");
+  return { checksum };
+}
 
 export const handleFileUpload = async (
   server: FastifyInstance,
@@ -19,23 +42,34 @@ export const handleFileUpload = async (
     }
 
     let id: string | null = null;
-    let stream: Readable | null = null;
-    let fileProvided: boolean = false;
+
     let name: string | null = null;
     let contentType: string | null = null;
     let metadata: Record<string, any> | null = null;
-
+    let checksum: string | null = null;
     let providedName: string | null = null;
+
+    let filePath: string | null = null;
+    let fileUrl: string | null = null;
 
     for await (const part of request.parts()) {
       if (part.type === "file") {
         const file = part as MultipartFile;
-        const passThrough = new PassThrough();
-        file.file.pipe(passThrough);
         name = file.filename;
         contentType = file.mimetype;
-        stream = passThrough;
-        fileProvided = true;
+
+        filePath = join(tmpdir(), `upload_${Date.now()}_${file.filename}`);
+
+        try {
+          const result = await saveWithChecksum(file.file, filePath);
+          checksum = result.checksum;
+        } catch (error) {
+          try {
+            await unlink(filePath);
+          } catch (e) {}
+          return reply.code(500).send({ message: "Failed to save uploaded file temporarily" });
+        }
+
         continue;
       }
 
@@ -44,11 +78,8 @@ export const handleFileUpload = async (
         continue;
       }
 
-      if (part.fieldname === "fileUrl" && part.value && !fileProvided) {
-        const res = await createStreamFromUrl(part.value as string);
-        stream = res.stream;
-        contentType = res.contentType || null;
-        name = res.name;
+      if (part.fieldname === "fileUrl" && part.value) {
+        fileUrl = part.value as string;
         continue;
       }
 
@@ -69,21 +100,40 @@ export const handleFileUpload = async (
       }
     }
 
-    if (!!providedName) {
-      name = providedName;
-    }
-
-    if (!stream) {
+    if (!filePath && !fileUrl) {
       return reply.code(400).send({
         success: false,
         message: "Either file or fileUrl must be provided",
       });
     }
 
+    if (!filePath) {
+      const streamFromUrl = await createStreamFromUrl(fileUrl!);
+      name = streamFromUrl.name;
+      contentType = streamFromUrl.contentType || contentType;
+
+      filePath = join(tmpdir(), `upload_${Date.now()}_${name}`);
+
+      try {
+        const result = await saveWithChecksum(streamFromUrl.stream, filePath);
+        checksum = result.checksum;
+      } catch (error) {
+        try {
+          await unlink(filePath);
+        } catch (e) {}
+        return reply.code(500).send({ message: "Failed to save uploaded file temporarily" });
+      }
+    }
+
+    if (!!providedName) {
+      name = providedName;
+    }
+
     const file = await server.fileService.saveFile({
       sessionId: request.params.sessionId,
-      stream,
+      filePath,
       name: name!,
+      checksum: checksum!,
       contentType: contentType!,
       ...(id && { id }),
       ...(metadata && { metadata }),
