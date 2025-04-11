@@ -19,6 +19,7 @@ export interface BrowserLauncherOptions {
     height: number;
   } | null;
   userDataDir?: string;
+  extra?: Record<string, string>;
 }
 
 export interface BrowserServerOptions {
