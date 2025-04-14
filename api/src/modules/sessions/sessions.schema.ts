@@ -44,6 +44,10 @@ const CreateSession = z.object({
     })
     .optional()
     .describe("Dimensions to use for the session"),
+  extra: z
+    .record(z.string(), z.record(z.string(), z.string()))
+    .optional()
+    .describe("Extra metadata to help initialize the session"),
 });
 
 const SessionDetails = z.object({
