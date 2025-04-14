@@ -427,7 +427,7 @@ export class CDPService extends EventEmitter {
     this.launchConfig = config || this.defaultLaunchConfig;
     this.logger.info("Launching new browser instance.");
 
-    const { options, userAgent } = this.launchConfig;
+    const { options, userAgent, userDataDir } = this.launchConfig;
 
     const defaultExtensions = ["recorder"];
     const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
@@ -497,6 +497,7 @@ export class CDPService extends EventEmitter {
         TZ: timezone,
         ...process.env,
       },
+      userDataDir,
       // dumpio: true, //uncomment this line to see logs from chromium
     };
 

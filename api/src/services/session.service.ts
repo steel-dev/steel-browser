@@ -14,6 +14,7 @@ import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp.service";
 import { FileService } from "./file.service";
 import { SeleniumService } from "./selenium.service";
+import { mkdir } from "fs/promises";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -88,13 +89,24 @@ export class SessionService {
     extensions?: string[];
     timezone?: string;
     dimensions?: { width: number; height: number };
+    extra?: Record<string, Record<string, string>>;
   }): Promise<SessionDetails> {
-    const { sessionId, proxyUrl, userAgent, sessionContext, extensions, logSinkUrl, dimensions, isSelenium, blockAds } =
-      options;
+    const { 
+      sessionId, 
+      proxyUrl, 
+      userAgent, 
+      sessionContext, 
+      extensions, 
+      logSinkUrl, 
+      dimensions, 
+      isSelenium, 
+      blockAds,
+      extra,
+    } = options;
 
     let timezone = options.timezone;
 
-    await this.resetSessionInfo({
+    const sessionInfo = await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
       proxy: proxyUrl,
@@ -146,7 +158,8 @@ export class SessionService {
     }
 
     
-    const userDataDir = path.join(os.tmpdir(), randomUUID());
+    const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
+    await mkdir(userDataDir, { recursive: true });
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
@@ -162,6 +175,7 @@ export class SessionService {
       timezone,
       dimensions,
       userDataDir,
+      extra,
     };
 
     if (isSelenium) {
