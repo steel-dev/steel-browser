@@ -1,5 +1,4 @@
 import axios, { AxiosError } from "axios";
-import { randomUUID } from "crypto";
 import { FastifyBaseLogger } from "fastify";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import os from "os";
