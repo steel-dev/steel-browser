@@ -19,12 +19,9 @@ fs.mkdirSync(BASE_DIR, { recursive: true });
 
 export class ArtifactService {
   private logger: FastifyBaseLogger;
-  private storageDir: string;
 
   constructor(_config: {}, logger: FastifyBaseLogger) {
     this.logger = logger;
-    this.storageDir = "/tmp/artifacts";
-    fs.mkdirSync(this.storageDir, { recursive: true });
   }
 
   private async ensureDirectoryExists(dirPath: string): Promise<void> {
@@ -36,7 +33,7 @@ export class ArtifactService {
   }
 
   private getSessionPath(sessionId: string): string {
-    return path.join(this.storageDir, this.sanitizePath(sessionId));
+    return path.join(BASE_DIR, this.sanitizePath(sessionId));
   }
 
   private getArtifactPath(sessionId: string, artifactPath: string): string {
