@@ -36,6 +36,7 @@
     "@scalar/fastify-api-reference": "^1.25.116",
     "@types/mime-types": "^2.1.4",
     "axios": "^1.8.4",
+    "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
     "ejs": "^3.1.10",
     "fastify": "^5.2.1",
