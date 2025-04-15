@@ -41,8 +41,8 @@ export class FileService {
       persistent: true,
       ignoreInitial: false,
       awaitWriteFinish: {
-        stabilityThreshold: 2000,
-        pollInterval: 100,
+        stabilityThreshold: 100,
+        pollInterval: 50,
       },
     });
 
