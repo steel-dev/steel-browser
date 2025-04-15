@@ -1,9 +1,9 @@
-import { CDPService } from "../../services/cdp.service";
+import { CDPService } from "../../services/cdp/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema";
 import { env } from "../../env";
-import { Protocol } from "puppeteer-core";
+import { CookieData } from "../../services/cdp/plugins/session/types";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -30,7 +30,7 @@ export const handleLaunchBrowserSession = async (
       proxyUrl,
       userAgent,
       sessionContext: sessionContext as {
-        cookies?: Protocol.Network.Cookie[] | undefined;
+        cookies?: CookieData[] | undefined;
         localStorage?: Record<string, Record<string, any>> | undefined;
       },
       extensions,
