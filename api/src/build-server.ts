@@ -9,10 +9,12 @@ import browserSessionPlugin from "./plugins/browser-session";
 import browserWebSocket from "./plugins/browser-socket/browser-socket";
 import customBodyParser from "./plugins/custom-body-parser";
 import fileStoragePlugin from "./plugins/file-storage";
+import artifactStoragePlugin from "./plugins/artifact-storage";
 import requestLogger from "./plugins/request-logger";
 import openAPIPlugin from "./plugins/schemas";
 import seleniumPlugin from "./plugins/selenium";
 import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
+import artifactsRoutes from "./modules/artifacts/artifacts.routes";
 
 const KB = 1024;
 const MB = 1024 * KB;
@@ -37,6 +39,7 @@ export default async function buildFastifyServer(options?: FastifyServerOptions)
   server.register(requestLogger);
   server.register(openAPIPlugin);
   server.register(fileStoragePlugin);
+  server.register(artifactStoragePlugin);
   server.register(browserInstancePlugin);
   server.register(seleniumPlugin);
   server.register(browserWebSocket);
@@ -49,6 +52,7 @@ export default async function buildFastifyServer(options?: FastifyServerOptions)
   server.register(cdpRoutes, { prefix: "/v1" });
   server.register(seleniumRoutes);
   server.register(filesRoutes, { prefix: "/v1" });
+  server.register(artifactsRoutes, { prefix: "/v1" });
 
   return server;
 }

@@ -27,3 +27,4 @@ dist
 extensions/*
 !extensions/recorder
 files/*
+artifacts/*
