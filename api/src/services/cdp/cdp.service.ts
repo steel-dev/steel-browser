@@ -178,19 +178,13 @@ export class CDPService extends EventEmitter {
       });
 
       if (page) {
-        // Notify plugins about the new page
-        await this.pluginManager.onPageCreated(page);
-
-        // Inject session context using legacy or plugin method
         if (this.launchConfig?.sessionContext) {
-          // Legacy approach - directly inject session context
-          await this.injectSessionContext(page, this.launchConfig.sessionContext);
-
-          // Also set session data in the plugin for future use
           const sessionData = SessionManager.convertFromSessionContext(this.launchConfig.sessionContext);
           this.sessionPlugin.setSessionData(this.getTargetId(page), sessionData);
-          this.sessionPlugin.onPageCreated(page);
         }
+
+        // Notify plugins about the new page
+        await this.pluginManager.onPageCreated(page);
 
         if (this.currentSessionConfig?.timezone) {
           await page.emulateTimezone(this.currentSessionConfig.timezone);
