@@ -1,10 +1,20 @@
 import { Page } from "puppeteer-core";
 import { ZodError } from "zod";
-import { CorruptedSessionDataError, SessionData, SessionDataSchema, StorageProviderName } from "./types";
+import {
+  CookieData,
+  CorruptedSessionDataError,
+  IndexedDBData,
+  LocalStorageData,
+  SessionData,
+  SessionDataSchema,
+  SessionStorageData,
+  StorageProviderName,
+} from "./types";
 import { CookieStorageProvider } from "./providers/cookie";
 import { LocalStorageProvider } from "./providers/localStorage";
 import { SessionStorageProvider } from "./providers/sessionStorage";
 import { IndexedDBStorageProvider } from "./providers/indexedDB";
+import { FastifyBaseLogger } from "fastify";
 
 export interface SessionManagerOptions {
   /**
@@ -17,15 +27,24 @@ export interface SessionManagerOptions {
    * Whether to enable debug mode for verbose logging
    */
   debugMode?: boolean;
+
+  /**
+   * Logger for output
+   */
+  logger?: FastifyBaseLogger;
 }
 
 // Initialize the storage provider map
-const createStorageProviders = (debugMode: boolean = false) => ({
-  [StorageProviderName.Cookies]: new CookieStorageProvider(),
-  [StorageProviderName.LocalStorage]: new LocalStorageProvider(),
-  [StorageProviderName.SessionStorage]: new SessionStorageProvider(),
-  [StorageProviderName.IndexedDB]: new IndexedDBStorageProvider({ debugMode }),
-});
+const createStorageProviders = (debugMode: boolean = false, logger?: FastifyBaseLogger) => {
+  const providers = {
+    [StorageProviderName.Cookies]: new CookieStorageProvider({ debugMode, logger }),
+    [StorageProviderName.LocalStorage]: new LocalStorageProvider({ debugMode, logger }),
+    [StorageProviderName.SessionStorage]: new SessionStorageProvider({ debugMode, logger }),
+    [StorageProviderName.IndexedDB]: new IndexedDBStorageProvider({ debugMode, logger }),
+  };
+
+  return providers;
+};
 
 // Default options for the session manager
 export const defaultSessionManagerOptions: SessionManagerOptions = {
@@ -37,14 +56,16 @@ export class SessionManager {
   protected readonly page: Page;
   private readonly storageProviders: Record<string, any>;
   private readonly debugMode: boolean;
+  private readonly logger?: FastifyBaseLogger;
 
-  constructor(page: Page, options: { debugMode?: boolean } = {}) {
+  constructor(page: Page, options: { debugMode?: boolean; logger?: FastifyBaseLogger } = {}) {
     this.page = page;
     this.debugMode = options.debugMode || false;
-    this.storageProviders = createStorageProviders(this.debugMode);
+    this.logger = options.logger;
+    this.storageProviders = createStorageProviders(this.debugMode, this.logger);
 
     if (this.debugMode) {
-      console.log(`[SessionManager] Initialized for page ${page.url()}`);
+      this.log(`Initialized for page ${page.url()}`);
     }
   }
 
@@ -58,16 +79,17 @@ export class SessionManager {
     for (const providerName of providers) {
       try {
         if (this.debugMode) {
-          console.log(`[SessionManager] Dumping ${providerName} data`);
+          this.log(`Dumping ${providerName} data`);
         }
 
-        data[providerName] = await this.storageProviders[providerName].get(this.page);
+        const providerData = await this.storageProviders[providerName].getCurrentData(this.page);
+        data[providerName] = providerData;
 
         if (this.debugMode) {
-          console.log(`[SessionManager] Successfully dumped ${providerName} data`);
+          this.log(`Successfully dumped ${providerName} data`);
         }
       } catch (error) {
-        console.error(`[SessionManager] Error dumping ${providerName}:`, error);
+        this.log(`Error dumping ${providerName}: ${error}`, true);
       }
     }
 
@@ -75,7 +97,43 @@ export class SessionManager {
   }
 
   /**
-   * Restore session data to the current page
+   * Get the current accumulated session data without querying the page
+   * This returns all the data that has been collected from all pages
+   */
+  public async getTrackedData(): Promise<SessionData> {
+    const data: SessionData = {};
+
+    try {
+      for (const providerName of Object.values(StorageProviderName)) {
+        const provider = this.storageProviders[providerName];
+
+        // If provider has getAllData method, use it to get tracked data
+        if (provider && "getCurrentData" in provider) {
+          // First, get current page data to make sure tracking is up to date
+          await provider.getCurrentData(this.page);
+
+          // Then get all tracked data
+          const providerData = provider.getAllData();
+
+          // Only include non-empty data
+          if (
+            providerData &&
+            typeof providerData === "object" &&
+            (Array.isArray(providerData) ? providerData.length > 0 : Object.keys(providerData).length > 0)
+          ) {
+            data[providerName] = providerData;
+          }
+        }
+      }
+    } catch (error) {
+      this.log(`Error getting tracked data: ${error}`, true);
+    }
+
+    return data;
+  }
+
+  /**
+   * Restore session data
    */
   public async restore(
     sessionData: SessionData,
@@ -99,17 +157,44 @@ export class SessionManager {
         if (providerData) {
           try {
             if (this.debugMode) {
-              console.log(`[SessionManager] Restoring ${providerName} data`);
+              this.log(`Restoring ${providerName} data`);
             }
 
-            await this.storageProviders[providerName].set(this.page, providerData);
+            // Pass data directly to the provider
+            await this.storageProviders[providerName].setAll(providerData);
 
             if (this.debugMode) {
-              console.log(`[SessionManager] Successfully restored ${providerName} data`);
+              this.log(`Successfully restored ${providerName} data`);
             }
           } catch (error) {
-            console.error(`[SessionManager] Error restoring ${providerName}:`, error);
+            this.log(`Error restoring ${providerName}: ${error}`, true);
           }
+        }
+      }),
+    );
+  }
+
+  /**
+   * Inject session data into the current page
+   */
+  public async inject(options: SessionManagerOptions = defaultSessionManagerOptions): Promise<void> {
+    const providers = options.storageProviders || defaultSessionManagerOptions.storageProviders!;
+
+    await Promise.all(
+      providers.map(async (providerName) => {
+        try {
+          if (this.debugMode) {
+            this.log(`Injecting ${providerName} data`);
+          }
+
+          // Pass data directly to the provider
+          await this.storageProviders[providerName].inject(this.page);
+
+          if (this.debugMode) {
+            this.log(`Successfully injected ${providerName} data`);
+          }
+        } catch (error) {
+          this.log(`Error injecting ${providerName}: ${error}`, true);
         }
       }),
     );
@@ -136,19 +221,29 @@ export class SessionManager {
    * Helper to convert from the old sessionContext format to the new SessionData format
    */
   public static convertFromSessionContext(sessionContext?: {
-    cookies?: any[];
-    localStorage?: Record<string, Record<string, string>>;
+    cookies?: CookieData[];
+    localStorage?: Record<string, LocalStorageData>;
+    sessionStorage?: Record<string, SessionStorageData>;
+    indexedDB?: Record<string, IndexedDBData>;
   }): SessionData {
     if (!sessionContext) return {};
 
     const data: SessionData = {};
 
     if (sessionContext.cookies && sessionContext.cookies.length > 0) {
-      data[StorageProviderName.Cookies] = JSON.stringify(sessionContext.cookies);
+      data[StorageProviderName.Cookies] = sessionContext.cookies;
     }
 
     if (sessionContext.localStorage && Object.keys(sessionContext.localStorage).length > 0) {
-      data[StorageProviderName.LocalStorage] = JSON.stringify(sessionContext.localStorage);
+      data[StorageProviderName.LocalStorage] = sessionContext.localStorage;
+    }
+
+    if (sessionContext.sessionStorage && Object.keys(sessionContext.sessionStorage).length > 0) {
+      data[StorageProviderName.SessionStorage] = sessionContext.sessionStorage;
+    }
+
+    if (sessionContext.indexedDB && Object.keys(sessionContext.indexedDB).length > 0) {
+      data[StorageProviderName.IndexedDB] = sessionContext.indexedDB;
     }
 
     return data;
@@ -158,30 +253,61 @@ export class SessionManager {
    * Helper to convert from the new SessionData format to the old sessionContext format
    */
   public static convertToSessionContext(sessionData: SessionData): {
-    cookies?: any[];
-    localStorage?: Record<string, Record<string, string>>;
+    cookies?: CookieData[];
+    localStorage?: Record<string, LocalStorageData>;
   } {
     const result: {
-      cookies?: any[];
-      localStorage?: Record<string, Record<string, string>>;
+      cookies?: CookieData[];
+      localStorage?: Record<string, LocalStorageData>;
+      sessionStorage?: Record<string, SessionStorageData>;
+      indexedDB?: Record<string, IndexedDBData>;
     } = {};
 
     if (sessionData[StorageProviderName.Cookies]) {
-      try {
-        result.cookies = JSON.parse(sessionData[StorageProviderName.Cookies]);
-      } catch (error) {
-        console.error("[SessionManager] Error parsing cookies from SessionData:", error);
-      }
+      result.cookies = sessionData[StorageProviderName.Cookies];
     }
 
     if (sessionData[StorageProviderName.LocalStorage]) {
-      try {
-        result.localStorage = JSON.parse(sessionData[StorageProviderName.LocalStorage]);
-      } catch (error) {
-        console.error("[SessionManager] Error parsing localStorage from SessionData:", error);
-      }
+      result.localStorage = sessionData[StorageProviderName.LocalStorage];
     }
 
     return result;
+  }
+
+  /**
+   * Helper for consistent logging
+   */
+  private log(message: string, isError = false, level: "debug" | "info" | "warn" | "error" = "info"): void {
+    // Skip debug logs completely when debugMode is false
+    if (level === "debug" && !this.debugMode) {
+      return;
+    }
+
+    const prefix = "[SessionManager]";
+    const fullMessage = `${prefix} ${message}`;
+
+    if (this.logger) {
+      if (isError) {
+        this.logger.error(fullMessage);
+      } else {
+        this.logger[level](fullMessage);
+      }
+    } else {
+      if (isError) {
+        console.error(fullMessage);
+      } else if (level === "warn") {
+        console.warn(fullMessage);
+      } else {
+        console.log(fullMessage);
+      }
+    }
+  }
+
+  /**
+   * Static helper for consistent logging in static methods
+   */
+  private static log(message: string, isError = false): void {
+    const prefix = "[SessionManager]";
+    isError ? console.error(`${prefix} ${message}`) : console.log(`${prefix} ${message}`);
   }
 }

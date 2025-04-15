@@ -1,38 +1,48 @@
 import { Page } from "puppeteer-core";
-import { StorageProvider, StorageProviderName } from "../types";
+import { CookieData, StorageProvider, StorageProviderName } from "../types";
+import { FastifyBaseLogger } from "fastify";
 
-export class CookieStorageProvider implements StorageProvider {
-  public name: StorageProviderName = StorageProviderName.Cookies;
+export class CookieStorageProvider extends StorageProvider<StorageProviderName.Cookies> {
+  public name: StorageProviderName.Cookies = StorageProviderName.Cookies;
+  private cookies: CookieData[] = [];
 
-  public async get(page: Page): Promise<string> {
+  constructor(options: { debugMode?: boolean; logger?: FastifyBaseLogger } = {}) {
+    super();
+    this.debugMode = options.debugMode || false;
+    this.logger = options.logger;
+  }
+
+  public async getCurrentData(page: Page): Promise<CookieData[]> {
     try {
       const client = await page.target().createCDPSession();
       try {
+        this.log("Fetching cookies via CDP", false, "debug");
         const { cookies } = await client.send("Network.getAllCookies");
-        return JSON.stringify(cookies);
+        this.cookies = cookies as CookieData[];
+        this.log(`Retrieved ${cookies.length} cookies`, false, "debug");
+        return cookies as CookieData[];
       } finally {
         await client.detach();
       }
     } catch (error) {
-      console.error("Error getting cookies:", error);
-      return "[]";
+      this.log(`Error getting cookies: ${error}`, true);
+      return [];
     }
   }
 
-  public async set(page: Page, data: string): Promise<void> {
+  public async inject(page: Page): Promise<void> {
     try {
-      const cookies = JSON.parse(data);
-      if (!Array.isArray(cookies)) {
-        throw new Error("Cookie data must be an array");
+      if (this.cookies.length > 0) {
+        this.log(`Setting ${this.cookies.length} cookies`, false, "debug");
       }
 
-      for (const cookie of cookies) {
-        // Skip invalid cookies
+      let validCookiesCount = 0;
+      for (const cookie of this.cookies) {
         if (!cookie.name || !cookie.value || !cookie.domain) {
+          this.log(`Skipping invalid cookie (missing required fields): ${JSON.stringify(cookie)}`, false, "warn");
           continue;
         }
 
-        // Convert to SetCookie format
         await page.setCookie({
           name: cookie.name,
           value: cookie.value,
@@ -43,10 +53,22 @@ export class CookieStorageProvider implements StorageProvider {
           secure: cookie.secure || false,
           sameSite: cookie.sameSite || undefined,
         });
+        validCookiesCount++;
       }
+
+      this.log(`Successfully set ${validCookiesCount} cookies`, false, "debug");
     } catch (error) {
-      console.error("Error setting cookies:", error);
+      this.log(`Error setting cookies: ${error}`, true);
       throw error;
     }
+  }
+
+  public setAll(data: CookieData[]): void {
+    this.cookies = data;
+  }
+
+  public getAllData(): CookieData[] {
+    this.log(`Returning ${this.cookies.length} cookies`, false, "debug");
+    return this.cookies;
   }
 }

@@ -1,12 +1,30 @@
 import { Page } from "puppeteer-core";
-import { StorageProvider, StorageProviderName } from "../types";
+import { SessionStorageData, StorageProvider, StorageProviderName } from "../types";
+import { FastifyBaseLogger } from "fastify";
 
-export class SessionStorageProvider implements StorageProvider {
-  public name: StorageProviderName = StorageProviderName.SessionStorage;
+export class SessionStorageProvider extends StorageProvider<StorageProviderName.SessionStorage> {
+  public name: StorageProviderName.SessionStorage = StorageProviderName.SessionStorage;
+  private storageData: Record<string, SessionStorageData> = {};
 
-  public async get(page: Page): Promise<string> {
+  constructor(options: { debugMode?: boolean; logger?: FastifyBaseLogger } = {}) {
+    super();
+    this.debugMode = options.debugMode || false;
+    this.logger = options.logger;
+  }
+
+  /**
+   * Get sessionStorage data from the current page and update our cache
+   */
+  public async getCurrentData(page: Page): Promise<SessionStorageData> {
     try {
-      const storage = await page.evaluate(() => {
+      if (page.url() === "about:blank") {
+        return {};
+      }
+
+      const hostname = new URL(page.url()).hostname;
+
+      // Get current sessionStorage data from the page
+      const currentStorage = await page.evaluate(() => {
         const items: Record<string, string> = {};
         for (let i = 0; i < sessionStorage.length; i++) {
           const key = sessionStorage.key(i);
@@ -17,22 +35,32 @@ export class SessionStorageProvider implements StorageProvider {
         return items;
       });
 
-      return JSON.stringify({
-        [new URL(page.url()).hostname]: storage,
-      });
+      // Update our cached data with the latest values
+      this.storageData[hostname] = { ...this.storageData[hostname], ...currentStorage };
+
+      this.log(`Updated storage data for ${hostname}`, false, "debug");
+
+      return this.storageData[hostname] || {};
     } catch (error) {
-      console.error("Error getting sessionStorage:", error);
-      return "{}";
+      this.log(`Error getting sessionStorage: ${error}`, true);
+      const hostname = page.url() !== "about:blank" ? new URL(page.url()).hostname : "";
+      return hostname ? this.storageData[hostname] || {} : {};
     }
   }
 
-  public async set(page: Page, data: string): Promise<void> {
+  public async inject(page: Page): Promise<void> {
     try {
-      const storageData = JSON.parse(data) as Record<string, Record<string, string>>;
-      const hostname = new URL(page.url()).hostname;
-      const storageItems = storageData[hostname] || {};
+      const url = page.url();
+      if (url === "about:blank") {
+        return;
+      }
 
+      const hostname = new URL(url).hostname;
+      const storageItems = this.storageData[hostname];
+
+      // Apply to page
       if (Object.keys(storageItems).length > 0) {
+        this.log(`Setting ${Object.keys(storageItems).length} sessionStorage items for ${hostname}`, false, "debug");
         await page.evaluate((items: Record<string, string>) => {
           for (const [key, value] of Object.entries(items)) {
             window.sessionStorage.setItem(key, value);
@@ -40,8 +68,20 @@ export class SessionStorageProvider implements StorageProvider {
         }, storageItems);
       }
     } catch (error) {
-      console.error("Error setting sessionStorage:", error);
+      this.log(`Error setting sessionStorage: ${error}`, true);
       throw error;
     }
+  }
+
+  public setAll(data: Record<string, SessionStorageData>): void {
+    this.storageData = data;
+  }
+
+  /**
+   * Get all tracked data regardless of current page
+   */
+  public getAllData(): Record<string, SessionStorageData> {
+    this.log(`Returning data for ${Object.keys(this.storageData).length} domains`, false, "debug");
+    return this.storageData;
   }
 }

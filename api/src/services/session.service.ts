@@ -4,7 +4,6 @@ import { FastifyBaseLogger } from "fastify";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import os from "os";
 import path from "path";
-import { Protocol } from "puppeteer-core";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
@@ -12,6 +11,7 @@ import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp/cdp.service";
+import { CookieData } from "./cdp/plugins/session/types";
 import { FileService } from "./file.service";
 import { SeleniumService } from "./selenium.service";
 import { mkdir } from "fs/promises";
@@ -80,7 +80,7 @@ export class SessionService {
     proxyUrl?: string;
     userAgent?: string;
     sessionContext?: {
-      cookies?: Protocol.Network.Cookie[];
+      cookies?: CookieData[];
       localStorage?: Record<string, Record<string, any>>;
     };
     isSelenium?: boolean;

@@ -1,25 +1,24 @@
-import { Page, CDPSession } from "puppeteer-core";
-import {
-  StorageProvider,
-  StorageProviderName,
-  CDPIndexedDBDatabaseNames,
-  IndexedDBDatabaseSchema,
-  IndexedDBSchema,
-} from "../types";
+import { Page } from "puppeteer-core";
+import { StorageProvider, StorageProviderName, IndexedDBData } from "../types";
 import { dexieCore, dexieExportImport } from "../constants/dexie";
+import { FastifyBaseLogger } from "fastify";
 
 /**
- * IndexedDB Storage Provider using Dexie.js for database operations
+ * IndexedDB Storage Provider
  *
  * This provider implements full IndexedDB database export/import functionality
  * for session management in the CDPService.
  */
-export class IndexedDBStorageProvider implements StorageProvider {
-  public name: StorageProviderName = StorageProviderName.IndexedDB;
-  private debugMode: boolean;
+export class IndexedDBStorageProvider extends StorageProvider<StorageProviderName.IndexedDB> {
+  public name: StorageProviderName.IndexedDB = StorageProviderName.IndexedDB;
 
-  constructor(options: { debugMode?: boolean } = {}) {
+  // Cache of IndexedDB data by security origin and database name
+  private indexedDBData: Record<string, IndexedDBData> = {};
+
+  constructor(options: { debugMode?: boolean; logger?: FastifyBaseLogger } = {}) {
+    super();
     this.debugMode = options.debugMode || false;
+    this.logger = options.logger;
   }
 
   /**
@@ -29,35 +28,101 @@ export class IndexedDBStorageProvider implements StorageProvider {
    * 1. Gets the security origin of the current page
    * 2. Retrieves all database names for that origin using CDP
    * 3. Exports each database using Dexie.js
-   * 4. Returns the serialized database data
+   * 4. Returns the serialized database data for the current origin only
    */
-  public async get(page: Page): Promise<string> {
+  public async getCurrentData(page: Page): Promise<IndexedDBData> {
     try {
-      // Get current page origin
-      const securityOrigin = await page.evaluate(() => location.origin);
-
-      // Get all database names for this origin using CDP
-      const dbNames = await this.getDatabaseNames(page, securityOrigin);
-
-      // If no databases found, return empty array
-      if (!dbNames.length) {
-        return "[]";
+      if (page.url() === "about:blank") {
+        return [];
       }
 
-      // Export each database using Dexie.js
-      const indexedDBs = await Promise.all(dbNames.map((db) => this.getIndexedDB(page, db)));
+      this.log("Retrieving IndexedDB data from current page", false, "debug");
 
-      // Format the results as expected by the session manager
-      return JSON.stringify(
-        dbNames.map((db, index) => ({
-          name: db,
-          data: indexedDBs[index],
-          securityOrigin,
-        })),
-      );
+      const [securityOrigin, databases] = (await page.evaluate(async () => {
+        const results = [];
+        let foundDatabases = [];
+        try {
+          // @ts-ignore
+          foundDatabases = await window.indexedDB.databases();
+          console.log("Found databases:", foundDatabases);
+        } catch (e) {
+          console.error("Error getting databases:", e);
+        }
+
+        const securityOrigin = window.location.origin;
+        console.log("Current security origin:", securityOrigin);
+
+        const connect = (database: any) =>
+          new Promise(function (resolve, _) {
+            const request = window.indexedDB.open(database.name, database.version);
+            request.onsuccess = (_) => resolve(request.result);
+            request.onerror = (e) => {
+              console.error("Error opening database:", e);
+              resolve(null);
+            };
+          });
+
+        const getAll = (db: any, objectStoreName: string) =>
+          new Promise(function (resolve, _) {
+            const request = db.transaction([objectStoreName]).objectStore(objectStoreName).getAll();
+            request.onsuccess = (_) => resolve(request.result);
+            request.onerror = (e) => {
+              console.error("Error getting data from store:", e);
+              resolve([]);
+            };
+          });
+
+        for (let i = 0; i < foundDatabases.length; i++) {
+          const db = await connect(foundDatabases[i]);
+          if (!db) continue;
+
+          // @ts-ignore
+          const dbName = db.name;
+          let data = [];
+          // @ts-ignore
+          for (let j = 0; j < db.objectStoreNames.length; j++) {
+            // @ts-ignore
+            const objectStoreName = db.objectStoreNames[j];
+            const values = await getAll(db, objectStoreName);
+            // @ts-ignore
+            data.push({
+              name: objectStoreName,
+              values,
+            });
+          }
+          // @ts-ignore
+          results.push({
+            name: dbName,
+            data,
+            securityOrigin,
+          });
+          // @ts-ignore
+          if (db.close) db.close();
+        }
+
+        return [securityOrigin, results];
+      })) as [string, IndexedDBData];
+
+      // Update our cached data
+      this.updateCache(securityOrigin, databases);
+
+      this.log(`Retrieved ${databases.length} IndexedDB databases from ${securityOrigin}`, false, "debug");
+
+      // Return only the current origin's data
+      return this.indexedDBData[securityOrigin] || [];
     } catch (error) {
-      console.error("[IndexedDBStorageProvider] Error getting IndexedDB data:", error);
-      return "[]";
+      this.log(`Error getting IndexedDB data: ${error}`, true);
+      // Try to get origin from URL if evaluate failed
+      try {
+        const url = page.url();
+        if (url && url !== "about:blank") {
+          const origin = new URL(url).origin;
+          return this.indexedDBData[origin] || [];
+        }
+      } catch (e) {
+        // Ignore error
+      }
+      return [];
     }
   }
 
@@ -65,116 +130,113 @@ export class IndexedDBStorageProvider implements StorageProvider {
    * Restore IndexedDB data to the page
    *
    * This method:
-   * 1. Parses the provided data
-   * 2. For each database, navigates to the correct origin if necessary
+   * 1. Parses the provided data if it's a string
+   * 2. For each database, checks if it matches the current origin
    * 3. Imports the database using Dexie.js
    */
-  public async set(page: Page, data: string): Promise<void> {
+  public async inject(page: Page): Promise<void> {
     try {
-      // Parse the database data
-      const databases = IndexedDBDatabaseSchema.array().parse(JSON.parse(data));
-
-      // If no databases to restore, exit early
-      if (!databases.length) {
+      const url = page.url();
+      if (url === "about:blank") {
         return;
       }
 
-      // Process each database
-      for (const db of databases) {
-        // Navigate to the correct origin if necessary
-        if (!page.url().includes(db.securityOrigin)) {
-          if (this.debugMode) console.log(`[IndexedDBStorageProvider] Navigating to ${db.securityOrigin}`);
-          await page.goto(db.securityOrigin);
+      const currentOrigin = new URL(url).origin;
+
+      const databases = this.indexedDBData[currentOrigin];
+
+      // Filter databases to only those matching the current origin
+      const currentOriginDatabases = databases.filter((db) => db.securityOrigin === currentOrigin);
+
+      // If no databases to restore for this origin, exit early
+      if (!currentOriginDatabases.length) {
+        this.log(`No IndexedDB databases to restore for ${currentOrigin}`, false, "debug");
+        return;
+      }
+
+      this.log(`Restoring ${currentOriginDatabases.length} IndexedDB databases for ${currentOrigin}`, false, "debug");
+
+      // Update our cached data
+      databases.forEach((db) => {
+        const origin = db.securityOrigin;
+        if (!this.indexedDBData[origin]) {
+          this.indexedDBData[origin] = [];
         }
 
-        // Import the database using Dexie.js
-        await this.setIndexedDB(page, db.data);
-      }
-    } catch (error) {
-      console.error("[IndexedDBStorageProvider] Error setting IndexedDB data:", error);
-    }
-  }
+        // Replace or add the database in our cache
+        const existingDbIndex = this.indexedDBData[origin].findIndex((existingDb) => existingDb.name === db.name);
 
-  /**
-   * Get all database names for a specific origin using CDP
-   */
-  private async getDatabaseNames(page: Page, securityOrigin: string): Promise<string[]> {
-    let session: CDPSession | null = null;
-
-    try {
-      // Create CDP session
-      session = await page.target().createCDPSession();
-
-      // Request database names from CDP
-      const response = await session.send("IndexedDB.requestDatabaseNames", {
-        securityOrigin,
+        if (existingDbIndex >= 0) {
+          this.indexedDBData[origin][existingDbIndex] = db;
+        } else {
+          this.indexedDBData[origin].push(db);
+        }
       });
 
-      // Parse and validate the response
-      const { databaseNames } = CDPIndexedDBDatabaseNames.parse(response);
+      // Process each database for the current origin
+      let processedDatabases = 0;
+      for (const db of currentOriginDatabases) {
+        // Convert data to string if it's not already
+        const dbData = typeof db.data === "string" ? db.data : JSON.stringify(db.data);
 
-      if (this.debugMode && databaseNames.length > 0) {
-        console.log(`[IndexedDBStorageProvider] Found databases: ${databaseNames.join(", ")}`);
+        // Import the database using Dexie.js
+        await this.setIndexedDB(page, dbData);
+        processedDatabases++;
       }
 
-      return databaseNames;
-    } catch (err) {
-      if ((err as Error).message.includes("No document for given frame found")) {
-        // This is an expected error when the page hasn't loaded yet
-        return [];
-      }
-
-      // Rethrow other errors
-      throw err;
-    } finally {
-      // Always detach the session when done
-      if (session) await session.detach().catch(() => {});
+      this.log(`Successfully processed ${processedDatabases} IndexedDB databases for ${currentOrigin}`, false, "info");
+    } catch (error) {
+      this.log(`Error setting IndexedDB data: ${error}`, true);
     }
   }
 
-  /**
-   * Export a database using Dexie.js
-   */
-  private async getIndexedDB(page: Page, dbName: string): Promise<string> {
-    if (this.debugMode) console.log(`[IndexedDBStorageProvider] Exporting database: ${dbName}`);
+  public setAll(data: Record<string, IndexedDBData>): void {
+    this.indexedDBData = data;
+  }
 
-    const result = await page.evaluate(this.generateGetContentScript(dbName));
-    return IndexedDBSchema.parse(result);
+  /**
+   * Update the cache with new data
+   */
+  private updateCache(securityOrigin: string, databases: IndexedDBData): void {
+    if (!this.indexedDBData[securityOrigin]) {
+      this.indexedDBData[securityOrigin] = [];
+    }
+
+    // Update or add each database
+    databases.forEach((db) => {
+      const existingDbIndex = this.indexedDBData[securityOrigin].findIndex((existingDb) => existingDb.name === db.name);
+
+      if (existingDbIndex >= 0) {
+        this.indexedDBData[securityOrigin][existingDbIndex] = db;
+      } else {
+        this.indexedDBData[securityOrigin].push(db);
+      }
+    });
+
+    this.log(
+      `Updated cache for ${securityOrigin}, total databases: ${this.indexedDBData[securityOrigin].length}`,
+      false,
+      "debug",
+    );
   }
 
   /**
    * Import a database using Dexie.js
    */
   private async setIndexedDB(page: Page, data: string): Promise<void> {
-    if (this.debugMode) console.log("[IndexedDBStorageProvider] Importing database");
-
+    this.log("Importing IndexedDB database", false, "debug");
     await page.evaluate(this.generateSetContentScript(data));
   }
 
   /**
-   * Generate JavaScript for exporting a database
+   * Get all stored data from all origins
    */
-  private generateGetContentScript(dbName: string): string {
-    return `
-    (async() => {
-      // Required for some websites to avoid conflicts
-      define = undefined;
-      exports = undefined;
-      if (window.module) module.exports = undefined;
+  public getAllData(): Record<string, IndexedDBData> {
+    const originsCount = Object.keys(this.indexedDBData).length;
+    const totalDatabases = Object.values(this.indexedDBData).reduce((sum, dbs) => sum + dbs.length, 0);
 
-      ${dexieCore}
-      ${dexieExportImport}
-      
-      try {
-        const db = await new Dexie("${dbName}").open();
-        const blob = await db.export();
-        const text = await blob.text();
-        return text;
-      } catch (error) {
-        console.error("Error exporting IndexedDB:", error);
-        return "{}";
-      }
-    })()`;
+    this.log(`Returning ${totalDatabases} IndexedDB databases from ${originsCount} origins`, false, "debug");
+    return this.indexedDBData;
   }
 
   /**

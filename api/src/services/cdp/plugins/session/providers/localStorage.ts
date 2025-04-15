@@ -1,12 +1,30 @@
 import { Page } from "puppeteer-core";
-import { StorageProvider, StorageProviderName } from "../types";
+import { LocalStorageData, StorageProvider, StorageProviderName } from "../types";
+import { FastifyBaseLogger } from "fastify";
 
-export class LocalStorageProvider implements StorageProvider {
-  public name: StorageProviderName = StorageProviderName.LocalStorage;
+export class LocalStorageProvider extends StorageProvider<StorageProviderName.LocalStorage> {
+  public name: StorageProviderName.LocalStorage = StorageProviderName.LocalStorage;
+  private storageData: Record<string, LocalStorageData> = {};
 
-  public async get(page: Page): Promise<string> {
+  constructor(options: { debugMode?: boolean; logger?: FastifyBaseLogger } = {}) {
+    super();
+    this.debugMode = options.debugMode || false;
+    this.logger = options.logger;
+  }
+
+  /**
+   * Get localStorage data from the current page and update our cache
+   */
+  public async getCurrentData(page: Page): Promise<LocalStorageData> {
     try {
-      const storage = await page.evaluate(() => {
+      if (page.url() === "about:blank") {
+        return {};
+      }
+
+      const hostname = new URL(page.url()).hostname;
+
+      // Get current localStorage data from the page
+      const currentStorage = await page.evaluate(() => {
         const items: Record<string, string> = {};
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
@@ -17,22 +35,32 @@ export class LocalStorageProvider implements StorageProvider {
         return items;
       });
 
-      return JSON.stringify({
-        [new URL(page.url()).hostname]: storage,
-      });
+      // Update our cached data with the latest values
+      this.storageData[hostname] = { ...this.storageData[hostname], ...currentStorage };
+
+      this.log(`Updated storage data for ${hostname}`, false, "debug");
+
+      return this.storageData[hostname] || {};
     } catch (error) {
-      console.error("Error getting localStorage:", error);
-      return "{}";
+      this.log(`Error getting localStorage: ${error}`, true);
+      const hostname = page.url() !== "about:blank" ? new URL(page.url()).hostname : "";
+      return hostname ? this.storageData[hostname] || {} : {};
     }
   }
 
-  public async set(page: Page, data: string): Promise<void> {
+  public async inject(page: Page): Promise<void> {
     try {
-      const storageData = JSON.parse(data) as Record<string, Record<string, string>>;
-      const hostname = new URL(page.url()).hostname;
-      const storageItems = storageData[hostname] || {};
+      const url = page.url();
+      if (url === "about:blank") {
+        return;
+      }
 
+      const hostname = new URL(url).hostname;
+      const storageItems = this.storageData[hostname];
+
+      // Apply to page
       if (Object.keys(storageItems).length > 0) {
+        this.log(`Setting ${Object.keys(storageItems).length} localStorage items for ${hostname}`, false, "debug");
         await page.evaluate((items: Record<string, string>) => {
           for (const [key, value] of Object.entries(items)) {
             window.localStorage.setItem(key, value);
@@ -40,8 +68,20 @@ export class LocalStorageProvider implements StorageProvider {
         }, storageItems);
       }
     } catch (error) {
-      console.error("Error setting localStorage:", error);
+      this.log(`Error setting localStorage: ${error}`, true);
       throw error;
     }
+  }
+
+  public setAll(data: Record<string, LocalStorageData>): void {
+    this.storageData = data;
+  }
+
+  /**
+   * Get all tracked data regardless of current page
+   */
+  public getAllData(): Record<string, LocalStorageData> {
+    this.log(`Returning data for ${Object.keys(this.storageData).length} domains`, false, "debug");
+    return this.storageData;
   }
 }

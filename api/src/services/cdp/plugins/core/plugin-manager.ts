@@ -1,6 +1,6 @@
 import { Browser, Page } from "puppeteer-core";
 import { CDPService } from "../../cdp.service";
-import { BasePlugin, PluginOptions } from "./base-plugin";
+import { BasePlugin } from "./base-plugin";
 import { FastifyBaseLogger } from "fastify";
 
 export class PluginManager {
@@ -51,64 +51,97 @@ export class PluginManager {
    * Notify all plugins about a browser launch
    */
   public async onBrowserLaunch(browser: Browser): Promise<void> {
-    for (const plugin of this.plugins.values()) {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
         await plugin.onBrowserLaunch(browser);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBrowserLaunch: ${error}`);
       }
-    }
+    });
+    await Promise.all(promises);
   }
 
   /**
    * Notify all plugins about a page creation
    */
   public async onPageCreated(page: Page): Promise<void> {
-    for (const plugin of this.plugins.values()) {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
         await plugin.onPageCreated(page);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onPageCreated: ${error}`);
       }
-    }
+    });
+    await Promise.all(promises);
   }
 
   /**
    * Notify all plugins before browser closes
    */
   public async onBrowserClose(browser: Browser): Promise<void> {
-    for (const plugin of this.plugins.values()) {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
         await plugin.onBrowserClose(browser);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBrowserClose: ${error}`);
       }
-    }
+    });
+    await Promise.all(promises);
+  }
+
+  /**
+   * Notify all plugins before a page navigates
+   */
+  public async onPageNavigate(page: Page): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await plugin.onPageNavigate(page);
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onPageNavigate: ${error}`);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  /**
+   * Notify all plugins before a page unloads
+   */
+  public async onPageUnload(page: Page): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await plugin.onPageUnload(page);
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onPageUnload: ${error}`);
+      }
+    });
+    await Promise.all(promises);
   }
 
   /**
    * Notify all plugins before a page closes
    */
   public async onBeforePageClose(page: Page): Promise<void> {
-    for (const plugin of this.plugins.values()) {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
         await plugin.onBeforePageClose(page);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBeforePageClose: ${error}`);
       }
-    }
+    });
+    await Promise.all(promises);
   }
 
   /**
    * Notify all plugins about shutdown
    */
   public async onShutdown(): Promise<void> {
-    for (const plugin of this.plugins.values()) {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
         await plugin.onShutdown();
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onShutdown: ${error}`);
       }
-    }
+    });
+    await Promise.all(promises);
   }
 }
