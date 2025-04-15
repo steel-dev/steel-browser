@@ -36,82 +36,158 @@ export class IndexedDBStorageProvider extends StorageProvider<StorageProviderNam
         return [];
       }
 
-      this.log("Retrieving IndexedDB data from current page", false, "debug");
+      const databaseInfo = await page.evaluate(async () => {
+        const origin = window.location.origin;
 
-      const [securityOrigin, databases] = (await page.evaluate(async () => {
-        const results = [];
-        let foundDatabases = [];
-        try {
-          // @ts-ignore
-          foundDatabases = await window.indexedDB.databases();
-          console.log("Found databases:", foundDatabases);
-        } catch (e) {
-          console.error("Error getting databases:", e);
-        }
-
-        const securityOrigin = window.location.origin;
-        console.log("Current security origin:", securityOrigin);
-
-        const connect = (database: any) =>
-          new Promise(function (resolve, _) {
-            const request = window.indexedDB.open(database.name, database.version);
-            request.onsuccess = (_) => resolve(request.result);
-            request.onerror = (e) => {
-              console.error("Error opening database:", e);
-              resolve(null);
-            };
-          });
-
-        const getAll = (db: any, objectStoreName: string) =>
-          new Promise(function (resolve, _) {
-            const request = db.transaction([objectStoreName]).objectStore(objectStoreName).getAll();
-            request.onsuccess = (_) => resolve(request.result);
-            request.onerror = (e) => {
-              console.error("Error getting data from store:", e);
-              resolve([]);
-            };
-          });
-
-        for (let i = 0; i < foundDatabases.length; i++) {
-          const db = await connect(foundDatabases[i]);
-          if (!db) continue;
-
-          // @ts-ignore
-          const dbName = db.name;
-          let data = [];
-          // @ts-ignore
-          for (let j = 0; j < db.objectStoreNames.length; j++) {
-            // @ts-ignore
-            const objectStoreName = db.objectStoreNames[j];
-            const values = await getAll(db, objectStoreName);
-            // @ts-ignore
-            data.push({
-              name: objectStoreName,
-              values,
-            });
+        const listDatabases = async (): Promise<DBInfo[]> => {
+          try {
+            if (window.indexedDB.databases) {
+              const nativeDatabases = await window.indexedDB.databases();
+              return nativeDatabases.map((db) => ({
+                name: db.name || "",
+                version: db.version,
+              }));
+            }
+          } catch (e) {
+            console.error("Failed to list databases via indexedDB.databases():", e);
           }
-          // @ts-ignore
-          results.push({
-            name: dbName,
-            data,
-            securityOrigin,
+          return [];
+        };
+
+        // Define database info types for TypeScript
+        type DBInfo = {
+          name: string;
+          version?: number;
+        };
+
+        type DetailedDBInfo = {
+          name: string;
+          version: number;
+          objectStores: string[];
+          db: IDBDatabase;
+        };
+
+        type StoreData = {
+          name: string;
+          values: any[];
+        };
+
+        type DBResult = {
+          name: string;
+          data: StoreData[];
+          securityOrigin: string;
+        };
+
+        const getDatabaseInfo = (dbName: string, version?: number): Promise<DetailedDBInfo | null> => {
+          return new Promise((resolve) => {
+            try {
+              const request = indexedDB.open(dbName, version);
+
+              request.onerror = (event) => {
+                console.error(`Error opening database ${dbName}:`, event);
+                resolve(null);
+              };
+
+              request.onsuccess = (event) => {
+                const db = request.result;
+                const storeNames = Array.from(db.objectStoreNames);
+                console.log(`Successfully opened database ${dbName}, found stores:`, storeNames);
+
+                const result: DetailedDBInfo = {
+                  name: dbName,
+                  version: db.version,
+                  objectStores: storeNames,
+                  db: db,
+                };
+
+                resolve(result);
+              };
+
+              // Handle upgrade needed event (should not happen in read-only access)
+              request.onupgradeneeded = (event) => {
+                console.log(`Unexpected onupgradeneeded for ${dbName}`);
+                const db = request.result;
+                db.close();
+                resolve(null);
+              };
+            } catch (e) {
+              console.error(`Exception opening database ${dbName}:`, e);
+              resolve(null);
+            }
           });
-          // @ts-ignore
-          if (db.close) db.close();
+        };
+
+        // Helper to read all data from an object store
+        const getAllFromStore = (db: IDBDatabase, storeName: string): Promise<StoreData> => {
+          return new Promise((resolve) => {
+            try {
+              const transaction = db.transaction(storeName, "readonly");
+              const store = transaction.objectStore(storeName);
+              const request = store.getAll();
+
+              request.onsuccess = () => {
+                resolve({
+                  name: storeName,
+                  values: request.result,
+                });
+              };
+
+              request.onerror = (event) => {
+                console.error(`Error reading from store ${storeName}:`, event);
+                resolve({
+                  name: storeName,
+                  values: [],
+                });
+              };
+            } catch (e) {
+              console.error(`Exception reading from store ${storeName}:`, e);
+              resolve({
+                name: storeName,
+                values: [],
+              });
+            }
+          });
+        };
+
+        let databases: DBInfo[] = await listDatabases();
+
+        const results: DBResult[] = [];
+        for (const dbInfo of databases) {
+          const dbDetailedInfo = await getDatabaseInfo(dbInfo.name, dbInfo.version);
+
+          if (!dbDetailedInfo) {
+            console.log(`Could not get detailed info for ${dbInfo.name}`);
+            continue;
+          }
+
+          const dbData: StoreData[] = [];
+          for (const storeName of dbDetailedInfo.objectStores) {
+            const storeData = await getAllFromStore(dbDetailedInfo.db, storeName);
+            dbData.push(storeData);
+          }
+
+          results.push({
+            name: dbInfo.name,
+            data: dbData,
+            securityOrigin: origin,
+          });
+
+          dbDetailedInfo.db.close();
         }
 
-        return [securityOrigin, results];
-      })) as [string, IndexedDBData];
+        return { origin, results };
+      });
 
-      // Update our cached data
-      this.updateCache(securityOrigin, databases);
+      const securityOrigin = databaseInfo.origin;
+      const databases = databaseInfo.results;
 
-      this.log(`Retrieved ${databases.length} IndexedDB databases from ${securityOrigin}`, false, "debug");
+      this.updateCache(securityOrigin, databases as IndexedDBData);
 
-      // Return only the current origin's data
       return this.indexedDBData[securityOrigin] || [];
     } catch (error) {
       this.log(`Error getting IndexedDB data: ${error}`, true);
+      console.error("IndexedDB extraction error:", error);
+
       // Try to get origin from URL if evaluate failed
       try {
         const url = page.url();
