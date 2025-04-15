@@ -1,3 +1,5 @@
+import chokidar, { FSWatcher } from "chokidar";
+import { createHash } from "crypto";
 import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import { rename, unlink } from "fs/promises";
@@ -22,12 +24,106 @@ export class FileService {
   private logger: FastifyBaseLogger;
   private baseDownloadPath: string;
   private fileMap: Map<string, Map<string, File>> = new Map();
+  private fileWatcher: FSWatcher | null = null;
+  private processingFiles: Set<string> = new Set();
 
   constructor(_config: {}, logger: FastifyBaseLogger) {
     this.logger = logger;
     this.baseDownloadPath = env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
     fs.mkdirSync(this.baseDownloadPath, { recursive: true });
     this.fileMap = new Map();
+    this.initFileWatcher();
+  }
+
+  private initFileWatcher() {
+    this.fileWatcher = chokidar.watch(this.baseDownloadPath, {
+      ignored: /(^|[\/\\])\../, // ignore dotfiles
+      persistent: true,
+      ignoreInitial: false,
+      awaitWriteFinish: {
+        stabilityThreshold: 100,
+        pollInterval: 50,
+      },
+    });
+
+    this.fileWatcher.on("add", async (filePath) => {
+      if (this.processingFiles.has(filePath)) {
+        return;
+      }
+
+      try {
+        // Check if the file is in a session directory
+        const relativePath = path.relative(this.baseDownloadPath, filePath);
+        const parts = relativePath.split(path.sep);
+
+        if (parts.length < 2) {
+          return; // Not in a session directory
+        }
+
+        const sessionId = parts[0];
+        const fileName = parts[parts.length - 1];
+
+        // Skip if already in the file map
+        if (this.isFileAlreadyTracked(sessionId, filePath)) {
+          return;
+        }
+
+        this.logger.info(`Detected new file: ${filePath} in session ${sessionId}`);
+
+        // Calculate checksum
+        const checksum = await this.calculateChecksum(filePath);
+
+        // Add to file map
+        if (!this.fileMap.has(sessionId)) {
+          this.fileMap.set(sessionId, new Map());
+        }
+
+        const stats = await fs.promises.stat(filePath);
+        const currentDate = new Date();
+        const id = uuidv4();
+
+        const file: File = {
+          name: fileName,
+          size: stats.size,
+          contentType: mime.lookup(fileName) || "application/octet-stream",
+          createdAt: currentDate,
+          updatedAt: currentDate,
+          checksum,
+          path: filePath,
+        };
+
+        this.fileMap.get(sessionId)!.set(id, file);
+        this.logger.info(`Added file ${fileName} to session ${sessionId} with ID ${id}`);
+      } catch (error) {
+        this.logger.error(`Error processing file ${filePath}: ${error}`);
+      }
+    });
+
+    this.logger.info(`File watcher initialized for ${this.baseDownloadPath}`);
+  }
+
+  private async calculateChecksum(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = createHash("sha256");
+      const stream = fs.createReadStream(filePath);
+
+      stream.on("error", reject);
+      stream.on("data", (chunk) => hash.update(chunk));
+      stream.on("end", () => resolve(hash.digest("hex")));
+    });
+  }
+
+  private isFileAlreadyTracked(sessionId: string, filePath: string): boolean {
+    const sessionFiles = this.fileMap.get(sessionId);
+    if (!sessionFiles) return false;
+
+    for (const file of sessionFiles.values()) {
+      if (file.path === filePath) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private async ensureDirectoryExists(dirPath: string): Promise<void> {
@@ -86,11 +182,19 @@ export class FileService {
 
     const destinationPath = await this.getFilePath({ sessionId: options.sessionId, name: fileName });
 
+    // Mark file as being processed to avoid duplicate processing by watcher
+    this.processingFiles.add(destinationPath);
+
     try {
       await rename(options.filePath, destinationPath);
     } catch (error: any) {
       await unlink(options.filePath);
       console.error(`Error moving file: ${error.message}`);
+    } finally {
+      // Remove from processing list after a short delay
+      setTimeout(() => {
+        this.processingFiles.delete(destinationPath);
+      }, 1000);
     }
 
     if (!this.fileMap.has(options.sessionId)) {
