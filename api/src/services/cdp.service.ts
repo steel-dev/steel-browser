@@ -1,17 +1,20 @@
-import puppeteer, { Browser, Page, Target, BrowserContext, Protocol, TargetType, CDPSession } from "puppeteer-core";
-import { Duplex } from "stream";
 import { EventEmitter } from "events";
-import { filterHeaders, getChromeExecutablePath } from "../utils/browser";
-import httpProxy from "http-proxy";
-import { IncomingMessage } from "http";
-import { env } from "../env";
-import { getExtensionPaths } from "../utils/extensions";
-import { BrowserLauncherOptions, BrowserEvent, EmitEvent, BrowserEventType } from "../types";
-import { FingerprintInjector } from "fingerprint-injector";
-import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint-generator";
 import { FastifyBaseLogger } from "fastify";
-import { isAdRequest } from "../utils/ads";
+import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint-generator";
+import { FingerprintInjector } from "fingerprint-injector";
+import { IncomingMessage } from "http";
+import httpProxy from "http-proxy";
+import os from "os";
+import path from "path";
+import puppeteer, { Browser, BrowserContext, CDPSession, Page, Protocol, Target, TargetType } from "puppeteer-core";
+import { Duplex } from "stream";
+import { env } from "../env";
 import { loadFingerprintScript } from "../scripts";
+import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../types";
+import { isAdRequest } from "../utils/ads";
+import { filterHeaders, getChromeExecutablePath } from "../utils/browser";
+import { getExtensionPaths } from "../utils/extensions";
+import { CDPLifecycle } from "./cdp-lifecycle.service";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -378,6 +381,7 @@ export class CDPService extends EventEmitter {
       this.removeAllHandlers();
       await this.browserInstance.close();
       await this.browserInstance.process()?.kill();
+      await CDPLifecycle.shutdown(this.currentSessionConfig);
       this.localStorageData = {};
       this.fingerprintData = null;
       this.currentSessionConfig = null;
@@ -423,7 +427,7 @@ export class CDPService extends EventEmitter {
     this.launchConfig = config || this.defaultLaunchConfig;
     this.logger.info("Launching new browser instance.");
 
-    const { options, userAgent } = this.launchConfig;
+    const { options, userAgent, userDataDir } = this.launchConfig;
 
     const defaultExtensions = ["recorder"];
     const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
@@ -454,6 +458,8 @@ export class CDPService extends EventEmitter {
     this.fingerprintData = await fingerprintGen.getFingerprint();
 
     const timezone = config?.timezone || this.defaultTimezone;
+
+    await CDPLifecycle.launch(this.launchConfig);
 
     const launchArgs = [
       "--remote-allow-origins=*",
@@ -491,6 +497,7 @@ export class CDPService extends EventEmitter {
         TZ: timezone,
         ...process.env,
       },
+      userDataDir,
       // dumpio: true, //uncomment this line to see logs from chromium
     };
 

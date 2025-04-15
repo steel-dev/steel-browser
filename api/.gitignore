@@ -28,3 +28,5 @@ extensions/*
 !extensions/recorder
 files/*
 artifacts/*
+# Ignore future changes to this file
+src/services/cdp-lifecycle.service.ts

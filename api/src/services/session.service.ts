@@ -1,5 +1,11 @@
+import axios, { AxiosError } from "axios";
+import { randomUUID } from "crypto";
 import { FastifyBaseLogger } from "fastify";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import os from "os";
+import path from "path";
 import { Protocol } from "puppeteer-core";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 import { SessionDetails } from "../modules/sessions/sessions.schema";
@@ -8,9 +14,7 @@ import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp.service";
 import { FileService } from "./file.service";
 import { SeleniumService } from "./selenium.service";
-import axios, { AxiosError } from "axios";
-import { SocksProxyAgent } from "socks-proxy-agent";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { mkdir } from "fs/promises";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -85,13 +89,24 @@ export class SessionService {
     extensions?: string[];
     timezone?: string;
     dimensions?: { width: number; height: number };
+    extra?: Record<string, Record<string, string>>;
   }): Promise<SessionDetails> {
-    const { sessionId, proxyUrl, userAgent, sessionContext, extensions, logSinkUrl, dimensions, isSelenium, blockAds } =
-      options;
+    const { 
+      sessionId, 
+      proxyUrl, 
+      userAgent, 
+      sessionContext, 
+      extensions, 
+      logSinkUrl, 
+      dimensions, 
+      isSelenium, 
+      blockAds,
+      extra,
+    } = options;
 
     let timezone = options.timezone;
 
-    await this.resetSessionInfo({
+    const sessionInfo = await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
       proxy: proxyUrl,
@@ -142,6 +157,10 @@ export class SessionService {
       }
     }
 
+    
+    const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
+    await mkdir(userDataDir, { recursive: true });
+
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
@@ -155,6 +174,8 @@ export class SessionService {
       logSinkUrl,
       timezone,
       dimensions,
+      userDataDir,
+      extra,
     };
 
     if (isSelenium) {

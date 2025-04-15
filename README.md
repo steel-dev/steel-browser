@@ -77,7 +77,6 @@ If you're looking to deploy to a cloud provider, we've got you covered.
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Pre-built Docker Image (API only) | [![Deploy with Github Container Redistry](https://img.shields.io/badge/GHCR-478CFF?style=for-the-badge&labelColor=478CFF&logo=github&logoColor=white)](https://github.com/steel-dev/steel-browser/pkgs/container/steel-browser-api) |
 | 1-click deploy to Railway | [![Deploy on Railway](https://img.shields.io/badge/Railway-B039CB?style=for-the-badge&labelColor=B039CB&logo=railway&logoColor=white)](https://railway.app/template/FQG9Ca) |
-| 1-click deploy to Render | [![Deploy to Render](https://img.shields.io/badge/Render-8A05FF?style=for-the-badge&labelColor=8A05FF&logo=render&logoColor=white)](https://render.com/deploy?repo=https://github.com/steel-dev/steel-browser) |
 
 
 ## 💻 Running Locally

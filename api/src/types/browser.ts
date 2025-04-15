@@ -18,6 +18,8 @@ export interface BrowserLauncherOptions {
     width: number;
     height: number;
   } | null;
+  userDataDir?: string;
+  extra?: Record<string, Record<string, string>>;
 }
 
 export interface BrowserServerOptions {
