@@ -91,15 +91,15 @@ export class SessionService {
     dimensions?: { width: number; height: number };
     extra?: Record<string, Record<string, string>>;
   }): Promise<SessionDetails> {
-    const { 
-      sessionId, 
-      proxyUrl, 
-      userAgent, 
-      sessionContext, 
-      extensions, 
-      logSinkUrl, 
-      dimensions, 
-      isSelenium, 
+    const {
+      sessionId,
+      proxyUrl,
+      userAgent,
+      sessionContext,
+      extensions,
+      logSinkUrl,
+      dimensions,
+      isSelenium,
       blockAds,
       extra,
     } = options;
@@ -157,14 +157,15 @@ export class SessionService {
       }
     }
 
-    
     const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
     await mkdir(userDataDir, { recursive: true });
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
-        args: [userAgent ? `--user-agent=${userAgent}` : undefined].filter(Boolean) as string[],
+        args: [...env.CHROME_ARGS.split(" "), userAgent ? `--user-agent=${userAgent}` : undefined].filter(
+          Boolean,
+        ) as string[],
         proxyUrl: this.activeSession.proxyServer?.url,
       },
       sessionContext,
