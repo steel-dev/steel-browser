@@ -22,6 +22,7 @@ export const handleLaunchBrowserSession = async (
       dimensions,
       isSelenium,
       blockAds,
+      extra,
     } = request.body;
 
     return await server.sessionService.startSession({
@@ -38,8 +39,10 @@ export const handleLaunchBrowserSession = async (
       dimensions,
       isSelenium,
       blockAds,
+      extra,
     });
   } catch (e: unknown) {
+    server.log.error("Failed lauching browser session", e);
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
   }
