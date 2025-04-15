@@ -43,6 +43,7 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val !== "false" && val !== "")
     .default("false"),
+  CHROME_ARGS: z.string().optional().default(""),
 });
 
 export const env = envSchema.parse(process.env);
