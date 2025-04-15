@@ -8,13 +8,15 @@ import os from "os";
 import path from "path";
 import puppeteer, { Browser, BrowserContext, CDPSession, Page, Protocol, Target, TargetType } from "puppeteer-core";
 import { Duplex } from "stream";
-import { env } from "../env";
-import { loadFingerprintScript } from "../scripts";
-import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../types";
-import { isAdRequest } from "../utils/ads";
-import { filterHeaders, getChromeExecutablePath } from "../utils/browser";
-import { getExtensionPaths } from "../utils/extensions";
-import { CDPLifecycle } from "./cdp-lifecycle.service";
+import { env } from "../../env";
+import { loadFingerprintScript } from "../../scripts";
+import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types";
+import { isAdRequest } from "../../utils/ads";
+import { filterHeaders, getChromeExecutablePath } from "../../utils/browser";
+import { getExtensionPaths } from "../../utils/extensions";
+import { CDPLifecycle } from "../cdp-lifecycle.service";
+import { PluginManager } from "./plugins/core/plugin-manager";
+import { SessionPlugin, SessionManager, SessionData } from "./plugins/session";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -32,6 +34,8 @@ export class CDPService extends EventEmitter {
   private currentSessionConfig: BrowserLauncherOptions | null;
   private shuttingDown: boolean;
   private defaultTimezone: string;
+  private pluginManager: PluginManager;
+  private sessionPlugin: SessionPlugin;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -70,6 +74,18 @@ export class CDPService extends EventEmitter {
       blockAds: true,
       extensions: [],
     };
+
+    // Initialize plugin manager
+    this.pluginManager = new PluginManager(this, logger);
+
+    // Register session plugin
+    this.sessionPlugin = new SessionPlugin({
+      autoRestoreSession: true,
+      autoDumpSession: true,
+      logger: this.logger,
+      debugMode: env.ENABLE_VERBOSE_LOGGING,
+    });
+    this.pluginManager.register(this.sessionPlugin);
   }
 
   private removeAllHandlers() {
@@ -129,6 +145,8 @@ export class CDPService extends EventEmitter {
   public async refreshPrimaryPage() {
     const newPage = await this.createPage();
     if (this.primaryPage) {
+      // Notify plugins before page close
+      await this.pluginManager.onBeforePageClose(this.primaryPage);
       await this.primaryPage.close();
     }
     this.primaryPage = newPage;
@@ -143,6 +161,8 @@ export class CDPService extends EventEmitter {
     });
 
     if (page) {
+      this.pluginManager.onPageNavigate(page);
+
       //@ts-ignore
       const pageId = page.target()._targetId;
 
@@ -158,8 +178,13 @@ export class CDPService extends EventEmitter {
       });
 
       if (page) {
-        // Inject session context first
-        await this.injectSessionContext(page, this.launchConfig?.sessionContext);
+        if (this.launchConfig?.sessionContext) {
+          const sessionData = SessionManager.convertFromSessionContext(this.launchConfig.sessionContext);
+          this.sessionPlugin.setSessionData(this.getTargetId(page), sessionData);
+        }
+
+        // Notify plugins about the new page
+        await this.pluginManager.onPageCreated(page);
 
         if (this.currentSessionConfig?.timezone) {
           await page.emulateTimezone(this.currentSessionConfig.timezone);
@@ -178,9 +203,9 @@ export class CDPService extends EventEmitter {
         if (!env.SKIP_FINGERPRINT_INJECTION) {
           // Use our safer fingerprint injection method instead of FingerprintInjector
           await this.injectFingerprintSafely(page, this.fingerprintData!);
-          this.logger.debug("Injected fingerprint into page");
+          this.logger.debug("[CDPService] Injected fingerprint into page");
         } else {
-          this.logger.info("Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting");
+          this.logger.info("[CDPService] Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting");
         }
 
         await page.setRequestInterception(true);
@@ -192,13 +217,13 @@ export class CDPService extends EventEmitter {
           delete headers["accept-language"]; // Patch to help with headless detection
 
           if (this.launchConfig?.blockAds && isAdRequest(request.url())) {
-            this.logger.info(`Blocked request to ad related resource: ${request.url()}`);
+            this.logger.info(`[CDPService] Blocked request to ad related resource: ${request.url()}`);
             await request.abort();
             return;
           }
 
           if (request.url().startsWith("file://")) {
-            this.logger.error(`Blocked request to file protocol: ${request.url()}`);
+            this.logger.error(`[CDPService] Blocked request to file protocol: ${request.url()}`);
             page.close().catch(() => {});
             this.shutdown();
           } else {
@@ -208,7 +233,7 @@ export class CDPService extends EventEmitter {
 
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
-            this.logger.error(`Blocked response from file protocol: ${response.url()}`);
+            this.logger.error(`[CDPService] Blocked response from file protocol: ${response.url()}`);
             page.close().catch(() => {});
             this.shutdown();
           }
@@ -227,7 +252,7 @@ export class CDPService extends EventEmitter {
         });
       }
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
-      console.log("Background page created:", target.url());
+      this.logger.info(`[CDPService] Background page created: ${target.url()}`);
       const page = await target.page();
       await this.setupPageLogging(page, target.type());
     } else {
@@ -241,7 +266,7 @@ export class CDPService extends EventEmitter {
         return;
       }
 
-      this.logger.info(`Setting up logging for page: ${page.url()}`);
+      this.logger.info(`[CDPService] Setting up logging for page: ${page.url()}`);
 
       //@ts-ignore
       const pageId = page.target()._targetId;
@@ -265,7 +290,7 @@ export class CDPService extends EventEmitter {
       page.on("error", (err) => {
         this.customEmit(EmitEvent.Log, {
           type: BrowserEventType.Error,
-          text: JSON.stringify({ pageId, message: err.message, name: err.name }),
+          text: err ? JSON.stringify({ pageId, message: err.message, name: err.name }) : "Unknown error on page",
           timestamp: new Date(),
         });
       });
@@ -273,14 +298,14 @@ export class CDPService extends EventEmitter {
       page.on("pageerror", (err) => {
         this.customEmit(EmitEvent.Log, {
           type: BrowserEventType.PageError,
-          text: JSON.stringify({ pageId, message: err.message, name: err.name }),
+          text: err ? JSON.stringify({ pageId, message: err.message, name: err.name }) : "Unknown page error",
           timestamp: new Date(),
         });
       });
 
       page.on("framenavigated", (frame) => {
         if (!frame.parentFrame()) {
-          this.logger.info(`Navigated to ${frame.url()}`);
+          this.logger.info(`[CDPService] Navigated to ${frame.url()}`);
           this.customEmit(EmitEvent.Log, {
             type: BrowserEventType.Navigation,
             text: JSON.stringify({ pageId, url: frame.url() }),
@@ -291,9 +316,9 @@ export class CDPService extends EventEmitter {
 
       page.on("console", (message) => {
         if (targetType === TargetType.BACKGROUND_PAGE) {
-          this.logger.info(`Extension console: ${message.type()}: ${message.text()}`);
+          this.logger.info(`[CDPService] Extension console: ${message.type()}: ${message.text()}`);
         } else {
-          this.logger.info(`Console message: ${message.type()}: ${message.text()}`);
+          this.logger.info(`[CDPService] Console message: ${message.type()}: ${message.text()}`);
         }
         this.customEmit(EmitEvent.Log, {
           type: BrowserEventType.Console,
@@ -314,7 +339,7 @@ export class CDPService extends EventEmitter {
       const session = await page.target().createCDPSession();
       await this.setupCDPLogging(session, targetType);
     } catch (error) {
-      this.logger.error(`Error setting up page logging: ${error}`);
+      this.logger.error(`[CDPService] Error setting up page logging: ${error}`);
     }
   }
 
@@ -377,18 +402,35 @@ export class CDPService extends EventEmitter {
   public async shutdown(): Promise<void> {
     if (this.browserInstance) {
       this.shuttingDown = true;
-      this.logger.info(`Shutting down CDPService and cleaning up resources`);
-      this.removeAllHandlers();
-      await this.browserInstance.close();
-      await this.browserInstance.process()?.kill();
-      await CDPLifecycle.shutdown(this.currentSessionConfig);
-      this.localStorageData = {};
-      this.fingerprintData = null;
-      this.currentSessionConfig = null;
-      this.browserInstance = null;
-      this.wsEndpoint = null;
-      this.emit("close");
-      this.shuttingDown = false;
+      this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
+
+      try {
+        if (this.browserInstance) {
+          await this.pluginManager.onBrowserClose(this.browserInstance);
+        }
+
+        await this.pluginManager.onShutdown();
+
+        this.removeAllHandlers();
+        await this.browserInstance.close();
+        await this.browserInstance.process()?.kill();
+        await CDPLifecycle.shutdown(this.currentSessionConfig);
+        this.localStorageData = {};
+        this.fingerprintData = null;
+        this.currentSessionConfig = null;
+        this.browserInstance = null;
+        this.wsEndpoint = null;
+        this.emit("close");
+        this.shuttingDown = false;
+      } catch (error) {
+        this.logger.error(`[CDPService] Error during shutdown: ${error}`);
+        // Ensure we complete the shutdown even if plugins throw errors
+        await this.browserInstance?.close();
+        await this.browserInstance?.process()?.kill();
+        await CDPLifecycle.shutdown(this.currentSessionConfig);
+        this.browserInstance = null;
+        this.shuttingDown = false;
+      }
     }
   }
 
@@ -415,17 +457,17 @@ export class CDPService extends EventEmitter {
       this.browserInstance && this.isDefaultConfig(config) && this.isDefaultConfig(this.launchConfig);
 
     if (shouldReuseInstance) {
-      this.logger.info("Reusing existing browser instance with default configuration.");
+      this.logger.info("[CDPService] Reusing existing browser instance with default configuration.");
       this.launchConfig = config || this.defaultLaunchConfig;
       await this.refreshPrimaryPage();
       return this.browserInstance!;
     } else if (this.browserInstance) {
-      this.logger.info("Existing browser instance detected. Closing it before launching a new one.");
+      this.logger.info("[CDPService] Existing browser instance detected. Closing it before launching a new one.");
       await this.shutdown();
     }
 
     this.launchConfig = config || this.defaultLaunchConfig;
-    this.logger.info("Launching new browser instance.");
+    this.logger.info("[CDPService] Launching new browser instance.");
 
     const { options, userAgent, userDataDir } = this.launchConfig;
 
@@ -483,8 +525,6 @@ export class CDPService extends EventEmitter {
       ...(options.args || []),
     ].filter(Boolean);
 
-    console.log("Launch args", launchArgs);
-
     const finalLaunchOptions = {
       ...options,
       defaultViewport: this.launchConfig.dimensions ? this.launchConfig.dimensions : null,
@@ -495,18 +535,20 @@ export class CDPService extends EventEmitter {
       handleSIGTERM: false,
       env: {
         TZ: timezone,
-        ...process.env,
       },
       userDataDir,
       // dumpio: true, //uncomment this line to see logs from chromium
     };
 
-    this.logger.info(`Launch Options:`);
+    this.logger.info(`[CDPService] Launch Options:`);
     this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
     this.browserInstance = (await puppeteer.launch(finalLaunchOptions)) as unknown as Browser;
 
+    // Notify plugins about browser launch
+    await this.pluginManager.onBrowserLaunch(this.browserInstance);
+
     this.browserInstance.on("error", (err) => {
-      this.logger.error(`Browser error: ${err}`);
+      this.logger.error(`[CDPService] Browser error: ${err}`);
       this.customEmit(EmitEvent.Log, {
         type: BrowserEventType.BrowserError,
         text: `BROWSER ERROR: ${err}`,
@@ -541,7 +583,7 @@ export class CDPService extends EventEmitter {
       this.browserInstance?.off("disconnected", cleanupListeners);
       socket.off("close", cleanupListeners);
       socket.off("error", cleanupListeners);
-      console.log("WebSocket connection listeners cleaned up");
+      this.logger.info("[CDPService] WebSocket connection listeners cleaned up");
     };
 
     // Set up all event listeners with the same cleanup function
@@ -588,18 +630,26 @@ export class CDPService extends EventEmitter {
     return this.fingerprintData?.fingerprint.navigator.userAgent;
   }
 
-  public async getBrowserState(): Promise<{
-    cookies: Protocol.Network.Cookie[];
-    localStorage: Record<string, Record<string, string>>;
-  }> {
+  public async getBrowserState(): Promise<SessionData> {
     if (!this.browserInstance || !this.primaryPage) {
       throw new Error("Browser or primary page not initialized");
     }
 
-    const client = await this.primaryPage.createCDPSession();
-    const { cookies } = await client.send("Network.getAllCookies");
-    await client.detach().catch(() => {}); // Clean up
-    return { cookies, localStorage: this.localStorageData };
+    // Also use the new session plugin to get full session data
+    const sessionManager = this.primaryPage.session;
+    let sessionData: SessionData = {};
+
+    if (sessionManager) {
+      try {
+        this.logger.info("[CDPService] Dumping session data");
+        sessionData = await sessionManager.getTrackedData();
+        this.logger.info("[CDPService] Session data dumped");
+      } catch (error) {
+        this.logger.error(`[CDPService] Error dumping session data: ${error}`);
+      }
+    }
+
+    return sessionData;
   }
 
   private async logEvent(event: BrowserEvent) {
@@ -772,7 +822,7 @@ export class CDPService extends EventEmitter {
         }),
       );
     } catch (error) {
-      this.logger.error(`Error injecting fingerprint safely: ${error}`);
+      this.logger.error(`[Fingerprint] Error injecting fingerprint safely: ${error}`);
       const fingerprintInjector = new FingerprintInjector();
       // @ts-ignore - Ignore type mismatch between puppeteer versions
       await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);

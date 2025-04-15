@@ -1,4 +1,4 @@
-import { CDPService } from "../../services/cdp.service";
+import { CDPService } from "../../services/cdp/cdp.service";
 import { FastifyReply } from "fastify";
 import { getErrors } from "../../utils/errors";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest } from "./actions.schema";
@@ -9,7 +9,12 @@ import { updateLog } from "../../utils/logging";
 import { getProxyServer } from "../../utils/proxy";
 import { SessionService } from "../../services/session.service";
 
-export const handleScrape = async (sessionService: SessionService, browserService: CDPService, request: ScrapeRequest, reply: FastifyReply) => {
+export const handleScrape = async (
+  sessionService: SessionService,
+  browserService: CDPService,
+  request: ScrapeRequest,
+  reply: FastifyReply,
+) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, format, screenshot, pdf, proxyUrl, logUrl, delay } = request.body;
@@ -129,7 +134,12 @@ export const handleScrape = async (sessionService: SessionService, browserServic
   }
 };
 
-export const handleScreenshot = async (sessionService: SessionService, browserService: CDPService, request: ScreenshotRequest, reply: FastifyReply) => {
+export const handleScreenshot = async (
+  sessionService: SessionService,
+  browserService: CDPService,
+  request: ScreenshotRequest,
+  reply: FastifyReply,
+) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay, fullPage } = request.body;
@@ -181,7 +191,12 @@ export const handleScreenshot = async (sessionService: SessionService, browserSe
   }
 };
 
-export const handlePDF = async (sessionService: SessionService, browserService: CDPService, request: PDFRequest, reply: FastifyReply) => {
+export const handlePDF = async (
+  sessionService: SessionService,
+  browserService: CDPService,
+  request: PDFRequest,
+  reply: FastifyReply,
+) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay } = request.body;

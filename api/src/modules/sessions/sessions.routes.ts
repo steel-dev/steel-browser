@@ -88,6 +88,9 @@ async function routes(server: FastifyInstance) {
         description: "Get a browser context",
         tags: ["Sessions"],
         summary: "Get a browser context",
+        response: {
+          200: $ref("SessionContext"),
+        },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => handleGetBrowserContext(server.cdpService, request, reply),
