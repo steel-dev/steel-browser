@@ -273,6 +273,13 @@ export class FileService {
   }
 
   public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ id: string } & File>> {
+    try {
+      const allFiles = await fs.promises.readdir(this.baseDownloadPath);
+      this.logger.info(`Files in ${this.baseDownloadPath}: ${allFiles.join(", ")}`);
+    } catch (error) {
+      this.logger.error(`Error reading directory ${this.baseDownloadPath}: ${error}`);
+    }
+
     const sessionItems = this.fileMap.get(sessionId) || new Map();
 
     return Array.from(sessionItems.entries())
