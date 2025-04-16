@@ -511,6 +511,7 @@ export class CDPService extends EventEmitter {
       `--remote-debugging-address=${env.HOST}`,
       "--remote-debugging-port=9222",
       "--no-sandbox",
+      "--disable-pdf-extension",
       "--disable-setuid-sandbox",
       "--use-angle=disabled",
       "--disable-blink-features=AutomationControlled",
