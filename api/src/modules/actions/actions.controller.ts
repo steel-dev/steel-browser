@@ -119,22 +119,29 @@ export const handleScrape = async (
 
     times.totalInstanceTime = Date.now() - startTime;
 
-    if (proxy) {
-      await page.browserContext().close();
-    } else {
-      await browserService.refreshPrimaryPage();
+    if (url) {
+      if (proxy) {
+        await page.browserContext().close();
+      } else {
+        await browserService.refreshPrimaryPage();
+      }
     }
 
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
+
     return reply.send(scrapeResponse);
   } catch (e: unknown) {
     const error = getErrors(e);
+
     if (logUrl) {
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
-    await browserService.refreshPrimaryPage();
+
+    if (url) {
+      await browserService.refreshPrimaryPage();
+    }
     return reply.code(500).send({ message: error });
   }
 };
@@ -180,22 +187,31 @@ export const handleScreenshot = async (
 
     const screenshot = await page.screenshot({ fullPage, type: "jpeg", quality: 100 });
     times.screenshotTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
-    if (proxy) {
-      await page.browserContext().close();
-    } else {
-      await browserService.refreshPrimaryPage();
+
+    if (url) {
+      if (proxy) {
+        await page.browserContext().close();
+      } else {
+        await browserService.refreshPrimaryPage();
+      }
     }
 
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
+
     return reply.send(screenshot);
   } catch (e: unknown) {
     const error = getErrors(e);
+
     if (logUrl) {
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
-    await browserService.refreshPrimaryPage();
+
+    if (url) {
+      await browserService.refreshPrimaryPage();
+    }
+
     return reply.code(500).send({ message: error });
   }
 };
@@ -230,23 +246,29 @@ export const handlePDF = async (
       page = await browserService.getPrimaryPage();
       times.pageTime = Date.now() - startTime;
     }
+
     if (url) {
       await page.goto(url, { timeout: 30000, waitUntil: "domcontentloaded" });
       times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
     } else {
       page = await browserService.getPrimaryPage();
     }
+
     if (delay) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
     const pdf = await page.pdf();
     times.pdfTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
-    if (proxy) {
-      await page.browserContext().close();
-    } else {
-      await browserService.refreshPrimaryPage();
+
+    if (url) {
+      if (proxy) {
+        await page.browserContext().close();
+      } else {
+        await browserService.refreshPrimaryPage();
+      }
     }
+
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
@@ -256,7 +278,9 @@ export const handlePDF = async (
     if (logUrl) {
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
-    await browserService.refreshPrimaryPage();
+    if (url) {
+      await browserService.refreshPrimaryPage();
+    }
     return reply.code(500).send({ message: error });
   }
 };
