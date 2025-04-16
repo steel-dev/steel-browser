@@ -335,4 +335,16 @@ export class FileService {
 
     return filesArray;
   }
+
+  public async initializeSession(sessionId: string): Promise<string> {
+    const sessionPath = this.getSessionPath(sessionId);
+    await this.ensureDirectoryExists(sessionPath);
+    this.logger.info(`Session directory initialized: ${sessionPath}`);
+
+    if (!this.fileMap.has(sessionId)) {
+      this.fileMap.set(sessionId, new Map());
+    }
+
+    return sessionPath;
+  }
 }
