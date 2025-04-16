@@ -47,6 +47,7 @@ export class FileService {
     });
 
     this.fileWatcher.on("add", async (filePath) => {
+      console.log(">>>", filePath);
       if (this.processingFiles.has(filePath)) {
         return;
       }
