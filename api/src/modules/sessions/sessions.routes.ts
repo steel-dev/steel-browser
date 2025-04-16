@@ -8,8 +8,16 @@ import {
   handleGetSessionStream,
   handleGetSessionLiveDetails,
 } from "./sessions.controller";
+import { handleScrape, handleScreenshot, handlePDF } from "../actions/actions.controller";
 import { $ref } from "../../plugins/schemas";
-import { CreateSessionRequest, RecordedEvents, SessionStreamRequest } from "./sessions.schema";
+import {
+  CreateSessionRequest,
+  RecordedEvents,
+  SessionStreamRequest,
+  SessionsScrapeRequest,
+  SessionsScreenshotRequest,
+  SessionsPDFRequest,
+} from "./sessions.schema";
 import { EmitEvent } from "../../types/enums";
 
 async function routes(server: FastifyInstance) {
@@ -179,6 +187,60 @@ async function routes(server: FastifyInstance) {
     },
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
       handleGetSessionLiveDetails(server, request, reply),
+  );
+
+  server.post(
+    "/sessions/scrape",
+    {
+      schema: {
+        operationId: "scrape_session",
+        description: "Scrape Current Session",
+        tags: ["Sessions"],
+        summary: "Scrape Current Session",
+        body: $ref("ScrapeRequest"),
+        response: {
+          200: $ref("ScrapeResponse"),
+        },
+      },
+    },
+    async (request: SessionsScrapeRequest, reply: FastifyReply) =>
+      handleScrape(server.sessionService, server.cdpService, request, reply),
+  );
+
+  server.post(
+    "/sessions/screenshot",
+    {
+      schema: {
+        operationId: "screenshot_session",
+        description: "Take Screenshot of Current Session",
+        tags: ["Sessions"],
+        summary: "Take Screenshot of Current Session",
+        body: $ref("ScreenshotRequest"),
+        response: {
+          200: $ref("ScreenshotResponse"),
+        },
+      },
+    },
+    async (request: SessionsScreenshotRequest, reply: FastifyReply) =>
+      handleScreenshot(server.sessionService, server.cdpService, request, reply),
+  );
+
+  server.post(
+    "/sessions/pdf",
+    {
+      schema: {
+        operationId: "pdf_session",
+        description: "Generate PDF of Current Session",
+        tags: ["Sessions"],
+        summary: "Generate PDF of Current Session",
+        body: $ref("PDFRequest"),
+        response: {
+          200: $ref("PDFResponse"),
+        },
+      },
+    },
+    async (request: SessionsPDFRequest, reply: FastifyReply) =>
+      handlePDF(server.sessionService, server.cdpService, request, reply),
   );
 }
 

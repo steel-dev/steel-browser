@@ -11,7 +11,6 @@ import scalarTheme from "./scalar-theme";
 import { buildJsonSchemas } from "../utils/schema";
 import { env } from "../env";
 import filesSchemas from "../modules/files/files.schema";
-import pageSchemas from "../modules/page/page.schema";
 
 const SCHEMAS = {
   ...actionSchemas,
@@ -19,7 +18,6 @@ const SCHEMAS = {
   ...cdpSchemas,
   ...seleniumSchemas,
   ...filesSchemas,
-  ...pageSchemas,
 };
 
 export const { schemas, $ref } = buildJsonSchemas(SCHEMAS);
