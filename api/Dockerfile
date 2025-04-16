@@ -98,7 +98,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
-RUN mkdir -p /files
+RUN mkdir -p /files && chmod 777 /files
 
 COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
 

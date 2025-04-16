@@ -336,7 +336,7 @@ export class FileService {
     return filesArray;
   }
 
-  public async initializeSession(sessionId: string): Promise<string> {
+  public async initializeSession({ sessionId }: { sessionId: string }): Promise<string> {
     const sessionPath = this.getSessionPath(sessionId);
     await this.ensureDirectoryExists(sessionPath);
     this.logger.info(`Session directory initialized: ${sessionPath}`);

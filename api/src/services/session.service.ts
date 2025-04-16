@@ -253,7 +253,7 @@ export class SessionService {
 
     // Initialize session directory
     const sessionId = this.activeSession.id;
-    await this.fileService.initializeSession(sessionId);
+    await this.fileService.initializeSession({ sessionId });
 
     return this.activeSession;
   }
