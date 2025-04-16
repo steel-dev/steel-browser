@@ -58,6 +58,11 @@ export class LocalStorageProvider extends StorageProvider<StorageProviderName.Lo
       const hostname = new URL(url).hostname;
       const storageItems = this.storageData[hostname];
 
+      if (!storageItems) {
+        this.log(`No localStorage items to restore for ${hostname}`, false, "debug");
+        return;
+      }
+
       // Apply to page
       if (Object.keys(storageItems).length > 0) {
         this.log(`Setting ${Object.keys(storageItems).length} localStorage items for ${hostname}`, false, "debug");

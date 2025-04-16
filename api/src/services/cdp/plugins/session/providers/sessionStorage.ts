@@ -58,6 +58,11 @@ export class SessionStorageProvider extends StorageProvider<StorageProviderName.
       const hostname = new URL(url).hostname;
       const storageItems = this.storageData[hostname];
 
+      if (!storageItems) {
+        this.log(`No sessionStorage items to restore for ${hostname}`, false, "debug");
+        return;
+      }
+
       // Apply to page
       if (Object.keys(storageItems).length > 0) {
         this.log(`Setting ${Object.keys(storageItems).length} sessionStorage items for ${hostname}`, false, "debug");
