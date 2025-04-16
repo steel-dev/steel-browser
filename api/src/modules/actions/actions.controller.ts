@@ -42,8 +42,6 @@ export const handleScrape = async (
     if (url) {
       await page.goto(url, { timeout: 30000, waitUntil: "domcontentloaded" });
       times.pageLoadTime = Date.now() - startTime - times.pageTime;
-    } else {
-      page = await browserService.getPrimaryPage();
     }
 
     if (delay) {
@@ -177,8 +175,6 @@ export const handleScreenshot = async (
     if (url) {
       await page.goto(url, { timeout: 30000, waitUntil: "domcontentloaded" });
       times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
-    } else {
-      page = await browserService.getPrimaryPage();
     }
 
     if (delay) {
@@ -250,8 +246,6 @@ export const handlePDF = async (
     if (url) {
       await page.goto(url, { timeout: 30000, waitUntil: "domcontentloaded" });
       times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
-    } else {
-      page = await browserService.getPrimaryPage();
     }
 
     if (delay) {
