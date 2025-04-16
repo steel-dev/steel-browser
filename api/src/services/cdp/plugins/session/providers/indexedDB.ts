@@ -221,6 +221,11 @@ export class IndexedDBStorageProvider extends StorageProvider<StorageProviderNam
 
       const databases = this.indexedDBData[currentOrigin];
 
+      if (!databases) {
+        this.log(`No IndexedDB databases to restore for ${currentOrigin}`, false, "debug");
+        return;
+      }
+
       // Filter databases to only those matching the current origin
       const currentOriginDatabases = databases.filter((db) => db.securityOrigin === currentOrigin);
 
