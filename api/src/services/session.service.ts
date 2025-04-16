@@ -251,10 +251,6 @@ export class SessionService {
       proxyServer: undefined,
     };
 
-    // Initialize session directory
-    const sessionId = this.activeSession.id;
-    await this.fileService.initializeSession({ sessionId });
-
     return this.activeSession;
   }
 }
