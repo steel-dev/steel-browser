@@ -38,6 +38,9 @@ RUN npm ci --include=dev --workspace=api --ignore-scripts
 # Install dependencies for recorder extension separately
 RUN cd api/extensions/recorder && npm ci --include=dev && cd -
 
+# Install @rrweb/packer explicitly
+RUN cd api && npm install @rrweb/packer && cd -
+
 # Build the api package
 RUN npm run build -w api
 
@@ -45,8 +48,9 @@ RUN cd api/extensions/recorder && \
     npm run build && \
     cd -
 
-# Prune dev dependencies
+# Prune dev dependencies but keep @rrweb/packer
 RUN npm prune --omit=dev -w api
+RUN cd api && npm install @rrweb/packer --save-prod && cd -
 RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
 FROM base AS production
