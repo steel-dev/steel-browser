@@ -97,7 +97,7 @@ async function routes(server: FastifyInstance) {
         tags: ["Sessions"],
         summary: "Get a browser context",
         response: {
-          200: $ref("SessionContext"),
+          200: $ref("SessionContextSchema"),
         },
       },
     },
