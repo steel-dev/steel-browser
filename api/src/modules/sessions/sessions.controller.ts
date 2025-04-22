@@ -3,7 +3,7 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema";
 import { env } from "../../env";
-import { CookieData } from "../../services/cdp/plugins/session/types";
+import { CookieData } from "../../services/context/types";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,

@@ -4,9 +4,16 @@ import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint
 import { FingerprintInjector } from "fingerprint-injector";
 import { IncomingMessage } from "http";
 import httpProxy from "http-proxy";
-import os from "os";
-import path from "path";
-import puppeteer, { Browser, BrowserContext, CDPSession, Page, Protocol, Target, TargetType } from "puppeteer-core";
+import puppeteer, {
+  Browser,
+  BrowserContext,
+  CDPSession,
+  HTTPRequest,
+  Page,
+  Protocol,
+  Target,
+  TargetType,
+} from "puppeteer-core";
 import { Duplex } from "stream";
 import { env } from "../../env";
 import { loadFingerprintScript } from "../../scripts";
@@ -16,7 +23,9 @@ import { filterHeaders, getChromeExecutablePath } from "../../utils/browser";
 import { getExtensionPaths } from "../../utils/extensions";
 import { CDPLifecycle } from "../cdp-lifecycle.service";
 import { PluginManager } from "./plugins/core/plugin-manager";
-import { SessionPlugin, SessionManager, SessionData } from "./plugins/session";
+import { SessionData } from "../context/types";
+import { ChromeContextService } from "../context/chrome-context.service";
+import { extractStorageForPage, handleFrameNavigated, groupSessionStorageByOrigin } from "../../utils/context";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -29,13 +38,13 @@ export class CDPService extends EventEmitter {
   private wsProxyServer: httpProxy;
   private primaryPage: Page | null;
   private launchConfig?: BrowserLauncherOptions;
-  private localStorageData: Record<string, Record<string, string>>;
   private defaultLaunchConfig: BrowserLauncherOptions;
   private currentSessionConfig: BrowserLauncherOptions | null;
   private shuttingDown: boolean;
   private defaultTimezone: string;
   private pluginManager: PluginManager;
-  private sessionPlugin: SessionPlugin;
+  private trackedOrigins: Set<string> = new Set<string>();
+  private chromeSessionService: ChromeContextService;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -48,7 +57,8 @@ export class CDPService extends EventEmitter {
     this.fingerprintData = null;
     this.chromeExecPath = getChromeExecutablePath();
     this.defaultTimezone = env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
-
+    this.trackedOrigins = new Set<string>();
+    this.chromeSessionService = new ChromeContextService(logger);
     // Clean up any existing proxy server
     if (this.wsProxyServer) {
       try {
@@ -60,13 +70,11 @@ export class CDPService extends EventEmitter {
 
     this.wsProxyServer = httpProxy.createProxyServer();
 
-    // Add error handler to the proxy server
     this.wsProxyServer.on("error", (err) => {
       this.logger.error(`Proxy server error: ${err}`);
     });
 
     this.primaryPage = null;
-    this.localStorageData = {};
     this.currentSessionConfig = null;
     this.shuttingDown = false;
     this.defaultLaunchConfig = {
@@ -75,17 +83,7 @@ export class CDPService extends EventEmitter {
       extensions: [],
     };
 
-    // Initialize plugin manager
     this.pluginManager = new PluginManager(this, logger);
-
-    // Register session plugin
-    this.sessionPlugin = new SessionPlugin({
-      autoRestoreSession: true,
-      autoDumpSession: true,
-      logger: this.logger,
-      debugMode: env.ENABLE_VERBOSE_LOGGING,
-    });
-    this.pluginManager.register(this.sessionPlugin);
   }
 
   private removeAllHandlers() {
@@ -166,6 +164,18 @@ export class CDPService extends EventEmitter {
       //@ts-ignore
       const pageId = page.target()._targetId;
 
+      // Track the origin of the page
+      try {
+        const url = page.url();
+        if (url && url.startsWith("http")) {
+          const origin = new URL(url).origin;
+          this.trackedOrigins.add(origin);
+          this.logger.debug(`[CDPService] Tracking new origin: ${origin}`);
+        }
+      } catch (err) {
+        this.logger.error(`[CDPService] Error tracking origin: ${err}`);
+      }
+
       this.customEmit(EmitEvent.PageId, { pageId });
     }
   }
@@ -178,9 +188,15 @@ export class CDPService extends EventEmitter {
       });
 
       if (page) {
-        if (this.launchConfig?.sessionContext) {
-          const sessionData = SessionManager.convertFromSessionContext(this.launchConfig.sessionContext);
-          this.sessionPlugin.setSessionData(this.getTargetId(page), sessionData);
+        try {
+          const url = page.url();
+          if (url && url.startsWith("http")) {
+            const origin = new URL(url).origin;
+            this.trackedOrigins.add(origin);
+            this.logger.debug(`[CDPService] Tracking new origin: ${origin}`);
+          }
+        } catch (err) {
+          this.logger.error(`[CDPService] Error tracking origin: ${err}`);
         }
 
         // Notify plugins about the new page
@@ -212,24 +228,7 @@ export class CDPService extends EventEmitter {
 
         await this.setupPageLogging(page, target.type());
 
-        page.on("request", async (request) => {
-          const headers = request.headers();
-          delete headers["accept-language"]; // Patch to help with headless detection
-
-          if (this.launchConfig?.blockAds && isAdRequest(request.url())) {
-            this.logger.info(`[CDPService] Blocked request to ad related resource: ${request.url()}`);
-            await request.abort();
-            return;
-          }
-
-          if (request.url().startsWith("file://")) {
-            this.logger.error(`[CDPService] Blocked request to file protocol: ${request.url()}`);
-            page.close().catch(() => {});
-            this.shutdown();
-          } else {
-            await request.continue({ headers });
-          }
-        });
+        page.on("request", (request) => this.handlePageRequest(request, page));
 
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
@@ -238,25 +237,32 @@ export class CDPService extends EventEmitter {
             this.shutdown();
           }
         });
-
-        const updateLocalStorage = (host: string, storage: Record<string, string>) => {
-          this.localStorageData[host] = { ...this.localStorageData[host], ...storage };
-        };
-
-        await page.exposeFunction("updateLocalStorage", updateLocalStorage);
-
-        await page.evaluateOnNewDocument(() => {
-          window.addEventListener("beforeunload", () => {
-            updateLocalStorage(window.location.host, { ...window.localStorage });
-          });
-        });
       }
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       this.logger.info(`[CDPService] Background page created: ${target.url()}`);
       const page = await target.page();
       await this.setupPageLogging(page, target.type());
     } else {
-      // Handle SERVICE_WORKER, SHARED_WORKER, BROWSER, WEBVIEW and OTHER targets.
+      // TODO: Handle SERVICE_WORKER, SHARED_WORKER, BROWSER, WEBVIEW and OTHER targets.
+    }
+  }
+
+  private async handlePageRequest(request: HTTPRequest, page: Page) {
+    const headers = request.headers();
+    delete headers["accept-language"]; // Patch to help with headless detection
+
+    if (this.launchConfig?.blockAds && isAdRequest(request.url())) {
+      this.logger.info(`[CDPService] Blocked request to ad related resource: ${request.url()}`);
+      await request.abort();
+      return;
+    }
+
+    if (request.url().startsWith("file://")) {
+      this.logger.error(`[CDPService] Blocked request to file protocol: ${request.url()}`);
+      page.close().catch(() => {});
+      this.shutdown();
+    } else {
+      await request.continue({ headers });
     }
   }
 
@@ -415,7 +421,6 @@ export class CDPService extends EventEmitter {
         await this.browserInstance.close();
         await this.browserInstance.process()?.kill();
         await CDPLifecycle.shutdown(this.currentSessionConfig);
-        this.localStorageData = {};
         this.fingerprintData = null;
         this.currentSessionConfig = null;
         this.browserInstance = null;
@@ -493,10 +498,6 @@ export class CDPService extends EventEmitter {
       },
     });
 
-    if (this.launchConfig.sessionContext?.localStorage) {
-      this.localStorageData = this.launchConfig.sessionContext.localStorage;
-    }
-
     this.fingerprintData = await fingerprintGen.getFingerprint();
 
     const timezone = config?.timezone || this.defaultTimezone;
@@ -556,13 +557,19 @@ export class CDPService extends EventEmitter {
       });
     });
 
+    this.primaryPage = (await this.browserInstance.pages())[0];
+
+    if (this.launchConfig?.sessionContext) {
+      this.logger.debug(`[CDPService] Page created with session context, injecting session context`);
+      await this.injectSessionContext(this.primaryPage, this.launchConfig.sessionContext);
+    }
+
     this.browserInstance.on("targetcreated", this.handleNewTarget.bind(this));
     this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
     this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
 
     this.wsEndpoint = this.browserInstance.wsEndpoint();
 
-    this.primaryPage = (await this.browserInstance.pages())[0];
     await this.handleNewTarget(this.primaryPage.target());
     await this.handleTargetChange(this.primaryPage.target());
 
@@ -574,7 +581,6 @@ export class CDPService extends EventEmitter {
       throw new Error(`WebSocket endpoint not available. Ensure the browser is launched first.`);
     }
 
-    // Create clean event handler with proper cleanup
     const cleanupListeners = () => {
       this.browserInstance?.off("close", cleanupListeners);
       if (this.browserInstance?.process()) {
@@ -586,7 +592,6 @@ export class CDPService extends EventEmitter {
       this.logger.info("[CDPService] WebSocket connection listeners cleaned up");
     };
 
-    // Set up all event listeners with the same cleanup function
     this.browserInstance?.once("close", cleanupListeners);
     if (this.browserInstance?.process()) {
       this.browserInstance.process()?.once("close", cleanupListeners);
@@ -630,26 +635,121 @@ export class CDPService extends EventEmitter {
     return this.fingerprintData?.fingerprint.navigator.userAgent;
   }
 
+  public async getCookies(): Promise<Protocol.Network.Cookie[]> {
+    if (!this.primaryPage) {
+      throw new Error("Primary page not initialized");
+    }
+    const client = await this.primaryPage.createCDPSession();
+    const { cookies } = await client.send("Network.getAllCookies");
+    await client.detach();
+    return cookies;
+  }
+
   public async getBrowserState(): Promise<SessionData> {
     if (!this.browserInstance || !this.primaryPage) {
       throw new Error("Browser or primary page not initialized");
     }
 
-    // Also use the new session plugin to get full session data
-    const sessionManager = this.primaryPage.session;
-    let sessionData: SessionData = {};
+    const userDataDir = this.launchConfig?.userDataDir;
 
-    if (sessionManager) {
-      try {
-        this.logger.info("[CDPService] Dumping session data");
-        sessionData = await sessionManager.getTrackedData();
-        this.logger.info("[CDPService] Session data dumped");
-      } catch (error) {
-        this.logger.error(`[CDPService] Error dumping session data: ${error}`);
-      }
+    if (!userDataDir) {
+      this.logger.warn("No userDataDir specified, returning empty session data");
+      return {};
     }
 
-    return sessionData;
+    try {
+      this.logger.info(`[CDPService] Dumping session data from userDataDir: ${userDataDir}`);
+
+      // Run session data extraction and CDP storage extraction in parallel
+      const [cookieData, sessionData, storageData] = await Promise.all([
+        this.getCookies(),
+        this.chromeSessionService.getSessionData(userDataDir),
+        this.getExistingPageSessionData(),
+      ]);
+
+      // Merge storage data with session data
+      const result = {
+        cookies: cookieData,
+        localStorage: {
+          ...(sessionData.localStorage || {}),
+          ...(storageData.localStorage || {}),
+        },
+        sessionStorage: {
+          ...(sessionData.sessionStorage || {}),
+          ...(storageData.sessionStorage || {}),
+        },
+        indexedDB: {
+          ...(sessionData.indexedDB || {}),
+          ...(storageData.indexedDB || {}),
+        },
+      };
+
+      this.logger.info("[CDPService] Session data dumped successfully");
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[CDPService] Error dumping session data: ${errorMessage}`);
+      return {};
+    }
+  }
+  /**
+   * Extract all storage data (localStorage, sessionStorage, IndexedDB) for all open pages
+   */
+  private async getExistingPageSessionData(): Promise<SessionData> {
+    if (!this.browserInstance || !this.primaryPage) {
+      return {};
+    }
+
+    const result: SessionData = {
+      localStorage: {},
+      sessionStorage: {},
+      indexedDB: {},
+    };
+
+    try {
+      const pages = await this.browserInstance.pages();
+
+      const validPages = pages.filter((page) => {
+        try {
+          const url = page.url();
+          return url && url.startsWith("http");
+        } catch (e) {
+          return false;
+        }
+      });
+
+      this.logger.info(
+        `[CDPService] Processing ${validPages.length} valid pages out of ${pages.length} total for storage extraction`,
+      );
+
+      const results = await Promise.all(validPages.map((page) => extractStorageForPage(page, this.logger)));
+
+      // Merge all results
+      for (const item of results) {
+        for (const domain in item.localStorage) {
+          result.localStorage![domain] = {
+            ...(result.localStorage![domain] || {}),
+            ...item.localStorage![domain],
+          };
+        }
+
+        for (const domain in item.sessionStorage) {
+          result.sessionStorage![domain] = {
+            ...(result.sessionStorage![domain] || {}),
+            ...item.sessionStorage![domain],
+          };
+        }
+
+        for (const domain in item.indexedDB) {
+          result.indexedDB![domain] = [...(result.indexedDB![domain] || []), ...item.indexedDB![domain]];
+        }
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error(`[CDPService] Error extracting storage with CDP: ${error}`);
+      return result;
+    }
   }
 
   private async logEvent(event: BrowserEvent) {
@@ -677,6 +777,7 @@ export class CDPService extends EventEmitter {
 
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
     this.currentSessionConfig = sessionConfig;
+    this.trackedOrigins.clear(); // Clear tracked origins when starting a new session
     return this.launch(sessionConfig);
   }
 
@@ -684,6 +785,7 @@ export class CDPService extends EventEmitter {
     this.logger.info("Ending current session and restarting with default configuration.");
     await this.shutdown();
     this.currentSessionConfig = null;
+    this.trackedOrigins.clear(); // Clear tracked origins
     await this.launch(this.defaultLaunchConfig);
   }
 
@@ -709,46 +811,46 @@ export class CDPService extends EventEmitter {
   private async injectSessionContext(page: Page, context?: BrowserLauncherOptions["sessionContext"]) {
     if (!context) return;
 
-    // Set cookies if provided
-    if (context.cookies?.length) {
-      await page.setCookie(
-        ...context.cookies.map((cookie) => ({
-          ...cookie,
-          partitionKey: cookie.partitionKey ? String(cookie.partitionKey) : undefined,
-        })),
-      );
+    const storageByOrigin = groupSessionStorageByOrigin(context);
+
+    for (const origin of storageByOrigin.keys()) {
+      this.trackedOrigins.add(origin);
     }
 
-    // Set localStorage if provided - we'll inject it when navigation occurs
-    if (context.localStorage) {
-      // Listen for framenavigated events to set localStorage for the correct domain
-      page.on("framenavigated", async (frame) => {
-        // Only handle main frame navigation
-        if (!frame.parentFrame()) {
-          const domain = new URL(frame.url()).hostname;
-          const storageItems = Object.entries(context.localStorage?.[domain] || {});
-
-          if (storageItems?.length) {
-            await frame.evaluate((items) => {
-              items.forEach(([key, value]) => {
-                window.localStorage.setItem(key, value);
-              });
-            }, storageItems);
-          }
-        }
-      });
-
-      // Also inject for the initial page if we're already on a domain
-      const domain = new URL(page.url()).hostname;
-      const initialStorageItems = context.localStorage[domain];
-      if (initialStorageItems?.length) {
-        await page.evaluate((items) => {
-          items.forEach(({ key, value }) => {
-            window.localStorage.setItem(key, value);
-          });
-        }, initialStorageItems);
+    const client = await page.target().createCDPSession();
+    try {
+      if (context.cookies?.length) {
+        await client.send("Network.setCookies", {
+          cookies: context.cookies.map((cookie) => ({
+            ...cookie,
+            partitionKey: cookie.partitionKey as unknown as Protocol.Network.Cookie["partitionKey"],
+          })),
+        });
+        this.logger.info(`[CDPService] Set ${context.cookies.length} cookies`);
       }
+    } catch (error) {
+      this.logger.error(`[CDPService] Error setting cookies: ${error}`);
+    } finally {
+      await client.detach().catch(() => {});
     }
+
+    this.logger.info(`[CDPService] Registered frame navigation handler for ${storageByOrigin.size} origins`);
+    page.on("framenavigated", (frame) => handleFrameNavigated(frame, storageByOrigin, this.logger));
+
+    page.browser().on("targetcreated", async (target) => {
+      if (target.type() === "page") {
+        try {
+          const newPage = await target.page();
+          if (newPage) {
+            newPage.on("framenavigated", (frame) => handleFrameNavigated(frame, storageByOrigin, this.logger));
+          }
+        } catch (err) {
+          this.logger.error(`[CDPService] Error adding framenavigated handler to new page: ${err}`);
+        }
+      }
+    });
+
+    this.logger.debug("[CDPService] Session context injection setup complete");
   }
 
   private async injectFingerprintSafely(page: Page, fingerprintData: BrowserFingerprintWithHeaders) {
