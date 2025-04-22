@@ -1,5 +1,5 @@
 import { BrowserEventType } from "./enums";
-import { CookieData } from "../services/cdp/plugins/session/types";
+import { CookieData, IndexedDBDatabase, LocalStorageData, SessionStorageData } from "../services/context/types";
 
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
@@ -7,9 +7,9 @@ export interface BrowserLauncherOptions {
   stealth?: boolean;
   sessionContext?: {
     cookies?: CookieData[];
-    localStorage?: Record<string, Record<string, any>>;
-    sessionStorage?: Record<string, Record<string, any>>;
-    indexedDB?: Record<string, { name: string; securityOrigin: string; data?: any }[]>;
+    localStorage?: Record<string, LocalStorageData>;
+    sessionStorage?: Record<string, SessionStorageData>;
+    indexedDB?: Record<string, IndexedDBDatabase[]>;
   };
   userAgent?: string;
   extensions?: string[];

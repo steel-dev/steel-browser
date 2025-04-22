@@ -1,10 +1,10 @@
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { CDPCookieSchema } from "../../services/cdp/plugins/session";
 import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema";
+import { CDPCookieSchema } from "../../services/context/types";
 
 const SessionContext = z.object({
-  cookies: z.array(CDPCookieSchema).optional().describe("Cookies to initialize in the session"),
+  cookies: z.array(CDPCookieSchema).optional(),
   localStorage: z
     .record(z.string(), z.record(z.string(), z.any()))
     .optional()
