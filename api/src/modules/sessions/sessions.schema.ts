@@ -1,6 +1,7 @@
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
 import { CDPCookieSchema } from "../../services/cdp/plugins/session";
+import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema";
 
 const SessionContext = z.object({
   cookies: z.array(CDPCookieSchema).optional().describe("Cookies to initialize in the session"),
@@ -112,6 +113,15 @@ const SessionLiveDetailsResponse = z.object({
 const SessionStreamResponse = z.string().describe("HTML content for the session streamer view");
 
 const MultipleSessions = z.array(SessionDetails);
+
+export type SessionsScrapeRequestBody = Omit<ScrapeRequestBody, "url">;
+export type SessionsScrapeRequest = FastifyRequest<{ Body: SessionsScrapeRequestBody }>;
+
+export type SessionsScreenshotRequestBody = Omit<ScreenshotRequestBody, "url">;
+export type SessionsScreenshotRequest = FastifyRequest<{ Body: SessionsScreenshotRequestBody }>;
+
+export type SessionsPDFRequestBody = Omit<PDFRequestBody, "url">;
+export type SessionsPDFRequest = FastifyRequest<{ Body: SessionsPDFRequestBody }>;
 
 export type RecordedEvents = z.infer<typeof RecordedEvents>;
 export type CreateSessionBody = z.infer<typeof CreateSession>;
