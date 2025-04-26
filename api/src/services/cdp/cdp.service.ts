@@ -494,15 +494,6 @@ export class CDPService extends EventEmitter {
 
     const { options, userAgent, userDataDir } = this.launchConfig;
 
-    const defaultExtensions = ["recorder"];
-    const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
-
-    const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
-
-    const extensionArgs = extensionPaths.length
-      ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
-      : [];
-
     const fingerprintGen = new FingerprintGenerator({
       devices: ["desktop"],
       operatingSystems: ["linux"],
@@ -525,6 +516,15 @@ export class CDPService extends EventEmitter {
       await mutator(this.launchConfig);
     }
     this.currentSessionConfig = this.launchConfig;
+
+    const defaultExtensions = ["recorder"];
+    const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
+
+    const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
+
+    const extensionArgs = extensionPaths.length
+      ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
+      : [];
 
     const launchArgs = [
       "--remote-allow-origins=*",
