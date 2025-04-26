@@ -20,12 +20,12 @@ import { loadFingerprintScript } from "../../scripts";
 import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types";
 import { isAdRequest } from "../../utils/ads";
 import { filterHeaders, getChromeExecutablePath } from "../../utils/browser";
+import { extractStorageForPage, groupSessionStorageByOrigin, handleFrameNavigated } from "../../utils/context";
 import { getExtensionPaths } from "../../utils/extensions";
-import { CDPLifecycle } from "../cdp-lifecycle.service";
-import { PluginManager } from "./plugins/core/plugin-manager";
-import { SessionData } from "../context/types";
 import { ChromeContextService } from "../context/chrome-context.service";
-import { extractStorageForPage, handleFrameNavigated, groupSessionStorageByOrigin } from "../../utils/context";
+import { SessionData } from "../context/types";
+import { PluginManager } from "./plugins/core/plugin-manager";
+import { CDPLifecycle } from "../cdp-lifecycle.service";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -45,6 +45,9 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
+
+  private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
+  private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -84,6 +87,14 @@ export class CDPService extends EventEmitter {
     };
 
     this.pluginManager = new PluginManager(this, logger);
+  }
+
+  public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
+    this.launchMutators.push(fn);
+  }
+
+  public registerShutdownHook(fn: (config: BrowserLauncherOptions | null) => Promise<void> | void) {
+    this.shutdownMutators.push(fn);
   }
 
   private removeAllHandlers() {
@@ -405,6 +416,13 @@ export class CDPService extends EventEmitter {
     return this.browserInstance.newPage();
   }
 
+  private async shutdownHook() {
+    await CDPLifecycle.shutdown(this.currentSessionConfig); // backwards compat
+    for (const mutator of this.shutdownMutators) {
+      await mutator(this.currentSessionConfig);
+    }
+  }
+
   public async shutdown(): Promise<void> {
     if (this.browserInstance) {
       this.shuttingDown = true;
@@ -420,7 +438,7 @@ export class CDPService extends EventEmitter {
         this.removeAllHandlers();
         await this.browserInstance.close();
         await this.browserInstance.process()?.kill();
-        await CDPLifecycle.shutdown(this.currentSessionConfig);
+        await this.shutdownHook();
         this.fingerprintData = null;
         this.currentSessionConfig = null;
         this.browserInstance = null;
@@ -432,7 +450,7 @@ export class CDPService extends EventEmitter {
         // Ensure we complete the shutdown even if plugins throw errors
         await this.browserInstance?.close();
         await this.browserInstance?.process()?.kill();
-        await CDPLifecycle.shutdown(this.currentSessionConfig);
+        await this.shutdownHook();
         this.browserInstance = null;
         this.shuttingDown = false;
       }
@@ -502,7 +520,11 @@ export class CDPService extends EventEmitter {
 
     const timezone = config?.timezone || this.defaultTimezone;
 
-    await CDPLifecycle.launch(this.launchConfig);
+    await CDPLifecycle.launch(this.launchConfig); // backwards compat
+    for (const mutator of this.launchMutators) {
+      await mutator(this.launchConfig);
+    }
+    this.currentSessionConfig = this.launchConfig;
 
     const launchArgs = [
       "--remote-allow-origins=*",
