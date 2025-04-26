@@ -53,7 +53,7 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> =
     await fastify.register(filesRoutes, { prefix: "/v1" });
   };
 
-export default fp(steelBrowserPlugin, {
+export default fp<SteelBrowserConfig>(steelBrowserPlugin, {
   name: "steel-browser",
   fastify: "5.x",
 });

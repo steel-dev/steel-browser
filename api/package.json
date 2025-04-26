@@ -1,9 +1,18 @@
 {
-  "name": "@steel/api",
+  "name": "@steel/steel-browser",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "type": "module",
+  "private": true,
+  "exports": {
+    "./plugin": {
+      "import": {
+        "types": "./build/steel-browser-plugin.d.ts",
+        "default": "./build/steel-browser-plugin.js"
+      }
+    }
+  },
   "scripts": {
     "start": "node ./build/index.js",
     "build": "tsc && npm run copy:templates && npm run copy:fingerprint",
@@ -21,6 +30,7 @@
     "@types/json-stringify-safe": "^5.0.3",
     "@types/node": "^22.14.1",
     "@types/ws": "^8.5.14",
+    "fastify": "^5.2.1",
     "prettier": "3.0.3",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",
@@ -42,7 +52,6 @@
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
     "ejs": "^3.1.10",
-    "fastify": "^5.2.1",
     "fastify-graceful-shutdown": "^4.0.1",
     "fastify-plugin": "^5.0.1",
     "file-type": "^20.4.1",
@@ -67,5 +76,8 @@
   },
   "overrides": {
     "cross-spawn": "^7.0.6"
+  },
+  "peerDependencies": {
+    "fastify": "^5.0.0"
   }
 }
