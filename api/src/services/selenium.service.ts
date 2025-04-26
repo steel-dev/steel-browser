@@ -1,8 +1,9 @@
 import { EventEmitter } from "events";
 import { ChildProcess, spawn } from "child_process";
 import { BrowserLauncherOptions, BrowserEvent, BrowserEventType } from "../types";
-import path from "path";
+import path, { dirname } from "path";
 import { FastifyBaseLogger } from "fastify";
+import { fileURLToPath } from "url";
 
 export class SeleniumService extends EventEmitter {
   private seleniumProcess: ChildProcess | null = null;
@@ -35,7 +36,7 @@ export class SeleniumService extends EventEmitter {
       await this.close();
     }
 
-    const projectRoot = path.resolve(__dirname, "../../");
+    const projectRoot = path.resolve(dirname(fileURLToPath(import.meta.url)), "../../");
     const seleniumServerPath = path.join(projectRoot, "selenium", "server", "selenium-server.jar");
 
     const seleniumArgs = ["-jar", seleniumServerPath, "standalone"];

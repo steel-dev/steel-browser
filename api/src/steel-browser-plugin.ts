@@ -1,7 +1,7 @@
 import fastifyView from "@fastify/view";
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import path from "node:path";
+import path, { dirname } from "node:path";
 import browserInstancePlugin from "./plugins/browser";
 import browserSessionPlugin from "./plugins/browser-session";
 import browserWebSocket from "./plugins/browser-socket/browser-socket";
@@ -11,6 +11,8 @@ import requestLogger from "./plugins/request-logger";
 import openAPIPlugin from "./plugins/schemas";
 import seleniumPlugin from "./plugins/selenium";
 import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes";
+import { fileURLToPath } from "node:url";
+import ejs from "ejs";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -30,11 +32,11 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> =
     // Plugins
     await fastify.register(fastifyView, {
       engine: {
-        ejs: require("ejs"),
+        ejs,
       },
-      root: path.join(__dirname, "templates"), // dirname(fileURLToPath(import.meta))
+      root: path.join(dirname(fileURLToPath(import.meta.url)), "templates"),
     });
-    await fastify.register(requestLogger); // move to app?
+    await fastify.register(requestLogger);
     await fastify.register(openAPIPlugin);
     await fastify.register(fileStoragePlugin);
     await fastify.register(browserInstancePlugin);

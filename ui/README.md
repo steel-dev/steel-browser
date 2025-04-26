@@ -18,7 +18,7 @@ If you are developing a production application, we recommend updating the config
     ecmaVersion: 'latest',
     sourceType: 'module',
     project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
+    tsconfigRootDir: dirname(fileURLToPath(import.meta.url)),
    },
 ```
 

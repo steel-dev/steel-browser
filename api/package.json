@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node ./build/index.js",
     "build": "tsc && npm run copy:templates && npm run copy:fingerprint",
     "copy:templates": "mkdir -p build/templates && cp -r src/templates/* build/templates/",
     "copy:fingerprint": "cp src/scripts/fingerprint.js build/scripts/fingerprint.js",
     "prepare:recorder": "cd extensions/recorder && npm install && npm run build",
-    "dev": "npm run prepare:recorder && ts-node-dev --poll --exit-child ./src/index.ts",
+    "dev": "npm run prepare:recorder && tsx watch src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "pretty": "prettier --write \"src/**/*.ts\"",
     "generate:openapi": "ts-node ./openapi/generate.ts"
@@ -22,6 +23,7 @@
     "@types/ws": "^8.5.14",
     "prettier": "3.0.3",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "vite": "^6.1.0"
   },
@@ -58,7 +60,6 @@
     "proxy-chain": "^2.5.6",
     "puppeteer-core": "23.6.0",
     "socks-proxy-agent": "^8.0.5",
-    "ts-node-dev": "^2.0.0",
     "turndown": "^7.2.0",
     "uuid": "^11.0.5",
     "zod": "^3.24.2",
