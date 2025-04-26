@@ -8,8 +8,17 @@ import {
   handleGetFile,
   handleSessionFilesDelete,
 } from "./files.controller";
+import fastifyMultipart from "@fastify/multipart";
+import { MB } from "../../utils/size";
 
 async function routes(server: FastifyInstance) {
+  await server.register(fastifyMultipart, {
+    limits: {
+      fileSize: server.steelBrowserConfig.fileStorage?.maxSizePerSession ?? 100 * MB,
+    },
+    attachFieldsToBody: false,
+  });
+
   server.post(
     "/sessions/:sessionId/files",
     {
