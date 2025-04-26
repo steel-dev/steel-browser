@@ -1,6 +1,6 @@
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ScrapeFormat } from "../../types/enums";
+import { ScrapeFormat } from "../../types/enums.js";
 
 const ScrapeRequest = z.object({
   url: z.string().optional(),

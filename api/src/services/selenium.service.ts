@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import { ChildProcess, spawn } from "child_process";
-import { BrowserLauncherOptions, BrowserEvent, BrowserEventType } from "../types";
+import { BrowserLauncherOptions, BrowserEvent, BrowserEventType } from "../types/index.js";
 import path, { dirname } from "path";
 import { FastifyBaseLogger } from "fastify";
 import { fileURLToPath } from "url";

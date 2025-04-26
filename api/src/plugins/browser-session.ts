@@ -1,8 +1,8 @@
 import fastifyGracefulShutdown from "fastify-graceful-shutdown";
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import { SessionService } from "../services/session.service";
-import { env } from "../env";
+import { SessionService } from "../services/session.service.js";
+import { env } from "../env.js";
 
 const browserSessionPlugin: FastifyPluginAsync = async (fastify, _options) => {
   const sessionService = new SessionService({

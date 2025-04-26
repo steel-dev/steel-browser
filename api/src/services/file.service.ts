@@ -7,7 +7,7 @@ import mime from "mime-types";
 import path from "path";
 import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
-import { env } from "../env";
+import { env } from "../env.js";
 
 interface File {
   name: string;

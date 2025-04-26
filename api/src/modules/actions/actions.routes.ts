@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyReply } from "fastify";
-import { handlePDF, handleScrape, handleScreenshot } from "./actions.controller";
-import { $ref } from "../../plugins/schemas";
-import { PDFRequest, ScrapeRequest, ScreenshotRequest } from "./actions.schema";
+import { handlePDF, handleScrape, handleScreenshot } from "./actions.controller.js";
+import { $ref } from "../../plugins/schemas.js";
+import { PDFRequest, ScrapeRequest, ScreenshotRequest } from "./actions.schema.js";
 
 async function routes(server: FastifyInstance) {
   server.post(

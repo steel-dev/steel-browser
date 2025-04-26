@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
-import { CDPService } from "../services/cdp/cdp.service";
+import { CDPService } from "../services/cdp/cdp.service.js";
 import fp from "fastify-plugin";
-import { BrowserLauncherOptions } from "../types";
+import { BrowserLauncherOptions } from "../types/index.js";
 
 declare module "fastify" {
   interface FastifyInstance {

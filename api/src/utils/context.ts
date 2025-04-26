@@ -6,9 +6,9 @@ import {
   IndexedDBRecord,
   SessionStorageData,
   LocalStorageData,
-} from "../services/context/types";
+} from "../services/context/types.js";
 import { FastifyBaseLogger } from "fastify";
-import { BrowserLauncherOptions } from "../types";
+import { BrowserLauncherOptions } from "../types/index.js";
 /**
  * Extract storage data for a single origin
  * @param client CDP session

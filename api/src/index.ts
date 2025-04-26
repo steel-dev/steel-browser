@@ -1,9 +1,9 @@
 import fastify from "fastify";
 import fastifyCors from "@fastify/cors";
 import fastifySensible from "@fastify/sensible";
-import steelBrowserPlugin from "./steel-browser-plugin";
-import { loggingConfig } from "./config";
-import { MB } from "./utils/size";
+import steelBrowserPlugin from "./steel-browser-plugin.js";
+import { loggingConfig } from "./config.js";
+import { MB } from "./utils/size.js";
 
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;

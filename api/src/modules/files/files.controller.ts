@@ -9,7 +9,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
-import { getErrors } from "../../utils/errors";
+import { getErrors } from "../../utils/errors.js";
 
 async function saveWithChecksum(
   inputStream: NodeJS.ReadableStream,

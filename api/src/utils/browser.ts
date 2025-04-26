@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { Page } from "puppeteer-core";
-import { env } from "../env";
+import { env } from "../env.js";
 
 export const getChromeExecutablePath = () => {
   if (env.CHROME_EXECUTABLE_PATH) {

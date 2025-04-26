@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { $ref } from "../../plugins/schemas";
+import { $ref } from "../../plugins/schemas.js";
 import {
   handleFileDelete,
   handleFileDownload,
@@ -7,9 +7,9 @@ import {
   handleFileUpload,
   handleGetFile,
   handleSessionFilesDelete,
-} from "./files.controller";
+} from "./files.controller.js";
 import fastifyMultipart from "@fastify/multipart";
-import { MB } from "../../utils/size";
+import { MB } from "../../utils/size.js";
 
 async function routes(server: FastifyInstance) {
   await server.register(fastifyMultipart, {
