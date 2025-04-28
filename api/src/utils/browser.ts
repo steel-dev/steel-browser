@@ -29,7 +29,7 @@ export const getChromeExecutablePath = () => {
     return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
   }
 
-  return "/usr/bin/google-chrome-stable";
+  return "/usr/bin/chromium";
 };
 
 export async function installMouseHelper(page: Page) {

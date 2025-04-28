@@ -8,8 +8,8 @@ ENV NODE_ENV="production" \
     PUPPETEER_CACHE_DIR=/app/.cache \
     DISPLAY=:10 \
     PATH="/usr/bin:/app/selenium/driver:${PATH}" \
-    CHROME_BIN=/usr/bin/google-chrome-stable \
-    CHROME_PATH=/usr/bin/google-chrome-stable
+    CHROME_BIN=/usr/bin/chromium \
+    CHROME_PATH=/usr/bin/chromium
 
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
@@ -78,21 +78,8 @@ RUN apt-get update && \
     ca-certificates \
     curl \
     unzip \
-    # Download and install specific version of Chrome
-    && CHROME_DEB="google-chrome-stable_128.0.6613.119-1_amd64.deb" \
-    && wget -q "https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/${CHROME_DEB}" \
-    && apt-get install -y ./google-chrome-stable_*.deb \
-    && rm google-chrome-stable_*.deb \
-    # Install matching ChromeDriver
-    && mkdir -p /selenium/driver \
-    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/128.0.6613.119/linux64/chromedriver-linux64.zip" \
-    && unzip chromedriver-linux64.zip -d /tmp \
-    && mv /tmp/chromedriver-linux64/chromedriver /selenium/driver/chromedriver \
-    && rm -rf chromedriver-linux64.zip /tmp/chromedriver-linux64 \
-    && chmod +x /selenium/driver/chromedriver \
-    # Verify installations
-    && google-chrome-stable --version \
-    && /selenium/driver/chromedriver --version \
+    # Download and install Chromium
+    && apt-get install -y chromium chromium-driver \
     # Clean up
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
