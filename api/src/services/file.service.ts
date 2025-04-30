@@ -4,151 +4,128 @@ import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import { rename, unlink } from "fs/promises";
 import mime from "mime-types";
-import path from "path";
+import path, { relative, resolve } from "path";
 import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env";
 
 interface File {
-  name: string;
   size: number;
-  contentType: string;
-  createdAt: Date;
-  updatedAt: Date;
-  checksum: string;
-  path: string;
-  metadata?: Record<string, any>;
+  lastModified: Date;
+  // metadata?: Record<string, any>;
 }
 
 export class FileService {
-  private logger: FastifyBaseLogger;
-  private baseDownloadPath: string;
-  private fileMap: Map<string, Map<string, File>> = new Map();
+  private db: Map<string, File>;
+  private baseFilesPath: string;
   private fileWatcher: FSWatcher | null = null;
   private processingFiles: Set<string> = new Set();
 
-  constructor(_config: {}, logger: FastifyBaseLogger) {
-    this.logger = logger;
-    this.baseDownloadPath = env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
-    fs.mkdirSync(this.baseDownloadPath, { recursive: true });
-    this.fileMap = new Map();
-    this.initFileWatcher();
+  constructor() {
+    this.db = new Map();
+    this.baseFilesPath = env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
+    fs.mkdirSync(this.baseFilesPath, { recursive: true });
+    // this.initFileWatcher();
   }
 
-  private initFileWatcher() {
-    this.fileWatcher = chokidar.watch(this.baseDownloadPath, {
-      ignored: /(^|[\/\\])\../, // ignore dotfiles
-      persistent: true,
-      ignoreInitial: false,
-      awaitWriteFinish: {
-        stabilityThreshold: 100,
-        pollInterval: 50,
-      },
-    });
+  // private initFileWatcher() {
+  //   this.fileWatcher = chokidar.watch(this.baseFilesPath, {
+  //     ignored: /(^|[\/\\])\../, // ignore dotfiles
+  //     persistent: true,
+  //     ignoreInitial: false,
+  //     awaitWriteFinish: {
+  //       stabilityThreshold: 100,
+  //       pollInterval: 50,
+  //     },
+  //   });
 
-    this.fileWatcher.on("add", async (filePath) => {
-      if (this.processingFiles.has(filePath)) {
-        return;
-      }
+  //   this.fileWatcher.on("add", async (filePath) => {
+  //     if (this.processingFiles.has(filePath)) {
+  //       return;
+  //     }
 
-      try {
-        // Check if the file is in a session directory
-        const relativePath = path.relative(this.baseDownloadPath, filePath);
-        const parts = relativePath.split(path.sep);
+  //     try {
+  //       // Check if the file is in a session directory
+  //       const relativePath = path.relative(this.baseFilesPath, filePath);
+  //       const parts = relativePath.split(path.sep);
 
-        if (parts.length < 2) {
-          return; // Not in a session directory
-        }
+  //       if (parts.length < 2) {
+  //         return; // Not in a session directory
+  //       }
 
-        const sessionId = parts[0];
-        const fileName = parts[parts.length - 1];
+  //       const sessionId = parts[0];
+  //       const fileName = parts[parts.length - 1];
 
-        // Skip if already in the file map
-        if (this.isFileAlreadyTracked(sessionId, filePath)) {
-          return;
-        }
+  //       // Skip if already in the file map
+  //       if (this.isFileAlreadyTracked(sessionId, filePath)) {
+  //         return;
+  //       }
 
-        this.logger.info(`Detected new file: ${filePath} in session ${sessionId}`);
+  //       this.logger.info(`Detected new file: ${filePath} in session ${sessionId}`);
 
-        // Calculate checksum
-        const checksum = await this.calculateChecksum(filePath);
+  //       // Calculate checksum
+  //       const checksum = await this.calculateChecksum(filePath);
 
-        // Add to file map
-        if (!this.fileMap.has(sessionId)) {
-          this.fileMap.set(sessionId, new Map());
-        }
+  //       // Add to file map
+  //       if (!this.fileMap.has(sessionId)) {
+  //         this.fileMap.set(sessionId, new Map());
+  //       }
 
-        const stats = await fs.promises.stat(filePath);
-        const currentDate = new Date();
-        const id = uuidv4();
+  //       const stats = await fs.promises.stat(filePath);
+  //       const currentDate = new Date();
+  //       const id = uuidv4();
 
-        const file: File = {
-          name: fileName,
-          size: stats.size,
-          contentType: mime.lookup(fileName) || "application/octet-stream",
-          createdAt: currentDate,
-          updatedAt: currentDate,
-          checksum,
-          path: filePath,
-        };
+  //       const file: File = {
+  //         name: fileName,
+  //         size: stats.size,
+  //         contentType: mime.lookup(fileName) || "application/octet-stream",
+  //         createdAt: currentDate,
+  //         updatedAt: currentDate,
+  //         checksum,
+  //         path: filePath,
+  //       };
 
-        this.fileMap.get(sessionId)!.set(id, file);
-        this.logger.info(`Added file ${fileName} to session ${sessionId} with ID ${id}`);
-      } catch (error) {
-        this.logger.error(`Error processing file ${filePath}: ${error}`);
-      }
-    });
+  //       this.fileMap.get(sessionId)!.set(id, file);
+  //       this.logger.info(`Added file ${fileName} to session ${sessionId} with ID ${id}`);
+  //     } catch (error) {
+  //       this.logger.error(`Error processing file ${filePath}: ${error}`);
+  //     }
+  //   });
 
-    this.logger.info(`File watcher initialized for ${this.baseDownloadPath}`);
-  }
+  //   this.logger.info(`File watcher initialized for ${this.baseFilesPath}`);
+  // }
 
-  private async calculateChecksum(filePath: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const hash = createHash("sha256");
-      const stream = fs.createReadStream(filePath);
+  // private isFileAlreadyTracked(sessionId: string, filePath: string): boolean {
+  //   const sessionFiles = this.fileMap.get(sessionId);
+  //   if (!sessionFiles) return false;
 
-      stream.on("error", reject);
-      stream.on("data", (chunk) => hash.update(chunk));
-      stream.on("end", () => resolve(hash.digest("hex")));
-    });
-  }
+  //   for (const file of sessionFiles.values()) {
+  //     if (file.path === filePath) {
+  //       return true;
+  //     }
+  //   }
 
-  private isFileAlreadyTracked(sessionId: string, filePath: string): boolean {
-    const sessionFiles = this.fileMap.get(sessionId);
-    if (!sessionFiles) return false;
+  //   return false;
+  // }
 
-    for (const file of sessionFiles.values()) {
-      if (file.path === filePath) {
-        return true;
-      }
+  private getSafeFilePath(relativePath: string) {
+    const resolvedPath = resolve(this.baseFilesPath, relativePath);
+    if (!resolvedPath.startsWith(this.baseFilesPath + path.sep) && resolvedPath !== this.baseFilesPath) {
+      throw new Error("Invalid path");
     }
-
-    return false;
+    return resolvedPath;
   }
 
-  private async ensureDirectoryExists(dirPath: string): Promise<void> {
-    await fs.promises.mkdir(dirPath, { recursive: true });
-  }
+  private addTimestampToFilePath(filePath: string): string {
+    const dir = path.dirname(filePath);
+    const ext = path.extname(filePath);
+    const baseName = path.basename(filePath, ext);
 
-  private sanitizeId(id: string): string {
-    return path.basename(id);
-  }
+    const timestamp = Date.now();
+    const newFileName = `${baseName}-${timestamp}${ext}`;
 
-  private getSessionPath(sessionId: string): string {
-    return path.join(this.baseDownloadPath, this.sanitizeId(sessionId));
-  }
-
-  private buildFileName(originalName: string, id: string): string {
-    const parsed = path.parse(originalName);
-    const safeBase = this.sanitizeId(parsed.name);
-    const safeExt = parsed.ext;
-    return `${safeBase}-${id}${safeExt}`;
-  }
-
-  public async getFilePath({ sessionId, name }: { sessionId: string; name: string }): Promise<string> {
-    const sessionPath = this.getSessionPath(sessionId);
-    await this.ensureDirectoryExists(sessionPath);
-    return path.join(sessionPath, this.sanitizeId(name));
+    const newPath = path.join(dir, newFileName);
+    return newPath;
   }
 
   private async exists(filePath: string): Promise<boolean> {
@@ -162,169 +139,100 @@ export class FileService {
     }
   }
 
-  public async saveFile(options: {
-    sessionId: string;
+  // ============================================================
+  // Public Methods
+  // ============================================================
+
+  public async saveFile({
+    filePath,
+    stream,
+  }: {
     filePath: string;
-    checksum: string;
-    id?: string;
-    name?: string;
-    contentType?: string;
-    metadata?: Record<string, any>;
-  }): Promise<{ id: string } & File> {
-    const id = options.id || uuidv4();
-    let fileName: string;
+    stream: Readable;
+  }): Promise<File & { path: string }> {
+    const safeFilePath = this.addTimestampToFilePath(this.getSafeFilePath(filePath));
 
-    if (options.name) {
-      fileName = this.buildFileName(options.name, id);
-    } else {
-      fileName = id;
-    }
-
-    const destinationPath = await this.getFilePath({ sessionId: options.sessionId, name: fileName });
-
-    // Mark file as being processed to avoid duplicate processing by watcher
-    this.processingFiles.add(destinationPath);
-
-    try {
-      await rename(options.filePath, destinationPath);
-    } catch (error: any) {
-      await unlink(options.filePath);
-      console.error(`Error moving file: ${error.message}`);
-    } finally {
-      // Remove from processing list after a short delay
-      setTimeout(() => {
-        this.processingFiles.delete(destinationPath);
-      }, 1000);
-    }
-
-    if (!this.fileMap.has(options.sessionId)) {
-      this.fileMap.set(options.sessionId, new Map());
-    }
-
-    const currentDate = new Date();
+    await fs.promises.writeFile(safeFilePath, stream);
 
     const file: File = {
-      name: options.name || fileName,
-      size: (await fs.promises.stat(destinationPath)).size,
-      contentType: options.contentType || (options.name && mime.lookup(options.name)) || "application/octet-stream",
-      createdAt: currentDate,
-      updatedAt: currentDate,
-      checksum: options.checksum,
-      metadata: options.metadata,
-      path: destinationPath,
+      size: (await fs.promises.stat(filePath)).size,
+      lastModified: (await fs.promises.stat(filePath)).mtime,
     };
 
-    this.fileMap.get(options.sessionId)!.set(id, file);
+    this.db.set(safeFilePath, file);
 
-    return {
-      id,
-      ...file,
-    };
+    return { ...file, path: safeFilePath };
   }
 
-  public async getFile({ sessionId, id }: { sessionId: string; id: string }): Promise<{ id: string } & File> {
-    const sessionFiles = this.fileMap.get(sessionId);
-    if (!sessionFiles) {
-      throw new Error(`Session not found: ${sessionId}`);
+  // public async getFile({ sessionId, id }: { sessionId: string; id: string }): Promise<{ id: string } & File> {
+  //   const sessionFiles = this.fileMap.get(sessionId);
+  //   if (!sessionFiles) {
+  //     throw new Error(`Session not found: ${sessionId}`);
+  //   }
+
+  //   const file = sessionFiles.get(id);
+  //   if (!file) {
+  //     throw new Error(`File metadata not found: ${id}`);
+  //   }
+
+  //   if (!(await this.exists(file.path))) {
+  //     throw new Error(`File not found: ${file.path}`);
+  //   }
+
+  //   return {
+  //     id,
+  //     ...file,
+  //   };
+  // }
+
+  public async downloadFile({ filePath }: { filePath: string }): Promise<{ stream: Readable } & File> {
+    if (!(await this.exists(filePath))) {
+      throw new Error(`File not found: ${filePath}`);
     }
 
-    const file = sessionFiles.get(id);
+    const file = this.db.get(filePath);
+    const stream = fs.createReadStream(filePath);
+
     if (!file) {
-      throw new Error(`File metadata not found: ${id}`);
-    }
-
-    if (!(await this.exists(file.path))) {
-      throw new Error(`File not found: ${file.path}`);
+      return {
+        stream,
+        size: (await fs.promises.stat(filePath)).size,
+        lastModified: (await fs.promises.stat(filePath)).mtime,
+      };
     }
 
     return {
-      id,
+      stream,
       ...file,
     };
   }
 
-  public async downloadFile({
-    sessionId,
-    id,
-  }: {
-    sessionId: string;
-    id: string;
-  }): Promise<{ id: string; stream: Readable } & File> {
-    const sessionFiles = this.fileMap.get(sessionId);
-    if (!sessionFiles) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-
-    const file = sessionFiles.get(id);
-    if (!file) {
-      throw new Error(`File metadata not found: ${id}`);
-    }
-
-    if (!(await this.exists(file.path))) {
-      throw new Error(`File not found: ${file.path}`);
-    }
-
-    return {
-      id,
-      stream: fs.createReadStream(file.path),
-      ...file,
-    };
-  }
-
-  public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ id: string } & File>> {
-    const sessionItems = this.fileMap.get(sessionId) || new Map();
-
-    return Array.from(sessionItems.entries())
-      .map(([id, file]) => ({
-        id,
+  public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ path: string } & File>> {
+    return Array.from(this.db.entries())
+      .map(([path, file]) => ({
+        path,
         ...file,
       }))
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
   }
 
-  public async deleteFile({ sessionId, id }: { sessionId: string; id: string }): Promise<{ id: string } & File> {
-    const sessionFiles = this.fileMap.get(sessionId);
-    if (!sessionFiles) {
-      throw new Error(`Session not found: ${sessionId}`);
+  public async deleteFile({ sessionId, filePath }: { sessionId: string; filePath: string }): Promise<void> {
+    if (!(await this.exists(filePath))) {
+      throw new Error(`File not found: ${filePath}`);
     }
+    await fs.promises.unlink(filePath);
+    this.db.delete(filePath);
 
-    const file = sessionFiles.get(id);
-    if (!file) {
-      throw new Error(`File metadata not found: ${id}`);
-    }
-
-    if (!(await this.exists(file.path))) {
-      throw new Error(`File not found: ${file.path}`);
-    }
-
-    await fs.promises.unlink(file.path);
-
-    this.fileMap.get(sessionId)!.delete(id);
-
-    return { id, ...file };
+    return;
   }
 
-  public async cleanupFiles({ sessionId }: { sessionId: string }): Promise<({ id: string } & File)[]> {
-    const sessionPath = this.getSessionPath(sessionId);
+  public async cleanupFiles({ sessionId }: { sessionId: string }): Promise<void> {
+    await fs.promises.rm(this.baseFilesPath, { recursive: true, force: true });
+    await fs.promises.mkdir(this.baseFilesPath);
+    this.db.clear();
 
-    if (!(await this.exists(sessionPath))) {
-      return [];
-    }
-
-    const files = this.fileMap.get(sessionId);
-
-    if (!files) {
-      return [];
-    }
-
-    const filesArray = Array.from(files.entries()).map(([id, file]) => ({
-      id,
-      ...file,
-    }));
-
-    await fs.promises.rm(sessionPath, { recursive: true, force: true });
-    this.fileMap.delete(sessionId);
-
-    return filesArray;
+    return;
   }
 }
+
+export const fileService = new FileService();
