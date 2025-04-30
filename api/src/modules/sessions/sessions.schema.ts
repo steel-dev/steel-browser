@@ -1,28 +1,13 @@
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { CDPCookieSchema } from "../../services/cdp/plugins/session";
-
-const SessionContext = z.object({
-  cookies: z.array(CDPCookieSchema).optional().describe("Cookies to initialize in the session"),
-  localStorage: z
-    .record(z.string(), z.record(z.string(), z.any()))
-    .optional()
-    .describe("Domain-specific localStorage items to initialize in the session"),
-  sessionStorage: z
-    .record(z.string(), z.record(z.string(), z.any()))
-    .optional()
-    .describe("Domain-specific sessionStorage items to initialize in the session"),
-  indexedDB: z
-    .record(z.string(), z.array(z.record(z.string(), z.any())))
-    .optional()
-    .describe("Domain-specific indexedDB items to initialize in the session"),
-});
+import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema";
+import { SessionContextSchema } from "../../services/context/types";
 
 const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
   proxyUrl: z.string().optional().describe("Proxy URL to use for the session"),
   userAgent: z.string().optional().describe("User agent string to use for the session"),
-  sessionContext: SessionContext.optional().describe("Session context data to be used in the created session"),
+  sessionContext: SessionContextSchema.optional().describe("Session context data to be used in the created session"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
   blockAds: z.boolean().optional().describe("Flag to indicate if ads should be blocked in the session"),
   // Specific to hosted steel
@@ -113,6 +98,15 @@ const SessionStreamResponse = z.string().describe("HTML content for the session 
 
 const MultipleSessions = z.array(SessionDetails);
 
+export type SessionsScrapeRequestBody = Omit<ScrapeRequestBody, "url">;
+export type SessionsScrapeRequest = FastifyRequest<{ Body: SessionsScrapeRequestBody }>;
+
+export type SessionsScreenshotRequestBody = Omit<ScreenshotRequestBody, "url">;
+export type SessionsScreenshotRequest = FastifyRequest<{ Body: SessionsScreenshotRequestBody }>;
+
+export type SessionsPDFRequestBody = Omit<PDFRequestBody, "url">;
+export type SessionsPDFRequest = FastifyRequest<{ Body: SessionsPDFRequestBody }>;
+
 export type RecordedEvents = z.infer<typeof RecordedEvents>;
 export type CreateSessionBody = z.infer<typeof CreateSession>;
 export type CreateSessionRequest = FastifyRequest<{ Body: CreateSessionBody }>;
@@ -126,7 +120,7 @@ export const browserSchemas = {
   CreateSession,
   SessionDetails,
   MultipleSessions,
-  SessionContext,
+  SessionContextSchema,
   RecordedEvents,
   ReleaseSession,
   SessionStreamQuery,

@@ -2,8 +2,8 @@ import { CDPService } from "../../services/cdp/cdp.service";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema";
-import { env } from "../../env";
-import { CookieData } from "../../services/cdp/plugins/session/types";
+import { CookieData } from "../../services/context/types";
+import { getUrl, getBaseUrl } from "../../utils/url";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -87,10 +87,10 @@ export const handleGetSessionDetails = async (
       eventCount: 0,
       timeout: 0,
       creditsUsed: 0,
-      websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
-      debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
-      debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
-      sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
+      websocketUrl: getBaseUrl("ws"),
+      debugUrl: getUrl("v1/sessions/debug"),
+      debuggerUrl: getUrl("v1/devtools/inspector.html"),
+      sessionViewerUrl: getBaseUrl(),
       userAgent: "",
       isSelenium: false,
       proxy: "",
@@ -128,7 +128,7 @@ export const handleGetSessionStream = async (
   const singlePageMode = !!(pageId || pageIndex);
 
   // Construct WebSocket URL with page parameters if present
-  let wsUrl = `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/cast`;
+  let wsUrl = getUrl("v1/sessions/cast", "ws");
   if (pageId) {
     wsUrl += `?pageId=${encodeURIComponent(pageId)}`;
   } else if (pageIndex) {

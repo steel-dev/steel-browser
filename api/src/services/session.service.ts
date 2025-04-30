@@ -10,10 +10,11 @@ import { SessionDetails } from "../modules/sessions/sessions.schema";
 import { BrowserLauncherOptions } from "../types";
 import { ProxyServer } from "../utils/proxy";
 import { CDPService } from "./cdp/cdp.service";
-import { CookieData } from "./cdp/plugins/session/types";
+import { CookieData } from "./context/types";
 import { FileService } from "./file.service";
 import { SeleniumService } from "./selenium.service";
 import { mkdir } from "fs/promises";
+import { getUrl, getBaseUrl } from "../utils/url";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -32,10 +33,10 @@ const sessionStats = {
 
 const defaultSession = {
   status: "idle" as SessionDetails["status"],
-  websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
-  debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
-  debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
-  sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
+  websocketUrl: getBaseUrl("ws"),
+  debugUrl: getUrl("v1/sessions/debug"),
+  debuggerUrl: getUrl("v1/devtools/inspector.html"),
+  sessionViewerUrl: getBaseUrl(),
   dimensions: { width: 1920, height: 1080 },
   userAgent: "",
   isSelenium: false,
@@ -196,10 +197,10 @@ export class SessionService {
       await this.cdpService.startNewSession(browserLauncherOptions);
 
       Object.assign(this.activeSession, {
-        websocketUrl: `ws://${env.DOMAIN ?? env.HOST}:${env.PORT}/`,
-        debugUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/sessions/debug`,
-        debuggerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}/v1/devtools/inspector.html`,
-        sessionViewerUrl: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
+        websocketUrl: getBaseUrl("ws"),
+        debugUrl: getUrl("v1/sessions/debug"),
+        debuggerUrl: getUrl("v1/devtools/inspector.html"),
+        sessionViewerUrl: getBaseUrl(),
         userAgent: this.cdpService.getUserAgent(),
       });
     }

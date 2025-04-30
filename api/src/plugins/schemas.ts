@@ -9,8 +9,8 @@ import browserSchemas from "../modules/sessions/sessions.schema";
 import seleniumSchemas from "../modules/selenium/selenium.schema";
 import scalarTheme from "./scalar-theme";
 import { buildJsonSchemas } from "../utils/schema";
-import { env } from "../env";
 import filesSchemas from "../modules/files/files.schema";
+import { getBaseUrl } from "../utils/url";
 
 const SCHEMAS = {
   ...actionSchemas,
@@ -36,7 +36,7 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
       },
       servers: [
         {
-          url: `http://${env.DOMAIN ?? env.HOST}:${env.PORT}`,
+          url: getBaseUrl(),
           description: "Local server",
         },
       ],
