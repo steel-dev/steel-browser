@@ -239,11 +239,15 @@ export class FileService {
 
   public async deleteFile({ sessionId, filePath }: { sessionId: string; filePath: string }): Promise<void> {
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
-    if (!(await this.exists(filePath))) {
-      throw new Error(`File not found: ${filePath}`);
+
+    const safeFilePath = this.getSafeFilePath(filePath);
+
+    if (!(await this.exists(safeFilePath))) {
+      throw new Error(`File not found: ${safeFilePath}`);
     }
-    await fs.promises.unlink(filePath);
-    this.db.delete(filePath);
+
+    await fs.promises.unlink(safeFilePath);
+    this.db.delete(safeFilePath);
 
     return;
   }
