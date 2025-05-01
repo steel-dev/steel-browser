@@ -4,7 +4,7 @@ import { FileService } from "../services/file.service";
 
 const fileStoragePlugin: FastifyPluginAsync = async (fastify, _options) => {
   fastify.log.info("Registering file service");
-  const fileService = new FileService({}, fastify.log);
+  const fileService = new FileService();
   fastify.decorate("fileService", fileService);
 };
 
