@@ -29,6 +29,20 @@ async function routes(server: FastifyInstance) {
     ) => filesController.handleFileUpload(server, request, reply),
   );
 
+  server.head(
+    "/sessions/:sessionId/files/*",
+    {
+      schema: {
+        operationId: "head_file",
+        summary: "Head a file",
+        description: "Head a file from a session",
+        tags: ["Files"],
+      },
+    },
+    async (request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>, reply) =>
+      filesController.handleFileHead(server, request, reply),
+  );
+
   server.get(
     "/sessions/:sessionId/files/*",
     {

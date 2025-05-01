@@ -138,6 +138,27 @@ export class FilesController {
     }
   }
 
+  async handleFileHead(
+    server: FastifyInstance,
+    request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>,
+    reply: FastifyReply,
+  ) {
+    const { size, lastModified } = await this.fileService.getFile({
+      sessionId: request.params.sessionId,
+      filePath: request.params["*"],
+    });
+
+    const name = request.params["*"].split("/").pop() || "downloaded-file";
+
+    reply
+      .header("Content-Length", size)
+      .header("Last-Modified", lastModified.toISOString())
+      .header("Content-Type", mime.lookup(request.params["*"]) || "application/octet-stream")
+      .header("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`);
+
+    return reply.code(200).send();
+  }
+
   async handleFileList(
     server: FastifyInstance,
     request: FastifyRequest<{

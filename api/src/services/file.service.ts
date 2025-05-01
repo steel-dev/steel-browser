@@ -202,16 +202,7 @@ export class FileService {
     }
 
     const file = this.db.get(safeFilePath);
-    // Increase buffer size to 64KB for better handling of larger files
-    const stream = fs.createReadStream(safeFilePath, {
-      highWaterMark: 64 * 1024, // 64KB buffer instead of default 16KB
-    });
-
-    // Add error handler to avoid unhandled errors
-    stream.on("error", (err) => {
-      console.error(`Error reading file stream: ${err.message}`);
-      // The stream will emit the error to consumers
-    });
+    const stream = fs.createReadStream(safeFilePath);
 
     if (!file) {
       return {
@@ -225,6 +216,19 @@ export class FileService {
       stream,
       ...file,
     };
+  }
+
+  public async getFile({ sessionId, filePath }: { sessionId: string; filePath: string }): Promise<File> {
+    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    const safeFilePath = this.getSafeFilePath(filePath);
+    if (!(await this.exists(safeFilePath))) {
+      throw new Error(`File not found: ${safeFilePath}`);
+    }
+    const file = this.db.get(safeFilePath)!;
+    if (!file) {
+      throw new Error(`File not found: ${safeFilePath}`);
+    }
+    return file;
   }
 
   public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ path: string } & File>> {
