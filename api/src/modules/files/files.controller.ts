@@ -184,7 +184,7 @@ export class FilesController {
     reply: FastifyReply,
   ) {
     try {
-      await this.fileService.cleanupFiles({ sessionId: request.params.sessionId });
+      await this.fileService.cleanupFiles();
       return reply.code(204).send();
     } catch (e: unknown) {
       const error = getErrors(e);
@@ -192,5 +192,3 @@ export class FilesController {
     }
   }
 }
-
-export const filesController = new FilesController(new FileService());

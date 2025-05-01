@@ -179,6 +179,8 @@ export class SessionService {
       extra,
     };
 
+    await this.fileService.cleanupFiles();
+
     if (isSelenium) {
       await this.cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
@@ -219,9 +221,9 @@ export class SessionService {
       await this.cdpService.endSession();
     }
 
-    await this.fileService.cleanupFiles({ sessionId: this.activeSession.id });
-
     const releasedSession = this.activeSession;
+
+    await this.fileService.cleanupFiles();
 
     await this.resetSessionInfo({
       id: uuidv4(),

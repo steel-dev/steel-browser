@@ -1,8 +1,11 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { $ref } from "../../plugins/schemas";
-import { filesController } from "./files.controller";
+import { FileService } from "../../services/file.service";
+import { FilesController } from "./files.controller";
 
 async function routes(server: FastifyInstance) {
+  const filesController = new FilesController(FileService.getInstance());
+
   server.post(
     "/sessions/:sessionId/files/*",
     {

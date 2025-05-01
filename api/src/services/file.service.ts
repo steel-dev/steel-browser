@@ -20,12 +20,19 @@ export class FileService {
   private baseFilesPath: string;
   private fileWatcher: FSWatcher | null = null;
   private processingFiles: Set<string> = new Set();
-
-  constructor() {
+  private static instance: FileService | null = null;
+  private constructor() {
     this.db = new Map();
     this.baseFilesPath = env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
     // this.initFileWatcher();
+  }
+
+  public static getInstance() {
+    if (!FileService.instance) {
+      FileService.instance = new FileService();
+    }
+    return FileService.instance;
   }
 
   // private initFileWatcher() {
@@ -150,13 +157,15 @@ export class FileService {
     filePath: string;
     stream: Readable;
   }): Promise<File & { path: string }> {
+    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+
     const safeFilePath = this.addTimestampToFilePath(this.getSafeFilePath(filePath));
 
     await fs.promises.writeFile(safeFilePath, stream);
 
     const file: File = {
-      size: (await fs.promises.stat(filePath)).size,
-      lastModified: (await fs.promises.stat(filePath)).mtime,
+      size: (await fs.promises.stat(safeFilePath)).size,
+      lastModified: (await fs.promises.stat(safeFilePath)).mtime,
     };
 
     this.db.set(safeFilePath, file);
@@ -186,18 +195,29 @@ export class FileService {
   // }
 
   public async downloadFile({ filePath }: { filePath: string }): Promise<{ stream: Readable } & File> {
-    if (!(await this.exists(filePath))) {
-      throw new Error(`File not found: ${filePath}`);
+    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    const safeFilePath = this.getSafeFilePath(filePath);
+    if (!(await this.exists(safeFilePath))) {
+      throw new Error(`File not found: ${safeFilePath}`);
     }
 
-    const file = this.db.get(filePath);
-    const stream = fs.createReadStream(filePath);
+    const file = this.db.get(safeFilePath);
+    // Increase buffer size to 64KB for better handling of larger files
+    const stream = fs.createReadStream(safeFilePath, {
+      highWaterMark: 64 * 1024, // 64KB buffer instead of default 16KB
+    });
+
+    // Add error handler to avoid unhandled errors
+    stream.on("error", (err) => {
+      console.error(`Error reading file stream: ${err.message}`);
+      // The stream will emit the error to consumers
+    });
 
     if (!file) {
       return {
         stream,
-        size: (await fs.promises.stat(filePath)).size,
-        lastModified: (await fs.promises.stat(filePath)).mtime,
+        size: (await fs.promises.stat(safeFilePath)).size,
+        lastModified: (await fs.promises.stat(safeFilePath)).mtime,
       };
     }
 
@@ -208,6 +228,7 @@ export class FileService {
   }
 
   public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ path: string } & File>> {
+    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
     return Array.from(this.db.entries())
       .map(([path, file]) => ({
         path,
@@ -217,6 +238,7 @@ export class FileService {
   }
 
   public async deleteFile({ sessionId, filePath }: { sessionId: string; filePath: string }): Promise<void> {
+    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
     if (!(await this.exists(filePath))) {
       throw new Error(`File not found: ${filePath}`);
     }
@@ -226,13 +248,11 @@ export class FileService {
     return;
   }
 
-  public async cleanupFiles({ sessionId }: { sessionId: string }): Promise<void> {
-    await fs.promises.rm(this.baseFilesPath, { recursive: true, force: true });
-    await fs.promises.mkdir(this.baseFilesPath);
-    this.db.clear();
+  public async cleanupFiles(): Promise<void> {
+    await fs.promises.rm(this.baseFilesPath, { recursive: true });
+    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    this.db = new Map();
 
     return;
   }
 }
-
-export const fileService = new FileService();

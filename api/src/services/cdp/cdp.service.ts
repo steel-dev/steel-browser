@@ -20,12 +20,13 @@ import { loadFingerprintScript } from "../../scripts";
 import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types";
 import { isAdRequest } from "../../utils/ads";
 import { filterHeaders, getChromeExecutablePath } from "../../utils/browser";
+import { extractStorageForPage, groupSessionStorageByOrigin, handleFrameNavigated } from "../../utils/context";
 import { getExtensionPaths } from "../../utils/extensions";
 import { CDPLifecycle } from "../cdp-lifecycle.service";
-import { PluginManager } from "./plugins/core/plugin-manager";
-import { SessionData } from "../context/types";
 import { ChromeContextService } from "../context/chrome-context.service";
-import { extractStorageForPage, handleFrameNavigated, groupSessionStorageByOrigin } from "../../utils/context";
+import { SessionData } from "../context/types";
+import { FileService } from "../file.service";
+import { PluginManager } from "./plugins/core/plugin-manager";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -45,8 +46,9 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
+  private fileService: FileService;
 
-  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
+  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger, fileService: FileService) {
     super();
     this.logger = logger;
     const { keepAlive = true } = config;
@@ -84,6 +86,7 @@ export class CDPService extends EventEmitter {
     };
 
     this.pluginManager = new PluginManager(this, logger);
+    this.fileService = fileService;
   }
 
   private removeAllHandlers() {
@@ -421,6 +424,7 @@ export class CDPService extends EventEmitter {
         await this.browserInstance.close();
         await this.browserInstance.process()?.kill();
         await CDPLifecycle.shutdown(this.currentSessionConfig);
+
         this.fingerprintData = null;
         this.currentSessionConfig = null;
         this.browserInstance = null;
