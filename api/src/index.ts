@@ -8,30 +8,31 @@ import { MB } from "./utils/size.js";
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-const serverInstance = fastify({
+export const server = fastify({
   logger: loggingConfig[process.env.NODE_ENV ?? "development"] ?? true,
   trustProxy: true,
   bodyLimit: 100 * MB,
   disableRequestLogging: true,
 });
 
-serverInstance.register(fastifySensible);
-serverInstance.register(fastifyCors, { origin: true });
-serverInstance.register(steelBrowserPlugin, {
-  fileStorage: {
-    maxSizePerSession: 100 * MB,
-  }
-});
+const setupServer = async () => {
+  await server.register(fastifySensible);
+  await server.register(fastifyCors, { origin: true });
+  await server.register(steelBrowserPlugin, {
+    fileStorage: {
+      maxSizePerSession: 100 * MB,
+    }
+  });
+};
 
 const startServer = async () => {
   try {
-    await serverInstance.listen({ port: PORT, host: HOST });
+    await setupServer();
+    await server.listen({ port: PORT, host: HOST });
   } catch (err) {
-    serverInstance.log.error(err);
+    server.log.error(err);
     process.exit(1);
   }
 };
 
 startServer();
-
-export const server = serverInstance;
