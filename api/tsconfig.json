@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "esModuleInterop": true,
-    "module": "commonjs",
+    "allowSyntheticDefaultImports": true,
+    "module": "ESNext",
     "target": "ESNext",
     "moduleResolution": "node",
     "skipLibCheck": true,
@@ -9,7 +10,9 @@
     "outDir": "build",
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
-    "strict": true
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true
   },
   "include": ["src"],
   "files": ["./src/types/fastify.d.ts", "src/services/cdp/plugins/pptr-extensions.d.ts"]

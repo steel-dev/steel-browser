@@ -1,7 +1,7 @@
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema";
-import { SessionContextSchema } from "../../services/context/types";
+import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema.js";
+import { SessionContextSchema } from "../../services/context/types.js";
 
 const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),

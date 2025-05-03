@@ -1,2 +1,2 @@
-export * from "./base-plugin";
-export * from "./plugin-manager";
+export * from "./base-plugin.js";
+export * from "./plugin-manager.js";

@@ -7,9 +7,9 @@ import {
   handleGetSessions,
   handleGetSessionStream,
   handleGetSessionLiveDetails,
-} from "./sessions.controller";
-import { handleScrape, handleScreenshot, handlePDF } from "../actions/actions.controller";
-import { $ref } from "../../plugins/schemas";
+} from "./sessions.controller.js";
+import { handleScrape, handleScreenshot, handlePDF } from "../actions/actions.controller.js";
+import { $ref } from "../../plugins/schemas.js";
 import {
   CreateSessionRequest,
   RecordedEvents,
@@ -17,8 +17,8 @@ import {
   SessionsScrapeRequest,
   SessionsScreenshotRequest,
   SessionsPDFRequest,
-} from "./sessions.schema";
-import { EmitEvent } from "../../types/enums";
+} from "./sessions.schema.js";
+import { EmitEvent } from "../../types/enums.js";
 
 async function routes(server: FastifyInstance) {
   server.get(

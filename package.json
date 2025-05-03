@@ -4,6 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "author": "",
+  "type": "module",
   "workspaces": [
     "api",
     "ui",
@@ -25,6 +26,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "fastify": "^5.2.1"
   }
 }

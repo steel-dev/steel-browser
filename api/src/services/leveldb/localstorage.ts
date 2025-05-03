@@ -3,7 +3,7 @@ import path from "path";
 import os from "os";
 import { Level } from "level";
 import iconv from "iconv-lite";
-import { copyDirectory } from "../../utils/leveldb";
+import { copyDirectory } from "../../utils/leveldb.js";
 
 /**
  * Decode a Chrome-encoded string.

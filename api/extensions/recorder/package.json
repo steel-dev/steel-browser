@@ -2,6 +2,7 @@
   "name": "steel-recording-extension",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "dependencies": {
     "rrweb": "^2.0.0-alpha.4",
     "@rrweb/packer": "^2.0.0-alpha.4"

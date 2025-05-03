@@ -1,11 +1,11 @@
 import { type FastifyInstance, type FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import WebSocket from "ws";
-import { EmitEvent } from "../../types/enums";
-import { handleCastSession } from "./casting.handler";
+import { WebSocketServer, WebSocket } from 'ws';
+import { EmitEvent } from "../../types/enums.js";
+import { handleCastSession } from "./casting.handler.js";
 
 // WebSocket server instance
-const wss = new WebSocket.Server({ noServer: true });
+const wss = new WebSocketServer({ noServer: true });
 
 // WebSocket handlers
 function handleLogsWebSocket(fastify: FastifyInstance, ws: WebSocket) {

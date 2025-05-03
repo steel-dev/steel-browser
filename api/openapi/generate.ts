@@ -1,6 +1,6 @@
 import { writeFileSync } from "fs";
 import { server } from "../src";
-import { env } from "../src/env";
+import { env } from "../src/env.js";
 
 interface OpenAPIServer {
   url: string;

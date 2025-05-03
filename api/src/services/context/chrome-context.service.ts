@@ -1,9 +1,9 @@
 import { EventEmitter } from "events";
 import { FastifyBaseLogger } from "fastify";
 import path from "path";
-import { SessionData } from "./types";
-import { ChromeLocalStorageReader } from "../leveldb/localstorage";
-import { ChromeSessionStorageReader } from "../leveldb/sessionstorage";
+import { SessionData } from "./types.js";
+import { ChromeLocalStorageReader } from "../leveldb/localstorage.js";
+import { ChromeSessionStorageReader } from "../leveldb/sessionstorage.js";
 
 export class ChromeContextService extends EventEmitter {
   private logger: FastifyBaseLogger;

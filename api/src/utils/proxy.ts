@@ -1,4 +1,4 @@
-import { SessionService } from "../services/session.service";
+import { SessionService } from "../services/session.service.js";
 import { Server } from "proxy-chain";
 
 export class ProxyServer extends Server {

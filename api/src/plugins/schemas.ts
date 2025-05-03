@@ -2,15 +2,15 @@ import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import fastifySwagger from "@fastify/swagger";
 import fastifyScalar from "@scalar/fastify-api-reference";
-import { titleCase } from "../utils/text";
-import actionSchemas from "../modules/actions/actions.schema";
-import cdpSchemas from "../modules/cdp/cdp.schemas";
-import browserSchemas from "../modules/sessions/sessions.schema";
-import seleniumSchemas from "../modules/selenium/selenium.schema";
-import scalarTheme from "./scalar-theme";
-import { buildJsonSchemas } from "../utils/schema";
-import filesSchemas from "../modules/files/files.schema";
-import { getBaseUrl } from "../utils/url";
+import { titleCase } from "../utils/text.js";
+import actionSchemas from "../modules/actions/actions.schema.js";
+import cdpSchemas from "../modules/cdp/cdp.schemas.js";
+import browserSchemas from "../modules/sessions/sessions.schema.js";
+import seleniumSchemas from "../modules/selenium/selenium.schema.js";
+import scalarTheme from "./scalar-theme.js";
+import { buildJsonSchemas } from "../utils/schema.js";
+import filesSchemas from "../modules/files/files.schema.js";
+import { getBaseUrl } from "../utils/url.js";
 
 const SCHEMAS = {
   ...actionSchemas,

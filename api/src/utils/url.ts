@@ -1,4 +1,4 @@
-import { env } from "../env";
+import { env } from "../env.js";
 
 /**
  * Returns the appropriate protocol based on the protocol type and HTTPS setting

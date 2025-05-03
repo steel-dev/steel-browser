@@ -1,5 +1,5 @@
 import { FastifyServerOptions } from "fastify";
-import { env } from "./env";
+import { env } from "./env.js";
 import stringify from "json-stringify-safe";
 
 interface LoggingConfig {
