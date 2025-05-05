@@ -194,6 +194,8 @@ export class SessionService {
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
       });
 
+      this.fileService.setCurrentSessionId(sessionInfo.id);
+
       return this.activeSession;
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
@@ -205,6 +207,8 @@ export class SessionService {
         sessionViewerUrl: getBaseUrl(),
         userAgent: this.cdpService.getUserAgent(),
       });
+
+      this.fileService.setCurrentSessionId(sessionInfo.id);
     }
 
     return this.activeSession;
@@ -224,6 +228,8 @@ export class SessionService {
     const releasedSession = this.activeSession;
 
     await this.fileService.cleanupFiles();
+
+    this.fileService.setCurrentSessionId(null);
 
     await this.resetSessionInfo({
       id: uuidv4(),

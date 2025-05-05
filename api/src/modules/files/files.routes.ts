@@ -118,6 +118,20 @@ async function routes(server: FastifyInstance) {
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) =>
       filesController.handleFileDeleteAll(server, request, reply),
   );
+
+  server.get(
+    "/sessions/:sessionId/files.zip",
+    {
+      schema: {
+        operationId: "archive_files",
+        summary: "Archive files",
+        description: "Download all files from the session as a zip archive.",
+        tags: ["Files"],
+      },
+    },
+    async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) =>
+      filesController.handleFileArchive(server, request, reply),
+  );
 }
 
 export default routes;

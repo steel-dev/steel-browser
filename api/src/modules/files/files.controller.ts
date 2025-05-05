@@ -1,5 +1,7 @@
 import { MultipartFile } from "@fastify/multipart";
+import archiver from "archiver";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import * as fs from "fs";
 import http from "http";
 import https from "https";
 import mime from "mime-types";
@@ -8,11 +10,7 @@ import { FileService } from "../../services/file.service";
 import { getErrors } from "../../utils/errors";
 
 export class FilesController {
-  private fileService: FileService;
-
-  constructor(fileService: FileService) {
-    this.fileService = fileService;
-  }
+  constructor(private fileService: FileService) {}
 
   async handleFileUpload(
     server: FastifyInstance,
@@ -210,6 +208,68 @@ export class FilesController {
     } catch (e: unknown) {
       const error = getErrors(e);
       return reply.code(500).send({ success: false, message: error });
+    }
+  }
+
+  async handleFileArchive(
+    server: FastifyInstance,
+    request: FastifyRequest<{ Params: { sessionId: string } }>,
+    reply: FastifyReply,
+  ) {
+    const prebuiltArchivePath = this.fileService.getPrebuiltArchivePath();
+
+    const sessionId = this.fileService.getCurrentSessionId();
+
+    if (!sessionId || !prebuiltArchivePath?.includes(sessionId)) {
+      return reply.code(404).send({ success: false, message: "Archive not found" });
+    }
+
+    try {
+      if (prebuiltArchivePath) {
+        try {
+          const stats = await fs.promises.stat(prebuiltArchivePath);
+          if (stats.isFile()) {
+            server.log.info(`Serving prebuilt archive: ${prebuiltArchivePath}`);
+            const stream = fs.createReadStream(prebuiltArchivePath);
+            reply.header("Content-Type", "application/zip");
+            reply.header("Content-Disposition", `attachment; filename="files.zip"`);
+            reply.header("Content-Length", stats.size);
+            reply.header("Last-Modified", stats.mtime.toUTCString());
+            return reply.send(stream);
+          } else {
+            server.log.warn(`Prebuilt archive path exists but is not a file: ${prebuiltArchivePath}`);
+          }
+        } catch (err: any) {
+          if (err.code === "ENOENT") {
+            server.log.info("Prebuilt archive not found, generating empty archive.");
+          } else {
+            server.log.error(`Error accessing prebuilt archive ${prebuiltArchivePath}:`, err);
+          }
+        }
+      } else {
+        server.log.info(
+          "Prebuilt archive path is not available (likely still generating or error occurred), serving empty archive.",
+        );
+      }
+
+      server.log.info("Sending empty archive.");
+      reply.header("Content-Type", "application/zip");
+      reply.header("Content-Disposition", `attachment; filename="files-archive-empty.zip"`);
+      const emptyArchive = archiver("zip", { zlib: { level: 9 } }); // Use level 9 for consistency
+
+      emptyArchive.pipe(reply.raw);
+
+      await emptyArchive.finalize();
+      return;
+    } catch (err: any) {
+      server.log.error("Error during handleFileArchive:", err);
+      if (!reply.sent) {
+        try {
+          reply.code(500).send({ message: "Failed to process archive request" });
+        } catch (sendError) {
+          server.log.error("Error sending 500 response after archive handling error:", sendError);
+        }
+      }
     }
   }
 }
