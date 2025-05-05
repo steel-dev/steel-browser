@@ -123,14 +123,14 @@ async function routes(server: FastifyInstance) {
     "/sessions/:sessionId/files.zip",
     {
       schema: {
-        operationId: "archive_files",
-        summary: "Archive files",
+        operationId: "download_archive",
+        summary: "Download archive",
         description: "Download all files from the session as a zip archive.",
         tags: ["Files"],
       },
     },
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) =>
-      filesController.handleFileArchive(server, request, reply),
+      filesController.handleDownloadArchive(server, request, reply),
   );
 }
 

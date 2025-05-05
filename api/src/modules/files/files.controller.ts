@@ -211,7 +211,7 @@ export class FilesController {
     }
   }
 
-  async handleFileArchive(
+  async handleDownloadArchive(
     server: FastifyInstance,
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
