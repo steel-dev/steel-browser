@@ -2,6 +2,7 @@ import archiver from "archiver";
 import chokidar, { FSWatcher } from "chokidar";
 import fs from "fs";
 import { debounce, DebouncedFunc } from "lodash";
+import { tmpdir } from "os";
 import path, { resolve } from "path";
 import { Readable } from "stream";
 import { env } from "../env";
@@ -27,7 +28,7 @@ export class FileService {
   // -----------------------
 
   private constructor() {
-    this.baseFilesPath = env.NODE_ENV === "development" ? path.join(process.cwd(), "/files") : "/files";
+    this.baseFilesPath = env.NODE_ENV === "development" ? path.join(tmpdir(), "/files") : "/files";
     this.prebuiltArchiveDir = "/tmp/.steel";
 
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
@@ -82,7 +83,7 @@ export class FileService {
         stabilityThreshold: 500,
         pollInterval: 100,
       },
-      depth: 0,
+      depth: undefined,
     });
 
     console.log(`[FileService] File watcher initialized for ${this.baseFilesPath}`);
@@ -107,17 +108,6 @@ export class FileService {
     return resolvedPath;
   }
 
-  private addTimestampToFilePath(filePath: string): string {
-    const dir = path.dirname(filePath);
-    const ext = path.extname(filePath);
-    const baseName = path.basename(filePath, ext);
-
-    const timestamp = Date.now();
-    const newFileName = `${baseName}-${timestamp}${ext}`;
-
-    return path.join(dir, newFileName);
-  }
-
   private async exists(filePath: string): Promise<boolean> {
     try {
       await fs.promises.stat(filePath);
@@ -138,28 +128,27 @@ export class FileService {
   }): Promise<File & { path: string }> {
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
 
-    const safeFilePathWithoutTs = this.getSafeFilePath(filePath);
-    const finalSafeFilePath = this.addTimestampToFilePath(safeFilePathWithoutTs);
+    const safeFilePath = this.getSafeFilePath(filePath);
 
     try {
-      await fs.promises.writeFile(finalSafeFilePath, stream);
-      const stats = await fs.promises.stat(finalSafeFilePath);
+      await fs.promises.writeFile(safeFilePath, stream);
+      const stats = await fs.promises.stat(safeFilePath);
       const file: File = {
         size: stats.size,
         lastModified: stats.mtime,
       };
-      console.log(`File saved: ${finalSafeFilePath}, Size: ${file.size}`);
+      console.log(`File saved: ${safeFilePath}, Size: ${file.size}`);
       this.debouncedCreateArchive();
-      return { ...file, path: finalSafeFilePath };
+      return { ...file, path: safeFilePath };
     } catch (error) {
-      console.error(`[FileService] Error saving file ${finalSafeFilePath}:`, error);
+      console.error(`[FileService] Error saving file ${safeFilePath}:`, error);
 
       try {
-        if (await this.exists(finalSafeFilePath)) {
-          await fs.promises.unlink(finalSafeFilePath);
+        if (await this.exists(safeFilePath)) {
+          await fs.promises.unlink(safeFilePath);
         }
       } catch (cleanupErr) {
-        console.error(`[FileService] Failed to cleanup file ${finalSafeFilePath} after save error:`, cleanupErr);
+        console.error(`[FileService] Failed to cleanup file ${safeFilePath} after save error:`, cleanupErr);
       }
       throw error;
     }
