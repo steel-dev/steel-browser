@@ -1,6 +1,5 @@
 services:
   api:
-    platform: linux/amd64
     build:
       context: .
       dockerfile: ./api/Dockerfile
