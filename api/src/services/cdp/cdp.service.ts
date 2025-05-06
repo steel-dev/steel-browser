@@ -26,6 +26,7 @@ import { ChromeContextService } from "../context/chrome-context.service.js";
 import { SessionData } from "../context/types.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { CDPLifecycle } from "../cdp-lifecycle.service.js";
+import { FileService } from "../file.service.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -45,11 +46,12 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
+  private fileService: FileService;
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
 
-  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
+  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger, fileService: FileService) {
     super();
     this.logger = logger;
     const { keepAlive = true } = config;
@@ -87,6 +89,7 @@ export class CDPService extends EventEmitter {
     };
 
     this.pluginManager = new PluginManager(this, logger);
+    this.fileService = fileService;
   }
 
   public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
@@ -418,6 +421,7 @@ export class CDPService extends EventEmitter {
 
   private async shutdownHook() {
     await CDPLifecycle.shutdown(this.currentSessionConfig); // backwards compat
+    await this.fileService.archiveAndClearSessionFiles();
     for (const mutator of this.shutdownMutators) {
       await mutator(this.currentSessionConfig);
     }
@@ -438,6 +442,7 @@ export class CDPService extends EventEmitter {
         this.removeAllHandlers();
         await this.browserInstance.close();
         await this.browserInstance.process()?.kill();
+
         await this.shutdownHook();
         this.fingerprintData = null;
         this.currentSessionConfig = null;

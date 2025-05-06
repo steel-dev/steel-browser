@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { config } from "dotenv";
+import path from "path";
 
 config();
 

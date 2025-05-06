@@ -179,6 +179,8 @@ export class SessionService {
       extra,
     };
 
+    await this.fileService.archiveAndClearSessionFiles();
+
     if (isSelenium) {
       await this.cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
@@ -205,6 +207,9 @@ export class SessionService {
       });
     }
 
+    this.fileService.setCurrentSessionId(sessionInfo.id);
+    this.fileService.cleanupFiles();
+
     return this.activeSession;
   }
 
@@ -220,9 +225,11 @@ export class SessionService {
       await this.cdpService.endSession();
     }
 
-    await this.fileService.cleanupFiles({ sessionId: this.activeSession.id });
-
     const releasedSession = this.activeSession;
+
+    // Blocking
+    await this.fileService.archiveAndClearSessionFiles();
+    this.fileService.setCurrentSessionId(null);
 
     await this.resetSessionInfo({
       id: uuidv4(),
@@ -230,6 +237,8 @@ export class SessionService {
     });
 
     this.pastSessions.push(releasedSession);
+
+    this.fileService.cleanupFiles();
 
     return releasedSession;
   }
