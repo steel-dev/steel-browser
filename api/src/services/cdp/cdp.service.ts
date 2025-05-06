@@ -497,7 +497,7 @@ export class CDPService extends EventEmitter {
     const fingerprintGen = new FingerprintGenerator({
       devices: ["desktop"],
       operatingSystems: ["linux"],
-      browsers: [{ name: "chrome", minVersion: 128 }],
+      browsers: [{ name: "chrome", minVersion: 130 }],
       locales: ["en-US", "en"],
       screen: {
         minWidth: this.launchConfig.dimensions?.width ?? 1920,

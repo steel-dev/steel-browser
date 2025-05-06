@@ -215,6 +215,7 @@ export class SessionService {
 
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
+      await this.cdpService.launch();
     } else {
       await this.cdpService.endSession();
     }
