@@ -22,7 +22,7 @@ export class FileService {
   private prebuiltArchiveDir: string;
   private prebuiltArchivePath: string | null = null;
   private isArchiving: boolean = false;
-  private archiveDebounceTime = 1000; // 1 seconds debounce time
+  private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
   private currentSessionId: string | null = null;
   // -----------------------
