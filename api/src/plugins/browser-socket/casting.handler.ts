@@ -3,10 +3,10 @@ import puppeteer, { Browser, CDPSession, Page } from "puppeteer-core";
 import { Duplex } from "stream";
 import WebSocket from "ws";
 
-import { SessionService } from "../../services/session.service";
-import { env } from "../../env";
-import { PageInfo, MouseEvent, NavigationEvent, KeyEvent, CloseTabEvent } from "../../types/casting";
-import { getPageFavicon, getPageTitle, navigatePage } from "../../utils/casting";
+import { SessionService } from "../../services/session.service.js";
+import { env } from "../../env.js";
+import { PageInfo, MouseEvent, NavigationEvent, KeyEvent, CloseTabEvent } from "../../types/casting.js";
+import { getPageFavicon, getPageTitle, navigatePage } from "../../utils/casting.js";
 
 export async function handleCastSession(
   request: IncomingMessage,

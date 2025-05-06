@@ -1,5 +1,5 @@
-import { BrowserEventType } from "./enums";
-import { CookieData, IndexedDBDatabase, LocalStorageData, SessionStorageData } from "../services/context/types";
+import { BrowserEventType } from "./enums.js";
+import { CookieData, IndexedDBDatabase, LocalStorageData, SessionStorageData } from "../services/context/types.js";
 
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;

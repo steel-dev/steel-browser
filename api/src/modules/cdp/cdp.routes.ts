@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
-import { $ref } from "../../plugins/schemas";
-import cdpSchemas from "./cdp.schemas";
+import { $ref } from "../../plugins/schemas.js";
+import cdpSchemas from "./cdp.schemas.js";
 
 async function routes(server: FastifyInstance) {
   server.get(

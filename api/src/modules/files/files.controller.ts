@@ -6,8 +6,8 @@ import http from "http";
 import https from "https";
 import mime from "mime-types";
 import { Readable } from "stream";
-import { FileService } from "../../services/file.service";
-import { getErrors } from "../../utils/errors";
+import { FileService } from "../../services/file.service.js";
+import { getErrors } from "../../utils/errors.js";
 
 export class FilesController {
   constructor(private fileService: FileService) {}

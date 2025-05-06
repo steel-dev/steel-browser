@@ -1,13 +1,13 @@
-import { CDPService } from "../../services/cdp/cdp.service";
+import { CDPService } from "../../services/cdp/cdp.service.js";
 import { FastifyReply } from "fastify";
-import { getErrors } from "../../utils/errors";
-import { PDFRequest, ScrapeRequest, ScreenshotRequest } from "./actions.schema";
-import { cleanHtml, getMarkdown, getReadabilityContent } from "../../utils/scrape";
-import { ScrapeFormat } from "../../types";
+import { getErrors } from "../../utils/errors.js";
+import { PDFRequest, ScrapeRequest, ScreenshotRequest } from "./actions.schema.js";
+import { cleanHtml, getMarkdown, getReadabilityContent } from "../../utils/scrape.js";
+import { ScrapeFormat } from "../../types/index.js";
 import { BrowserContext, Page } from "puppeteer-core";
-import { updateLog } from "../../utils/logging";
-import { getProxyServer } from "../../utils/proxy";
-import { SessionService } from "../../services/session.service";
+import { updateLog } from "../../utils/logging.js";
+import { getProxyServer } from "../../utils/proxy.js";
+import { SessionService } from "../../services/session.service.js";
 
 export const handleScrape = async (
   sessionService: SessionService,

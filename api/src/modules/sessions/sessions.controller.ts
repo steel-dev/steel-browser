@@ -1,9 +1,9 @@
-import { CDPService } from "../../services/cdp/cdp.service";
+import { CDPService } from "../../services/cdp/cdp.service.js";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { getErrors } from "../../utils/errors";
-import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema";
-import { CookieData } from "../../services/context/types";
-import { getUrl, getBaseUrl } from "../../utils/url";
+import { getErrors } from "../../utils/errors.js";
+import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
+import { CookieData } from "../../services/context/types.js";
+import { getUrl, getBaseUrl } from "../../utils/url.js";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,

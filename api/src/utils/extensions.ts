@@ -1,8 +1,9 @@
 import fs from "fs";
-import path from "path";
+import path, { dirname } from "path";
+import { fileURLToPath } from "url";
 
 export function getExtensionPaths(extensionNames: string[]): string[] {
-  const extensionsDir = path.join(__dirname, "..", "..", "extensions");
+  const extensionsDir = path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "extensions");
 
   if (!fs.existsSync(extensionsDir)) {
     console.warn("Extensions directory does not exist");

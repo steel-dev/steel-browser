@@ -4,6 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "author": "",
+  "type": "module",
   "workspaces": [
     "api",
     "ui",
@@ -27,7 +28,8 @@
   },
   "dependencies": {
     "@types/lodash": "^4.17.16",
+    "lodash": "^4.17.21",
     "husky": "^9.1.7",
-    "lodash": "^4.17.21"
+    "fastify": "^5.2.1"
   }
 }

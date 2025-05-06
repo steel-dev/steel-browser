@@ -48,13 +48,13 @@ verify_chrome() {
     log "Verifying Chrome installation..."
     
     # Check Chrome binary and version
-    if [ ! -f "/usr/bin/google-chrome-stable" ] && [ -z "$CHROME_EXECUTABLE_PATH" ]; then
-        log "ERROR: Chrome binary not found at /usr/bin/google-chrome-stable and CHROME_EXECUTABLE_PATH not set"
+    if [ ! -f "/usr/bin/chromium" ] && [ -z "$CHROME_EXECUTABLE_PATH" ]; then
+        log "ERROR: Chrome binary not found at /usr/bin/chromium and CHROME_EXECUTABLE_PATH not set"
         return 1
     fi
     
-    if [ -f "/usr/bin/google-chrome-stable" ]; then
-        chrome_version=$(google-chrome-stable --version 2>/dev/null || echo "unknown")
+    if [ -f "/usr/bin/chromium" ]; then
+        chrome_version=$(chromium --version 2>/dev/null || echo "unknown")
     elif [ -n "$CHROME_EXECUTABLE_PATH" ] && [ -f "$CHROME_EXECUTABLE_PATH" ]; then
         chrome_version=$("$CHROME_EXECUTABLE_PATH" --version 2>/dev/null || echo "unknown")
     else
@@ -63,12 +63,12 @@ verify_chrome() {
     log "Chrome version: $chrome_version"
     
     # Check ChromeDriver binary and version
-    if [ ! -f "/selenium/driver/chromedriver" ]; then
-        log "ERROR: ChromeDriver not found at /selenium/driver/chromedriver"
+    if [ ! -f "/usr/bin/chromedriver" ]; then
+        log "ERROR: ChromeDriver not found at /usr/bin/chromedriver"
         return 1
     fi
     
-    chromedriver_version=$(/selenium/driver/chromedriver --version 2>/dev/null || echo "unknown")
+    chromedriver_version=$(chromedriver --version 2>/dev/null || echo "unknown")
     log "ChromeDriver version: $chromedriver_version"
     
     log "Chrome environment configured successfully"

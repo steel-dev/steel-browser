@@ -1,9 +1,18 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { $ref } from "../../plugins/schemas";
 import { FileService } from "../../services/file.service";
 import { FilesController } from "./files.controller";
+import { $ref } from "../../plugins/schemas.js";
+import fastifyMultipart from "@fastify/multipart";
+import { MB } from "../../utils/size.js";
 
 async function routes(server: FastifyInstance) {
+  await server.register(fastifyMultipart, {
+    limits: {
+      fileSize: server.steelBrowserConfig.fileStorage?.maxSizePerSession ?? 100 * MB,
+    },
+    attachFieldsToBody: false,
+  });
+
   const filesController = new FilesController(FileService.getInstance());
 
   server.post(

@@ -5,7 +5,8 @@ import { debounce, DebouncedFunc } from "lodash";
 import { tmpdir } from "os";
 import path, { resolve } from "path";
 import { Readable } from "stream";
-import { env } from "../env";
+import { v4 as uuidv4 } from "uuid";
+import { env } from "../env.js";
 
 interface File {
   size: number;

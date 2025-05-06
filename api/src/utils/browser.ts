@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { Page } from "puppeteer-core";
-import { env } from "../env";
+import { env } from "../env.js";
 
 export const getChromeExecutablePath = () => {
   if (env.CHROME_EXECUTABLE_PATH) {
@@ -29,7 +29,7 @@ export const getChromeExecutablePath = () => {
     return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
   }
 
-  return "/usr/bin/google-chrome-stable";
+  return "/usr/bin/chromium";
 };
 
 export async function installMouseHelper(page: Page) {

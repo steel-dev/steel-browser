@@ -1,6 +1,6 @@
 import { Browser, Page } from "puppeteer-core";
-import { CDPService } from "../../cdp.service";
-import { BasePlugin } from "./base-plugin";
+import { CDPService } from "../../cdp.service.js";
+import { BasePlugin } from "./base-plugin.js";
 import { FastifyBaseLogger } from "fastify";
 
 export class PluginManager {

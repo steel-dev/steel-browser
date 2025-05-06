@@ -1,5 +1,5 @@
 import { Page } from "puppeteer-core";
-import { NavigationEvent } from "../types/casting";
+import { NavigationEvent } from "../types/casting.js";
 
 export const navigatePage = async (event: NavigationEvent["event"], targetPage: Page): Promise<void> => {
   if (event.action === "back") {

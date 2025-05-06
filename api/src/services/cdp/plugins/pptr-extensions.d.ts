@@ -1,4 +1,4 @@
-import { SessionManager } from "./session/session-manager";
+import { SessionManager } from "./session/session-manager.js";
 
 declare module "puppeteer-core" {
   interface Page {
