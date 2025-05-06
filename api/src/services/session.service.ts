@@ -208,6 +208,7 @@ export class SessionService {
     }
 
     this.fileService.setCurrentSessionId(sessionInfo.id);
+    this.fileService.cleanupFiles();
 
     return this.activeSession;
   }
@@ -235,6 +236,8 @@ export class SessionService {
     });
 
     this.pastSessions.push(releasedSession);
+
+    this.fileService.cleanupFiles();
 
     return releasedSession;
   }
