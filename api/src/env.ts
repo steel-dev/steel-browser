@@ -50,7 +50,6 @@ const envSchema = z.object({
     .transform((val) => val === "true" || val === "1")
     .default("false"),
   CHROME_ARGS: z.string().optional().default(""),
-  ARCHIVE_DIR: z.string().default(path.join("/tmp", ".steel")),
 });
 
 export const env = envSchema.parse(process.env);

@@ -424,6 +424,7 @@ export class CDPService extends EventEmitter {
         await this.browserInstance.close();
         await this.browserInstance.process()?.kill();
         await CDPLifecycle.shutdown(this.currentSessionConfig);
+        await this.fileService.archiveAndClearSessionFiles();
 
         this.fingerprintData = null;
         this.currentSessionConfig = null;
