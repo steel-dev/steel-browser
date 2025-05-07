@@ -129,6 +129,8 @@ export class FileService {
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
 
     const safeFilePath = this.getSafeFilePath(filePath);
+    const parentDir = path.dirname(safeFilePath);
+    await fs.promises.mkdir(parentDir, { recursive: true });
 
     try {
       await fs.promises.writeFile(safeFilePath, stream);
@@ -207,34 +209,41 @@ export class FileService {
   public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ path: string } & File>> {
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
 
-    try {
-      const filesAndDirs = await fs.promises.readdir(this.baseFilesPath, { withFileTypes: true });
-      const fileDetailsPromises = filesAndDirs.map(async (dirent) => {
-        const entryPath = path.join(this.baseFilesPath, dirent.name);
-        try {
-          if (dirent.isFile()) {
-            const stats = await fs.promises.stat(entryPath);
-            return {
-              path: entryPath,
-              size: stats.size,
-              lastModified: stats.mtime,
-            };
+    const allFiles: Array<{ path: string } & File> = [];
+
+    const collectFilesRecursively = async (currentDir: string) => {
+      try {
+        const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          const entryPath = path.join(currentDir, entry.name);
+          if (entry.isFile()) {
+            try {
+              const stats = await fs.promises.stat(entryPath);
+              // Store path relative to baseFilesPath
+              const relativePath = path.relative(this.baseFilesPath, entryPath);
+              allFiles.push({
+                path: relativePath,
+                size: stats.size,
+                lastModified: stats.mtime,
+              });
+            } catch (statError) {
+              console.error(`[FileService] Error getting stats for file ${entryPath} during listFiles:`, statError);
+            }
+          } else if (entry.isDirectory()) {
+            await collectFilesRecursively(entryPath);
           }
-        } catch (statError) {
-          console.error(`[FileService] Error getting stats for file ${entryPath} during listFiles:`, statError);
         }
-        return null;
-      });
+      } catch (readDirError) {
+        console.error(`[FileService] Error reading directory ${currentDir} during listFiles:`, readDirError);
+      }
+    };
 
-      const fileDetails = (await Promise.all(fileDetailsPromises)).filter(
-        (file): file is { path: string } & File => file !== null,
-      );
-
-      fileDetails.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
-
-      return fileDetails;
+    try {
+      await collectFilesRecursively(this.baseFilesPath);
+      allFiles.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+      return allFiles;
     } catch (error) {
-      console.error(`[FileService] Error reading directory ${this.baseFilesPath} for listFiles:`, error);
+      console.error(`[FileService] Error listing files recursively from ${this.baseFilesPath}:`, error);
       return [];
     }
   }
