@@ -219,10 +219,8 @@ export class FileService {
           if (entry.isFile()) {
             try {
               const stats = await fs.promises.stat(entryPath);
-              // Store path relative to baseFilesPath
-              const relativePath = path.relative(this.baseFilesPath, entryPath);
               allFiles.push({
-                path: relativePath,
+                path: entryPath,
                 size: stats.size,
                 lastModified: stats.mtime,
               });
