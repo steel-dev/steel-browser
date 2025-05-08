@@ -19,7 +19,6 @@ export const getPageTitle = async (page: Page): Promise<string> => {
   try {
     return await page.title();
   } catch (error) {
-    console.error("Error getting page title:", error);
     return "Untitled";
   }
 };
@@ -38,7 +37,6 @@ export const getPageFavicon = async (page: Page): Promise<string | null> => {
       return null;
     });
   } catch (error) {
-    console.error("Error getting page favicon:", error);
     return null;
   }
 };
