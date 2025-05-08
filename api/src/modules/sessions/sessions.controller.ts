@@ -173,9 +173,7 @@ export const handleGetSessionLiveDetails = async (
               }
               return null;
             });
-          } catch (error) {
-            console.error("Error getting page favicon:", error);
-          }
+          } catch (error) {}
 
           return {
             id: pageId,
