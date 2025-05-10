@@ -476,131 +476,144 @@ export class CDPService extends EventEmitter {
   }
 
   public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
-    const shouldReuseInstance =
-      this.browserInstance && this.isDefaultConfig(config) && this.isDefaultConfig(this.launchConfig);
-
-    if (shouldReuseInstance) {
-      this.logger.info("[CDPService] Reusing existing browser instance with default configuration.");
-      this.launchConfig = config || this.defaultLaunchConfig;
-      await this.refreshPrimaryPage();
-      return this.browserInstance!;
-    } else if (this.browserInstance) {
-      this.logger.info("[CDPService] Existing browser instance detected. Closing it before launching a new one.");
-      await this.shutdown();
-    }
-
-    this.launchConfig = config || this.defaultLaunchConfig;
-    this.logger.info("[CDPService] Launching new browser instance.");
-
-    const { options, userAgent, userDataDir } = this.launchConfig;
-
-    const fingerprintGen = new FingerprintGenerator({
-      devices: ["desktop"],
-      operatingSystems: ["linux"],
-      browsers: [{ name: "chrome", minVersion: 130 }],
-      locales: ["en-US", "en"],
-      screen: {
-        minWidth: this.launchConfig.dimensions?.width ?? 1920,
-        minHeight: this.launchConfig.dimensions?.height ?? 1080,
-        maxWidth: this.launchConfig.dimensions?.width ?? 1920,
-        maxHeight: this.launchConfig.dimensions?.height ?? 1080,
-      },
-    });
-
-    this.fingerprintData = await fingerprintGen.getFingerprint();
-
-    const timezone = config?.timezone || this.defaultTimezone;
-
-    await CDPLifecycle.launch(this.launchConfig); // backwards compat
-    for (const mutator of this.launchMutators) {
-      await mutator(this.launchConfig);
-    }
-    this.currentSessionConfig = this.launchConfig;
-
-    const defaultExtensions = ["recorder"];
-    const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
-
-    const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
-
-    const extensionArgs = extensionPaths.length
-      ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
-      : [];
-
-    const launchArgs = [
-      "--remote-allow-origins=*",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      this.launchConfig.dimensions ? "" : "--start-maximized",
-      `--remote-debugging-address=${env.HOST}`,
-      "--remote-debugging-port=9222",
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--use-angle=disabled",
-      "--disable-web-security",
-      "--disable-features=IsolateOrigins,site-per-process",
-      "--no-default-browser-check",
-      "--no-first-run",
-      "--disable-search-engine-choice-screen",
-      "--disable-blink-features=AutomationControlled",
-      `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
-      `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${this.launchConfig.dimensions?.height ?? 1080}`,
-      `--timezone=${timezone}`,
-      userAgent ? `--user-agent=${userAgent}` : "",
-      this.launchConfig.options.proxyUrl ? `--proxy-server=${this.launchConfig.options.proxyUrl}` : "",
-      "--webrtc-ip-handling-policy=disable_non_proxied_udp",
-      "--force-webrtc-ip-handling-policy",
-      ...extensionArgs,
-      ...(options.args || []),
-    ].filter(Boolean);
-
-    const finalLaunchOptions = {
-      ...options,
-      defaultViewport: this.launchConfig.dimensions ? this.launchConfig.dimensions : null,
-      args: launchArgs,
-      executablePath: this.chromeExecPath,
-      timeout: 0,
-      handleSIGINT: false,
-      handleSIGTERM: false,
-      env: {
-        TZ: timezone,
-      },
-      userDataDir,
-      // dumpio: true, //uncomment this line to see logs from chromium
-    };
-
-    this.logger.info(`[CDPService] Launch Options:`);
-    this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
-    this.browserInstance = (await puppeteer.launch(finalLaunchOptions)) as unknown as Browser;
-
-    // Notify plugins about browser launch
-    await this.pluginManager.onBrowserLaunch(this.browserInstance);
-
-    this.browserInstance.on("error", (err) => {
-      this.logger.error(`[CDPService] Browser error: ${err}`);
-      this.customEmit(EmitEvent.Log, {
-        type: BrowserEventType.BrowserError,
-        text: `BROWSER ERROR: ${err}`,
-        timestamp: new Date(),
+    try {
+      const launchTimeout = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Browser launch timeout after 30 seconds")), 30000);
       });
-    });
 
-    this.primaryPage = (await this.browserInstance.pages())[0];
+      const launchProcess = (async () => {
+        const shouldReuseInstance =
+          this.browserInstance && this.isDefaultConfig(config) && this.isDefaultConfig(this.launchConfig);
 
-    if (this.launchConfig?.sessionContext) {
-      this.logger.debug(`[CDPService] Page created with session context, injecting session context`);
-      await this.injectSessionContext(this.primaryPage, this.launchConfig.sessionContext);
+        if (shouldReuseInstance) {
+          this.logger.info("[CDPService] Reusing existing browser instance with default configuration.");
+          this.launchConfig = config || this.defaultLaunchConfig;
+          await this.refreshPrimaryPage();
+          return this.browserInstance!;
+        } else if (this.browserInstance) {
+          this.logger.info("[CDPService] Existing browser instance detected. Closing it before launching a new one.");
+          await this.shutdown();
+        }
+
+        this.launchConfig = config || this.defaultLaunchConfig;
+        this.logger.info("[CDPService] Launching new browser instance.");
+
+        const { options, userAgent, userDataDir } = this.launchConfig;
+
+        const fingerprintGen = new FingerprintGenerator({
+          devices: ["desktop"],
+          operatingSystems: ["linux"],
+          browsers: [{ name: "chrome", minVersion: 130 }],
+          locales: ["en-US", "en"],
+          screen: {
+            minWidth: this.launchConfig.dimensions?.width ?? 1920,
+            minHeight: this.launchConfig.dimensions?.height ?? 1080,
+            maxWidth: this.launchConfig.dimensions?.width ?? 1920,
+            maxHeight: this.launchConfig.dimensions?.height ?? 1080,
+          },
+        });
+
+        this.fingerprintData = await fingerprintGen.getFingerprint();
+
+        const timezone = config?.timezone || this.defaultTimezone;
+
+        await CDPLifecycle.launch(this.launchConfig); // backwards compat
+        for (const mutator of this.launchMutators) {
+          await mutator(this.launchConfig);
+        }
+        this.currentSessionConfig = this.launchConfig;
+
+        const defaultExtensions = ["recorder"];
+        const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
+
+        const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
+
+        const extensionArgs = extensionPaths.length
+          ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
+          : [];
+
+        const launchArgs = [
+          "--remote-allow-origins=*",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          this.launchConfig.dimensions ? "" : "--start-maximized",
+          `--remote-debugging-address=${env.HOST}`,
+          "--remote-debugging-port=9222",
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--use-angle=disabled",
+          "--disable-web-security",
+          "--disable-features=IsolateOrigins,site-per-process",
+          "--no-default-browser-check",
+          "--no-first-run",
+          "--disable-search-engine-choice-screen",
+          "--disable-blink-features=AutomationControlled",
+          `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
+          `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
+            this.launchConfig.dimensions?.height ?? 1080
+          }`,
+          `--timezone=${timezone}`,
+          userAgent ? `--user-agent=${userAgent}` : "",
+          this.launchConfig.options.proxyUrl ? `--proxy-server=${this.launchConfig.options.proxyUrl}` : "",
+          "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+          "--force-webrtc-ip-handling-policy",
+          ...extensionArgs,
+          ...(options.args || []),
+        ].filter(Boolean);
+
+        const finalLaunchOptions = {
+          ...options,
+          defaultViewport: this.launchConfig.dimensions ? this.launchConfig.dimensions : null,
+          args: launchArgs,
+          executablePath: this.chromeExecPath,
+          timeout: 0,
+          env: {
+            TZ: timezone,
+          },
+          userDataDir,
+          dumpio: true, // Enable Chrome process stdout and stderr
+        };
+
+        this.logger.info(`[CDPService] Launch Options:`);
+        this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
+        this.browserInstance = (await puppeteer.launch(finalLaunchOptions)) as unknown as Browser;
+
+        // Notify plugins about browser launch
+        await this.pluginManager.onBrowserLaunch(this.browserInstance);
+
+        this.browserInstance.on("error", (err) => {
+          this.logger.error(`[CDPService] Browser error: ${err}`);
+          this.customEmit(EmitEvent.Log, {
+            type: BrowserEventType.BrowserError,
+            text: `BROWSER ERROR: ${err}`,
+            timestamp: new Date(),
+          });
+        });
+
+        this.primaryPage = (await this.browserInstance.pages())[0];
+
+        if (this.launchConfig?.sessionContext) {
+          this.logger.debug(`[CDPService] Page created with session context, injecting session context`);
+          await this.injectSessionContext(this.primaryPage, this.launchConfig.sessionContext);
+        }
+
+        this.browserInstance.on("targetcreated", this.handleNewTarget.bind(this));
+        this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
+        this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
+
+        this.wsEndpoint = this.browserInstance.wsEndpoint();
+
+        await this.handleNewTarget(this.primaryPage.target());
+        await this.handleTargetChange(this.primaryPage.target());
+
+        return this.browserInstance;
+      })();
+
+      return (await Promise.race([launchProcess, launchTimeout])) as Browser;
+    } catch (error) {
+      this.logger.error(`[CDPService] Failed to launch browser: ${error}`);
+      throw error;
     }
-
-    this.browserInstance.on("targetcreated", this.handleNewTarget.bind(this));
-    this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
-    this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
-
-    this.wsEndpoint = this.browserInstance.wsEndpoint();
-
-    await this.handleNewTarget(this.primaryPage.target());
-    await this.handleTargetChange(this.primaryPage.target());
-
-    return this.browserInstance;
   }
 
   public async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
