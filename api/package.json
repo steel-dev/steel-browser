@@ -1,5 +1,5 @@
 {
-  "name": "@steel/steel-browser",
+  "name": "@steel-browser/api",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -26,7 +26,6 @@
   },
   "author": "Nasr Mohamed",
   "devDependencies": {
-    "@types/iconv-lite": "^0.0.1",
     "@types/json-stringify-safe": "^5.0.3",
     "@types/node": "^22.14.1",
     "@types/ws": "^8.5.14",
