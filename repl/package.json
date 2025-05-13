@@ -1,5 +1,5 @@
 {
-  "name": "@steel/repl",
+  "name": "@steel-browser/repl",
   "private": true,
   "sideEffects": false,
   "type": "module",
