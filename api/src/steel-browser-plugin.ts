@@ -13,10 +13,16 @@ import seleniumPlugin from "./plugins/selenium.js";
 import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes.js";
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
+import type { CDPService } from "./services/cdp/cdp.service.js";
+import type { BrowserLauncherOptions } from "./types/browser.js";
 
+// We need to redecalre any decorators from within the plugin that we want to expose
 declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: SteelBrowserConfig;
+    cdpService: CDPService;
+    registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
+    registerCDPShutdownHook: (hook: (config: BrowserLauncherOptions | null) => Promise<void> | void) => void;
   }
 }
 
