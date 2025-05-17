@@ -23,6 +23,7 @@ export interface BrowserLauncherOptions {
   } | null;
   userDataDir?: string;
   extra?: Record<string, Record<string, string>>;
+  credentials?: boolean | "auto";
 }
 
 export interface BrowserServerOptions {

@@ -90,6 +90,7 @@ export class SessionService {
     timezone?: string;
     dimensions?: { width: number; height: number };
     extra?: Record<string, Record<string, string>>;
+    credentials: boolean | "auto";
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -102,6 +103,7 @@ export class SessionService {
       isSelenium,
       blockAds,
       extra,
+      credentials,
     } = options;
 
     let timezone = options.timezone;
@@ -177,6 +179,7 @@ export class SessionService {
       dimensions,
       userDataDir,
       extra,
+      credentials,
     };
 
     if (isSelenium) {

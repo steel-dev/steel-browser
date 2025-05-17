@@ -25,6 +25,10 @@ const CreateSession = z.object({
     .record(z.string(), z.record(z.string(), z.string()))
     .optional()
     .describe("Extra metadata to help initialize the session"),
+  credentials: z
+    .union([z.boolean(), z.literal("auto")])
+    .default(false)
+    .describe("Enables credential injection for secure auth"),
 });
 
 const SessionDetails = z.object({
