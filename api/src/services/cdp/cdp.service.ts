@@ -25,7 +25,6 @@ import { getExtensionPaths } from "../../utils/extensions.js";
 import { ChromeContextService } from "../context/chrome-context.service.js";
 import { SessionData } from "../context/types.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
-import { CDPLifecycle } from "../cdp-lifecycle.service.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -417,7 +416,6 @@ export class CDPService extends EventEmitter {
   }
 
   private async shutdownHook() {
-    await CDPLifecycle.shutdown(this.currentSessionConfig); // backwards compat
     for (const mutator of this.shutdownMutators) {
       await mutator(this.currentSessionConfig);
     }
@@ -517,7 +515,6 @@ export class CDPService extends EventEmitter {
 
         const timezone = config?.timezone || this.defaultTimezone;
 
-        await CDPLifecycle.launch(this.launchConfig); // backwards compat
         for (const mutator of this.launchMutators) {
           await mutator(this.launchConfig);
         }
