@@ -568,7 +568,7 @@ export class CDPService extends EventEmitter {
             TZ: timezone,
           },
           userDataDir,
-          dumpio: true, // Enable Chrome process stdout and stderr
+          dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
         };
 
         this.logger.info(`[CDPService] Launch Options:`);
