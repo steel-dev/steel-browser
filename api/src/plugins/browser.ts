@@ -12,7 +12,6 @@ declare module "fastify" {
 }
 
 const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
-  fastify.log.info("Launching default browser...");
   const cdpService = new CDPService({}, fastify.log);
 
   fastify.decorate("cdpService", cdpService);
@@ -23,7 +22,10 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
     cdpService.registerShutdownHook(hook);
   });
 
-  await cdpService.launch();
+  fastify.addHook("onListen", async function () {
+    this.log.info("Launching default browser...");
+    await cdpService.launch();
+  });
 };
 
 export default fp(browserInstancePlugin, "5.x");
