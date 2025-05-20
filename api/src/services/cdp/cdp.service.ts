@@ -529,13 +529,10 @@ export class CDPService extends EventEmitter {
           ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
           : [];
 
-        const launchArgs = [
+        const staticDefaultArgs = [
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          this.launchConfig.dimensions ? "" : "--start-maximized",
-          `--remote-debugging-address=${env.HOST}`,
-          "--remote-debugging-port=9222",
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--use-angle=disabled",
@@ -545,6 +542,14 @@ export class CDPService extends EventEmitter {
           "--no-first-run",
           "--disable-search-engine-choice-screen",
           "--disable-blink-features=AutomationControlled",
+          "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+          "--force-webrtc-ip-handling-policy",
+        ];
+
+        const dynamicArgs = [
+          this.launchConfig.dimensions ? "" : "--start-maximized",
+          `--remote-debugging-address=${env.HOST}`,
+          "--remote-debugging-port=9222",
           `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
             this.launchConfig.dimensions?.height ?? 1080
@@ -552,11 +557,17 @@ export class CDPService extends EventEmitter {
           `--timezone=${timezone}`,
           userAgent ? `--user-agent=${userAgent}` : "",
           this.launchConfig.options.proxyUrl ? `--proxy-server=${this.launchConfig.options.proxyUrl}` : "",
-          "--webrtc-ip-handling-policy=disable_non_proxied_udp",
-          "--force-webrtc-ip-handling-policy",
+        ];
+
+        const launchArgs = [
+          ...staticDefaultArgs,
+          ...dynamicArgs,
           ...extensionArgs,
           ...(options.args || []),
-        ].filter(Boolean);
+          ...env.CHROME_ARGS,
+        ]
+          .filter(Boolean)
+          .filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
 
         const finalLaunchOptions = {
           ...options,
