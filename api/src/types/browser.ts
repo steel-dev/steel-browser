@@ -1,5 +1,6 @@
-import { BrowserEventType } from "./enums.js";
-import { CookieData, IndexedDBDatabase, LocalStorageData, SessionStorageData } from "../services/context/types.js";
+import type { BrowserEventType } from "./enums.js";
+import type { CookieData, IndexedDBDatabase, LocalStorageData, SessionStorageData } from "../services/context/types.js";
+import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
@@ -23,7 +24,7 @@ export interface BrowserLauncherOptions {
   } | null;
   userDataDir?: string;
   extra?: Record<string, Record<string, string>>;
-  credentials?: boolean | "auto";
+  credentials?: CredentialsOptions;
 }
 
 export interface BrowserServerOptions {

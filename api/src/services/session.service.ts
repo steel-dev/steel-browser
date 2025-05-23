@@ -6,7 +6,7 @@ import path from "path";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env.js";
-import { SessionDetails } from "../modules/sessions/sessions.schema.js";
+import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
 import { BrowserLauncherOptions } from "../types/index.js";
 import { ProxyServer } from "../utils/proxy.js";
 import { CDPService } from "./cdp/cdp.service.js";
@@ -90,7 +90,7 @@ export class SessionService {
     timezone?: string;
     dimensions?: { width: number; height: number };
     extra?: Record<string, Record<string, string>>;
-    credentials: boolean | "auto";
+    credentials: CredentialsOptions;
   }): Promise<SessionDetails> {
     const {
       sessionId,
