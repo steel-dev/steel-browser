@@ -36,7 +36,7 @@ const CreateSession = z.object({
     .record(z.string(), z.record(z.string(), z.string()))
     .optional()
     .describe("Extra metadata to help initialize the session"),
-  credentials: SessionCredentials,
+  credentials: SessionCredentials.nullable(),
 });
 
 const SessionDetails = z.object({
