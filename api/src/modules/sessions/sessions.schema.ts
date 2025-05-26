@@ -8,7 +8,7 @@ export const SessionCredentials = z
   .object({
     autoSubmit: z.union([z.boolean(), z.never()]),
     blurFields: z.union([z.boolean(), z.never()]),
-    exactUrl: z.union([z.boolean(), z.never()]),
+    exactOrigin: z.union([z.boolean(), z.never()]),
   })
   .partial()
   .optional()
