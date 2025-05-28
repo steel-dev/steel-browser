@@ -5,16 +5,16 @@ import os from "os";
 import path from "path";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { v4 as uuidv4 } from "uuid";
-import { env } from "../env";
-import { SessionDetails } from "../modules/sessions/sessions.schema";
-import { BrowserLauncherOptions } from "../types";
-import { ProxyServer } from "../utils/proxy";
-import { CDPService } from "./cdp/cdp.service";
-import { CookieData } from "./context/types";
-import { FileService } from "./file.service";
-import { SeleniumService } from "./selenium.service";
+import { env } from "../env.js";
+import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
+import { BrowserLauncherOptions } from "../types/index.js";
+import { ProxyServer } from "../utils/proxy.js";
+import { CDPService } from "./cdp/cdp.service.js";
+import { CookieData } from "./context/types.js";
+import { FileService } from "./file.service.js";
+import { SeleniumService } from "./selenium.service.js";
 import { mkdir } from "fs/promises";
-import { getUrl, getBaseUrl } from "../utils/url";
+import { getUrl, getBaseUrl } from "../utils/url.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -90,6 +90,7 @@ export class SessionService {
     timezone?: string;
     dimensions?: { width: number; height: number };
     extra?: Record<string, Record<string, string>>;
+    credentials: CredentialsOptions;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -102,6 +103,7 @@ export class SessionService {
       isSelenium,
       blockAds,
       extra,
+      credentials,
     } = options;
 
     let timezone = options.timezone;
@@ -163,9 +165,6 @@ export class SessionService {
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
-        args: [...env.CHROME_ARGS.split(" "), userAgent ? `--user-agent=${userAgent}` : undefined].filter(
-          Boolean,
-        ) as string[],
         proxyUrl: this.activeSession.proxyServer?.url,
       },
       sessionContext,
@@ -177,6 +176,7 @@ export class SessionService {
       dimensions,
       userDataDir,
       extra,
+      credentials,
     };
 
     await this.fileService.archiveAndClearSessionFiles();
@@ -220,6 +220,7 @@ export class SessionService {
 
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
+      await this.cdpService.launch();
     } else {
       await this.cdpService.endSession();
     }

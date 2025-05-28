@@ -1,5 +1,5 @@
 {
-  "name": "@steel/ui",
+  "name": "@steel-browser/ui",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -70,6 +70,6 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.7.3",
-    "vite": "^4.4.5"
+    "vite": "^6.3.5"
   }
 }

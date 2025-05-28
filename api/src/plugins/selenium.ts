@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import { SeleniumService } from "../services/selenium.service";
+import { SeleniumService } from "../services/selenium.service.js";
 
 const seleniumPlugin: FastifyPluginAsync = async (fastify, options) => {
   const seleniumService = new SeleniumService(fastify.log);

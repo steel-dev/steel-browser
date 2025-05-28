@@ -1,7 +1,8 @@
 import fs from "fs";
-import path from "path";
+import path, { dirname } from "path";
+import { fileURLToPath } from "url";
 
-const SCRIPTS_DIR = path.join(__dirname);
+const SCRIPTS_DIR = path.join(dirname(fileURLToPath(import.meta.url)));
 
 export const loadScript = (scriptName: string): string => {
   const scriptPath = path.join(SCRIPTS_DIR, scriptName);

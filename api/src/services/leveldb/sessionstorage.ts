@@ -4,7 +4,7 @@ import os from "os";
 import { Level } from "level";
 import iconv from "iconv-lite";
 import { fileTypeFromBuffer } from "file-type";
-import { copyDirectory } from "../../utils/leveldb";
+import { copyDirectory } from "../../utils/leveldb.js";
 
 /**
  * Decode a UTF-16LE string

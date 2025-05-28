@@ -1,2 +1,2 @@
-export * from "./enums";
-export * from "./browser";
+export * from "./enums.js";
+export * from "./browser.js";

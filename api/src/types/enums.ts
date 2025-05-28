@@ -1,4 +1,4 @@
-import { BrowserServerOptions } from "./browser";
+import { BrowserServerOptions } from "./browser.js";
 
 export enum ScrapeFormat {
   HTML = "html",

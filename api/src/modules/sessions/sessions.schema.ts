@@ -1,7 +1,18 @@
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema";
-import { SessionContextSchema } from "../../services/context/types";
+import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema.js";
+import { SessionContextSchema } from "../../services/context/types.js";
+
+export type CredentialsOptions = z.infer<typeof SessionCredentials>;
+export const SessionCredentials = z
+  .object({
+    autoSubmit: z.union([z.boolean(), z.never()]),
+    blurFields: z.union([z.boolean(), z.never()]),
+    exactOrigin: z.union([z.boolean(), z.never()]),
+  })
+  .partial()
+  .optional()
+  .describe("Configuration for session credentials");
 
 const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
@@ -25,6 +36,7 @@ const CreateSession = z.object({
     .record(z.string(), z.record(z.string(), z.string()))
     .optional()
     .describe("Extra metadata to help initialize the session"),
+  credentials: SessionCredentials,
 });
 
 const SessionDetails = z.object({

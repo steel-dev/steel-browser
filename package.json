@@ -1,9 +1,10 @@
 {
-  "name": "steel",
+  "name": "steel-browser",
   "version": "1.0.0",
   "private": true,
   "license": "Apache-2.0",
   "author": "",
+  "type": "module",
   "workspaces": [
     "api",
     "ui",
@@ -26,8 +27,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@types/lodash": "^4.17.16",
     "husky": "^9.1.7",
-    "lodash": "^4.17.21"
+    "fastify": "^5.2.1"
   }
 }

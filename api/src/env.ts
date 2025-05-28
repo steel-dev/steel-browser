@@ -49,7 +49,21 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("false"),
-  CHROME_ARGS: z.string().optional().default(""),
+  CHROME_ARGS: z
+    .string()
+    .optional()
+    .transform((val) => (val ? val.split(" ").map((arg) => arg.trim()) : []))
+    .default(""),
+  FILTER_CHROME_ARGS: z
+    .string()
+    .optional()
+    .transform((val) => (val ? val.split(" ").map((arg) => arg.trim()) : []))
+    .default(""),
+  DEBUG_CHROME_PROCESS: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
 });
 
 export const env = envSchema.parse(process.env);

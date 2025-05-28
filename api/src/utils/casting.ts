@@ -1,5 +1,5 @@
 import { Page } from "puppeteer-core";
-import { NavigationEvent } from "../types/casting";
+import { NavigationEvent } from "../types/casting.js";
 
 export const navigatePage = async (event: NavigationEvent["event"], targetPage: Page): Promise<void> => {
   if (event.action === "back") {
@@ -19,7 +19,6 @@ export const getPageTitle = async (page: Page): Promise<string> => {
   try {
     return await page.title();
   } catch (error) {
-    console.error("Error getting page title:", error);
     return "Untitled";
   }
 };
@@ -38,7 +37,6 @@ export const getPageFavicon = async (page: Page): Promise<string | null> => {
       return null;
     });
   } catch (error) {
-    console.error("Error getting page favicon:", error);
     return null;
   }
 };

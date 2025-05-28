@@ -1,9 +1,9 @@
-import { CDPService } from "../../services/cdp/cdp.service";
+import { CDPService } from "../../services/cdp/cdp.service.js";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { getErrors } from "../../utils/errors";
-import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema";
-import { CookieData } from "../../services/context/types";
-import { getUrl, getBaseUrl } from "../../utils/url";
+import { getErrors } from "../../utils/errors.js";
+import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
+import { CookieData } from "../../services/context/types.js";
+import { getUrl, getBaseUrl } from "../../utils/url.js";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -23,6 +23,7 @@ export const handleLaunchBrowserSession = async (
       isSelenium,
       blockAds,
       extra,
+      credentials,
     } = request.body;
 
     return await server.sessionService.startSession({
@@ -40,6 +41,7 @@ export const handleLaunchBrowserSession = async (
       isSelenium,
       blockAds,
       extra,
+      credentials,
     });
   } catch (e: unknown) {
     server.log.error("Failed lauching browser session", e);
@@ -173,9 +175,7 @@ export const handleGetSessionLiveDetails = async (
               }
               return null;
             });
-          } catch (error) {
-            console.error("Error getting page favicon:", error);
-          }
+          } catch (error) {}
 
           return {
             id: pageId,
