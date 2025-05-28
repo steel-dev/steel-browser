@@ -1,7 +1,7 @@
 import archiver from "archiver";
 import chokidar, { FSWatcher } from "chokidar";
 import fs from "fs";
-import { debounce, DebouncedFunc } from "lodash";
+import { debounce, DebouncedFunc } from "lodash-es";
 import { tmpdir } from "os";
 import path, { resolve } from "path";
 import { Readable } from "stream";
