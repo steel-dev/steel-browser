@@ -440,6 +440,15 @@ export class CDPService extends EventEmitter {
         await this.browserInstance.close();
         await this.browserInstance.process()?.kill();
         await this.shutdownHook();
+        
+        this.logger.info("[CDPService] Cleaning up files during shutdown");
+        try {
+          await this.fileService.cleanupFiles();
+          this.logger.info("[CDPService] Files cleaned successfully");
+        } catch (error) {
+          this.logger.error(`[CDPService] Error cleaning files during shutdown: ${error}`);
+        }
+        
         this.fingerprintData = null;
         this.currentSessionConfig = null;
         this.browserInstance = null;
@@ -452,6 +461,13 @@ export class CDPService extends EventEmitter {
         await this.browserInstance?.close();
         await this.browserInstance?.process()?.kill();
         await this.shutdownHook();
+        
+        try {
+          await this.fileService.cleanupFiles();
+        } catch (cleanupError) {
+          this.logger.error(`[CDPService] Error cleaning files during error recovery: ${cleanupError}`);
+        }
+        
         this.browserInstance = null;
         this.shuttingDown = false;
       }
@@ -498,6 +514,14 @@ export class CDPService extends EventEmitter {
 
         this.launchConfig = config || this.defaultLaunchConfig;
         this.logger.info("[CDPService] Launching new browser instance.");
+
+        this.logger.info("[CDPService] Cleaning up files before browser launch");
+        try {
+          await this.fileService.cleanupFiles();
+          this.logger.info("[CDPService] Files cleaned successfully before launch");
+        } catch (error) {
+          this.logger.error(`[CDPService] Error cleaning files before launch: ${error}`);
+        }
 
         const { options, userAgent, userDataDir } = this.launchConfig;
 
