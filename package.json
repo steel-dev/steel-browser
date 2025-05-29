@@ -27,7 +27,9 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@types/lodash-es": "^4.17.12",
+    "fastify": "^5.2.1",
     "husky": "^9.1.7",
-    "fastify": "^5.2.1"
+    "lodash-es": "^4.17.21"
   }
 }
