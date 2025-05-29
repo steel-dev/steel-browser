@@ -18,9 +18,12 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
   fastify.decorate("registerCDPLaunchHook", (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => {
     cdpService.registerLaunchHook(hook);
   });
-  fastify.decorate("registerCDPShutdownHook", (hook: (config: BrowserLauncherOptions | null) => Promise<void> | void) => {
-    cdpService.registerShutdownHook(hook);
-  });
+  fastify.decorate(
+    "registerCDPShutdownHook",
+    (hook: (config: BrowserLauncherOptions | null) => Promise<void> | void) => {
+      cdpService.registerShutdownHook(hook);
+    },
+  );
 
   fastify.addHook("onListen", async function () {
     this.log.info("Launching default browser...");

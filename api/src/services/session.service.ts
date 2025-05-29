@@ -220,8 +220,6 @@ export class SessionService {
       await this.cdpService.endSession();
     }
 
-    await this.fileService.cleanupFiles({ sessionId: this.activeSession.id });
-
     const releasedSession = this.activeSession;
 
     await this.resetSessionInfo({

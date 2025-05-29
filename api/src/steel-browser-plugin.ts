@@ -32,32 +32,31 @@ export interface SteelBrowserConfig {
   };
 }
 
-const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> =
-  async (fastify, opts) => {
-    fastify.decorate("steelBrowserConfig", opts);
-    // Plugins
-    await fastify.register(fastifyView, {
-      engine: {
-        ejs,
-      },
-      root: path.join(dirname(fileURLToPath(import.meta.url)), "templates"),
-    });
-    await fastify.register(requestLogger);
-    await fastify.register(openAPIPlugin);
-    await fastify.register(fileStoragePlugin);
-    await fastify.register(browserInstancePlugin);
-    await fastify.register(seleniumPlugin);
-    await fastify.register(browserWebSocket);
-    await fastify.register(customBodyParser);
-    await fastify.register(browserSessionPlugin);
+const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
+  fastify.decorate("steelBrowserConfig", opts);
+  // Plugins
+  await fastify.register(fastifyView, {
+    engine: {
+      ejs,
+    },
+    root: path.join(dirname(fileURLToPath(import.meta.url)), "templates"),
+  });
+  await fastify.register(requestLogger);
+  await fastify.register(openAPIPlugin);
+  await fastify.register(fileStoragePlugin);
+  await fastify.register(browserInstancePlugin);
+  await fastify.register(seleniumPlugin);
+  await fastify.register(browserWebSocket);
+  await fastify.register(customBodyParser);
+  await fastify.register(browserSessionPlugin);
 
-    // Routes
-    await fastify.register(actionsRoutes, { prefix: "/v1" });
-    await fastify.register(sessionsRoutes, { prefix: "/v1" });
-    await fastify.register(cdpRoutes, { prefix: "/v1" });
-    await fastify.register(seleniumRoutes);
-    await fastify.register(filesRoutes, { prefix: "/v1" });
-  };
+  // Routes
+  await fastify.register(actionsRoutes, { prefix: "/v1" });
+  await fastify.register(sessionsRoutes, { prefix: "/v1" });
+  await fastify.register(cdpRoutes, { prefix: "/v1" });
+  await fastify.register(seleniumRoutes);
+  await fastify.register(filesRoutes, { prefix: "/v1" });
+};
 
 export default fp<SteelBrowserConfig>(steelBrowserPlugin, {
   name: "steel-browser",
