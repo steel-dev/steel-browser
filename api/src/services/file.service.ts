@@ -1,12 +1,12 @@
 import archiver from "archiver";
 import chokidar, { FSWatcher } from "chokidar";
 import fs from "fs";
+import type { DebouncedFunc } from "lodash-es";
+import { debounce } from "lodash-es";
 import { tmpdir } from "os";
 import path, { resolve } from "path";
 import { Readable } from "stream";
-import { env } from "../env";
-import { debounce } from "lodash-es";
-import type { DebouncedFunc } from "lodash-es";
+import { env } from "../env.js";
 
 interface File {
   size: number;

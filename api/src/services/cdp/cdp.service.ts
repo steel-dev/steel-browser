@@ -15,17 +15,17 @@ import puppeteer, {
   TargetType,
 } from "puppeteer-core";
 import { Duplex } from "stream";
-import { env } from "../../env";
-import { loadFingerprintScript } from "../../scripts";
-import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types";
-import { isAdRequest } from "../../utils/ads";
-import { filterHeaders, getChromeExecutablePath } from "../../utils/browser";
-import { extractStorageForPage, groupSessionStorageByOrigin, handleFrameNavigated } from "../../utils/context";
-import { getExtensionPaths } from "../../utils/extensions";
-import { ChromeContextService } from "../context/chrome-context.service";
-import { SessionData } from "../context/types";
-import { FileService } from "../file.service";
-import { PluginManager } from "./plugins/core/plugin-manager";
+import { env } from "../../env.js";
+import { loadFingerprintScript } from "../../scripts/index.js";
+import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types/index.js";
+import { isAdRequest } from "../../utils/ads.js";
+import { filterHeaders, getChromeExecutablePath } from "../../utils/browser.js";
+import { extractStorageForPage, groupSessionStorageByOrigin, handleFrameNavigated } from "../../utils/context.js";
+import { getExtensionPaths } from "../../utils/extensions.js";
+import { ChromeContextService } from "../context/chrome-context.service.js";
+import { SessionData } from "../context/types.js";
+import { FileService } from "../file.service.js";
+import { PluginManager } from "./plugins/core/plugin-manager.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
