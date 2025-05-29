@@ -10,7 +10,6 @@ import { env } from "../env";
 interface File {
   size: number;
   lastModified: Date;
-  // metadata?: Record<string, any>;
 }
 
 export class FileService {
@@ -20,16 +19,16 @@ export class FileService {
 
   // --- Archive related ---
   private prebuiltArchiveDir: string;
-  private prebuiltArchivePath: string | null = null;
+  private prebuiltArchivePath: string;
   private isArchiving: boolean = false;
   private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
-  private currentSessionId: string | null = null;
   // -----------------------
 
   private constructor() {
     this.baseFilesPath = env.NODE_ENV === "development" ? path.join(tmpdir(), "/files") : "/files";
     this.prebuiltArchiveDir = "/tmp/.steel";
+    this.prebuiltArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
 
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
 
@@ -37,19 +36,6 @@ export class FileService {
     this.debouncedCreateArchive = debounce(boundCreateArchive, this.archiveDebounceTime);
 
     this.initFileWatcher();
-  }
-
-  public setCurrentSessionId(sessionId: string | null) {
-    this.currentSessionId = sessionId;
-    if (sessionId) {
-      this.prebuiltArchivePath = path.join(this.prebuiltArchiveDir, `${sessionId}.zip`);
-    } else {
-      this.prebuiltArchivePath = null;
-    }
-  }
-
-  public getCurrentSessionId() {
-    return this.currentSessionId;
   }
 
   public static getInstance() {
@@ -183,7 +169,7 @@ export class FileService {
     }
   }
 
-  public async getFile({ sessionId, filePath }: { sessionId: string; filePath: string }): Promise<File> {
+  public async getFile({ filePath }: { filePath: string }): Promise<File> {
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
     const safeFilePath = this.getSafeFilePath(filePath);
 
@@ -206,7 +192,7 @@ export class FileService {
     }
   }
 
-  public async listFiles({ sessionId }: { sessionId: string }): Promise<Array<{ path: string } & File>> {
+  public async listFiles(): Promise<Array<{ path: string } & File>> {
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
 
     const allFiles: Array<{ path: string } & File> = [];
@@ -246,7 +232,7 @@ export class FileService {
     }
   }
 
-  public async deleteFile({ sessionId, filePath }: { sessionId: string; filePath: string }): Promise<void> {
+  public async deleteFile({ filePath }: { filePath: string }): Promise<void> {
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
     const safeFilePath = this.getSafeFilePath(filePath);
 
@@ -274,6 +260,29 @@ export class FileService {
 
   public async cleanupFiles(): Promise<void> {
     console.log(`[FileService cleanupFiles] Starting cleanup for directory: ${this.baseFilesPath}`);
+
+    this.debouncedCreateArchive.cancel();
+
+    try {
+      const archivePath = path.join(this.prebuiltArchiveDir, "files.zip");
+      if (fs.existsSync(archivePath)) {
+        await fs.promises.unlink(archivePath);
+        console.log(`[FileService cleanupFiles] Deleted archive file: ${archivePath}`);
+      }
+
+      const archiveDir = await fs.promises.readdir(this.prebuiltArchiveDir).catch(() => []);
+      for (const file of archiveDir) {
+        if (file.startsWith("files-") && file.endsWith(".zip.tmp")) {
+          const tempFilePath = path.join(this.prebuiltArchiveDir, file);
+          await fs.promises.unlink(tempFilePath).catch((err) => {
+            console.error(`[FileService cleanupFiles] Error deleting temp archive ${tempFilePath}:`, err);
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error(`[FileService cleanupFiles] Error cleaning up archive files:`, err);
+    }
+
     try {
       const items = await fs.promises.readdir(this.baseFilesPath);
       for (const item of items) {
@@ -304,9 +313,8 @@ export class FileService {
     }
 
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
-    console.log(
-      `[FileService cleanupFiles] Files cleaned. Triggering debounced archive creation for the new (empty) state.`,
-    );
+    console.log(`[FileService cleanupFiles] Files cleaned. Creating empty archive.`);
+    // Create an empty archive after cleanup
     this.debouncedCreateArchive();
   }
 
@@ -314,36 +322,23 @@ export class FileService {
     return this.baseFilesPath;
   }
 
-  public getPrebuiltArchivePath(): string | null {
-    if (this.currentSessionId) {
-      const expectedArchivePath = path.join(this.prebuiltArchiveDir, `${this.currentSessionId}.zip`);
-      if (fs.existsSync(expectedArchivePath)) {
-        return expectedArchivePath;
-      }
-      return this.prebuiltArchivePath;
-    }
-    return null;
+  public async getPrebuiltArchivePath(): Promise<string> {
+    return this.prebuiltArchivePath;
   }
 
   private _createArchive(): Promise<string | null> {
     return new Promise(async (resolvePromise, rejectPromise) => {
-      if (this.currentSessionId === null) {
-        console.log("[_createArchive] No session ID found, skipping archive creation.");
-        return resolvePromise(null);
-      }
-
       if (this.isArchiving) {
         console.warn(
-          `[_createArchive] Warning: Archiving process for session ${this.currentSessionId} initiated while another is already in progress. This might lead to conflicts if not handled by caller.`,
+          `[_createArchive] Warning: Archiving process initiated while another is already in progress. This might lead to conflicts if not handled by caller.`,
         );
       }
 
       this.isArchiving = true;
-      this.prebuiltArchivePath = null;
-      console.log(`[_createArchive] Starting archive creation for session: ${this.currentSessionId}`);
+      console.log(`[_createArchive] Starting archive creation`);
 
-      const tempArchivePath = path.join(this.prebuiltArchiveDir, `${this.currentSessionId}-${Date.now()}.zip.tmp`);
-      const finalArchivePath = path.join(this.prebuiltArchiveDir, `${this.currentSessionId}.zip`);
+      const tempArchivePath = path.join(this.prebuiltArchiveDir, `files-${Date.now()}.zip.tmp`);
+      const finalArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
 
       try {
         await fs.promises.mkdir(this.prebuiltArchiveDir, { recursive: true });
@@ -359,7 +354,6 @@ export class FileService {
 
       const operationCleanup = async (success: boolean, archivePath: string | null = null, error?: any) => {
         this.isArchiving = false;
-        this.prebuiltArchivePath = archivePath;
 
         if (!success && tempArchivePath && (await this.exists(tempArchivePath))) {
           try {
@@ -451,72 +445,5 @@ export class FileService {
         operationCleanup(false, null, err);
       }
     });
-  }
-
-  public async archiveAndClearSessionFiles(): Promise<string | null> {
-    const methodName = "[archiveAndClearSessionFiles]";
-    if (!this.currentSessionId) {
-      console.log(`${methodName} No current session ID. Skipping operation.`);
-      return null;
-    }
-
-    console.log(`${methodName} Starting for session: ${this.currentSessionId}`);
-
-    this.debouncedCreateArchive.cancel();
-    console.log(`${methodName} Cancelled pending debounced archive creation for session: ${this.currentSessionId}.`);
-
-    let waitCycles = 0;
-    const maxWaitCycles = 150;
-    while (this.isArchiving) {
-      if (waitCycles >= maxWaitCycles) {
-        console.error(
-          `${methodName} Timeout waiting for ongoing archive operation (session: ${this.currentSessionId}) to complete. Aborting.`,
-        );
-        return null;
-      }
-      console.log(
-        `${methodName} Another archive operation is in progress for session ${this.currentSessionId}, waiting... (${waitCycles}/${maxWaitCycles})`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      waitCycles++;
-    }
-
-    console.log(`${methodName} Initiating archive creation for session: ${this.currentSessionId}.`);
-    let archivePath: string | null = null;
-    try {
-      archivePath = await this._createArchive();
-    } catch (error) {
-      console.error(
-        `${methodName} Error during explicit archive creation for session ${this.currentSessionId}:`,
-        error,
-      );
-      return null;
-    }
-
-    if (!archivePath) {
-      console.warn(
-        `${methodName} Archive creation failed or returned no path for session ${this.currentSessionId}. Not clearing files.`,
-      );
-      return null;
-    }
-
-    console.log(`${methodName} Archive for session ${this.currentSessionId} successfully created at: ${archivePath}`);
-
-    console.log(`${methodName} Proceeding to clear session files for ${this.currentSessionId}.`);
-    try {
-      await this.cleanupFiles();
-      console.log(`${methodName} Session files for ${this.currentSessionId} cleared successfully.`);
-    } catch (error) {
-      console.error(`${methodName} Error during file cleanup for session ${this.currentSessionId}:`, error);
-      console.warn(
-        `${methodName} File cleanup failed for session ${this.currentSessionId}, but archive was created at ${archivePath}.`,
-      );
-      return archivePath;
-    }
-
-    console.log(
-      `${methodName} Operation completed for session: ${this.currentSessionId}. Archive at ${archivePath}, files cleared.`,
-    );
-    return archivePath;
   }
 }

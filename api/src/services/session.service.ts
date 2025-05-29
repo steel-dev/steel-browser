@@ -179,8 +179,6 @@ export class SessionService {
       credentials,
     };
 
-    await this.fileService.archiveAndClearSessionFiles();
-
     if (isSelenium) {
       await this.cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
@@ -207,9 +205,6 @@ export class SessionService {
       });
     }
 
-    this.fileService.setCurrentSessionId(sessionInfo.id);
-    this.fileService.cleanupFiles();
-
     return this.activeSession;
   }
 
@@ -226,10 +221,6 @@ export class SessionService {
     }
 
     const releasedSession = this.activeSession;
-
-    // Blocking
-    await this.fileService.archiveAndClearSessionFiles();
-    this.fileService.setCurrentSessionId(null);
 
     await this.resetSessionInfo({
       id: uuidv4(),

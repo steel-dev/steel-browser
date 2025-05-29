@@ -142,7 +142,6 @@ export class FilesController {
     reply: FastifyReply,
   ) {
     const { size, lastModified } = await this.fileService.getFile({
-      sessionId: request.params.sessionId,
       filePath: request.params["*"],
     });
 
@@ -165,7 +164,7 @@ export class FilesController {
     reply: FastifyReply,
   ) {
     try {
-      const files = await this.fileService.listFiles({ sessionId: request.params.sessionId });
+      const files = await this.fileService.listFiles();
 
       return reply.send({
         data: files.map((file) => ({
@@ -187,7 +186,6 @@ export class FilesController {
   ) {
     try {
       await this.fileService.deleteFile({
-        sessionId: request.params.sessionId,
         filePath: request.params["*"],
       });
       return reply.code(204).send();
@@ -216,40 +214,21 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
   ) {
-    const prebuiltArchivePath = this.fileService.getPrebuiltArchivePath();
-
-    const sessionId = this.fileService.getCurrentSessionId();
-
-    if (!sessionId || !prebuiltArchivePath?.includes(sessionId)) {
-      return reply.code(404).send({ success: false, message: "Archive not found" });
-    }
+    const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath();
 
     try {
-      if (prebuiltArchivePath) {
-        try {
-          const stats = await fs.promises.stat(prebuiltArchivePath);
-          if (stats.isFile()) {
-            server.log.info(`Serving prebuilt archive: ${prebuiltArchivePath}`);
-            const stream = fs.createReadStream(prebuiltArchivePath);
-            reply.header("Content-Type", "application/zip");
-            reply.header("Content-Disposition", `attachment; filename="files.zip"`);
-            reply.header("Content-Length", stats.size);
-            reply.header("Last-Modified", stats.mtime.toUTCString());
-            return reply.send(stream);
-          } else {
-            server.log.warn(`Prebuilt archive path exists but is not a file: ${prebuiltArchivePath}`);
-          }
-        } catch (err: any) {
-          if (err.code === "ENOENT") {
-            server.log.info("Prebuilt archive not found, generating empty archive.");
-          } else {
-            server.log.error(`Error accessing prebuilt archive ${prebuiltArchivePath}:`, err);
-          }
-        }
+      const stats = await fs.promises.stat(prebuiltArchivePath);
+      if (stats.isFile()) {
+        server.log.info(`Serving prebuilt archive: ${prebuiltArchivePath}`);
+        const stream = fs.createReadStream(prebuiltArchivePath);
+
+        reply.header("Content-Type", "application/zip");
+        reply.header("Content-Disposition", `attachment; filename="files.zip"`);
+        reply.header("Content-Length", stats.size);
+        reply.header("Last-Modified", stats.mtime.toUTCString());
+        return reply.send(stream);
       } else {
-        server.log.info(
-          "Prebuilt archive path is not available (likely still generating or error occurred), serving empty archive.",
-        );
+        server.log.warn(`Prebuilt archive path exists but is not a file: ${prebuiltArchivePath}`);
       }
 
       server.log.info("Sending empty archive.");
