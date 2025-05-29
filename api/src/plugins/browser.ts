@@ -13,7 +13,7 @@ declare module "fastify" {
 }
 
 const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
-  const cdpService = new CDPService({}, fastify.log, FileService.getInstance());
+  const cdpService = new CDPService({}, fastify.log);
 
   fastify.decorate("cdpService", cdpService);
   fastify.decorate("registerCDPLaunchHook", (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => {

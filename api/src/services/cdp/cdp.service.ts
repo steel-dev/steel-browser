@@ -45,12 +45,11 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
-  private fileService: FileService;
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
 
-  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger, fileService: FileService) {
+  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
     this.logger = logger;
     const { keepAlive = true } = config;
@@ -88,7 +87,6 @@ export class CDPService extends EventEmitter {
     };
 
     this.pluginManager = new PluginManager(this, logger);
-    this.fileService = fileService;
   }
 
   public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
@@ -440,15 +438,15 @@ export class CDPService extends EventEmitter {
         await this.browserInstance.close();
         await this.browserInstance.process()?.kill();
         await this.shutdownHook();
-        
+
         this.logger.info("[CDPService] Cleaning up files during shutdown");
         try {
-          await this.fileService.cleanupFiles();
+          await FileService.getInstance().cleanupFiles();
           this.logger.info("[CDPService] Files cleaned successfully");
         } catch (error) {
           this.logger.error(`[CDPService] Error cleaning files during shutdown: ${error}`);
         }
-        
+
         this.fingerprintData = null;
         this.currentSessionConfig = null;
         this.browserInstance = null;
@@ -461,13 +459,13 @@ export class CDPService extends EventEmitter {
         await this.browserInstance?.close();
         await this.browserInstance?.process()?.kill();
         await this.shutdownHook();
-        
+
         try {
-          await this.fileService.cleanupFiles();
+          await FileService.getInstance().cleanupFiles();
         } catch (cleanupError) {
           this.logger.error(`[CDPService] Error cleaning files during error recovery: ${cleanupError}`);
         }
-        
+
         this.browserInstance = null;
         this.shuttingDown = false;
       }
@@ -517,7 +515,7 @@ export class CDPService extends EventEmitter {
 
         this.logger.info("[CDPService] Cleaning up files before browser launch");
         try {
-          await this.fileService.cleanupFiles();
+          await FileService.getInstance().cleanupFiles();
           this.logger.info("[CDPService] Files cleaned successfully before launch");
         } catch (error) {
           this.logger.error(`[CDPService] Error cleaning files before launch: ${error}`);
