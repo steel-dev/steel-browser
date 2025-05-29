@@ -282,37 +282,16 @@ export class FileService {
     }
 
     try {
-      const items = await fs.promises.readdir(this.baseFilesPath);
-      for (const item of items) {
-        const itemPath = path.join(this.baseFilesPath, item);
-        try {
-          const stats = await fs.promises.lstat(itemPath);
-          if (stats.isDirectory()) {
-            await fs.promises.rm(itemPath, { recursive: true, force: true });
-            console.log(`[FileService cleanupFiles] Deleted directory: ${itemPath}`);
-          } else {
-            await fs.promises.unlink(itemPath);
-            console.log(`[FileService cleanupFiles] Deleted file: ${itemPath}`);
-          }
-        } catch (err: any) {
-          if (err.code !== "ENOENT") {
-            console.error(`[FileService cleanupFiles] Error deleting item ${itemPath}:`, err);
-          }
-        }
-      }
+      await fs.promises.rm(this.baseFilesPath, { recursive: true, force: true });
+      console.log(`[FileService cleanupFiles] Deleted entire directory: ${this.baseFilesPath}`);
     } catch (err: any) {
-      if (err.code === "ENOENT") {
-        console.log(
-          `[FileService cleanupFiles] Base directory ${this.baseFilesPath} does not exist, no cleanup needed or already clean.`,
-        );
-      } else {
-        console.error(`[FileService cleanupFiles] Error reading directory ${this.baseFilesPath} for cleanup:`, err);
+      if (err.code !== "ENOENT") {
+        console.error(`[FileService cleanupFiles] Error deleting directory ${this.baseFilesPath}:`, err);
       }
     }
 
     await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
     console.log(`[FileService cleanupFiles] Files cleaned. Creating empty archive.`);
-    // Create an empty archive after cleanup
     this.debouncedCreateArchive();
   }
 

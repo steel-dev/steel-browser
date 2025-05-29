@@ -229,8 +229,6 @@ export class SessionService {
 
     this.pastSessions.push(releasedSession);
 
-    this.fileService.cleanupFiles();
-
     return releasedSession;
   }
 
