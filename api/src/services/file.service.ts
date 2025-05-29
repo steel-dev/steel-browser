@@ -17,17 +17,14 @@ export class FileService {
   private baseFilesPath: string;
   private fileWatcher: FSWatcher | null = null;
   private static instance: FileService | null = null;
-
-  // --- Archive related ---
   private prebuiltArchiveDir: string;
   private prebuiltArchivePath: string;
   private isArchiving: boolean = false;
   private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
-  // -----------------------
 
   private constructor() {
-    this.baseFilesPath = env.NODE_ENV === "development" ? path.join(tmpdir(), "/files") : "/files";
+    this.baseFilesPath = env.NODE_ENV !== "production" ? path.join(tmpdir(), "files") : "/files";
     this.prebuiltArchiveDir = "/tmp/.steel";
     this.prebuiltArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
 
