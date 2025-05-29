@@ -32,10 +32,7 @@ const CreateSession = z.object({
     })
     .optional()
     .describe("Dimensions to use for the session"),
-  extra: z
-    .record(z.string(), z.record(z.string(), z.string()))
-    .optional()
-    .describe("Extra metadata to help initialize the session"),
+  extra: z.record(z.string(), z.any()).optional().describe("Extra metadata to help initialize the session"),
   credentials: SessionCredentials,
 });
 
