@@ -1,22 +1,50 @@
 import { MultipartFile } from "@fastify/multipart";
 import archiver from "archiver";
+import { randomUUID } from "crypto";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as fs from "fs";
 import http from "http";
 import https from "https";
 import mime from "mime-types";
+import { tmpdir } from "os";
+import path from "path";
 import { Readable } from "stream";
+import { pipeline } from "stream/promises";
+import { v4 as uuidv4 } from "uuid";
 import { FileService } from "../../services/file.service.js";
 import { getErrors } from "../../utils/errors.js";
 
 export class FilesController {
   constructor(private fileService: FileService) {}
 
+  private validatePath(filePath: string): boolean {
+    if (path.isAbsolute(filePath)) {
+      return false;
+    }
+
+    if (filePath.includes("..")) {
+      return false;
+    }
+
+    if (filePath.includes("\0")) {
+      return false;
+    }
+
+    const normalized = path.normalize(filePath);
+    if (normalized.startsWith("..")) {
+      return false;
+    }
+
+    return true;
+  }
+
   async handleFileUpload(
     server: FastifyInstance,
-    request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>,
+    request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
   ) {
+    let tempFilePath: string | null = null;
+
     try {
       if (!request.isMultipart()) {
         return reply.code(400).send({
@@ -25,7 +53,7 @@ export class FilesController {
         });
       }
 
-      const filePath = request.params["*"];
+      let filePath: string | null = null;
       let fileUrl: string | null = null;
       let fileProvided: boolean = false;
       let saveFileResult: Awaited<ReturnType<typeof this.fileService.saveFile>> | null = null;
@@ -34,16 +62,17 @@ export class FilesController {
         if (part.fieldname === "file") {
           if (part.type === "file") {
             const file = part as MultipartFile;
-            saveFileResult = await this.fileService.saveFile({
-              filePath,
-              stream: file.file,
-            });
             fileProvided = true;
-            continue;
-          } else if (typeof part.value === "string") {
+
+            tempFilePath = path.join(tmpdir(), `upload_${uuidv4()}`);
+
+            const writeStream = fs.createWriteStream(tempFilePath);
+            await pipeline(file.file, writeStream);
+          } else if (part.type === "field" && typeof part.value === "string") {
             fileUrl = part.value;
-            continue;
           }
+        } else if (part.fieldname === "path" && part.type === "field" && typeof part.value === "string") {
+          filePath = part.value;
         }
       }
 
@@ -55,10 +84,50 @@ export class FilesController {
         });
       }
 
-      if (!fileProvided && fileUrl) {
+      let finalPath: string;
+
+      if (fileProvided && tempFilePath) {
+        if (!filePath) {
+          finalPath = randomUUID();
+        } else {
+          if (!this.validatePath(filePath)) {
+            await fs.promises.unlink(tempFilePath).catch(() => {});
+            return reply.code(400).send({
+              success: false,
+              message: "Invalid path provided",
+            });
+          }
+          finalPath = filePath;
+        }
+
+        const readStream = fs.createReadStream(tempFilePath);
         saveFileResult = await this.fileService.saveFile({
-          filePath,
-          stream: (await this.createStreamFromUrl(fileUrl)).stream,
+          filePath: finalPath,
+          stream: readStream,
+        });
+
+        await fs.promises.unlink(tempFilePath).catch(() => {});
+        tempFilePath = null;
+      } else if (fileUrl) {
+        if (!filePath) {
+          const urlPath = new URL(fileUrl).pathname;
+          const filename = urlPath.split("/").pop() || randomUUID();
+          const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+          finalPath = sanitizedFilename;
+        } else {
+          if (!this.validatePath(filePath)) {
+            return reply.code(400).send({
+              success: false,
+              message: "Invalid path provided",
+            });
+          }
+          finalPath = filePath;
+        }
+
+        const { stream } = await this.createStreamFromUrl(fileUrl);
+        saveFileResult = await this.fileService.saveFile({
+          filePath: finalPath,
+          stream,
         });
       }
 
@@ -75,6 +144,9 @@ export class FilesController {
         lastModified: saveFileResult.lastModified,
       });
     } catch (e: unknown) {
+      if (tempFilePath) {
+        await fs.promises.unlink(tempFilePath).catch(() => {});
+      }
       const error = getErrors(e);
       return reply.code(500).send({ success: false, message: error });
     }
@@ -235,7 +307,7 @@ export class FilesController {
       server.log.info("Sending empty archive.");
       reply.header("Content-Type", "application/zip");
       reply.header("Content-Disposition", `attachment; filename="files-archive-empty.zip"`);
-      const emptyArchive = archiver("zip", { zlib: { level: 9 } }); // Use level 9 for consistency
+      const emptyArchive = archiver("zip", { zlib: { level: 9 } });
 
       emptyArchive.pipe(reply.raw);
 

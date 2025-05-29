@@ -1,9 +1,9 @@
 import fastifyMultipart from "@fastify/multipart";
 import { FastifyInstance, FastifyRequest } from "fastify";
 import { $ref } from "../../plugins/schemas.js";
+import { FileService } from "../../services/file.service.js";
 import { MB } from "../../utils/size.js";
 import { FilesController } from "./files.controller.js";
-import { FileService } from "../../services/file.service.js";
 
 async function routes(server: FastifyInstance) {
   const filesController = new FilesController(FileService.getInstance());
@@ -16,23 +16,25 @@ async function routes(server: FastifyInstance) {
   });
 
   server.post(
-    "/sessions/:sessionId/files/*",
+    "/sessions/:sessionId/files",
     {
       schema: {
         operationId: "upload_file",
         summary: "Upload a file",
         description:
-          "Uploads a file to a session via `multipart/form-data` with a `file` field that accepts either binary data or a URL string to download from.",
+          "Uploads a file to a session via `multipart/form-data` with a `file` field that accepts either binary data or a URL string to download from, and an optional `path` field for the file storage path.",
         tags: ["Files"],
         consumes: ["multipart/form-data"],
+        body: $ref("FileUploadRequest"),
         response: {
           200: $ref("FileDetails"),
         },
       },
+      validatorCompiler: () => (value) => ({ value }),
     },
     async (
       request: FastifyRequest<{
-        Params: { sessionId: string; "*": string };
+        Params: { sessionId: string };
       }>,
       reply,
     ) => filesController.handleFileUpload(server, request, reply),
