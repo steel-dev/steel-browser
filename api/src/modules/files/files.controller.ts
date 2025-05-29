@@ -31,33 +31,34 @@ export class FilesController {
       let saveFileResult: Awaited<ReturnType<typeof this.fileService.saveFile>> | null = null;
 
       for await (const part of request.parts()) {
-        if (part.type === "file") {
-          const file = part as MultipartFile;
-          saveFileResult = await this.fileService.saveFile({
-            filePath,
-            stream: file.file,
-          });
-          fileProvided = true;
-          continue;
-        }
-
-        if (part.fieldname === "fileUrl" && part.value) {
-          fileUrl = part.value as string;
-          continue;
+        if (part.fieldname === "file") {
+          if (part.type === "file") {
+            const file = part as MultipartFile;
+            saveFileResult = await this.fileService.saveFile({
+              filePath,
+              stream: file.file,
+            });
+            fileProvided = true;
+            continue;
+          } else if (typeof part.value === "string") {
+            fileUrl = part.value;
+            continue;
+          }
         }
       }
 
       if (!fileProvided && !fileUrl) {
         return reply.code(400).send({
           success: false,
-          message: "Either file or fileUrl must be provided",
+          message:
+            "No file provided in the multipart request. The 'file' field must contain either a file or a URL string.",
         });
       }
 
-      if (!fileProvided) {
+      if (!fileProvided && fileUrl) {
         saveFileResult = await this.fileService.saveFile({
           filePath,
-          stream: (await this.createStreamFromUrl(fileUrl!)).stream,
+          stream: (await this.createStreamFromUrl(fileUrl)).stream,
         });
       }
 
