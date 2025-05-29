@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 const FileUploadRequest = z.object({
-  file: z.any().optional().describe("The file to upload (binary)"),
-  fileUrl: z.string().url().optional().describe("Public URL to download file from"),
+  file: z.any().describe("The file to upload (binary) or URL string to download from"),
 });
 
 const FileDetails = z.object({
