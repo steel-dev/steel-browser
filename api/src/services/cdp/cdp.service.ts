@@ -1,6 +1,10 @@
 import { EventEmitter } from "events";
 import { FastifyBaseLogger } from "fastify";
-import { BrowserFingerprintWithHeaders, FingerprintGenerator } from "fingerprint-generator";
+import {
+  BrowserFingerprintWithHeaders,
+  FingerprintGenerator,
+  FingerprintGeneratorOptions,
+} from "fingerprint-generator";
 import { FingerprintInjector } from "fingerprint-injector";
 import { IncomingMessage } from "http";
 import httpProxy from "http-proxy";
@@ -229,7 +233,7 @@ export class CDPService extends EventEmitter {
         // Inject fingerprint only if it's not skipped
         if (!env.SKIP_FINGERPRINT_INJECTION) {
           // Use our safer fingerprint injection method instead of FingerprintInjector
-          await this.injectFingerprintSafely(page, this.fingerprintData!);
+          await this.injectFingerprintSafely(page, this.fingerprintData);
           this.logger.debug("[CDPService] Injected fingerprint into page");
         } else {
           this.logger.info("[CDPService] Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting");
@@ -523,20 +527,26 @@ export class CDPService extends EventEmitter {
 
         const { options, userAgent, userDataDir } = this.launchConfig;
 
-        const fingerprintGen = new FingerprintGenerator({
-          devices: ["desktop"],
-          operatingSystems: ["linux"],
-          browsers: [{ name: "chrome", minVersion: 130 }],
-          locales: ["en-US", "en"],
-          screen: {
-            minWidth: this.launchConfig.dimensions?.width ?? 1920,
-            minHeight: this.launchConfig.dimensions?.height ?? 1080,
-            maxWidth: this.launchConfig.dimensions?.width ?? 1920,
-            maxHeight: this.launchConfig.dimensions?.height ?? 1080,
-          },
-        });
+        if (!env.SKIP_FINGERPRINT_INJECTION && !userAgent) {
+          const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
+            devices: ["desktop"],
+            operatingSystems: ["linux"],
+            browsers: [{ name: "chrome", minVersion: 130 }],
+            locales: ["en-US", "en"],
+          };
 
-        this.fingerprintData = await fingerprintGen.getFingerprint();
+          const fingerprintGen = new FingerprintGenerator({
+            ...defaultFingerprintOptions,
+            screen: {
+              minWidth: this.launchConfig.dimensions?.width ?? 1920,
+              minHeight: this.launchConfig.dimensions?.height ?? 1080,
+              maxWidth: this.launchConfig.dimensions?.width ?? 1920,
+              maxHeight: this.launchConfig.dimensions?.height ?? 1080,
+            },
+          });
+
+          this.fingerprintData = await fingerprintGen.getFingerprint();
+        }
 
         const timezone = config?.timezone || this.defaultTimezone;
 
@@ -705,7 +715,7 @@ export class CDPService extends EventEmitter {
   }
 
   public getUserAgent() {
-    return this.fingerprintData?.fingerprint.navigator.userAgent;
+    return this.currentSessionConfig?.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent;
   }
 
   public async getCookies(): Promise<Protocol.Network.Cookie[]> {
@@ -926,7 +936,9 @@ export class CDPService extends EventEmitter {
     this.logger.debug("[CDPService] Session context injection setup complete");
   }
 
-  private async injectFingerprintSafely(page: Page, fingerprintData: BrowserFingerprintWithHeaders) {
+  private async injectFingerprintSafely(page: Page, fingerprintData: BrowserFingerprintWithHeaders | null) {
+    if (!fingerprintData) return;
+
     try {
       const { fingerprint, headers } = fingerprintData;
       // TypeScript fix - access userAgent through navigator property
