@@ -54,6 +54,7 @@ export class CDPService extends EventEmitter {
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
+  private proxyWebSocketHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null = null;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -93,6 +94,20 @@ export class CDPService extends EventEmitter {
     };
 
     this.pluginManager = new PluginManager(this, logger);
+  }
+
+  public setProxyWebSocketHandler(
+    handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
+  ): void {
+    this.proxyWebSocketHandler = handler;
+  }
+
+  public getBrowserInstance(): Browser | null {
+    return this.browserInstance;
+  }
+
+  public getLaunchConfig(): BrowserLauncherOptions | undefined {
+    return this.launchConfig;
   }
 
   public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
@@ -688,6 +703,12 @@ export class CDPService extends EventEmitter {
 
   @traceable
   public async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    if (this.proxyWebSocketHandler) {
+      this.logger.info("[CDPService] Using custom WebSocket proxy handler");
+      await this.proxyWebSocketHandler(req, socket, head);
+      return;
+    }
+
     if (!this.wsEndpoint) {
       throw new Error(`WebSocket endpoint not available. Ensure the browser is launched first.`);
     }
