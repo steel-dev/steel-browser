@@ -17,6 +17,7 @@ export const loadFingerprintScript = ({
   fixedRenderer,
   fixedHardwareConcurrency,
   fixedDeviceMemory,
+  fixedPlatform,
   fixedVersion = FIXED_VERSION,
   fixedShadingLanguageVersion = FIXED_SHADING_LANGUAGE_VERSION,
 }: {
@@ -26,6 +27,7 @@ export const loadFingerprintScript = ({
   fixedDeviceMemory: number;
   fixedVersion?: string;
   fixedShadingLanguageVersion?: string;
+  fixedPlatform?: string;
 }): string => {
   const fingerprintScript = loadScript("fingerprint.js");
 
@@ -36,6 +38,7 @@ export const loadFingerprintScript = ({
     const FIXED_SHADING_LANGUAGE_VERSION = "${fixedShadingLanguageVersion}";
     const FIXED_HARDWARE_CONCURRENCY = ${fixedHardwareConcurrency};
     const FIXED_DEVICE_MEMORY = ${fixedDeviceMemory};
+    const FIXED_PLATFORM = "${fixedPlatform}";
     ${fingerprintScript}
   `;
 };
