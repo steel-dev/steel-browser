@@ -986,7 +986,7 @@ export class CDPService extends EventEmitter {
             fullVersionList:
               userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
             fullVersion: userAgentMetadata.fullVersion,
-            platform: navigator.platform,
+            platform: fingerprint.navigator.platform || "Linux x86_64",
             platformVersion: userAgentMetadata.platformVersion,
             architecture: userAgentMetadata.architecture,
             model: userAgentMetadata.model,
@@ -1002,6 +1002,7 @@ export class CDPService extends EventEmitter {
 
       await page.evaluateOnNewDocument(
         loadFingerprintScript({
+          fixedPlatform: fingerprint.navigator.platform || "Linux x86_64",
           fixedVendor: fingerprint.videoCard.vendor,
           fixedRenderer: fingerprint.videoCard.renderer,
           fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
