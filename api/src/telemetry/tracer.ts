@@ -1,5 +1,5 @@
 import type { Span, SpanOptions } from "@opentelemetry/api";
-import { noopSpan } from "./noop";
+import { noopSpan } from "./noop.js";
 
 let otel: typeof import('@opentelemetry/api') | undefined;
 try {
