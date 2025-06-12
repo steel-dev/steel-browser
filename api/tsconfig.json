@@ -12,7 +12,9 @@
     "noImplicitAny": false,
     "strict": true,
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
   },
   "include": ["src"],
   "files": ["./src/types/fastify.d.ts", "src/services/cdp/plugins/pptr-extensions.d.ts"]

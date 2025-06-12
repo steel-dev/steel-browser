@@ -30,6 +30,7 @@ import { ChromeContextService } from "../context/chrome-context.service.js";
 import { SessionData } from "../context/types.js";
 import { FileService } from "../file.service.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
+import { traceable, tracer } from "../../telemetry/tracer.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -426,6 +427,7 @@ export class CDPService extends EventEmitter {
     }
   }
 
+  @traceable
   public async shutdown(): Promise<void> {
     if (this.browserInstance) {
       this.shuttingDown = true;
@@ -494,6 +496,7 @@ export class CDPService extends EventEmitter {
     return JSON.stringify(newConfig) === JSON.stringify(oldConfig);
   }
 
+  @traceable
   public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
     try {
       const launchTimeout = new Promise<never>((_, reject) => {
@@ -619,7 +622,10 @@ export class CDPService extends EventEmitter {
 
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
-        this.browserInstance = (await puppeteer.launch(finalLaunchOptions)) as unknown as Browser;
+
+        this.browserInstance = await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
+          return await puppeteer.launch(finalLaunchOptions);
+        }) as unknown as Browser;
 
         // Notify plugins about browser launch
         await this.pluginManager.onBrowserLaunch(this.browserInstance);
@@ -659,6 +665,7 @@ export class CDPService extends EventEmitter {
     }
   }
 
+  @traceable
   public async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     if (!this.wsEndpoint) {
       throw new Error(`WebSocket endpoint not available. Ensure the browser is launched first.`);
@@ -858,12 +865,14 @@ export class CDPService extends EventEmitter {
     return this.browserInstance?.pages() || [];
   }
 
+  @traceable
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
     this.currentSessionConfig = sessionConfig;
     this.trackedOrigins.clear(); // Clear tracked origins when starting a new session
     return this.launch(sessionConfig);
   }
 
+  @traceable
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and restarting with default configuration.");
     await this.shutdown();
@@ -891,6 +900,7 @@ export class CDPService extends EventEmitter {
     }
   }
 
+  @traceable
   private async injectSessionContext(page: Page, context?: BrowserLauncherOptions["sessionContext"]) {
     if (!context) return;
 
@@ -936,6 +946,7 @@ export class CDPService extends EventEmitter {
     this.logger.debug("[CDPService] Session context injection setup complete");
   }
 
+  @traceable
   private async injectFingerprintSafely(page: Page, fingerprintData: BrowserFingerprintWithHeaders | null) {
     if (!fingerprintData) return;
 
