@@ -2,6 +2,14 @@ import type { Span, SpanOptions } from "@opentelemetry/api";
 import { noopSpan } from "./noop";
 
 let otel: typeof import('@opentelemetry/api') | undefined;
+try {
+	otel = await import('@opentelemetry/api');
+} catch (err: any) {
+	if (err?.code !== 'MODULE_NOT_FOUND' && err?.code !== 'ERR_MODULE_NOT_FOUND') {
+		throw err;
+	}
+}
+
 
 interface TracerOptions extends SpanOptions {
   spanName?: string;
