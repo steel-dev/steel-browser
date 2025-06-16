@@ -1,5 +1,5 @@
-import { Browser, Page } from "puppeteer-core";
-import { CDPService } from "../../cdp.service.js";
+import type { Browser, Page } from "puppeteer-core";
+import type { CDPService } from "../../cdp.service.js";
 
 export interface PluginOptions {
   name: string;
