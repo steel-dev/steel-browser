@@ -31,6 +31,7 @@ import { SessionData } from "../context/types.js";
 import { FileService } from "../file.service.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
+import { BasePlugin } from "./plugins/core/base-plugin.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -164,6 +165,14 @@ export class CDPService extends EventEmitter {
       await this.primaryPage.close();
     }
     this.primaryPage = newPage;
+  }
+
+  public registerPlugin(plugin: BasePlugin) {
+    return this.pluginManager.register(plugin);
+  }
+  
+  public unregisterPlugin(pluginName: string) {
+    return this.pluginManager.unregister(pluginName);
   }
 
   private async handleTargetChange(target: Target) {

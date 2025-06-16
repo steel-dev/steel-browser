@@ -11,6 +11,12 @@
         "types": "./build/steel-browser-plugin.d.ts",
         "default": "./build/steel-browser-plugin.js"
       }
+    },
+    "./cdp-plugin": {
+      "import": {
+        "types": "./build/services/cdp/plugins/core/base-plugin.d.ts",
+        "default": "./build/services/cdp/plugins/core/base-plugin.js"
+      }
     }
   },
   "scripts": {
