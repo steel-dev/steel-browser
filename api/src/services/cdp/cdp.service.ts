@@ -170,7 +170,7 @@ export class CDPService extends EventEmitter {
   public registerPlugin(plugin: BasePlugin) {
     return this.pluginManager.register(plugin);
   }
-  
+
   public unregisterPlugin(pluginName: string) {
     return this.pluginManager.unregister(pluginName);
   }
@@ -584,13 +584,16 @@ export class CDPService extends EventEmitter {
           "--disable-setuid-sandbox",
           "--use-angle=disabled",
           "--disable-web-security",
-          "--disable-features=IsolateOrigins,site-per-process",
+          "--disable-features=IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching",
+          "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--no-first-run",
           "--disable-search-engine-choice-screen",
           "--disable-blink-features=AutomationControlled",
           "--webrtc-ip-handling-policy=disable_non_proxied_udp",
           "--force-webrtc-ip-handling-policy",
+          "--disable-touch-editing",
+          "--disable-touch-drag-drop",
         ];
 
         const dynamicArgs = [
@@ -632,9 +635,9 @@ export class CDPService extends EventEmitter {
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
 
-        this.browserInstance = await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
+        this.browserInstance = (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
           return await puppeteer.launch(finalLaunchOptions);
-        }) as unknown as Browser;
+        })) as unknown as Browser;
 
         // Notify plugins about browser launch
         await this.pluginManager.onBrowserLaunch(this.browserInstance);
