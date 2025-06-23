@@ -4,6 +4,9 @@ services:
     ports:
       - "3000:3000"
       - "9223:9223"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost:3000}
+      - CDP_DOMAIN=${CDP_DOMAIN:-localhost:9223}
     volumes:
       - ./.cache:/app/.cache
     networks:
