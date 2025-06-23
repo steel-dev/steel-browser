@@ -16,7 +16,7 @@ import ejs from "ejs";
 import type { CDPService } from "./services/cdp/cdp.service.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
 
-// We need to redecalre any decorators from within the plugin that we want to expose
+// We need to redeclare any decorators from within the plugin that we want to expose
 declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: SteelBrowserConfig;
