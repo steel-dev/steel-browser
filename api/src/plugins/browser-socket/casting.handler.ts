@@ -5,7 +5,14 @@ import WebSocket from "ws";
 
 import { SessionService } from "../../services/session.service.js";
 import { env } from "../../env.js";
-import { PageInfo, MouseEvent, NavigationEvent, KeyEvent, CloseTabEvent, GetSelectedTextEvent } from "../../types/casting.js";
+import {
+  PageInfo,
+  MouseEvent,
+  NavigationEvent,
+  KeyEvent,
+  CloseTabEvent,
+  GetSelectedTextEvent,
+} from "../../types/casting.js";
 import { getPageFavicon, getPageTitle, navigatePage } from "../../utils/casting.js";
 
 export async function handleCastSession(
@@ -272,7 +279,9 @@ export async function handleCastSession(
 
         ws.on("message", async (message) => {
           try {
-            const data: MouseEvent | KeyEvent | NavigationEvent | CloseTabEvent | GetSelectedTextEvent = JSON.parse(message.toString());
+            const data: MouseEvent | KeyEvent | NavigationEvent | CloseTabEvent | GetSelectedTextEvent = JSON.parse(
+              message.toString(),
+            );
             const { type } = data;
 
             if (!targetClient || !targetPage) {
@@ -330,25 +339,27 @@ export async function handleCastSession(
                 try {
                   const selectedText = await targetPage.evaluate(() => {
                     const selection = window.getSelection();
-                    return selection ? selection.toString() : '';
+                    return selection ? selection.toString() : "";
                   });
-                  
+
                   // Send the selected text back to the client
-                  ws.send(JSON.stringify({
-                    type: 'selectedTextResponse',
-                    pageId: (data as GetSelectedTextEvent).pageId,
-                    text: selectedText
-                  }));
-                  
-                  console.log('Retrieved selected text:', selectedText);
+                  ws.send(
+                    JSON.stringify({
+                      type: "selectedTextResponse",
+                      pageId: (data as GetSelectedTextEvent).pageId,
+                      text: selectedText,
+                    }),
+                  );
                 } catch (error) {
-                  console.error('Failed to get selected text:', error);
-                  ws.send(JSON.stringify({
-                    type: 'selectedTextResponse',
-                    pageId: (data as GetSelectedTextEvent).pageId,
-                    text: '',
-                    error: error instanceof Error ? error.message : 'Unknown error'
-                  }));
+                  console.error("Failed to get selected text:", error);
+                  ws.send(
+                    JSON.stringify({
+                      type: "selectedTextResponse",
+                      pageId: (data as GetSelectedTextEvent).pageId,
+                      text: "",
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    }),
+                  );
                 }
                 break;
               }

@@ -1553,13 +1553,11 @@
 
               function handleCopyEvent() {
                   if (!activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) {
-                      console.log('Cannot copy - no active tab');
                       return;
                   }
 
                   const ws = tabs[activeTabId].websocket;
                   if (ws.readyState !== WebSocket.OPEN) {
-                      console.log('Cannot copy - websocket not open');
                       return;
                   }
 
@@ -1571,13 +1569,11 @@
 
               function handlePasteEvent(text) {
                   if (!text || !activeTabId || !tabs[activeTabId] || !tabs[activeTabId].websocket) {
-                      console.log('Cannot paste - no text or no active tab');
                       return;
                   }
 
                   const ws = tabs[activeTabId].websocket;
                   if (ws.readyState !== WebSocket.OPEN) {
-                      console.log('Cannot paste - websocket not open');
                       return;
                   }
 
@@ -1628,10 +1624,8 @@
                       pendingRequests.delete(data.requestId);
 
                       if (data.type === 'clipboardWriteResponse') {
-                          if (data.success) {
-                              console.log('Clipboard write successful');
-                          } else {
-                              console.error('Clipboard write failed:', data.error);
+                          if (!data.success) {
+                            console.error('Clipboard write failed:', data.error);
                           }
                       } else if (data.type === 'clipboardReadResponse') {
                           if (data.text) {
@@ -1690,7 +1684,6 @@
                   const payload = JSON.parse(event.data);
 
                   if (payload.type === "selectedTextResponse") {
-                      console.log('Received selected text from browser:', payload.text);
 
                       if (payload.text && payload.text.length > 0) {
                           const requestId = ++clipboardRequestId;
@@ -1701,8 +1694,6 @@
                               text: payload.text,
                               requestId: requestId
                           }, '*');
-
-                          console.log('Sending text to clipboard:', payload.text);
                       } else {
                           console.log('No text selected in browser');
                       }

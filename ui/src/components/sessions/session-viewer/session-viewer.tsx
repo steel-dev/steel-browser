@@ -42,7 +42,6 @@ export function SessionViewer({ id }: SessionViewerProps) {
               "*",
             );
           } catch (error) {
-            console.error("Failed to read clipboard:", error);
             iframeRef.current.contentWindow?.postMessage(
               {
                 type: "clipboardReadResponse",
@@ -66,7 +65,6 @@ export function SessionViewer({ id }: SessionViewerProps) {
               "*",
             );
           } catch (error) {
-            console.error("Failed to write to clipboard:", error);
             iframeRef.current.contentWindow?.postMessage(
               {
                 type: "clipboardWriteResponse",
