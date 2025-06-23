@@ -170,7 +170,7 @@ export class CDPService extends EventEmitter {
   public registerPlugin(plugin: BasePlugin) {
     return this.pluginManager.register(plugin);
   }
-  
+
   public unregisterPlugin(pluginName: string) {
     return this.pluginManager.unregister(pluginName);
   }
@@ -632,9 +632,9 @@ export class CDPService extends EventEmitter {
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
 
-        this.browserInstance = await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
+        this.browserInstance = (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
           return await puppeteer.launch(finalLaunchOptions);
-        }) as unknown as Browser;
+        })) as unknown as Browser;
 
         // Notify plugins about browser launch
         await this.pluginManager.onBrowserLaunch(this.browserInstance);
@@ -1005,14 +1005,14 @@ export class CDPService extends EventEmitter {
             brands: userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
             fullVersionList:
               userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
-            fullVersion: userAgentMetadata.fullVersion,
+            fullVersion: userAgentMetadata.uaFullVersion,
             platform: fingerprint.navigator.platform || "Linux x86_64",
             platformVersion: userAgentMetadata.platformVersion,
             architecture: userAgentMetadata.architecture,
             model: userAgentMetadata.model,
             mobile: userAgentMetadata.mobile as unknown as boolean,
             bitness: userAgentMetadata.bitness,
-            wow64: userAgentMetadata.wow64 as unknown as boolean,
+            wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
           },
         });
       } finally {
