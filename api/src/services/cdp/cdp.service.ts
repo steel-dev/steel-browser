@@ -584,13 +584,16 @@ export class CDPService extends EventEmitter {
           "--disable-setuid-sandbox",
           "--use-angle=disabled",
           "--disable-web-security",
-          "--disable-features=IsolateOrigins,site-per-process",
+          "--disable-features=IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching",
+          "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--no-first-run",
           "--disable-search-engine-choice-screen",
           "--disable-blink-features=AutomationControlled",
           "--webrtc-ip-handling-policy=disable_non_proxied_udp",
           "--force-webrtc-ip-handling-policy",
+          "--disable-touch-editing",
+          "--disable-touch-drag-drop",
         ];
 
         const dynamicArgs = [

@@ -22,6 +22,7 @@ export type KeyEvent = {
     code: string;
     key: string;
     keyCode: number;
+    modifiers?: number;
   };
 };
 
@@ -36,6 +37,24 @@ export type NavigationEvent = {
 
 export type CloseTabEvent = {
   type: "closeTab";
+  pageId: string;
+};
+
+export type ClipboardWriteEvent = {
+  type: "clipboardWrite";
+  pageId: string;
+  event: {
+    text: string;
+  };
+};
+
+export type ClipboardReadEvent = {
+  type: "clipboardRead";
+  pageId: string;
+};
+
+export type GetSelectedTextEvent = {
+  type: "getSelectedText";
   pageId: string;
 };
 
