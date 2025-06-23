@@ -1008,14 +1008,14 @@ export class CDPService extends EventEmitter {
             brands: userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
             fullVersionList:
               userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
-            fullVersion: userAgentMetadata.fullVersion,
+            fullVersion: userAgentMetadata.uaFullVersion,
             platform: fingerprint.navigator.platform || "Linux x86_64",
             platformVersion: userAgentMetadata.platformVersion,
             architecture: userAgentMetadata.architecture,
             model: userAgentMetadata.model,
             mobile: userAgentMetadata.mobile as unknown as boolean,
             bitness: userAgentMetadata.bitness,
-            wow64: userAgentMetadata.wow64 as unknown as boolean,
+            wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
           },
         });
       } finally {
