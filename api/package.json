@@ -54,7 +54,6 @@
     "@fastify/sensible": "^6.0.3",
     "@fastify/swagger": "^9.4.2",
     "@fastify/view": "10.0.2",
-    "@fastify/vite": "^7.0.1",
     "@mozilla/readability": "^0.5.0",
     "@scalar/fastify-api-reference": "^1.25.116",
     "archiver": "^7.0.1",
@@ -64,8 +63,8 @@
     "ejs": "^3.1.10",
     "fastify-plugin": "^5.0.1",
     "file-type": "^20.4.1",
-    "fingerprint-generator": "^2.1.62",
-    "fingerprint-injector": "^2.1.62",
+    "fingerprint-generator": "2.1.66",
+    "fingerprint-injector": "2.1.66",
     "http-proxy": "^1.18.1",
     "https-proxy-agent": "^7.0.6",
     "iconv-lite": "^0.6.3",
@@ -88,15 +87,15 @@
     "cross-spawn": "^7.0.6"
   },
   "peerDependencies": {
-    "fastify": "^5.0.0",
-    "@opentelemetry/api": "1.9.0"
+    "@opentelemetry/api": "1.9.0",
+    "fastify": "^5.0.0"
   },
   "peerDependenciesMeta": {
-		"fastify": {
-			"optional": false
-		},
-		"@opentelemetry/api": {
-			"optional": true
-		}
-	}
+    "fastify": {
+      "optional": false
+    },
+    "@opentelemetry/api": {
+      "optional": true
+    }
+  }
 }
