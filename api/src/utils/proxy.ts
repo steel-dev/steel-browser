@@ -14,11 +14,18 @@ export class ProxyServer extends Server {
       port: 0,
 
       prepareRequestFunction: ({ connectionId, hostname }) => {
-        const internalBypassTests = ["0.0.0.0", process.env.HOST];
+        const internalBypassTests = new Set([
+          "0.0.0.0",
+          process.env.HOST,
+        ]);
+
         if (env.PROXY_INTERNAL_BYPASS) {
-          internalBypassTests.push(...env.PROXY_INTERNAL_BYPASS.split(","));
+          for (const host of env.PROXY_INTERNAL_BYPASS.split(",")) {
+            internalBypassTests.add(host.trim());
+          }
         }
-        const isInternalBypass = internalBypassTests.includes(hostname);
+
+        const isInternalBypass = internalBypassTests.has(hostname);
 
         if (isInternalBypass) {
           this.hostConnections.add(connectionId);
