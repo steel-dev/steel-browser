@@ -1,3 +1,4 @@
+import { env } from "../env.js";
 import { SessionService } from "../services/session.service.js";
 import { Server } from "proxy-chain";
 
@@ -13,7 +14,20 @@ export class ProxyServer extends Server {
       port: 0,
 
       prepareRequestFunction: ({ connectionId, hostname }) => {
-        if (hostname === process.env.HOST) {
+        const internalBypassTests = new Set([
+          "0.0.0.0",
+          process.env.HOST,
+        ]);
+
+        if (env.PROXY_INTERNAL_BYPASS) {
+          for (const host of env.PROXY_INTERNAL_BYPASS.split(",")) {
+            internalBypassTests.add(host.trim());
+          }
+        }
+
+        const isInternalBypass = internalBypassTests.has(hostname);
+
+        if (isInternalBypass) {
           this.hostConnections.add(connectionId);
           return {
             requestAuthentication: false,
