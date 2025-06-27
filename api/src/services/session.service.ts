@@ -201,7 +201,9 @@ export class SessionService {
         debugUrl: getUrl("v1/sessions/debug"),
         debuggerUrl: getUrl("v1/devtools/inspector.html"),
         sessionViewerUrl: getBaseUrl(),
-        userAgent: this.cdpService.getUserAgent(),
+        userAgent:
+          this.cdpService.getUserAgent() ||
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
       });
     }
 

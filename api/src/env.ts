@@ -14,6 +14,7 @@ const envSchema = z.object({
     .transform((val) => val === "true" || val === "1")
     .default("false"),
   CDP_REDIRECT_PORT: z.string().optional().default("9222"),
+  CDP_DOMAIN: z.string().optional(),
   PROXY_URL: z.string().optional(),
   DEFAULT_HEADERS: z
     .string()

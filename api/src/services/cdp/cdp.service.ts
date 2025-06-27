@@ -54,6 +54,7 @@ export class CDPService extends EventEmitter {
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
+  private proxyWebSocketHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null = null;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -95,6 +96,20 @@ export class CDPService extends EventEmitter {
     this.pluginManager = new PluginManager(this, logger);
   }
 
+  public setProxyWebSocketHandler(
+    handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
+  ): void {
+    this.proxyWebSocketHandler = handler;
+  }
+
+  public getBrowserInstance(): Browser | null {
+    return this.browserInstance;
+  }
+
+  public getLaunchConfig(): BrowserLauncherOptions | undefined {
+    return this.launchConfig;
+  }
+
   public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
     this.launchMutators.push(fn);
   }
@@ -127,12 +142,21 @@ export class CDPService extends EventEmitter {
     return this.primaryPage;
   }
 
+  private getDebuggerBase(): { baseUrl: string; protocol: string; wsProtocol: string } {
+    const baseUrl = env.CDP_DOMAIN ?? env.DOMAIN ?? `${env.HOST}:${env.CDP_REDIRECT_PORT}`;
+    const protocol = env.USE_SSL ? 'https' : 'http';
+    const wsProtocol = env.USE_SSL ? 'wss' : 'ws';
+    return { baseUrl, protocol, wsProtocol };
+  }
+
   public getDebuggerUrl() {
-    return `http://${env.HOST}:${env.CDP_REDIRECT_PORT}/devtools/devtools_app.html`;
+    const { baseUrl, protocol } = this.getDebuggerBase();
+    return `${protocol}://${baseUrl}/devtools/devtools_app.html`;
   }
 
   public getDebuggerWsUrl(pageId?: string) {
-    return `ws://${env.HOST}:${env.CDP_REDIRECT_PORT}/devtools/page/${pageId ?? this.getTargetId(this.primaryPage!)}`;
+    const { baseUrl, wsProtocol } = this.getDebuggerBase();
+    return `${wsProtocol}://${baseUrl}/devtools/page/${pageId ?? this.getTargetId(this.primaryPage!)}`;
   }
 
   public customEmit(event: EmitEvent, payload: any) {
@@ -679,6 +703,12 @@ export class CDPService extends EventEmitter {
 
   @traceable
   public async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    if (this.proxyWebSocketHandler) {
+      this.logger.info("[CDPService] Using custom WebSocket proxy handler");
+      await this.proxyWebSocketHandler(req, socket, head);
+      return;
+    }
+
     if (!this.wsEndpoint) {
       throw new Error(`WebSocket endpoint not available. Ensure the browser is launched first.`);
     }
