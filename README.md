@@ -160,7 +160,7 @@ The full REST API documentation can be found on your Steel instance at `/documen
 #### Using the SDKs
 If you prefer to use the our Python and Node SDKs, you can install the `steel-sdk` package for Node or Python.
 
-These SDKs are built on top of the REST API and provide a more convenient way to interact with the Steel browser API. They are fully typed, and are compatible with both Steel Cloud and self-hosted Steel instances (changeable using the `baseUrl` option on Node and `base_url` on Python). 
+These SDKs are built on top of the REST API and provide a more convenient way to interact with the Steel browser API. They are fully typed, and are compatible with both Steel Cloud and self-hosted Steel instances (changeable using the `baseURL` option on Node and `base_url` on Python). 
 
 For more details on installing and using the SDKs, please see the [Node SDK Reference](https://docs.steel.dev/overview/reference/node-sdk-reference) and the [Python SDK Reference](https://docs.steel.dev/overview/reference/python-sdk-reference).
 
@@ -181,7 +181,7 @@ Once you have a session, you can use the session ID or the root URL to interact 
 import Steel from 'steel-sdk';
 
 const client = new Steel({
-  baseUrl: "http://localhost:3000", // Custom API Base URL override
+  baseURL: "http://localhost:3000", // Custom API Base URL override
 });
 
 (async () => {
