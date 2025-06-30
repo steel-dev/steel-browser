@@ -91,6 +91,7 @@ export class SessionService {
     dimensions?: { width: number; height: number };
     extra?: Record<string, Record<string, string>>;
     credentials: CredentialsOptions;
+    skipFingerprintInjection?: boolean;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -104,6 +105,7 @@ export class SessionService {
       blockAds,
       extra,
       credentials,
+      skipFingerprintInjection,
     } = options;
 
     let timezone = options.timezone;
@@ -177,6 +179,7 @@ export class SessionService {
       userDataDir,
       extra,
       credentials,
+      skipFingerprintInjection,
     };
 
     if (isSelenium) {

@@ -25,6 +25,7 @@ export interface BrowserLauncherOptions {
   userDataDir?: string;
   extra?: Record<string, Record<string, string>>;
   credentials?: CredentialsOptions;
+  skipFingerprintInjection?: boolean;
 }
 
 export interface BrowserServerOptions {

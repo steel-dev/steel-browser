@@ -32,6 +32,21 @@ import { FileService } from "../file.service.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
 import { BasePlugin } from "./plugins/core/base-plugin.js";
+import {
+  BaseLaunchError,
+  LaunchTimeoutError,
+  ConfigurationError,
+  ResourceError,
+  NetworkError,
+  FingerprintError,
+  PluginError,
+  CleanupError,
+  BrowserProcessError,
+  SessionContextError,
+  categorizeError,
+} from "./errors/launch-errors.js";
+import { RetryManager, RetryOptions } from "../../utils/retry.js";
+import { validateLaunchConfig } from "./utils/validation.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -51,6 +66,7 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
+  private retryManager: RetryManager;
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
@@ -69,6 +85,7 @@ export class CDPService extends EventEmitter {
     this.defaultTimezone = env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
     this.trackedOrigins = new Set<string>();
     this.chromeSessionService = new ChromeContextService(logger);
+    this.retryManager = new RetryManager(logger);
     // Clean up any existing proxy server
     if (this.wsProxyServer) {
       try {
@@ -144,8 +161,8 @@ export class CDPService extends EventEmitter {
 
   private getDebuggerBase(): { baseUrl: string; protocol: string; wsProtocol: string } {
     const baseUrl = env.CDP_DOMAIN ?? env.DOMAIN ?? `${env.HOST}:${env.CDP_REDIRECT_PORT}`;
-    const protocol = env.USE_SSL ? 'https' : 'http';
-    const wsProtocol = env.USE_SSL ? 'wss' : 'ws';
+    const protocol = env.USE_SSL ? "https" : "http";
+    const wsProtocol = env.USE_SSL ? "wss" : "ws";
     return { baseUrl, protocol, wsProtocol };
   }
 
@@ -530,10 +547,22 @@ export class CDPService extends EventEmitter {
   }
 
   @traceable
-  public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
+  public async launch(config?: BrowserLauncherOptions, retryOptions?: Partial<RetryOptions>): Promise<Browser> {
+    // Use retry mechanism for the launch process
+    const result = await this.retryManager.executeWithRetry(
+      () => this.launchInternal(config),
+      "Browser Launch",
+      retryOptions,
+    );
+
+    return result.result;
+  }
+
+  @traceable
+  private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
     try {
       const launchTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Browser launch timeout after 30 seconds")), 30000);
+        setTimeout(() => reject(new LaunchTimeoutError(30000)), 30000);
       });
 
       const launchProcess = (async () => {
@@ -543,58 +572,102 @@ export class CDPService extends EventEmitter {
         if (shouldReuseInstance) {
           this.logger.info("[CDPService] Reusing existing browser instance with default configuration.");
           this.launchConfig = config || this.defaultLaunchConfig;
-          await this.refreshPrimaryPage();
+          try {
+            await this.refreshPrimaryPage();
+          } catch (error) {
+            throw new BrowserProcessError(
+              "Failed to refresh primary page when reusing browser instance",
+              "page_refresh",
+            );
+          }
           return this.browserInstance!;
         } else if (this.browserInstance) {
           this.logger.info("[CDPService] Existing browser instance detected. Closing it before launching a new one.");
-          await this.shutdown();
+          try {
+            await this.shutdown();
+          } catch (error) {
+            // Log but don't fail launch due to shutdown issues
+            this.logger.warn(`[CDPService] Error during shutdown before launch: ${error}`);
+          }
         }
 
         this.launchConfig = config || this.defaultLaunchConfig;
         this.logger.info("[CDPService] Launching new browser instance.");
 
+        // Validate configuration
+        try {
+          validateLaunchConfig(this.launchConfig);
+        } catch (error) {
+          throw categorizeError(error, "configuration validation");
+        }
+
+        // File cleanup - non-critical, log errors but continue
         this.logger.info("[CDPService] Cleaning up files before browser launch");
         try {
           await FileService.getInstance().cleanupFiles();
           this.logger.info("[CDPService] Files cleaned successfully before launch");
         } catch (error) {
-          this.logger.error(`[CDPService] Error cleaning files before launch: ${error}`);
+          const cleanupError = new CleanupError(
+            error instanceof Error ? error.message : String(error),
+            "pre-launch file cleanup",
+          );
+          this.logger.warn(`[CDPService] ${cleanupError.message} - continuing with launch`);
         }
 
         const { options, userAgent, userDataDir } = this.launchConfig;
 
-        if (!env.SKIP_FINGERPRINT_INJECTION && !userAgent) {
-          const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
-            devices: ["desktop"],
-            operatingSystems: ["linux"],
-            browsers: [{ name: "chrome", minVersion: 130 }],
-            locales: ["en-US", "en"],
-          };
+        // Fingerprint generation - can fail gracefully
+        if (!env.SKIP_FINGERPRINT_INJECTION && !userAgent && !this.launchConfig.skipFingerprintInjection) {
+          try {
+            const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
+              devices: ["desktop"],
+              operatingSystems: ["linux"],
+              browsers: [{ name: "chrome", minVersion: 130 }],
+              locales: ["en-US", "en"],
+            };
 
-          const fingerprintGen = new FingerprintGenerator({
-            ...defaultFingerprintOptions,
-            screen: {
-              minWidth: this.launchConfig.dimensions?.width ?? 1920,
-              minHeight: this.launchConfig.dimensions?.height ?? 1080,
-              maxWidth: this.launchConfig.dimensions?.width ?? 1920,
-              maxHeight: this.launchConfig.dimensions?.height ?? 1080,
-            },
-          });
+            const fingerprintGen = new FingerprintGenerator({
+              ...defaultFingerprintOptions,
+              screen: {
+                minWidth: this.launchConfig.dimensions?.width ?? 1920,
+                minHeight: this.launchConfig.dimensions?.height ?? 1080,
+                maxWidth: this.launchConfig.dimensions?.width ?? 1920,
+                maxHeight: this.launchConfig.dimensions?.height ?? 1080,
+              },
+            });
 
-          this.fingerprintData = await fingerprintGen.getFingerprint();
+            this.fingerprintData = await fingerprintGen.getFingerprint();
+          } catch (error) {
+            throw new FingerprintError(error instanceof Error ? error.message : String(error), "generation");
+          }
         }
 
         const timezone = config?.timezone || this.defaultTimezone;
 
-        for (const mutator of this.launchMutators) {
-          await mutator(this.launchConfig);
+        // Run launch mutators - plugin errors should be caught
+        try {
+          for (const mutator of this.launchMutators) {
+            await mutator(this.launchConfig);
+          }
+        } catch (error) {
+          throw new PluginError(
+            error instanceof Error ? error.message : String(error),
+            "launch-mutator",
+            "pre-launch hook",
+          );
         }
+
         this.currentSessionConfig = this.launchConfig;
 
         const defaultExtensions = ["recorder"];
         const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
 
-        const extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
+        let extensionPaths: string[] = [];
+        try {
+          extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
+        } catch (error) {
+          throw new ResourceError(`Failed to resolve extension paths: ${error}`, "extensions", false);
+        }
 
         const extensionArgs = extensionPaths.length
           ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
@@ -659,12 +732,26 @@ export class CDPService extends EventEmitter {
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
 
-        this.browserInstance = (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
-          return await puppeteer.launch(finalLaunchOptions);
-        })) as unknown as Browser;
+        // Browser process launch - most critical step
+        try {
+          this.browserInstance = (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
+            return await puppeteer.launch(finalLaunchOptions);
+          })) as unknown as Browser;
+        } catch (error) {
+          throw new BrowserProcessError(error instanceof Error ? error.message : String(error), "launch_failed");
+        }
 
-        // Notify plugins about browser launch
-        await this.pluginManager.onBrowserLaunch(this.browserInstance);
+        // Plugin notifications - catch individual plugin errors
+        try {
+          await this.pluginManager.onBrowserLaunch(this.browserInstance);
+        } catch (error) {
+          const pluginError = new PluginError(
+            error instanceof Error ? error.message : String(error),
+            "plugin-manager",
+            "browser launch notification",
+          );
+          this.logger.warn(`[CDPService] ${pluginError.message} - continuing with launch`);
+        }
 
         this.browserInstance.on("error", (err) => {
           this.logger.error(`[CDPService] Browser error: ${err}`);
@@ -675,29 +762,64 @@ export class CDPService extends EventEmitter {
           });
         });
 
-        this.primaryPage = (await this.browserInstance.pages())[0];
+        try {
+          this.primaryPage = (await this.browserInstance.pages())[0];
+        } catch (error) {
+          throw new BrowserProcessError("Failed to get primary page from browser instance", "page_access");
+        }
 
+        // Session context injection - can fail gracefully
         if (this.launchConfig?.sessionContext) {
           this.logger.debug(`[CDPService] Page created with session context, injecting session context`);
-          await this.injectSessionContext(this.primaryPage, this.launchConfig.sessionContext);
+          try {
+            await this.injectSessionContext(this.primaryPage, this.launchConfig.sessionContext);
+          } catch (error) {
+            const contextError = new SessionContextError(
+              error instanceof Error ? error.message : String(error),
+              "context injection",
+            );
+            this.logger.warn(`[CDPService] ${contextError.message} - continuing without session context`);
+          }
         }
 
         this.browserInstance.on("targetcreated", this.handleNewTarget.bind(this));
         this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
         this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
 
-        this.wsEndpoint = this.browserInstance.wsEndpoint();
+        try {
+          this.wsEndpoint = this.browserInstance.wsEndpoint();
+        } catch (error) {
+          throw new NetworkError("Failed to get WebSocket endpoint from browser", "websocket setup");
+        }
 
-        await this.handleNewTarget(this.primaryPage.target());
-        await this.handleTargetChange(this.primaryPage.target());
+        // Final setup steps
+        try {
+          await this.handleNewTarget(this.primaryPage.target());
+          await this.handleTargetChange(this.primaryPage.target());
+        } catch (error) {
+          const setupError = new BrowserProcessError(
+            error instanceof Error ? error.message : String(error),
+            "target_setup",
+          );
+          this.logger.warn(`[CDPService] ${setupError.message} - browser may not function correctly`);
+        }
 
         return this.browserInstance;
       })();
 
       return (await Promise.race([launchProcess, launchTimeout])) as Browser;
     } catch (error) {
-      this.logger.error(`[CDPService] Failed to launch browser: ${error}`);
-      throw error;
+      const categorizedError = error instanceof BaseLaunchError ? error : categorizeError(error, "browser launch");
+
+      this.logger.error(`[CDPService] LAUNCH ERROR (${categorizedError.type}): ${categorizedError.message}`, {
+        error: {
+          errorType: categorizedError.type,
+          isRetryable: categorizedError.isRetryable,
+          context: categorizedError.context,
+        },
+      });
+
+      throw categorizedError;
     }
   }
 
@@ -1041,10 +1163,10 @@ export class CDPService extends EventEmitter {
             fullVersion: userAgentMetadata.uaFullVersion,
             platform: fingerprint.navigator.platform || "Linux x86_64",
             platformVersion: userAgentMetadata.platformVersion,
-            architecture: userAgentMetadata.architecture,
-            model: userAgentMetadata.model,
+            architecture: userAgentMetadata.architecture || "x86",
+            model: userAgentMetadata.model || "",
             mobile: userAgentMetadata.mobile as unknown as boolean,
-            bitness: userAgentMetadata.bitness,
+            bitness: userAgentMetadata.bitness || "64",
             wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
           },
         });
