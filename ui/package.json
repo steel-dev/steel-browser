@@ -40,7 +40,6 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.53.0",
     "react-router-dom": "^6.16.0",
-    "react-syntax-highlighter": "^15.5.0",
     "react-top-loading-bar": "^2.3.1",
     "rrweb-player": "^1.0.0-alpha.4",
     "serve": "^14.0.1",
