@@ -1,5 +1,5 @@
 import { BrowserLauncherOptions } from "../../../types";
-import { ConfigurationError, ResourceError } from "../errors/launch-errors";
+import { ConfigurationError, ResourceError, ConfigurationField } from "../errors/launch-errors";
 
 /**
  * Validates a givenlaunch configuration (not conclusive)
@@ -8,12 +8,16 @@ export function validateLaunchConfig(config: BrowserLauncherOptions): void {
   // Validate dimensions
   if (config.dimensions) {
     if (config.dimensions.width <= 0 || config.dimensions.height <= 0) {
-      throw new ConfigurationError("Dimensions must be positive numbers", "dimensions", config.dimensions);
+      throw new ConfigurationError(
+        "Dimensions must be positive numbers",
+        ConfigurationField.DIMENSIONS,
+        config.dimensions,
+      );
     }
     if (config.dimensions.width > 7680 || config.dimensions.height > 4320) {
       throw new ConfigurationError(
         "Dimensions are unreasonably large (max 7680x4320)",
-        "dimensions",
+        ConfigurationField.DIMENSIONS,
         config.dimensions,
       );
     }
@@ -24,7 +28,11 @@ export function validateLaunchConfig(config: BrowserLauncherOptions): void {
     try {
       Intl.DateTimeFormat(undefined, { timeZone: config.timezone });
     } catch {
-      throw new ConfigurationError(`Invalid timezone: ${config.timezone}`, "timezone", config.timezone);
+      throw new ConfigurationError(
+        `Invalid timezone: ${config.timezone}`,
+        ConfigurationField.TIMEZONE,
+        config.timezone,
+      );
     }
   }
 
@@ -35,7 +43,7 @@ export function validateLaunchConfig(config: BrowserLauncherOptions): void {
     } catch {
       throw new ConfigurationError(
         `Invalid proxy URL format: ${config.options.proxyUrl}`,
-        "proxyUrl",
+        ConfigurationField.PROXY_URL,
         config.options.proxyUrl,
       );
     }

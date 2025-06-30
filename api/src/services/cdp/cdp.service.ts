@@ -35,7 +35,6 @@ import { BasePlugin } from "./plugins/core/base-plugin.js";
 import {
   BaseLaunchError,
   LaunchTimeoutError,
-  ConfigurationError,
   ResourceError,
   NetworkError,
   FingerprintError,
@@ -44,6 +43,14 @@ import {
   BrowserProcessError,
   SessionContextError,
   categorizeError,
+  BrowserProcessState,
+  PluginName,
+  PluginOperation,
+  CleanupType,
+  SessionContextType,
+  FingerprintStage,
+  ResourceType,
+  NetworkOperation,
 } from "./errors/launch-errors.js";
 import { RetryManager, RetryOptions } from "../../utils/retry.js";
 import { validateLaunchConfig } from "./utils/validation.js";
@@ -577,7 +584,7 @@ export class CDPService extends EventEmitter {
           } catch (error) {
             throw new BrowserProcessError(
               "Failed to refresh primary page when reusing browser instance",
-              "page_refresh",
+              BrowserProcessState.PAGE_REFRESH,
             );
           }
           return this.browserInstance!;
@@ -609,7 +616,7 @@ export class CDPService extends EventEmitter {
         } catch (error) {
           const cleanupError = new CleanupError(
             error instanceof Error ? error.message : String(error),
-            "pre-launch file cleanup",
+            CleanupType.PRE_LAUNCH_FILE_CLEANUP,
           );
           this.logger.warn(`[CDPService] ${cleanupError.message} - continuing with launch`);
         }
@@ -638,7 +645,10 @@ export class CDPService extends EventEmitter {
 
             this.fingerprintData = await fingerprintGen.getFingerprint();
           } catch (error) {
-            throw new FingerprintError(error instanceof Error ? error.message : String(error), "generation");
+            throw new FingerprintError(
+              error instanceof Error ? error.message : String(error),
+              FingerprintStage.GENERATION,
+            );
           }
         }
 
@@ -652,8 +662,8 @@ export class CDPService extends EventEmitter {
         } catch (error) {
           throw new PluginError(
             error instanceof Error ? error.message : String(error),
-            "launch-mutator",
-            "pre-launch hook",
+            PluginName.LAUNCH_MUTATOR,
+            PluginOperation.PRE_LAUNCH_HOOK,
           );
         }
 
@@ -666,7 +676,7 @@ export class CDPService extends EventEmitter {
         try {
           extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
         } catch (error) {
-          throw new ResourceError(`Failed to resolve extension paths: ${error}`, "extensions", false);
+          throw new ResourceError(`Failed to resolve extension paths: ${error}`, ResourceType.EXTENSIONS, false);
         }
 
         const extensionArgs = extensionPaths.length
@@ -738,7 +748,10 @@ export class CDPService extends EventEmitter {
             return await puppeteer.launch(finalLaunchOptions);
           })) as unknown as Browser;
         } catch (error) {
-          throw new BrowserProcessError(error instanceof Error ? error.message : String(error), "launch_failed");
+          throw new BrowserProcessError(
+            error instanceof Error ? error.message : String(error),
+            BrowserProcessState.LAUNCH_FAILED,
+          );
         }
 
         // Plugin notifications - catch individual plugin errors
@@ -747,8 +760,8 @@ export class CDPService extends EventEmitter {
         } catch (error) {
           const pluginError = new PluginError(
             error instanceof Error ? error.message : String(error),
-            "plugin-manager",
-            "browser launch notification",
+            PluginName.PLUGIN_MANAGER,
+            PluginOperation.BROWSER_LAUNCH_NOTIFICATION,
           );
           this.logger.warn(`[CDPService] ${pluginError.message} - continuing with launch`);
         }
@@ -765,10 +778,13 @@ export class CDPService extends EventEmitter {
         try {
           this.primaryPage = (await this.browserInstance.pages())[0];
         } catch (error) {
-          throw new BrowserProcessError("Failed to get primary page from browser instance", "page_access");
+          throw new BrowserProcessError(
+            "Failed to get primary page from browser instance",
+            BrowserProcessState.PAGE_ACCESS,
+          );
         }
 
-        // Session context injection - can fail gracefully
+        // Session context injection - should throw error if it fails
         if (this.launchConfig?.sessionContext) {
           this.logger.debug(`[CDPService] Page created with session context, injecting session context`);
           try {
@@ -776,9 +792,10 @@ export class CDPService extends EventEmitter {
           } catch (error) {
             const contextError = new SessionContextError(
               error instanceof Error ? error.message : String(error),
-              "context injection",
+              SessionContextType.CONTEXT_INJECTION,
             );
-            this.logger.warn(`[CDPService] ${contextError.message} - continuing without session context`);
+            this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
+            throw contextError;
           }
         }
 
@@ -789,7 +806,7 @@ export class CDPService extends EventEmitter {
         try {
           this.wsEndpoint = this.browserInstance.wsEndpoint();
         } catch (error) {
-          throw new NetworkError("Failed to get WebSocket endpoint from browser", "websocket setup");
+          throw new NetworkError("Failed to get WebSocket endpoint from browser", NetworkOperation.WEBSOCKET_SETUP);
         }
 
         // Final setup steps
@@ -799,7 +816,7 @@ export class CDPService extends EventEmitter {
         } catch (error) {
           const setupError = new BrowserProcessError(
             error instanceof Error ? error.message : String(error),
-            "target_setup",
+            BrowserProcessState.TARGET_SETUP,
           );
           this.logger.warn(`[CDPService] ${setupError.message} - browser may not function correctly`);
         }
