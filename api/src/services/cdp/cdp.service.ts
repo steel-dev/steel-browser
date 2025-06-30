@@ -21,10 +21,19 @@ import puppeteer, {
 import { Duplex } from "stream";
 import { env } from "../../env.js";
 import { loadFingerprintScript } from "../../scripts/index.js";
-import { BrowserEvent, BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types/index.js";
+import {
+  BrowserEvent,
+  BrowserEventType,
+  BrowserLauncherOptions,
+  EmitEvent,
+} from "../../types/index.js";
 import { isAdRequest } from "../../utils/ads.js";
 import { filterHeaders, getChromeExecutablePath } from "../../utils/browser.js";
-import { extractStorageForPage, groupSessionStorageByOrigin, handleFrameNavigated } from "../../utils/context.js";
+import {
+  extractStorageForPage,
+  groupSessionStorageByOrigin,
+  handleFrameNavigated,
+} from "../../utils/context.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { ChromeContextService } from "../context/chrome-context.service.js";
 import { SessionData } from "../context/types.js";
@@ -76,8 +85,11 @@ export class CDPService extends EventEmitter {
   private retryManager: RetryManager;
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
-  private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
-  private proxyWebSocketHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null = null;
+  private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
+    [];
+  private proxyWebSocketHandler:
+    | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
+    | null = null;
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
@@ -180,7 +192,9 @@ export class CDPService extends EventEmitter {
 
   public getDebuggerWsUrl(pageId?: string) {
     const { baseUrl, wsProtocol } = this.getDebuggerBase();
-    return `${wsProtocol}://${baseUrl}/devtools/page/${pageId ?? this.getTargetId(this.primaryPage!)}`;
+    return `${wsProtocol}://${baseUrl}/devtools/page/${
+      pageId ?? this.getTargetId(this.primaryPage!)
+    }`;
   }
 
   public customEmit(event: EmitEvent, payload: any) {
@@ -294,7 +308,9 @@ export class CDPService extends EventEmitter {
           await this.injectFingerprintSafely(page, this.fingerprintData);
           this.logger.debug("[CDPService] Injected fingerprint into page");
         } else {
-          this.logger.info("[CDPService] Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting");
+          this.logger.info(
+            "[CDPService] Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting",
+          );
         }
 
         await page.setRequestInterception(true);
@@ -305,7 +321,9 @@ export class CDPService extends EventEmitter {
 
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
-            this.logger.error(`[CDPService] Blocked response from file protocol: ${response.url()}`);
+            this.logger.error(
+              `[CDPService] Blocked response from file protocol: ${response.url()}`,
+            );
             page.close().catch(() => {});
             this.shutdown();
           }
@@ -369,7 +387,9 @@ export class CDPService extends EventEmitter {
       page.on("error", (err) => {
         this.customEmit(EmitEvent.Log, {
           type: BrowserEventType.Error,
-          text: err ? JSON.stringify({ pageId, message: err.message, name: err.name }) : "Unknown error on page",
+          text: err
+            ? JSON.stringify({ pageId, message: err.message, name: err.name })
+            : "Unknown error on page",
           timestamp: new Date(),
         });
       });
@@ -377,7 +397,9 @@ export class CDPService extends EventEmitter {
       page.on("pageerror", (err) => {
         this.customEmit(EmitEvent.Log, {
           type: BrowserEventType.PageError,
-          text: err ? JSON.stringify({ pageId, message: err.message, name: err.name }) : "Unknown page error",
+          text: err
+            ? JSON.stringify({ pageId, message: err.message, name: err.name })
+            : "Unknown page error",
           timestamp: new Date(),
         });
       });
@@ -409,7 +431,11 @@ export class CDPService extends EventEmitter {
       page.on("requestfailed", (request) => {
         this.customEmit(EmitEvent.Log, {
           type: BrowserEventType.RequestFailed,
-          text: JSON.stringify({ pageId, errorText: request.failure()?.errorText, url: request.url() }),
+          text: JSON.stringify({
+            pageId,
+            errorText: request.failure()?.errorText,
+            url: request.url(),
+          }),
           timestamp: new Date(),
         });
       });
@@ -428,7 +454,9 @@ export class CDPService extends EventEmitter {
         return;
       }
 
-      this.logger.info(`[CDP] Attaching CDP logging to session ${session.id()} of target type ${targetType}`);
+      this.logger.info(
+        `[CDP] Attaching CDP logging to session ${session.id()} of target type ${targetType}`,
+      );
 
       await session.send("Runtime.enable");
       await session.send("Log.enable");
@@ -526,7 +554,9 @@ export class CDPService extends EventEmitter {
         try {
           await FileService.getInstance().cleanupFiles();
         } catch (cleanupError) {
-          this.logger.error(`[CDPService] Error cleaning files during error recovery: ${cleanupError}`);
+          this.logger.error(
+            `[CDPService] Error cleaning files during error recovery: ${cleanupError}`,
+          );
         }
 
         this.browserInstance = null;
@@ -554,7 +584,10 @@ export class CDPService extends EventEmitter {
   }
 
   @traceable
-  public async launch(config?: BrowserLauncherOptions, retryOptions?: Partial<RetryOptions>): Promise<Browser> {
+  public async launch(
+    config?: BrowserLauncherOptions,
+    retryOptions?: Partial<RetryOptions>,
+  ): Promise<Browser> {
     // Use retry mechanism for the launch process
     const result = await this.retryManager.executeWithRetry(
       () => this.launchInternal(config),
@@ -574,10 +607,14 @@ export class CDPService extends EventEmitter {
 
       const launchProcess = (async () => {
         const shouldReuseInstance =
-          this.browserInstance && this.isDefaultConfig(config) && this.isDefaultConfig(this.launchConfig);
+          this.browserInstance &&
+          this.isDefaultConfig(config) &&
+          this.isDefaultConfig(this.launchConfig);
 
         if (shouldReuseInstance) {
-          this.logger.info("[CDPService] Reusing existing browser instance with default configuration.");
+          this.logger.info(
+            "[CDPService] Reusing existing browser instance with default configuration.",
+          );
           this.launchConfig = config || this.defaultLaunchConfig;
           try {
             await this.refreshPrimaryPage();
@@ -589,7 +626,9 @@ export class CDPService extends EventEmitter {
           }
           return this.browserInstance!;
         } else if (this.browserInstance) {
-          this.logger.info("[CDPService] Existing browser instance detected. Closing it before launching a new one.");
+          this.logger.info(
+            "[CDPService] Existing browser instance detected. Closing it before launching a new one.",
+          );
           try {
             await this.shutdown();
           } catch (error) {
@@ -624,7 +663,11 @@ export class CDPService extends EventEmitter {
         const { options, userAgent, userDataDir } = this.launchConfig;
 
         // Fingerprint generation - can fail gracefully
-        if (!env.SKIP_FINGERPRINT_INJECTION && !userAgent && !this.launchConfig.skipFingerprintInjection) {
+        if (
+          !env.SKIP_FINGERPRINT_INJECTION &&
+          !userAgent &&
+          !this.launchConfig.skipFingerprintInjection
+        ) {
           try {
             const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
               devices: ["desktop"],
@@ -670,17 +713,26 @@ export class CDPService extends EventEmitter {
         this.currentSessionConfig = this.launchConfig;
 
         const defaultExtensions = ["recorder"];
-        const customExtensions = this.launchConfig.extensions ? [...this.launchConfig.extensions] : [];
+        const customExtensions = this.launchConfig.extensions
+          ? [...this.launchConfig.extensions]
+          : [];
 
         let extensionPaths: string[] = [];
         try {
           extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
         } catch (error) {
-          throw new ResourceError(`Failed to resolve extension paths: ${error}`, ResourceType.EXTENSIONS, false);
+          throw new ResourceError(
+            `Failed to resolve extension paths: ${error}`,
+            ResourceType.EXTENSIONS,
+            false,
+          );
         }
 
         const extensionArgs = extensionPaths.length
-          ? [`--load-extension=${extensionPaths.join(",")}`, `--disable-extensions-except=${extensionPaths.join(",")}`]
+          ? [
+              `--load-extension=${extensionPaths.join(",")}`,
+              `--disable-extensions-except=${extensionPaths.join(",")}`,
+            ]
           : [];
 
         const staticDefaultArgs = [
@@ -713,7 +765,9 @@ export class CDPService extends EventEmitter {
           }`,
           `--timezone=${timezone}`,
           userAgent ? `--user-agent=${userAgent}` : "",
-          this.launchConfig.options.proxyUrl ? `--proxy-server=${this.launchConfig.options.proxyUrl}` : "",
+          this.launchConfig.options.proxyUrl
+            ? `--proxy-server=${this.launchConfig.options.proxyUrl}`
+            : "",
         ];
 
         const launchArgs = [
@@ -744,9 +798,12 @@ export class CDPService extends EventEmitter {
 
         // Browser process launch - most critical step
         try {
-          this.browserInstance = (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
-            return await puppeteer.launch(finalLaunchOptions);
-          })) as unknown as Browser;
+          this.browserInstance = (await tracer.startActiveSpan(
+            "CDPService.launchBrowser",
+            async () => {
+              return await puppeteer.launch(finalLaunchOptions);
+            },
+          )) as unknown as Browser;
         } catch (error) {
           throw new BrowserProcessError(
             error instanceof Error ? error.message : String(error),
@@ -786,7 +843,9 @@ export class CDPService extends EventEmitter {
 
         // Session context injection - should throw error if it fails
         if (this.launchConfig?.sessionContext) {
-          this.logger.debug(`[CDPService] Page created with session context, injecting session context`);
+          this.logger.debug(
+            `[CDPService] Page created with session context, injecting session context`,
+          );
           try {
             await this.injectSessionContext(this.primaryPage, this.launchConfig.sessionContext);
           } catch (error) {
@@ -806,7 +865,10 @@ export class CDPService extends EventEmitter {
         try {
           this.wsEndpoint = this.browserInstance.wsEndpoint();
         } catch (error) {
-          throw new NetworkError("Failed to get WebSocket endpoint from browser", NetworkOperation.WEBSOCKET_SETUP);
+          throw new NetworkError(
+            "Failed to get WebSocket endpoint from browser",
+            NetworkOperation.WEBSOCKET_SETUP,
+          );
         }
 
         // Final setup steps
@@ -818,7 +880,9 @@ export class CDPService extends EventEmitter {
             error instanceof Error ? error.message : String(error),
             BrowserProcessState.TARGET_SETUP,
           );
-          this.logger.warn(`[CDPService] ${setupError.message} - browser may not function correctly`);
+          this.logger.warn(
+            `[CDPService] ${setupError.message} - browser may not function correctly`,
+          );
         }
 
         return this.browserInstance;
@@ -826,15 +890,19 @@ export class CDPService extends EventEmitter {
 
       return (await Promise.race([launchProcess, launchTimeout])) as Browser;
     } catch (error) {
-      const categorizedError = error instanceof BaseLaunchError ? error : categorizeError(error, "browser launch");
+      const categorizedError =
+        error instanceof BaseLaunchError ? error : categorizeError(error, "browser launch");
 
-      this.logger.error(`[CDPService] LAUNCH ERROR (${categorizedError.type}): ${categorizedError.message}`, {
-        error: {
-          errorType: categorizedError.type,
-          isRetryable: categorizedError.isRetryable,
-          context: categorizedError.context,
+      this.logger.error(
+        `[CDPService] LAUNCH ERROR (${categorizedError.type}): ${categorizedError.message}`,
+        {
+          error: {
+            errorType: categorizedError.type,
+            isRetryable: categorizedError.isRetryable,
+            context: categorizedError.context,
+          },
         },
-      });
+      );
 
       throw categorizedError;
     }
@@ -903,7 +971,9 @@ export class CDPService extends EventEmitter {
   }
 
   public getUserAgent() {
-    return this.currentSessionConfig?.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent;
+    return (
+      this.currentSessionConfig?.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent
+    );
   }
 
   public async getCookies(): Promise<Protocol.Network.Cookie[]> {
@@ -993,7 +1063,9 @@ export class CDPService extends EventEmitter {
         `[CDPService] Processing ${validPages.length} valid pages out of ${pages.length} total for storage extraction`,
       );
 
-      const results = await Promise.all(validPages.map((page) => extractStorageForPage(page, this.logger)));
+      const results = await Promise.all(
+        validPages.map((page) => extractStorageForPage(page, this.logger)),
+      );
 
       // Merge all results
       for (const item of results) {
@@ -1012,7 +1084,10 @@ export class CDPService extends EventEmitter {
         }
 
         for (const domain in item.indexedDB) {
-          result.indexedDB![domain] = [...(result.indexedDB![domain] || []), ...item.indexedDB![domain]];
+          result.indexedDB![domain] = [
+            ...(result.indexedDB![domain] || []),
+            ...item.indexedDB![domain],
+          ];
         }
       }
 
@@ -1038,7 +1113,9 @@ export class CDPService extends EventEmitter {
         );
       }
     } catch (error) {
-      this.logger.error(`Error logging event from CDPService: ${error} at URL: ${this.launchConfig.logSinkUrl}`);
+      this.logger.error(
+        `Error logging event from CDPService: ${error} at URL: ${this.launchConfig.logSinkUrl}`,
+      );
     }
   }
 
@@ -1082,7 +1159,10 @@ export class CDPService extends EventEmitter {
   }
 
   @traceable
-  private async injectSessionContext(page: Page, context?: BrowserLauncherOptions["sessionContext"]) {
+  private async injectSessionContext(
+    page: Page,
+    context?: BrowserLauncherOptions["sessionContext"],
+  ) {
     if (!context) return;
 
     const storageByOrigin = groupSessionStorageByOrigin(context);
@@ -1108,7 +1188,9 @@ export class CDPService extends EventEmitter {
       await client.detach().catch(() => {});
     }
 
-    this.logger.info(`[CDPService] Registered frame navigation handler for ${storageByOrigin.size} origins`);
+    this.logger.info(
+      `[CDPService] Registered frame navigation handler for ${storageByOrigin.size} origins`,
+    );
     page.on("framenavigated", (frame) => handleFrameNavigated(frame, storageByOrigin, this.logger));
 
     page.browser().on("targetcreated", async (target) => {
@@ -1116,7 +1198,9 @@ export class CDPService extends EventEmitter {
         try {
           const newPage = await target.page();
           if (newPage) {
-            newPage.on("framenavigated", (frame) => handleFrameNavigated(frame, storageByOrigin, this.logger));
+            newPage.on("framenavigated", (frame) =>
+              handleFrameNavigated(frame, storageByOrigin, this.logger),
+            );
           }
         } catch (err) {
           this.logger.error(`[CDPService] Error adding framenavigated handler to new page: ${err}`);
@@ -1128,7 +1212,10 @@ export class CDPService extends EventEmitter {
   }
 
   @traceable
-  private async injectFingerprintSafely(page: Page, fingerprintData: BrowserFingerprintWithHeaders | null) {
+  private async injectFingerprintSafely(
+    page: Page,
+    fingerprintData: BrowserFingerprintWithHeaders | null,
+  ) {
     if (!fingerprintData) return;
 
     try {
@@ -1174,7 +1261,8 @@ export class CDPService extends EventEmitter {
           acceptLanguage: headers["accept-language"],
           platform: fingerprint.navigator.platform || "Linux x86_64",
           userAgentMetadata: {
-            brands: userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
+            brands:
+              userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
             fullVersionList:
               userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
             fullVersion: userAgentMetadata.uaFullVersion,

@@ -1,5 +1,10 @@
 import { FastifyBaseLogger } from "fastify";
-import { BaseLaunchError } from "../services/cdp/errors/launch-errors.js";
+import {
+  BaseLaunchError,
+  ConfigurationError,
+  LaunchTimeoutError,
+  ResourceError,
+} from "../services/cdp/errors/launch-errors.js";
 
 export interface RetryOptions {
   maxAttempts: number;
@@ -60,7 +65,9 @@ export class RetryManager {
 
     for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
       try {
-        this.logger.info(`[RetryManager] ${operationName} - Attempt ${attempt}/${opts.maxAttempts}`);
+        this.logger.info(
+          `[RetryManager] ${operationName} - Attempt ${attempt}/${opts.maxAttempts}`,
+        );
 
         const result = await operation();
         const totalDuration = Date.now() - startTime;
@@ -83,19 +90,26 @@ export class RetryManager {
         const isRetryable = this.isErrorRetryable(err);
         const isLastAttempt = attempt === opts.maxAttempts;
 
-        this.logger.warn(`[RetryManager] ${operationName} failed on attempt ${attempt}/${opts.maxAttempts}`, {
-          error: err.message,
-          isRetryable,
-          isLastAttempt,
-          errorType: err instanceof BaseLaunchError ? err.type : "unknown",
-        });
+        this.logger.warn(
+          `[RetryManager] ${operationName} failed on attempt ${attempt}/${opts.maxAttempts}`,
+          {
+            error: err.message,
+            isRetryable,
+            isLastAttempt,
+            errorType: err instanceof BaseLaunchError ? err.type : "unknown",
+          },
+        );
 
         if (!isRetryable || isLastAttempt) {
           if (!isRetryable) {
-            this.logger.error(`[RetryManager] ${operationName} failed with non-retryable error: ${err.message}`);
+            this.logger.error(
+              `[RetryManager] ${operationName} failed with non-retryable error: ${err.message}`,
+            );
             throw err; // Throw original error for non-retryable errors
           } else {
-            this.logger.error(`[RetryManager] ${operationName} failed after ${opts.maxAttempts} attempts`);
+            this.logger.error(
+              `[RetryManager] ${operationName} failed after ${opts.maxAttempts} attempts`,
+            );
             throw new RetryError(attempt, err, errors);
           }
         }
@@ -106,7 +120,9 @@ export class RetryManager {
         const delay = Math.min(baseDelay + jitter, opts.maxDelayMs);
 
         this.logger.info(
-          `[RetryManager] Waiting ${Math.round(delay)}ms before retry ${attempt + 1}/${opts.maxAttempts}`,
+          `[RetryManager] Waiting ${Math.round(delay)}ms before retry ${attempt + 1}/${
+            opts.maxAttempts
+          }`,
         );
         await this.sleep(delay);
       }
@@ -117,6 +133,14 @@ export class RetryManager {
   }
 
   private isErrorRetryable(error: Error): boolean {
+    if (
+      error instanceof ConfigurationError ||
+      error instanceof ResourceError ||
+      error instanceof LaunchTimeoutError
+    ) {
+      return false;
+    }
+
     if (error instanceof BaseLaunchError) {
       return error.isRetryable;
     }
