@@ -1,5 +1,5 @@
 import { BrowserLauncherOptions } from "../../../types";
-import { ConfigurationError, ResourceError, ConfigurationField } from "../errors/launch-errors";
+import { ConfigurationError, ConfigurationField } from "../errors/launch-errors.js";
 
 /**
  * Validates a givenlaunch configuration (not conclusive)
