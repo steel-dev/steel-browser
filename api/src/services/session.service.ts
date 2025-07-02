@@ -126,17 +126,9 @@ export class SessionService {
       // Fetch timezone information from the proxy's location if timezone isn't already specified
       if (!timezone) {
         try {
-          console.log(proxyUrl);
-          const proxyUrlObj = new URL(proxyUrl);
-          console.log(proxyUrlObj);
           const isSocks = proxyUrl.startsWith("socks");
 
-          let agent;
-          if (isSocks) {
-            agent = new SocksProxyAgent(proxyUrl);
-          } else {
-            agent = new HttpsProxyAgent(proxyUrl);
-          }
+          const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
 
           this.logger.info("Fetching timezone information based on proxy location");
           const response = await axios.get("http://ip-api.com/json", {
