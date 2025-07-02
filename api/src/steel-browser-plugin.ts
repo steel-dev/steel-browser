@@ -17,12 +17,14 @@ import type { CDPService } from "./services/cdp/cdp.service.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
+import { SessionService } from "./services/session.service.js";
 
 // We need to redeclare any decorators from within the plugin that we want to expose
 declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: SteelBrowserConfig;
     cdpService: CDPService;
+    sessionService: SessionService;
     webSocketRegistry: WebSocketRegistryService;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
     registerCDPShutdownHook: (

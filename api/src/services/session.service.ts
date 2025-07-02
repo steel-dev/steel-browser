@@ -126,12 +126,9 @@ export class SessionService {
       // Fetch timezone information from the proxy's location if timezone isn't already specified
       if (!timezone) {
         try {
-          console.log(proxyUrl);
-          const proxyUrlObj = new URL(proxyUrl);
-          console.log(proxyUrlObj);
           const isSocks = proxyUrl.startsWith("socks");
 
-          let agent;
+          let agent: HttpsProxyAgent<string> | SocksProxyAgent;
           if (isSocks) {
             agent = new SocksProxyAgent(proxyUrl);
           } else {
