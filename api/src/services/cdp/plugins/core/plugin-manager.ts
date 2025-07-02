@@ -2,6 +2,7 @@ import { Browser, Page } from "puppeteer-core";
 import { CDPService } from "../../cdp.service.js";
 import { BasePlugin } from "./base-plugin.js";
 import { FastifyBaseLogger } from "fastify";
+import { BrowserLauncherOptions } from "../../../../types/browser.js";
 
 export class PluginManager {
   private plugins: Map<string, BasePlugin>;
@@ -140,6 +141,20 @@ export class PluginManager {
         await plugin.onShutdown();
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onShutdown: ${error}`);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  /**
+   * Notify all plugins when a session has ended
+   */
+  public async onSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await plugin.onSessionEnd(sessionConfig);
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onSessionEnd: ${error}`);
       }
     });
     await Promise.all(promises);

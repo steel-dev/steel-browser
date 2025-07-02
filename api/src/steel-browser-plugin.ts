@@ -15,14 +15,19 @@ import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import type { CDPService } from "./services/cdp/cdp.service.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
+import { WebSocketHandler } from "./types/websocket.js";
+import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
 
 // We need to redeclare any decorators from within the plugin that we want to expose
 declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: SteelBrowserConfig;
     cdpService: CDPService;
+    webSocketRegistry: WebSocketRegistryService;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
-    registerCDPShutdownHook: (hook: (config: BrowserLauncherOptions | null) => Promise<void> | void) => void;
+    registerCDPShutdownHook: (
+      hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
+    ) => void;
   }
 }
 
@@ -30,6 +35,7 @@ export interface SteelBrowserConfig {
   fileStorage?: {
     maxSizePerSession?: number;
   };
+  customWsHandlers?: WebSocketHandler[];
 }
 
 const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
@@ -46,7 +52,9 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(fileStoragePlugin);
   await fastify.register(browserInstancePlugin);
   await fastify.register(seleniumPlugin);
-  await fastify.register(browserWebSocket);
+  await fastify.register(browserWebSocket, {
+    customHandlers: opts.customWsHandlers,
+  });
   await fastify.register(customBodyParser);
   await fastify.register(browserSessionPlugin);
 

@@ -21,6 +21,10 @@ const CreateSession = z.object({
   sessionContext: SessionContextSchema.optional().describe("Session context data to be used in the created session"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
   blockAds: z.boolean().optional().describe("Flag to indicate if ads should be blocked in the session"),
+  skipFingerprintInjection: z
+    .boolean()
+    .optional()
+    .describe("Flag to indicate if fingerprint injection should be skipped for this session."),
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),

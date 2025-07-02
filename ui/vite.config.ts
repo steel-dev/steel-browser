@@ -16,12 +16,13 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:3000",
         changeOrigin: true,
-        rewrite: path => path.replace(/^\/api/, ""),
+        rewrite: (path) => path.replace(/^\/api/, ""),
       },
       "/ws": {
         target: "ws://localhost:3000",
         ws: true,
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ws/, ""),
       },
     },
   },

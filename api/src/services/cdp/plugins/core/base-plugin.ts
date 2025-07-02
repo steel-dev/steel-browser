@@ -1,5 +1,6 @@
 import type { Browser, Page } from "puppeteer-core";
 import type { CDPService } from "../../cdp.service.js";
+import { BrowserLauncherOptions } from "../../../../types/browser.js";
 
 export interface PluginOptions {
   name: string;
@@ -29,4 +30,5 @@ export abstract class BasePlugin {
   public async onBrowserClose(browser: Browser): Promise<void> {}
   public async onBeforePageClose(page: Page): Promise<void> {}
   public async onShutdown(): Promise<void> {}
+  public async onSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {}
 }
