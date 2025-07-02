@@ -1133,7 +1133,9 @@ export class CDPService extends EventEmitter {
   @traceable
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and restarting with default configuration.");
+    const sessionConfig = this.currentSessionConfig!;
     await this.shutdown();
+    await this.pluginManager.onSessionEnd(sessionConfig);
     this.currentSessionConfig = null;
     this.trackedOrigins.clear(); // Clear tracked origins
     await this.launch(this.defaultLaunchConfig);
@@ -1154,7 +1156,9 @@ export class CDPService extends EventEmitter {
       await this.launch(this.defaultLaunchConfig);
     } else {
       this.logger.info("Shutting down browser.");
+      const sessionConfig = this.currentSessionConfig!;
       await this.shutdown();
+      await this.pluginManager.onSessionEnd(sessionConfig);
     }
   }
 
