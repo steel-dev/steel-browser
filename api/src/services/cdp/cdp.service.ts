@@ -1134,6 +1134,7 @@ export class CDPService extends EventEmitter {
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and restarting with default configuration.");
     await this.shutdown();
+    await this.pluginManager.onSessionEnd(this.currentSessionConfig!);
     this.currentSessionConfig = null;
     this.trackedOrigins.clear(); // Clear tracked origins
     await this.launch(this.defaultLaunchConfig);
