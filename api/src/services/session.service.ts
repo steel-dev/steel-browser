@@ -128,12 +128,7 @@ export class SessionService {
         try {
           const isSocks = proxyUrl.startsWith("socks");
 
-          let agent: HttpsProxyAgent<string> | SocksProxyAgent;
-          if (isSocks) {
-            agent = new SocksProxyAgent(proxyUrl);
-          } else {
-            agent = new HttpsProxyAgent(proxyUrl);
-          }
+          const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
 
           this.logger.info("Fetching timezone information based on proxy location");
           const response = await axios.get("http://ip-api.com/json", {
