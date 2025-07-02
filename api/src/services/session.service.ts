@@ -121,12 +121,6 @@ export class SessionService {
 
     if (proxyUrl) {
       this.activeSession.proxyServer = new ProxyServer(proxyUrl);
-      this.activeSession.proxyServer.on("connectionClosed", ({ stats }) => {
-        if (stats) {
-          this.activeSession.proxyTxBytes += stats.trgTxBytes;
-          this.activeSession.proxyRxBytes += stats.trgRxBytes;
-        }
-      });
       await this.activeSession.proxyServer.listen();
 
       // Fetch timezone information from the proxy's location if timezone isn't already specified
@@ -156,7 +150,9 @@ export class SessionService {
             this.logger.info(`Setting timezone to ${timezone} based on proxy location`);
           }
         } catch (error: unknown) {
-          this.logger.error(`Failed to fetch timezone information: ${(error as AxiosError).message}`);
+          this.logger.error(
+            `Failed to fetch timezone information: ${(error as AxiosError).message}`,
+          );
         }
       }
     }
@@ -216,7 +212,13 @@ export class SessionService {
   public async endSession(): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
-    this.activeSession.duration = new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
+    this.activeSession.duration =
+      new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
+
+    if (this.activeSession.proxyServer) {
+      this.activeSession.proxyTxBytes = this.activeSession.proxyServer.txBytes;
+      this.activeSession.proxyRxBytes = this.activeSession.proxyServer.rxBytes;
+    }
 
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
