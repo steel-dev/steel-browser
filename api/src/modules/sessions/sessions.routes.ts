@@ -158,7 +158,11 @@ async function routes(server: FastifyInstance) {
     "/events",
     {
       preParsing: async (req, reply, payload) => {
-        server.log.warn("Incoming headers:", req.headers);
+        server.log.warn(
+          `Incoming headers: ${Object.entries(req.headers)
+            .map(([key, val]) => `${key}=${Array.isArray(val) ? val.join(",") : val}`)
+            .join(" ")}`
+        );
         return payload;
       },
       schema: {
