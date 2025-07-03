@@ -15,6 +15,7 @@ import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
 import { mkdir } from "fs/promises";
 import { getUrl, getBaseUrl } from "../utils/url.js";
+import { deepMerge } from "../utils/context.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -92,6 +93,7 @@ export class SessionService {
     extra?: Record<string, Record<string, string>>;
     credentials: CredentialsOptions;
     skipFingerprintInjection?: boolean;
+    userPreferences?: Record<string, any>;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -106,6 +108,7 @@ export class SessionService {
       extra,
       credentials,
       skipFingerprintInjection,
+      userPreferences,
     } = options;
 
     let timezone = options.timezone;
@@ -152,6 +155,17 @@ export class SessionService {
     const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
     await mkdir(userDataDir, { recursive: true });
 
+    const defaultUserPreferences = {
+      plugins: {
+        always_open_pdf_externally: true,
+        plugins_disabled: ["Chrome PDF Viewer"],
+      },
+    };
+
+    const mergedUserPreferences = userPreferences
+      ? deepMerge(defaultUserPreferences, userPreferences)
+      : defaultUserPreferences;
+
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
@@ -165,6 +179,7 @@ export class SessionService {
       timezone,
       dimensions,
       userDataDir,
+      userPreferences: mergedUserPreferences,
       extra,
       credentials,
       skipFingerprintInjection,

@@ -206,7 +206,9 @@ export class ChromeSessionStorageReader {
    * Reads a Chrome Session Storage LevelDB directory and returns a nested record of items
    * grouped by origin (hostname).
    */
-  public static async readSessionStorage(dir: string): Promise<Record<string, Record<string, string>>> {
+  public static async readSessionStorage(
+    dir: string,
+  ): Promise<Record<string, Record<string, string>>> {
     const sdb = await SessionStoreDb.open(dir);
     try {
       await sdb.load();
