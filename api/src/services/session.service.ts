@@ -121,28 +121,14 @@ export class SessionService {
 
     if (proxyUrl) {
       this.activeSession.proxyServer = new ProxyServer(proxyUrl);
-      this.activeSession.proxyServer.on("connectionClosed", ({ stats }) => {
-        if (stats) {
-          this.activeSession.proxyTxBytes += stats.trgTxBytes;
-          this.activeSession.proxyRxBytes += stats.trgRxBytes;
-        }
-      });
       await this.activeSession.proxyServer.listen();
 
       // Fetch timezone information from the proxy's location if timezone isn't already specified
       if (!timezone) {
         try {
-          console.log(proxyUrl);
-          const proxyUrlObj = new URL(proxyUrl);
-          console.log(proxyUrlObj);
           const isSocks = proxyUrl.startsWith("socks");
 
-          let agent;
-          if (isSocks) {
-            agent = new SocksProxyAgent(proxyUrl);
-          } else {
-            agent = new HttpsProxyAgent(proxyUrl);
-          }
+          const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
 
           this.logger.info("Fetching timezone information based on proxy location");
           const response = await axios.get("http://ip-api.com/json", {
@@ -156,7 +142,9 @@ export class SessionService {
             this.logger.info(`Setting timezone to ${timezone} based on proxy location`);
           }
         } catch (error: unknown) {
-          this.logger.error(`Failed to fetch timezone information: ${(error as AxiosError).message}`);
+          this.logger.error(
+            `Failed to fetch timezone information: ${(error as AxiosError).message}`,
+          );
         }
       }
     }
@@ -216,7 +204,13 @@ export class SessionService {
   public async endSession(): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
-    this.activeSession.duration = new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
+    this.activeSession.duration =
+      new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
+
+    if (this.activeSession.proxyServer) {
+      this.activeSession.proxyTxBytes = this.activeSession.proxyServer.txBytes;
+      this.activeSession.proxyRxBytes = this.activeSession.proxyServer.rxBytes;
+    }
 
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
