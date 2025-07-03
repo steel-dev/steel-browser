@@ -157,6 +157,10 @@ async function routes(server: FastifyInstance) {
   server.post(
     "/events",
     {
+      preParsing: async (req, reply, payload) => {
+        server.log.warn("Incoming headers:", req.headers);
+        return payload;
+      },
       schema: {
         operationId: "receive_events",
         description: "Receive recorded events from the browser",
