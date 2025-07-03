@@ -17,7 +17,10 @@ const hopByHopHeaders = [
  * There's an issue with proxy-chain's implementation causing corruption in our internals requests
  */
 export const PassthroughServer = http.createServer((clientReq, clientRes) => {
-  console.error("Incoming clientReq.headers:", clientReq.headers);
+  const headerString = `{ ${Object.entries(clientReq.headers)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(", ")} }`;
+  console.error(`Incoming clientReq.headers: ${headerString}`);
 
   const targetUrl = new URL(clientReq.url ?? "/", `http://${clientReq.headers.host}`);
 
@@ -34,7 +37,10 @@ export const PassthroughServer = http.createServer((clientReq, clientRes) => {
   proxyHeaders['x-forwarded-proto'] = 'http';
   proxyHeaders['x-forwarded-host'] = clientReq.headers.host || '';
 
-  console.log("Forwarding headers to target:", proxyHeaders);
+  const forwardingHeaderString = `{ ${Object.entries(proxyHeaders)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(", ")} }`;
+  console.error(`Forwarding headers to target: ${forwardingHeaderString}`);
 
   const proxyReq = http.request({
     method: clientReq.method,
