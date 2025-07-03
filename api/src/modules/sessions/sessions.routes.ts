@@ -154,18 +154,33 @@ async function routes(server: FastifyInstance) {
     async (request: SessionStreamRequest, reply: FastifyReply) => handleGetSessionStream(server, request, reply),
   );
 
-  server.addContentTypeParser('*', { parseAs: 'string' }, (req, body, done) => {
+  // server.addContentTypeParser('*', { parseAs: 'string' }, (req, body, done) => {
+  //   const contentType = req.headers['content-type'];
+  //   const transferEncoding = req.headers['transfer-encoding'];
+
+  //   server.log.warn(`Parsing body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
+
+  //   try {
+  //     const parsed = JSON.parse(body as string);
+  //     done(null, parsed);
+  //   } catch (err) {
+  //     server.log.error(`Failed to parse JSON body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
+  //     done(null, body); // fallback — pass raw string to route
+  //   }
+  // });
+
+  server.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
     const contentType = req.headers['content-type'];
     const transferEncoding = req.headers['transfer-encoding'];
 
-    server.log.warn(`Parsing body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
+    server.log.warn(`Parsing body from: ${req.url} with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
 
     try {
-      const parsed = JSON.parse(body as string);
-      done(null, parsed);
+      const json = JSON.parse(body.toString('utf8'));
+      done(null, json);
     } catch (err) {
-      server.log.error(`Failed to parse JSON body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
-      done(null, body); // fallback — pass raw string to route
+      server.log.error({ err }, `JSON parse failed: ${(err as any)?.message}`);
+      done(null, body); // fallback
     }
   });
   
