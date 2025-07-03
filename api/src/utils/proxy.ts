@@ -18,8 +18,8 @@ export class ProxyServer extends Server {
         const isEventsPath = url.endsWith("/v1/events");
 
         if (isEventsPath) {
-          console.error("Bypassing /events request:");
-          console.log(`\x1b[1m\x1b[91m{ url: "${url}", hostname: "${hostname}" }\x1b[0m`);
+          console.error("Bypassing /events request:", url, hostname);
+          console.error(`\x1b[1m\x1b[91m{ url: "${url}", hostname: "${hostname}" }\x1b[0m`);
         }
 
         const internalBypassTests = new Set([
