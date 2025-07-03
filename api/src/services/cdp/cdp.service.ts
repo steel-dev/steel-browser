@@ -6,8 +6,10 @@ import {
   FingerprintGeneratorOptions,
 } from "fingerprint-generator";
 import { FingerprintInjector } from "fingerprint-injector";
+import fs from "fs";
 import { IncomingMessage } from "http";
 import httpProxy from "http-proxy";
+import path from "path";
 import puppeteer, {
   Browser,
   BrowserContext,
@@ -21,6 +23,7 @@ import puppeteer, {
 import { Duplex } from "stream";
 import { env } from "../../env.js";
 import { loadFingerprintScript } from "../../scripts/index.js";
+import { traceable, tracer } from "../../telemetry/tracer.js";
 import {
   BrowserEvent,
   BrowserEventType,
@@ -30,38 +33,39 @@ import {
 import { isAdRequest } from "../../utils/ads.js";
 import { filterHeaders, getChromeExecutablePath } from "../../utils/browser.js";
 import {
+  deepMerge,
   extractStorageForPage,
+  getProfilePath,
   groupSessionStorageByOrigin,
   handleFrameNavigated,
 } from "../../utils/context.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
+import { RetryManager, RetryOptions } from "../../utils/retry.js";
 import { ChromeContextService } from "../context/chrome-context.service.js";
 import { SessionData } from "../context/types.js";
 import { FileService } from "../file.service.js";
-import { PluginManager } from "./plugins/core/plugin-manager.js";
-import { traceable, tracer } from "../../telemetry/tracer.js";
-import { BasePlugin } from "./plugins/core/base-plugin.js";
 import {
   BaseLaunchError,
-  LaunchTimeoutError,
-  ResourceError,
-  NetworkError,
-  FingerprintError,
-  PluginError,
-  CleanupError,
   BrowserProcessError,
-  SessionContextError,
-  categorizeError,
   BrowserProcessState,
+  CleanupError,
+  CleanupType,
+  FingerprintError,
+  FingerprintStage,
+  LaunchTimeoutError,
+  NetworkError,
+  NetworkOperation,
+  PluginError,
   PluginName,
   PluginOperation,
-  CleanupType,
-  SessionContextType,
-  FingerprintStage,
+  ResourceError,
   ResourceType,
-  NetworkOperation,
+  SessionContextError,
+  SessionContextType,
+  categorizeError,
 } from "./errors/launch-errors.js";
-import { RetryManager, RetryOptions } from "../../utils/retry.js";
+import { BasePlugin } from "./plugins/core/base-plugin.js";
+import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { validateLaunchConfig, validateTimezone } from "./utils/validation.js";
 
 export class CDPService extends EventEmitter {
@@ -810,6 +814,15 @@ export class CDPService extends EventEmitter {
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
 
+        if (userDataDir && this.launchConfig.userPreferences) {
+          this.logger.info(`[CDPService] Setting up user preferences in ${userDataDir}`);
+          try {
+            await this.setupUserPreferences(userDataDir, this.launchConfig.userPreferences);
+          } catch (error) {
+            this.logger.warn(`[CDPService] Failed to set up user preferences: ${error}`);
+          }
+        }
+
         // Browser process launch - most critical step
         try {
           this.browserInstance = (await tracer.startActiveSpan(
@@ -1312,6 +1325,34 @@ export class CDPService extends EventEmitter {
       const fingerprintInjector = new FingerprintInjector();
       // @ts-ignore - Ignore type mismatch between puppeteer versions
       await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
+    }
+  }
+
+  @traceable
+  private async setupUserPreferences(userDataDir: string, userPreferences: Record<string, any>) {
+    try {
+      const preferencesPath = getProfilePath(userDataDir, "Preferences");
+      const defaultProfileDir = path.dirname(preferencesPath);
+
+      await fs.promises.mkdir(defaultProfileDir, { recursive: true });
+
+      let existingPreferences = {};
+
+      try {
+        const existingContent = await fs.promises.readFile(preferencesPath, "utf8");
+        existingPreferences = JSON.parse(existingContent);
+      } catch (error) {
+        this.logger.debug(`[CDPService] No existing preferences found, creating new: ${error}`);
+      }
+
+      const mergedPreferences = deepMerge(existingPreferences, userPreferences);
+
+      await fs.promises.writeFile(preferencesPath, JSON.stringify(mergedPreferences, null, 2));
+
+      this.logger.info(`[CDPService] User preferences written to ${preferencesPath}`);
+    } catch (error) {
+      this.logger.error(`[CDPService] Error setting up user preferences: ${error}`);
+      throw error;
     }
   }
 }

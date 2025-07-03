@@ -13,6 +13,7 @@ import { CookieData } from "./context/types.js";
 import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
 import { TimezoneFetcher } from "./timezone-fetcher.service.js";
+import { deepMerge } from "../utils/context.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -92,6 +93,7 @@ export class SessionService {
     extra?: Record<string, Record<string, string>>;
     credentials: CredentialsOptions;
     skipFingerprintInjection?: boolean;
+    userPreferences?: Record<string, any>;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -106,6 +108,7 @@ export class SessionService {
       extra,
       credentials,
       skipFingerprintInjection,
+      userPreferences,
     } = options;
 
     // start fetching timezone as early as possible
@@ -140,6 +143,17 @@ export class SessionService {
       await this.activeSession.proxyServer.listen();
     }
 
+    const defaultUserPreferences = {
+      plugins: {
+        always_open_pdf_externally: true,
+        plugins_disabled: ["Chrome PDF Viewer"],
+      },
+    };
+
+    const mergedUserPreferences = userPreferences
+      ? deepMerge(defaultUserPreferences, userPreferences)
+      : defaultUserPreferences;
+
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
@@ -153,6 +167,7 @@ export class SessionService {
       timezone: timezonePromise,
       dimensions,
       userDataDir,
+      userPreferences: mergedUserPreferences,
       extra,
       credentials,
       skipFingerprintInjection,

@@ -28,6 +28,7 @@ export interface BrowserLauncherOptions {
     height: number;
   } | null;
   userDataDir?: string;
+  userPreferences?: Record<string, any>;
   extra?: Record<string, Record<string, string>>;
   credentials?: CredentialsOptions;
   skipFingerprintInjection?: boolean;

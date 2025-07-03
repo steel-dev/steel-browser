@@ -1,6 +1,10 @@
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ScrapeRequestBody, ScreenshotRequestBody, PDFRequestBody } from "../actions/actions.schema.js";
+import {
+  ScrapeRequestBody,
+  ScreenshotRequestBody,
+  PDFRequestBody,
+} from "../actions/actions.schema.js";
 import { SessionContextSchema } from "../../services/context/types.js";
 
 export type CredentialsOptions = z.infer<typeof SessionCredentials>;
@@ -18,9 +22,14 @@ const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
   proxyUrl: z.string().optional().describe("Proxy URL to use for the session"),
   userAgent: z.string().optional().describe("User agent string to use for the session"),
-  sessionContext: SessionContextSchema.optional().describe("Session context data to be used in the created session"),
+  sessionContext: SessionContextSchema.optional().describe(
+    "Session context data to be used in the created session",
+  ),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
-  blockAds: z.boolean().optional().describe("Flag to indicate if ads should be blocked in the session"),
+  blockAds: z
+    .boolean()
+    .optional()
+    .describe("Flag to indicate if ads should be blocked in the session"),
   skipFingerprintInjection: z
     .boolean()
     .optional()
@@ -36,7 +45,16 @@ const CreateSession = z.object({
     })
     .optional()
     .describe("Dimensions to use for the session"),
-  extra: z.record(z.string(), z.any()).optional().describe("Extra metadata to help initialize the session"),
+  userPreferences: z
+    .record(z.string(), z.any())
+    .optional()
+    .describe(
+      "Chrome user preferences to customize browser behavior (e.g., font size, popup blocking, notification settings)",
+    ),
+  extra: z
+    .record(z.string(), z.any())
+    .optional()
+    .describe("Extra metadata to help initialize the session"),
   credentials: SessionCredentials,
 });
 
@@ -61,8 +79,16 @@ const SessionDetails = z.object({
   sessionViewerUrl: z.string().describe("URL to view session details"),
   userAgent: z.string().optional().describe("User agent string used in the session"),
   proxy: z.string().optional().describe("Proxy server used for the session"),
-  proxyTxBytes: z.number().int().nonnegative().describe("Amount of data transmitted through the proxy"),
-  proxyRxBytes: z.number().int().nonnegative().describe("Amount of data received through the proxy"),
+  proxyTxBytes: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("Amount of data transmitted through the proxy"),
+  proxyRxBytes: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("Amount of data received through the proxy"),
   solveCaptcha: z.boolean().optional().describe("Indicates if captcha solving is enabled"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
 });
@@ -76,8 +102,16 @@ const RecordedEvents = z.object({
 });
 
 const SessionStreamQuery = z.object({
-  showControls: z.boolean().optional().default(true).describe("Show controls in the browser iframe"),
-  theme: z.enum(["dark", "light"]).optional().default("dark").describe("Theme of the browser iframe"),
+  showControls: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("Show controls in the browser iframe"),
+  theme: z
+    .enum(["dark", "light"])
+    .optional()
+    .default("dark")
+    .describe("Theme of the browser iframe"),
   interactive: z.boolean().optional().default(true).describe("Make the browser iframe interactive"),
   pageId: z.string().optional().describe("Page ID to connect to"),
   pageIndex: z.string().optional().describe("Page index (or tab index) to connect to"),
