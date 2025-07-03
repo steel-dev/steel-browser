@@ -212,14 +212,8 @@ async function routes(server: FastifyInstance) {
   // );
 
   server.post("/events", async (req, reply) => {
-    const chunks: any[] = [];
-    for await (const chunk of req.raw) chunks.push(chunk);
-    const raw = Buffer.concat(chunks).toString("utf8");
-
     try {
-      const parsed = JSON.parse(raw);
-      server.log.warn("Parsed /events body:", parsed);
-      server.cdpService.customEmit(EmitEvent.Recording, parsed);
+      server.cdpService.customEmit(EmitEvent.Recording, req.body);
       return reply.send({ status: "ok" });
     } catch (err) {
       server.log.error({ err }, "JSON parse error in /events:");
