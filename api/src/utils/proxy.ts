@@ -15,22 +15,30 @@ const hopByHop = new Set([
   "upgrade",
 ]);
 
+type Result<T> = [err: Error, result: null] | [err: null, result: T];
+
 const makePassthrough = function ({ request, hostname, port }: PrepareRequestFunctionOpts): NonNullable<PrepareRequestFunctionResult['customResponseFunction']> {
   return async () => {
-    const proxyRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
-        const forward = http.request(
-          {
-            hostname,
-            port,
-            method: request.method,
-            path: request.url,
-            headers: request.headers,
-          },
-          resolve,
-        );
-        forward.on("error", reject);
-        request.pipe(forward);
-      });
+    const [err, proxyRes]: Result<http.IncomingMessage> = await new Promise((resolve) => {
+      const forward = http.request(
+        {
+          hostname,
+          port,
+          method: request.method,
+          path: request.url,
+          headers: request.headers,
+        },
+        (res) => resolve([null, res]),
+      );
+
+      forward.on("error", (err) => resolve([err, null]));
+      request.pipe(forward);
+    });
+
+    if (err) {
+      console.error(`[FUCK DADDY] Request failed "${err.name}": ${err.message}`)
+      throw err;
+    }
     
     const chunks: Buffer[] = [];
     for await (const chunk of proxyRes) chunks.push(chunk);
@@ -42,12 +50,16 @@ const makePassthrough = function ({ request, hostname, port }: PrepareRequestFun
         headers[k] = Array.isArray(v) ? v.join(",") : v;
       }
     }
-    
-    return {
+
+    const response = {
       statusCode: proxyRes.statusCode ?? 500,
       headers: proxyRes.headers as Record<string, string>,
       body,
     };
+
+    console.error(`[FUCK ME] ${JSON.stringify(response)}`)
+    
+    return response;
   };
 }
 
