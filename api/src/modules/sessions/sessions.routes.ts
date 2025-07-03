@@ -154,6 +154,21 @@ async function routes(server: FastifyInstance) {
     async (request: SessionStreamRequest, reply: FastifyReply) => handleGetSessionStream(server, request, reply),
   );
 
+  server.addContentTypeParser('*', { parseAs: 'string' }, (req, body, done) => {
+    const contentType = req.headers['content-type'];
+    const transferEncoding = req.headers['transfer-encoding'];
+
+    server.log.warn(`Parsing body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
+
+    try {
+      const parsed = JSON.parse(body as string);
+      done(null, parsed);
+    } catch (err) {
+      server.log.error(`Failed to parse JSON body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
+      done(null, body); // fallback — pass raw string to route
+    }
+  });
+  
   // server.post(
   //   "/events",
   //   {
