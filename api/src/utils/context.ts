@@ -9,13 +9,17 @@ import {
 } from "../services/context/types.js";
 import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../types/index.js";
+import path from "path";
 /**
  * Extract storage data for a single origin
  * @param client CDP session
  * @param origin Origin to process
  * @returns Storage data for the origin
  */
-export async function extractStorageForPage(page: Page, logger: FastifyBaseLogger): Promise<SessionData> {
+export async function extractStorageForPage(
+  page: Page,
+  logger: FastifyBaseLogger,
+): Promise<SessionData> {
   const result: SessionData = {
     localStorage: {},
     sessionStorage: {},
@@ -37,7 +41,9 @@ export async function extractStorageForPage(page: Page, logger: FastifyBaseLogge
 
     try {
       // Check if the page has a valid main frame
-      const { frameTree } = await client.send("Page.getFrameTree").catch(() => ({ frameTree: null }));
+      const { frameTree } = await client
+        .send("Page.getFrameTree")
+        .catch(() => ({ frameTree: null }));
       if (!frameTree) {
         logger.debug(`[CDPService] Page has no valid frame tree for ${domain}`);
         return result;
@@ -251,8 +257,10 @@ export const handleFrameNavigated = async (
           storeMap[store.name] = store.records.map((record) => {
             try {
               // Parse the key and value if they're stored as strings
-              const parsedKey = typeof record.key === "string" ? JSON.parse(record.key) : record.key;
-              const parsedValue = typeof record.value === "string" ? JSON.parse(record.value) : record.value;
+              const parsedKey =
+                typeof record.key === "string" ? JSON.parse(record.key) : record.key;
+              const parsedValue =
+                typeof record.value === "string" ? JSON.parse(record.value) : record.value;
               return { key: parsedKey, value: parsedValue };
             } catch (e) {
               // Fall back to original values if parsing fails
@@ -349,7 +357,9 @@ export const handleFrameNavigated = async (
  * @param context Session context data from BrowserLauncherOptions
  * @returns Map of origins to their storage data
  */
-export function groupSessionStorageByOrigin(context?: BrowserLauncherOptions["sessionContext"]): Map<
+export function groupSessionStorageByOrigin(
+  context?: BrowserLauncherOptions["sessionContext"],
+): Map<
   string,
   {
     localStorage?: LocalStorageData;
@@ -357,8 +367,7 @@ export function groupSessionStorageByOrigin(context?: BrowserLauncherOptions["se
     indexedDB?: IndexedDBDatabase[];
   }
 > {
-  // Set up origin maps for quick lookups
-  const storageByOrigin = new Map<
+  const result = new Map<
     string,
     {
       localStorage?: LocalStorageData;
@@ -367,35 +376,85 @@ export function groupSessionStorageByOrigin(context?: BrowserLauncherOptions["se
     }
   >();
 
-  if (!context) return storageByOrigin;
+  if (!context) return result;
 
-  // Prepare data for lookup by origin
   if (context.localStorage) {
-    Object.entries(context.localStorage).forEach(([origin, data]) => {
-      if (!storageByOrigin.has(origin)) {
-        storageByOrigin.set(origin, {});
+    for (const [domain, storage] of Object.entries(context.localStorage)) {
+      if (!result.has(domain)) {
+        result.set(domain, {});
       }
-      storageByOrigin.get(origin)!.localStorage = data;
-    });
+      result.get(domain)!.localStorage = storage;
+    }
   }
 
   if (context.sessionStorage) {
-    Object.entries(context.sessionStorage).forEach(([origin, data]) => {
-      if (!storageByOrigin.has(origin)) {
-        storageByOrigin.set(origin, {});
+    for (const [domain, storage] of Object.entries(context.sessionStorage)) {
+      if (!result.has(domain)) {
+        result.set(domain, {});
       }
-      storageByOrigin.get(origin)!.sessionStorage = data;
-    });
+      result.get(domain)!.sessionStorage = storage;
+    }
   }
 
   if (context.indexedDB) {
-    Object.entries(context.indexedDB).forEach(([origin, data]) => {
-      if (!storageByOrigin.has(origin)) {
-        storageByOrigin.set(origin, {});
+    for (const [domain, databases] of Object.entries(context.indexedDB)) {
+      if (!result.has(domain)) {
+        result.set(domain, {});
       }
-      storageByOrigin.get(origin)!.indexedDB = data;
-    });
+      result.get(domain)!.indexedDB = databases;
+    }
   }
 
-  return storageByOrigin;
+  return result;
+}
+
+/**
+ * Helper to get Chrome profile paths in a cross-platform way
+ * Takes into account different Chrome profile directory structures
+ */
+export function getProfilePath(userDataDir: string, ...pathSegments: string[]): string {
+  // Chrome profile directories vary by platform and version
+  // Both "Default" and "Profile 1" are standard locations
+  const possibleProfileDirs = ["Default", "Profile 1"];
+
+  // First check if the userDataDir already includes a profile directory
+  const dirName = path.basename(userDataDir);
+  if (possibleProfileDirs.includes(dirName)) {
+    // userDataDir already points to a profile directory
+    return path.join(userDataDir, ...pathSegments);
+  }
+
+  const defaultPath = path.join(userDataDir, "Default", ...pathSegments);
+
+  return defaultPath;
+}
+
+/**
+ * Deep merge two objects, with the second object taking precedence.
+ * Arrays are replaced entirely, not merged.
+ */
+export function deepMerge<T = any>(target: T, source: Partial<T>): T {
+  if (typeof target !== "object" || target === null) {
+    return source as T;
+  }
+  if (typeof source !== "object" || source === null) {
+    return target;
+  }
+
+  const result = { ...target };
+
+  for (const key in source) {
+    if (source.hasOwnProperty(key)) {
+      const sourceValue = source[key];
+      const targetValue = (result as any)[key];
+
+      if (typeof sourceValue === "object" && sourceValue !== null && !Array.isArray(sourceValue)) {
+        (result as any)[key] = deepMerge(targetValue, sourceValue);
+      } else {
+        (result as any)[key] = sourceValue;
+      }
+    }
+  }
+
+  return result;
 }

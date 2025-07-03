@@ -1,5 +1,10 @@
 import type { BrowserEventType } from "./enums.js";
-import type { CookieData, IndexedDBDatabase, LocalStorageData, SessionStorageData } from "../services/context/types.js";
+import type {
+  CookieData,
+  IndexedDBDatabase,
+  LocalStorageData,
+  SessionStorageData,
+} from "../services/context/types.js";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
 export interface BrowserLauncherOptions {
@@ -23,6 +28,7 @@ export interface BrowserLauncherOptions {
     height: number;
   } | null;
   userDataDir?: string;
+  userPreferences?: Record<string, any>;
   extra?: Record<string, Record<string, string>>;
   credentials?: CredentialsOptions;
   skipFingerprintInjection?: boolean;
