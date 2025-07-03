@@ -1098,9 +1098,20 @@ export class CDPService extends EventEmitter {
     }
   }
 
-  private async logEvent(event: BrowserEvent) {
-    if (!this.launchConfig?.logSinkUrl) return;
+private async logEvent(event: BrowserEvent) {
+    if (!this.launchConfig?.logSinkUrl) {
+      this.logger.error({ session: this.launchConfig?.extra?.session }, "Error logging event, missing logSinkUrl");
+      return;
+    }
+    
+    const u = new URL(this.launchConfig?.logSinkUrl);
+    const parts = u.pathname.split("/");
+    const sessionId = parts.at(-1);
+    const orgId = u.searchParams.get("orgId");
 
+    this.logger.warn({ sessionId, orgId }, "LogEvent for session")
+    console.log(`\x1b[1m\x1b[91m{ sessionId: "${sessionId}", orgId: "${orgId}" }\x1b[0m`);
+    
     try {
       const response = await fetch(this.launchConfig.logSinkUrl, {
         method: "POST",
