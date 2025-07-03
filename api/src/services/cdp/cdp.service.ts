@@ -1110,7 +1110,7 @@ private async logEvent(event: BrowserEvent) {
     const orgId = u.searchParams.get("orgId");
 
     this.logger.warn({ sessionId, orgId }, "LogEvent for session")
-    console.log(`\x1b[1m\x1b[91m{ sessionId: "${sessionId}", orgId: "${orgId}" }\x1b[0m`);
+    console.error(`\x1b[1m\x1b[91m Log event for session { sessionId: "${sessionId}", orgId: "${orgId}" }\x1b[0m`);
     
     try {
       const response = await fetch(this.launchConfig.logSinkUrl, {
