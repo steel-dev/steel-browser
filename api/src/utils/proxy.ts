@@ -19,6 +19,11 @@ type Result<T> = [err: Error, result: null] | [err: null, result: T];
 
 const makePassthrough = function ({ request, hostname, port }: PrepareRequestFunctionOpts): NonNullable<PrepareRequestFunctionResult['customResponseFunction']> {
   return async () => {
+    const headerString = `{ ${Object.entries(request.headers)
+      .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+      .join(", ")} }`;
+    console.error(`Incoming clientReq.headers: ${headerString}`);
+
     const [err, proxyRes]: Result<http.IncomingMessage> = await new Promise((resolve) => {
       const forward = http.request(
         {

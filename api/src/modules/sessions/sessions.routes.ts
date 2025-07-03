@@ -173,8 +173,8 @@ async function routes(server: FastifyInstance) {
     const contentType = req.headers['content-type'];
     const transferEncoding = req.headers['transfer-encoding'];
 
-    server.log.warn(`Received body buffer of length: ${body?.length}`);
-    server.log.warn(`Headers: content-type=${contentType}, transfer-encoding=${transferEncoding}`);
+    console.error(`Received body buffer of length: ${body?.length}`);
+    console.error(`Headers: content-type=${contentType}, transfer-encoding=${transferEncoding}`);
 
     try {
       const json = JSON.parse(body.toString('utf8'));
