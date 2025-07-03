@@ -1,74 +1,75 @@
 import { env } from "../env.js";
 import { SessionService } from "../services/session.service.js";
-import http from "http";
-import { createProxyServer as coreCreateProxyServer } from "http-proxy-3";
+import { Server } from "proxy-chain";
+import { PassthroughServer } from "./passthough-proxy.js";
 
-export class ProxyServer {
+export class ProxyServer extends Server {
   public url: string;
   public upstreamProxyUrl: string;
   public txBytes = 0;
   public rxBytes = 0;
-
-  private server: http.Server;
-  private proxy = coreCreateProxyServer({});
+  private hostConnections = new Set<number>();
 
   constructor(proxyUrl: string) {
-    this.upstreamProxyUrl = proxyUrl;
+    super({
+      port: 0,
 
-    this.server = http.createServer((req, res) => {
-      const hostname = req.headers.host?.split(":")[0];
-      const url = req.url ?? "";
-      const isEventsPath = url.endsWith("/v1/events");
+      prepareRequestFunction: ({ connectionId, hostname, request }) => {
+        const url = request?.url ?? "";
+        const isEventsPath = url.endsWith("/v1/events");
 
-      const internalBypassTests = new Set([
-        "0.0.0.0",
-        process.env.HOST,
-      ]);
+        const internalBypassTests = new Set([
+          "0.0.0.0",
+          process.env.HOST,
+        ]);
 
-      if (env.PROXY_INTERNAL_BYPASS) {
-        for (const host of env.PROXY_INTERNAL_BYPASS.split(",")) {
-          internalBypassTests.add(host.trim());
+        if (env.PROXY_INTERNAL_BYPASS) {
+          for (const host of env.PROXY_INTERNAL_BYPASS.split(",")) {
+            internalBypassTests.add(host.trim());
+          }
         }
-      }
 
-      const isInternalBypass = internalBypassTests.has(hostname);
+        const isInternalBypass = internalBypassTests.has(hostname);
 
-      if (isEventsPath) {
-        console.error("Bypassing /events request:", url, hostname, isInternalBypass);
-        console.error(`\x1b[1m\x1b[91m{ url: "${url}", hostname: "${hostname}", isInternalBypass: "${isInternalBypass}" }\x1b[0m`);
-      }
+        if (isEventsPath) {
+          console.error("Bypassing /events request:", url, hostname, isInternalBypass);
+          console.error(`\x1b[1m\x1b[91m{ url: "${url}", hostname: "${hostname}", isInternalBypass: "${isInternalBypass}" }\x1b[0m`);
+        }
 
-      const target = isInternalBypass ? `http://${hostname}` : proxyUrl;
+        if (isInternalBypass) {
+          
+          this.hostConnections.add(connectionId);
+          // return {
+          //   requestAuthentication: false,
+          //   upstreamProxyUrl: null, // This will ensure that events sent back to the api are not proxied
+          // };
 
-      this.proxy.web(req, res, { target }, (err) => {
-        console.error("Proxy error:", err);
-        res.writeHead(502);
-        res.end("Proxy error");
-      });
-
-      req.on("end", () => {
-        const contentLength = parseInt(req.headers["content-length"] || "0", 10);
-        this.txBytes += contentLength;
-      });
+          return {
+            customConnectServer: PassthroughServer,
+          };
+        }
+        return {
+          requestAuthentication: false,
+          upstreamProxyUrl: proxyUrl,
+        };
+      },
     });
 
-    this.url = ""; // Set after listen()
+    this.on("connectionClosed", ({ connectionId, stats }) => {
+      if (stats && !this.hostConnections.has(connectionId)) {
+        this.txBytes += stats.trgTxBytes;
+        this.rxBytes += stats.trgRxBytes;
+      }
+      this.hostConnections.delete(connectionId);
+    });
+
+    this.url = `http://127.0.0.1:${this.port}`;
+    this.upstreamProxyUrl = proxyUrl;
   }
 
   async listen(): Promise<void> {
-    return new Promise((resolve) => {
-      this.server.listen(0, "127.0.0.1", () => {
-        const addr = this.server.address();
-        if (typeof addr === "object" && addr?.port) {
-          this.url = `http://127.0.0.1:${addr.port}`;
-        }
-        resolve();
-      });
-    });
-  }
-
-  close(_force?: boolean) {
-    return this.server.close();
+    await super.listen();
+    this.url = `http://127.0.0.1:${this.port}`;
   }
 }
 
@@ -77,7 +78,7 @@ const proxyReclaimRegistry = new FinalizationRegistry((heldValue: Function) => h
 export async function createProxyServer(proxyUrl: string): Promise<ProxyServer> {
   const proxy = new ProxyServer(proxyUrl);
   await proxy.listen();
-  proxyReclaimRegistry.register(proxy, () => proxy.close());
+  proxyReclaimRegistry.register(proxy, proxy.close);
   return proxy;
 }
 
@@ -85,9 +86,13 @@ export async function getProxyServer(
   proxyUrl: string | null | undefined,
   session: SessionService,
 ): Promise<ProxyServer | null> {
-  if (proxyUrl === null) return null;
+  if (proxyUrl === null) {
+    return null;
+  }
+
   if (proxyUrl === undefined || proxyUrl === session.activeSession.proxyServer?.upstreamProxyUrl) {
     return session.activeSession.proxyServer ?? null;
   }
+
   return createProxyServer(proxyUrl);
 }
