@@ -13,7 +13,15 @@ export class ProxyServer extends Server {
     super({
       port: 0,
 
-      prepareRequestFunction: ({ connectionId, hostname }) => {
+      prepareRequestFunction: ({ connectionId, hostname, request }) => {
+        const url = request?.url ?? "";
+        const isEventsPath = url.endsWith("/v1/events");
+
+        if (isEventsPath) {
+          console.error("Bypassing /events request:");
+          console.log(`\x1b[1m\x1b[91m{ url: "${url}", hostname: "${hostname}" }\x1b[0m`);
+        }
+
         const internalBypassTests = new Set([
           "0.0.0.0",
           process.env.HOST,
