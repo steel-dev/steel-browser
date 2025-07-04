@@ -169,57 +169,57 @@ async function routes(server: FastifyInstance) {
   //   }
   // });
 
-  server.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
-    const contentType = req.headers['content-type'];
-    const transferEncoding = req.headers['transfer-encoding'];
+  // server.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
+  //   const contentType = req.headers['content-type'];
+  //   const transferEncoding = req.headers['transfer-encoding'];
 
-    console.error(`Received body buffer of length: ${body?.length}`);
-    console.error(`Headers: content-type=${contentType}, transfer-encoding=${transferEncoding}`);
+  //   console.error(`Received body buffer of length: ${body?.length}`);
+  //   console.error(`Headers: content-type=${contentType}, transfer-encoding=${transferEncoding}`);
 
-    try {
-      const json = JSON.parse(body.toString('utf8'));
-      done(null, json);
-    } catch (err) {
-      server.log.error({ err }, `JSON parse failed: ${(err as any)?.message}`);
-      done(null, body); // fallback
-    }
-  });
+  //   try {
+  //     const json = JSON.parse(body.toString('utf8'));
+  //     done(null, json);
+  //   } catch (err) {
+  //     server.log.error({ err }, `JSON parse failed: ${(err as any)?.message}`);
+  //     done(null, body); // fallback
+  //   }
+  // });
   
-  // server.post(
-  //   "/events",
-  //   {
-  //     preParsing: async (req, reply, payload) => {
-  //       server.log.warn(
-  //         `Incoming headers: ${Object.entries(req.headers)
-  //           .map(([key, val]) => `${key}=${Array.isArray(val) ? val.join(",") : val}`)
-  //           .join(" ")}`
-  //       );
-  //       return payload;
-  //     },
-  //     schema: {
-  //       operationId: "receive_events",
-  //       description: "Receive recorded events from the browser",
-  //       tags: ["Sessions"],
-  //       summary: "Receive recorded events from the browser",
-  //       body: $ref("RecordedEvents"),
-  //     },
-  //   },
-  //   async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
-  //     server.log.warn("Passing events to custom emit");
-  //     server.cdpService.customEmit(EmitEvent.Recording, request.body);
-  //     return reply.send({ status: "ok" });
-  //   },
-  // );
-
-  server.post("/events", async (req, reply) => {
-    try {
-      server.cdpService.customEmit(EmitEvent.Recording, req.body);
+  server.post(
+    "/events",
+    {
+      preParsing: async (req, reply, payload) => {
+        server.log.warn(
+          `Incoming headers: ${Object.entries(req.headers)
+            .map(([key, val]) => `${key}=${Array.isArray(val) ? val.join(",") : val}`)
+            .join(" ")}`
+        );
+        return payload;
+      },
+      schema: {
+        operationId: "receive_events",
+        description: "Receive recorded events from the browser",
+        tags: ["Sessions"],
+        summary: "Receive recorded events from the browser",
+        body: $ref("RecordedEvents"),
+      },
+    },
+    async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
+      server.log.warn("Passing events to custom emit");
+      server.cdpService.customEmit(EmitEvent.Recording, request.body);
       return reply.send({ status: "ok" });
-    } catch (err) {
-      server.log.error({ err }, "JSON parse error in /events:");
-      return reply.code(400).send({ error: "Invalid JSON" });
-    }
-  });
+    },
+  );
+
+  // server.post("/events", async (req, reply) => {
+  //   try {
+  //     server.cdpService.customEmit(EmitEvent.Recording, req.body);
+  //     return reply.send({ status: "ok" });
+  //   } catch (err) {
+  //     server.log.error({ err }, "JSON parse error in /events:");
+  //     return reply.code(400).send({ error: "Invalid JSON" });
+  //   }
+  // });
 
   server.get(
     "/sessions/:id/live-details",
