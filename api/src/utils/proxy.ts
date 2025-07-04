@@ -17,13 +17,12 @@ const hopByHop = new Set([
 
 type Result<T> = [err: Error, result: null] | [err: null, result: T];
 
+/**
+ * There's an issue with proxy-chain's handling of chunked requests when doing a direct passthrough.
+ * This workaround forwards the requests manually and returns the response
+ */
 const makePassthrough = function ({ request, hostname, port }: PrepareRequestFunctionOpts): NonNullable<PrepareRequestFunctionResult['customResponseFunction']> {
   return async () => {
-    const headerString = `{ ${Object.entries(request.headers)
-      .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-      .join(", ")} }`;
-    console.error(`Incoming clientReq.headers: ${headerString}`);
-
     const [err, proxyRes]: Result<http.IncomingMessage> = await new Promise((resolve) => {
       const forward = http.request(
         {
@@ -41,7 +40,7 @@ const makePassthrough = function ({ request, hostname, port }: PrepareRequestFun
     });
 
     if (err) {
-      console.error(`[FUCK DADDY] Request failed "${err.name}": ${err.message}`)
+      console.error(`Request failed "${err.name}": ${err.message}`)
       throw err;
     }
     
@@ -55,16 +54,12 @@ const makePassthrough = function ({ request, hostname, port }: PrepareRequestFun
         headers[k] = Array.isArray(v) ? v.join(",") : v;
       }
     }
-
-    const response = {
+    
+    return {
       statusCode: proxyRes.statusCode ?? 500,
       headers: proxyRes.headers as Record<string, string>,
       body,
     };
-
-    console.error(`[FUCK ME] ${JSON.stringify(response)}`)
-    
-    return response;
   };
 }
 
@@ -80,10 +75,8 @@ export class ProxyServer extends Server {
       port: 0,
 
       prepareRequestFunction: (options) => {
-        const { connectionId, hostname, request } = options;
-        const url = request?.url ?? "";
-        const isEventsPath = url.endsWith("/v1/events");
-
+        const { connectionId, hostname } = options;
+        
         const internalBypassTests = new Set([
           "0.0.0.0",
           process.env.HOST,
@@ -97,19 +90,8 @@ export class ProxyServer extends Server {
 
         const isInternalBypass = internalBypassTests.has(hostname);
 
-        if (isEventsPath) {
-          console.error("Bypassing /events request:", url, hostname, isInternalBypass);
-          console.error(`\x1b[1m\x1b[91m{ url: "${url}", hostname: "${hostname}", isInternalBypass: "${isInternalBypass}" }\x1b[0m`);
-        }
-
         if (isInternalBypass) {
-          
           this.hostConnections.add(connectionId);
-          // return {
-          //   requestAuthentication: false,
-          //   upstreamProxyUrl: null, // This will ensure that events sent back to the api are not proxied
-          // };
-
           return {
             customConnectServer: PassthroughServer,
             customResponseFunction: makePassthrough(options),

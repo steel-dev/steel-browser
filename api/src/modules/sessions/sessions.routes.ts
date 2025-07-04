@@ -153,49 +153,10 @@ async function routes(server: FastifyInstance) {
     },
     async (request: SessionStreamRequest, reply: FastifyReply) => handleGetSessionStream(server, request, reply),
   );
-
-  // server.addContentTypeParser('*', { parseAs: 'string' }, (req, body, done) => {
-  //   const contentType = req.headers['content-type'];
-  //   const transferEncoding = req.headers['transfer-encoding'];
-
-  //   server.log.warn(`Parsing body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
-
-  //   try {
-  //     const parsed = JSON.parse(body as string);
-  //     done(null, parsed);
-  //   } catch (err) {
-  //     server.log.error(`Failed to parse JSON body with content-type: ${contentType}, transfer-encoding: ${transferEncoding}`);
-  //     done(null, body); // fallback — pass raw string to route
-  //   }
-  // });
-
-  // server.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
-  //   const contentType = req.headers['content-type'];
-  //   const transferEncoding = req.headers['transfer-encoding'];
-
-  //   console.error(`Received body buffer of length: ${body?.length}`);
-  //   console.error(`Headers: content-type=${contentType}, transfer-encoding=${transferEncoding}`);
-
-  //   try {
-  //     const json = JSON.parse(body.toString('utf8'));
-  //     done(null, json);
-  //   } catch (err) {
-  //     server.log.error({ err }, `JSON parse failed: ${(err as any)?.message}`);
-  //     done(null, body); // fallback
-  //   }
-  // });
   
   server.post(
     "/events",
     {
-      preParsing: async (req, reply, payload) => {
-        server.log.warn(
-          `Incoming headers: ${Object.entries(req.headers)
-            .map(([key, val]) => `${key}=${Array.isArray(val) ? val.join(",") : val}`)
-            .join(" ")}`
-        );
-        return payload;
-      },
       schema: {
         operationId: "receive_events",
         description: "Receive recorded events from the browser",
@@ -210,16 +171,6 @@ async function routes(server: FastifyInstance) {
       return reply.send({ status: "ok" });
     },
   );
-
-  // server.post("/events", async (req, reply) => {
-  //   try {
-  //     server.cdpService.customEmit(EmitEvent.Recording, req.body);
-  //     return reply.send({ status: "ok" });
-  //   } catch (err) {
-  //     server.log.error({ err }, "JSON parse error in /events:");
-  //     return reply.code(400).send({ error: "Invalid JSON" });
-  //   }
-  // });
 
   server.get(
     "/sessions/:id/live-details",
