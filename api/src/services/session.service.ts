@@ -1,20 +1,18 @@
-import axios, { AxiosError } from "axios";
 import { FastifyBaseLogger } from "fastify";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { mkdir } from "fs/promises";
 import os from "os";
 import path from "path";
-import { SocksProxyAgent } from "socks-proxy-agent";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env.js";
 import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
 import { BrowserLauncherOptions } from "../types/index.js";
 import { ProxyServer } from "../utils/proxy.js";
+import { getBaseUrl, getUrl } from "../utils/url.js";
 import { CDPService } from "./cdp/cdp.service.js";
 import { CookieData } from "./context/types.js";
 import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
-import { mkdir } from "fs/promises";
-import { getUrl, getBaseUrl } from "../utils/url.js";
+import { TimezoneFetcher } from "./timezone-fetcher.service.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -49,6 +47,7 @@ export class SessionService {
   private cdpService: CDPService;
   private seleniumService: SeleniumService;
   private fileService: FileService;
+  private timezoneFetcher: TimezoneFetcher;
 
   public pastSessions: Session[] = [];
   public activeSession: Session;
@@ -63,6 +62,7 @@ export class SessionService {
     this.seleniumService = config.seleniumService;
     this.fileService = config.fileService;
     this.logger = config.logger;
+    this.timezoneFetcher = new TimezoneFetcher(config.logger);
     this.activeSession = {
       id: uuidv4(),
       createdAt: new Date().toISOString(),
@@ -108,8 +108,6 @@ export class SessionService {
       skipFingerprintInjection,
     } = options;
 
-    let timezone = options.timezone;
-
     const sessionInfo = await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
@@ -119,34 +117,24 @@ export class SessionService {
       isSelenium,
     });
 
+    // Setup proxy server first if needed
     if (proxyUrl) {
       this.activeSession.proxyServer = new ProxyServer(proxyUrl);
       await this.activeSession.proxyServer.listen();
+    }
 
-      // Fetch timezone information from the proxy's location if timezone isn't already specified
-      if (!timezone) {
-        try {
-          const isSocks = proxyUrl.startsWith("socks");
-
-          const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
-
-          this.logger.info("Fetching timezone information based on proxy location");
-          const response = await axios.get("http://ip-api.com/json", {
-            httpAgent: agent,
-            httpsAgent: agent,
-            timeout: 5000,
-          });
-
-          if (response.data && response.data.status === "success" && response.data.timezone) {
-            timezone = response.data.timezone;
-            this.logger.info(`Setting timezone to ${timezone} based on proxy location`);
-          }
-        } catch (error: unknown) {
-          this.logger.error(
-            `Failed to fetch timezone information: ${(error as AxiosError).message}`,
-          );
-        }
-      }
+    let timezonePromise: Promise<string>;
+    if (options.timezone) {
+      timezonePromise = Promise.resolve(options.timezone);
+    } else if (proxyUrl) {
+      timezonePromise = this.timezoneFetcher.getTimezone(
+        proxyUrl,
+        env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      );
+    } else {
+      timezonePromise = Promise.resolve(
+        env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      );
     }
 
     const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
@@ -162,7 +150,7 @@ export class SessionService {
       blockAds,
       extensions: extensions || [],
       logSinkUrl,
-      timezone,
+      timezone: timezonePromise,
       dimensions,
       userDataDir,
       extra,

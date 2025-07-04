@@ -62,7 +62,7 @@ import {
   NetworkOperation,
 } from "./errors/launch-errors.js";
 import { RetryManager, RetryOptions } from "../../utils/retry.js";
-import { validateLaunchConfig } from "./utils/validation.js";
+import { validateLaunchConfig, validateTimezone } from "./utils/validation.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -290,7 +290,12 @@ export class CDPService extends EventEmitter {
         await this.pluginManager.onPageCreated(page);
 
         if (this.currentSessionConfig?.timezone) {
-          await page.emulateTimezone(this.currentSessionConfig.timezone);
+          try {
+            const resolvedTimezone = await this.currentSessionConfig.timezone;
+            await page.emulateTimezone(resolvedTimezone);
+          } catch (error) {
+            this.logger.warn(`Failed to resolve timezone for page emulation: ${error}`);
+          }
         }
 
         if (this.launchConfig?.customHeaders) {
@@ -695,7 +700,16 @@ export class CDPService extends EventEmitter {
           }
         }
 
-        const timezone = config?.timezone || this.defaultTimezone;
+        let timezone = this.defaultTimezone;
+        if (config?.timezone) {
+          try {
+            timezone = await validateTimezone(config.timezone, this.defaultTimezone);
+            this.logger.debug(`Resolved and validated timezone: ${timezone}`);
+          } catch (error) {
+            this.logger.warn(`Timezone validation failed: ${error}, using fallback`);
+            timezone = this.defaultTimezone;
+          }
+        }
 
         // Run launch mutators - plugin errors should be caught
         try {
