@@ -11,7 +11,7 @@ export interface TimezoneFetchResult {
 export class TimezoneFetcher {
   private logger: FastifyBaseLogger;
   private fetchPromises: Map<string, Promise<TimezoneFetchResult>> = new Map();
-  private readonly FETCH_TIMEOUT = 5000;
+  private readonly FETCH_TIMEOUT = 2000;
 
   constructor(logger: FastifyBaseLogger) {
     this.logger = logger;
