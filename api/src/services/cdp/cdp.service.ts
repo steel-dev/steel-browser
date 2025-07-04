@@ -215,7 +215,7 @@ export class CDPService extends EventEmitter {
         });
       }
     } catch (error) {
-      this.logger.error(`Error emitting event: ${error}`);
+      this.logger.error({ err: error }, `Error emitting event`);
     }
   }
 
