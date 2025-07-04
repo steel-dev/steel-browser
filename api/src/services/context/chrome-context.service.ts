@@ -34,12 +34,15 @@ export class ChromeContextService extends EventEmitter {
     try {
       const sessionData: SessionData = {};
 
-      const localStorage = await this.extractLocalStorage(userDataDir);
+      const [localStorage, sessionStorage] = await Promise.all([
+        this.extractLocalStorage(userDataDir),
+        this.extractSessionStorage(userDataDir),
+      ]);
+
       if (localStorage && Object.keys(localStorage).length > 0) {
         sessionData.localStorage = localStorage;
       }
 
-      const sessionStorage = await this.extractSessionStorage(userDataDir);
       if (sessionStorage && Object.keys(sessionStorage).length > 0) {
         sessionData.sessionStorage = sessionStorage;
       }
@@ -76,7 +79,9 @@ export class ChromeContextService extends EventEmitter {
   /**
    * Extract localStorage from Chrome's LevelDB database
    */
-  private async extractLocalStorage(userDataDir: string): Promise<Record<string, Record<string, string>>> {
+  private async extractLocalStorage(
+    userDataDir: string,
+  ): Promise<Record<string, Record<string, string>>> {
     const localStoragePath = this.getProfilePath(userDataDir, "Local Storage", "leveldb");
     this.logger.info(`Extracting localStorage from ${localStoragePath}`);
 
@@ -93,13 +98,16 @@ export class ChromeContextService extends EventEmitter {
   /**
    * Extract sessionStorage from Chrome's Session Storage
    */
-  private async extractSessionStorage(userDataDir: string): Promise<Record<string, Record<string, string>>> {
+  private async extractSessionStorage(
+    userDataDir: string,
+  ): Promise<Record<string, Record<string, string>>> {
     // Normalize path for cross-platform compatibility
     const sessionStoragePath = this.getProfilePath(userDataDir, "Session Storage");
 
     try {
       this.logger.info(`Reading sessionStorage from ${sessionStoragePath}`);
-      const sessionStorage = await ChromeSessionStorageReader.readSessionStorage(sessionStoragePath);
+      const sessionStorage =
+        await ChromeSessionStorageReader.readSessionStorage(sessionStoragePath);
       return sessionStorage;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
