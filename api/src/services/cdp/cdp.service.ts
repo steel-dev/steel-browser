@@ -733,7 +733,7 @@ export class CDPService extends EventEmitter {
 
         let extensionPaths: string[] = [];
         try {
-          extensionPaths = getExtensionPaths([...defaultExtensions, ...customExtensions]);
+          extensionPaths = await getExtensionPaths([...defaultExtensions, ...customExtensions]);
         } catch (error) {
           throw new ResourceError(
             `Failed to resolve extension paths: ${error}`,
