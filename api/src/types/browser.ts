@@ -1,5 +1,10 @@
 import type { BrowserEventType } from "./enums.js";
-import type { CookieData, IndexedDBDatabase, LocalStorageData, SessionStorageData } from "../services/context/types.js";
+import type {
+  CookieData,
+  IndexedDBDatabase,
+  LocalStorageData,
+  SessionStorageData,
+} from "../services/context/types.js";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
 export interface BrowserLauncherOptions {
@@ -17,7 +22,7 @@ export interface BrowserLauncherOptions {
   logSinkUrl?: string;
   blockAds?: boolean;
   customHeaders?: Record<string, string>;
-  timezone?: string;
+  timezone?: Promise<string>;
   dimensions?: {
     width: number;
     height: number;

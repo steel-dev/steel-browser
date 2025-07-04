@@ -2,7 +2,7 @@ import { BrowserLauncherOptions } from "../../../types";
 import { ConfigurationError, ConfigurationField } from "../errors/launch-errors.js";
 
 /**
- * Validates a givenlaunch configuration (not conclusive)
+ * Validates a given launch configuration (not conclusive)
  */
 export function validateLaunchConfig(config: BrowserLauncherOptions): void {
   // Validate dimensions
@@ -23,19 +23,6 @@ export function validateLaunchConfig(config: BrowserLauncherOptions): void {
     }
   }
 
-  // Validates timezone
-  if (config.timezone) {
-    try {
-      Intl.DateTimeFormat(undefined, { timeZone: config.timezone });
-    } catch {
-      throw new ConfigurationError(
-        `Invalid timezone: ${config.timezone}`,
-        ConfigurationField.TIMEZONE,
-        config.timezone,
-      );
-    }
-  }
-
   // Validates proxy URL format
   if (config.options.proxyUrl) {
     try {
@@ -47,5 +34,41 @@ export function validateLaunchConfig(config: BrowserLauncherOptions): void {
         config.options.proxyUrl,
       );
     }
+  }
+}
+
+export async function validateTimezone(
+  timezonePromise: Promise<string>,
+  fallbackTimezone: string,
+  timeoutMs: number = 3000,
+): Promise<string> {
+  try {
+    const timeoutPromise = new Promise<string>((resolve) => {
+      setTimeout(() => {
+        resolve(fallbackTimezone);
+      }, timeoutMs);
+    });
+
+    const timezone = await Promise.race([timezonePromise, timeoutPromise]);
+
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: timezone });
+      return timezone;
+    } catch (timezoneError) {
+      throw new ConfigurationError(
+        `Invalid timezone resolved: ${timezone}`,
+        ConfigurationField.TIMEZONE,
+        timezone,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ConfigurationError) {
+      throw error;
+    }
+    throw new ConfigurationError(
+      `Failed to resolve timezone: ${error}`,
+      ConfigurationField.TIMEZONE,
+      undefined,
+    );
   }
 }
