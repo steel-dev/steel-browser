@@ -6,12 +6,32 @@ import { SocksProxyAgent } from "socks-proxy-agent";
 export interface TimezoneFetchResult {
   timezone: string | null;
   error?: string;
+  service?: string;
+}
+
+interface TimezoneService {
+  name: string;
+  url: string;
+  parseTimezone: (data: any) => string | null;
 }
 
 export class TimezoneFetcher {
   private logger: FastifyBaseLogger;
   private fetchPromises: Map<string, Promise<TimezoneFetchResult>> = new Map();
   private readonly FETCH_TIMEOUT = 2000;
+
+  private readonly services: TimezoneService[] = [
+    {
+      name: "ip-api.com",
+      url: "http://ip-api.com/json",
+      parseTimezone: (data) => (data?.status === "success" ? data.timezone : null),
+    },
+    {
+      name: "ipinfo.io",
+      url: "https://ipinfo.io/json",
+      parseTimezone: (data) => data?.timezone || null,
+    },
+  ];
 
   constructor(logger: FastifyBaseLogger) {
     this.logger = logger;
@@ -20,7 +40,6 @@ export class TimezoneFetcher {
   private startFetch(proxyUrl: string): Promise<TimezoneFetchResult> {
     const existing = this.fetchPromises.get(proxyUrl);
     if (existing) {
-      this.logger.debug(`[TimezoneFetcher] Reusing existing fetch for ${proxyUrl}`);
       return existing;
     }
 
@@ -49,39 +68,51 @@ export class TimezoneFetcher {
   }
 
   private async fetchTimezoneInternal(proxyUrl: string): Promise<TimezoneFetchResult> {
-    try {
-      const isSocks = proxyUrl.startsWith("socks");
-      const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
+    const isSocks = proxyUrl.startsWith("socks");
+    const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
 
-      this.logger.debug(`[TimezoneFetcher] Fetching timezone information for ${proxyUrl}`);
+    const servicePromises = this.services.map(async (service) => {
+      try {
+        const response = await axios.get(service.url, {
+          httpAgent: agent,
+          httpsAgent: agent,
+          timeout: this.FETCH_TIMEOUT,
+        });
 
-      const response = await axios.get("http://ip-api.com/json", {
-        httpAgent: agent,
-        httpsAgent: agent,
-        timeout: this.FETCH_TIMEOUT,
-      });
+        const timezone = service.parseTimezone(response.data);
 
-      if (response.data && response.data.status === "success" && response.data.timezone) {
-        const result: TimezoneFetchResult = {
-          timezone: response.data.timezone,
-        };
-
-        return result;
-      } else {
-        throw new Error(`Invalid response: ${response.data?.status || "unknown"}`);
+        if (timezone) {
+          return {
+            timezone,
+            service: service.name,
+          };
+        } else {
+          throw new Error(`No timezone found in response from ${service.name}`);
+        }
+      } catch (error: unknown) {
+        const errorMessage = error instanceof AxiosError ? error.message : String(error);
+        this.logger.debug(`[TimezoneFetcher] ${service.name} failed: ${errorMessage}`);
+        throw new Error(`${service.name}: ${errorMessage}`);
       }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof AxiosError ? error.message : String(error);
-      this.logger.warn(
-        `[TimezoneFetcher] Failed to fetch timezone for ${proxyUrl}: ${errorMessage}`,
-      );
+    });
 
-      const result: TimezoneFetchResult = {
+    try {
+      const result = await Promise.any(servicePromises);
+      return result;
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof AggregateError
+          ? `All services failed: ${error.errors.map((e) => e.message).join(", ")}`
+          : error instanceof Error
+          ? error.message
+          : String(error);
+
+      this.logger.warn(`[TimezoneFetcher] All services failed for ${proxyUrl}: ${errorMessage}`);
+
+      return {
         timezone: null,
         error: errorMessage,
       };
-
-      return result;
     }
   }
 }
