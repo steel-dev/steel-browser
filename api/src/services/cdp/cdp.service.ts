@@ -691,23 +691,12 @@ export class CDPService extends EventEmitter {
               },
             });
 
-            this.fingerprintData = await fingerprintGen.getFingerprint();
+            this.fingerprintData = fingerprintGen.getFingerprint();
           } catch (error) {
             throw new FingerprintError(
               error instanceof Error ? error.message : String(error),
               FingerprintStage.GENERATION,
             );
-          }
-        }
-
-        let timezone = this.defaultTimezone;
-        if (config?.timezone) {
-          try {
-            timezone = await validateTimezone(config.timezone, this.defaultTimezone);
-            this.logger.debug(`Resolved and validated timezone: ${timezone}`);
-          } catch (error) {
-            this.logger.warn(`Timezone validation failed: ${error}, using fallback`);
-            timezone = this.defaultTimezone;
           }
         }
 
@@ -740,6 +729,17 @@ export class CDPService extends EventEmitter {
             ResourceType.EXTENSIONS,
             false,
           );
+        }
+
+        let timezone = this.defaultTimezone;
+        if (config?.timezone) {
+          try {
+            timezone = await validateTimezone(config.timezone, this.defaultTimezone);
+            this.logger.debug(`Resolved and validated timezone: ${timezone}`);
+          } catch (error) {
+            this.logger.warn(`Timezone validation failed: ${error}, using fallback`);
+            timezone = this.defaultTimezone;
+          }
         }
 
         const extensionArgs = extensionPaths.length
