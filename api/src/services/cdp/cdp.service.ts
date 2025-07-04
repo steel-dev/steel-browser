@@ -1098,9 +1098,9 @@ export class CDPService extends EventEmitter {
     }
   }
 
-private async logEvent(event: BrowserEvent) {
+  private async logEvent(event: BrowserEvent) {
     if (!this.launchConfig?.logSinkUrl) return;
-    
+
     try {
       const response = await fetch(this.launchConfig.logSinkUrl, {
         method: "POST",

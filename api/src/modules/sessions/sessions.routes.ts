@@ -153,7 +153,7 @@ async function routes(server: FastifyInstance) {
     },
     async (request: SessionStreamRequest, reply: FastifyReply) => handleGetSessionStream(server, request, reply),
   );
-  
+
   server.post(
     "/events",
     {
@@ -166,7 +166,6 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
-      server.log.warn("Passing events to custom emit");
       server.cdpService.customEmit(EmitEvent.Recording, request.body);
       return reply.send({ status: "ok" });
     },
