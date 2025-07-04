@@ -108,21 +108,7 @@ export class SessionService {
       skipFingerprintInjection,
     } = options;
 
-    const sessionInfo = await this.resetSessionInfo({
-      id: sessionId || uuidv4(),
-      status: "live",
-      proxy: proxyUrl,
-      solveCaptcha: false,
-      dimensions,
-      isSelenium,
-    });
-
-    // Setup proxy server first if needed
-    if (proxyUrl) {
-      this.activeSession.proxyServer = new ProxyServer(proxyUrl);
-      await this.activeSession.proxyServer.listen();
-    }
-
+    // start fetching timezone as early as possible
     let timezonePromise: Promise<string>;
     if (options.timezone) {
       timezonePromise = Promise.resolve(options.timezone);
@@ -137,8 +123,24 @@ export class SessionService {
       );
     }
 
+    const sessionInfo = await this.resetSessionInfo({
+      id: sessionId || uuidv4(),
+      status: "live",
+      proxy: proxyUrl,
+      solveCaptcha: false,
+      dimensions,
+      isSelenium,
+    });
+
     const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
-    await mkdir(userDataDir, { recursive: true });
+    const promises: Promise<any>[] = [mkdir(userDataDir, { recursive: true })];
+
+    if (proxyUrl) {
+      this.activeSession.proxyServer = new ProxyServer(proxyUrl);
+      promises.push(this.activeSession.proxyServer.listen());
+    }
+
+    await Promise.all(promises);
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
