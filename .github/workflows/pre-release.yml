@@ -30,21 +30,30 @@ jobs:
         uses: mikepenz/release-changelog-builder-action@v5
         id: changelog
         with:
-          mode: "HYBRID"
+          mode: "PR"
+          fetchReleaseInformation: true
           configurationJson: |
             {
               "template": "#{{CHANGELOG}} #{{CONTRIBUTORS}}",
               "pr_template": "#{{URL}} #{{TITLE}} #{{PR_NUMBER}}",
               "categories": [
                 {
+                    "title": "## Improvements",
+                    "labels": ["feat", "feature"]
+                },
+                {
                     "title": "## Bug Fixes",
                     "labels": ["fix", "bug"]
                 },
                 {
-                    "title": "## Improvements",
+                    "title": "## Housekeeping",
                     "labels": []
                 }
               ],
+              "sort": {
+                    "order": "ASC",
+                    "on_property": "mergedAt"
+              },
               "label_extractor": [
                 {
                   "pattern": "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test){1}(\\([\\w\\-\\.]+\\))?(!)?: ([\\w ])+([\\s\\S]*)",
@@ -52,7 +61,6 @@ jobs:
                   "target": "$1"
                 }
               ],
-              fetchReleaseInformation: true
             }
           toTag: ${{ steps.bump_version.outputs.newTag }}
           fromTag: ""
