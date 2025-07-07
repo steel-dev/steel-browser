@@ -26,3 +26,4 @@ dist
 .aider*
 extensions/*
 .env/
+docker
