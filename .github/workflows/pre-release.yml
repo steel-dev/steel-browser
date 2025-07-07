@@ -1,5 +1,4 @@
----
-name: Automated Release
+name: Automatic Release
 
 on:
   push:
@@ -11,25 +10,41 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Release Please
-        id: release
-        uses: googleapis/release-please-action@v4
+      # Automatic semantic version bump (major/minor/patch from commit messages)
+      - name: Bump version and push tag
+        id: bump_version
+        uses: phips28/gh-action-bump-version@v11.0.3
         with:
-          release-type: node
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          changelog-types: '[{"type":"github-release","section":"Image","hidden":false}]'
-
-      - name: Add image to release notes
-        if: steps.release.outputs.release_created == 'true'
-        run: |
-          gh release edit ${{ steps.release.outputs.tag_name }} \
-            --repo ${{ github.repository }} \
-            --notes "$(gh release view ${{ steps.release.outputs.tag_name }} --repo ${{ github.repository }} --json body -q .body)
-            ![release-image](https://private-user-images.githubusercontent.com/123210769/411679811-9937e162-22c9-4b30-b9d0-ccf90c9b6fb4.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTE4ODEzNzksIm5iZiI6MTc1MTg4MTA3OSwicGF0aCI6Ii8xMjMyMTA3NjkvNDExNjc5ODExLTk5MzdlMTYyLTIyYzktNGIzMC1iOWQwLWNjZjkwYzliNmZiNC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjUwNzA3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MDcwN1QwOTM3NTlaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT03ZGUxNTJiYTUwMzVjYTA4YjVhMmRkYWFlNmZlNDU2MzQ5MGMyYjk1Mzg5YjM4NTFjMWRhMzliNDA3NmNmOTNiJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.eVhycfIu2JjBKDPKa7bg18fu8KXytbrTT-WH6D8p_HY)
-
+          tag-prefix: "v"
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      # Generate changelog file from previous commits
+      - name: Generate changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        id: changelog
+        with:
+          configuration: ""
+          toTag: ${{ steps.bump_version.outputs.newTag }}
+          fromTag: ""
+
+      # Create automatic GitHub release
+      - name: Create GitHub Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
+          automatic_release_tag: ${{ steps.bump_version.outputs.newTag }}
+          prerelease: false
+          title: "Release ${{ steps.bump_version.outputs.newTag }}"
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+
+            ![release-image](https://private-user-images.githubusercontent.com/123210769/411679811-9937e162-22c9-4b30-b9d0-ccf90c9b6fb4.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTE4ODMxMDIsIm5iZiI6MTc1MTg4MjgwMiwicGF0aCI6Ii8xMjMyMTA3NjkvNDExNjc5ODExLTk5MzdlMTYyLTIyYzktNGIzMC1iOWQwLWNjZjkwYzliNmZiNC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjUwNzA3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MDcwN1QxMDA2NDJaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1iZWQ4NTZjYWQ2NzIwNDc2OTU3NWZlMzg1NDdkM2VkZDJiZTc4YmQyOTUwNWYwMGUwZGQzNDg1ZDUwNzRlMmY1JlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.VU_L7qhvtv6DtAbdmozuV-t3Nit8I0aCXFNZfxHcirI)
+
+            Additional release notes or custom text here.
