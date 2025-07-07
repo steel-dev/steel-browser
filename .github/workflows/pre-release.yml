@@ -41,10 +41,12 @@ jobs:
           repo_token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
           automatic_release_tag: ${{ steps.bump_version.outputs.newTag }}
           prerelease: false
-          title: "Release ${{ steps.bump_version.outputs.newTag }}"
+          title: "Release ${{ steps.bump_version.outputs.newTag }}-beta"
           body: |
             ${{ steps.changelog.outputs.changelog }}
 
-            ![release-image](https://private-user-images.githubusercontent.com/123210769/411679811-9937e162-22c9-4b30-b9d0-ccf90c9b6fb4.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTE4ODMxMDIsIm5iZiI6MTc1MTg4MjgwMiwicGF0aCI6Ii8xMjMyMTA3NjkvNDExNjc5ODExLTk5MzdlMTYyLTIyYzktNGIzMC1iOWQwLWNjZjkwYzliNmZiNC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjUwNzA3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MDcwN1QxMDA2NDJaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1iZWQ4NTZjYWQ2NzIwNDc2OTU3NWZlMzg1NDdkM2VkZDJiZTc4YmQyOTUwNWYwMGUwZGQzNDg1ZDUwNzRlMmY1JlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.VU_L7qhvtv6DtAbdmozuV-t3Nit8I0aCXFNZfxHcirI)
+            ![release-image](https://raw.githubusercontent.com/steel-dev/.github/refs/heads/main/profile/github_hero.png)
 
-            Additional release notes or custom text here.
+            ## Come Hang Out
+            Questions? Join us on [Discord](https://discord.gg/your-server-link)
+            Found a bug? Open an issue on [GitHub](https://github.com/your-repo/issues)
