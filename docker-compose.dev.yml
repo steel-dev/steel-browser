@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: ./api/Dockerfile
       args:
-        NODE_VERSION: 22.13.0
+        NODE_VERSION: 22.14.0
     ports:
       - "3000:3000"
       - "9223:9223"
