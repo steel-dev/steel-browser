@@ -36,12 +36,12 @@ jobs:
 
       # Create automatic GitHub release
       - name: Create GitHub Release
-        uses: marvinpinto/action-automatic-releases@latest
+        uses: ncipollo/release-action@v1
         with:
-          repo_token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
-          automatic_release_tag: ${{ steps.bump_version.outputs.newTag }}
+          token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
+          tag: ${{ steps.bump_version.outputs.newTag }}
           prerelease: false
-          title: "Release ${{ steps.bump_version.outputs.newTag }}-beta"
+          name: "Release ${{ steps.bump_version.outputs.newTag }}-beta"
           body: |
             ${{ steps.changelog.outputs.changelog }}
 
