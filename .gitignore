@@ -25,3 +25,4 @@ out
 dist
 .aider*
 extensions/*
+.env/
