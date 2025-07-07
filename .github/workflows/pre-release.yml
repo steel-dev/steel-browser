@@ -20,7 +20,7 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           release-type: node
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           changelog-types: '[{"type":"github-release","section":"Image","hidden":false}]'
 
       - name: Add image to release notes
@@ -32,4 +32,4 @@ jobs:
             ![release-image](https://private-user-images.githubusercontent.com/123210769/411679811-9937e162-22c9-4b30-b9d0-ccf90c9b6fb4.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTE4ODEzNzksIm5iZiI6MTc1MTg4MTA3OSwicGF0aCI6Ii8xMjMyMTA3NjkvNDExNjc5ODExLTk5MzdlMTYyLTIyYzktNGIzMC1iOWQwLWNjZjkwYzliNmZiNC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjUwNzA3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MDcwN1QwOTM3NTlaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT03ZGUxNTJiYTUwMzVjYTA4YjVhMmRkYWFlNmZlNDU2MzQ5MGMyYjk1Mzg5YjM4NTFjMWRhMzliNDA3NmNmOTNiJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.eVhycfIu2JjBKDPKa7bg18fu8KXytbrTT-WH6D8p_HY)
 
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
