@@ -31,36 +31,46 @@ jobs:
         id: changelog
         with:
           mode: "PR"
-          fetchReleaseInformation: true
           configurationJson: |
             {
-              "template": "#{{CHANGELOG}} #{{CONTRIBUTORS}}",
-              "pr_template": "#{{URL}} #{{TITLE}} #{{PR_NUMBER}}",
-              "categories": [
+              "template": "#{{CHANGELOG}} ## Contributors\n\n #{{CONTRIBUTORS}}",
+              "pr_template": "[#{{MERGE_SHA_SUBSTRING}}](#{{URL}}/#{{MERGE_SHA}}) #{{TITLE}} (shoutout @#{{AUTHOR}}) ([##{{NUMBER}}](#{{URL}}))",
+              "custom_placeholders": [
                 {
-                    "title": "## Improvements",
-                    "labels": ["feat", "feature"]
-                },
-                {
-                    "title": "## Bug Fixes",
-                    "labels": ["fix", "bug"]
-                },
-                {
-                    "title": "## Housekeeping",
-                    "labels": []
+                  "name": "MERGE_SHA_SUBSTRING",
+                  "source": "MERGE_SHA",
+                  "transformer": {
+                    "pattern": "^(.{6})",
+                    "method": "regexr",
+                    "target": "$1"
+                  }
                 }
               ],
-              "sort": {
-                    "order": "ASC",
-                    "on_property": "mergedAt"
-              },
-              "label_extractor": [
+              "categories": [
+                {
+                  "title": "--- \n\n ## Improvements",
+                  "labels": ["feat", "feature"]
+                },
+                {
+                  "title": "--- \n\n## Bug Fixes",
+                  "labels": ["fix", "bug"]
+                },
+                {
+                  "title": "--- \n\n## Housekeeping",
+                  "labels": []
+                }
+              ],
+                "sort": {
+                  "order": "ASC",
+                  "on_property": "mergedAt"
+                },
+                "label_extractor": [
                 {
                   "pattern": "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test){1}(\\([\\w\\-\\.]+\\))?(!)?: ([\\w ])+([\\s\\S]*)",
                   "on_property": "title",
                   "target": "$1"
                 }
-              ],
+              ]
             }
           toTag: ${{ steps.bump_version.outputs.newTag }}
           fromTag: ""
@@ -76,10 +86,10 @@ jobs:
           body: |
             ${{ steps.changelog.outputs.changelog }}
 
+            ---
+
             ![release-image](https://raw.githubusercontent.com/steel-dev/.github/refs/heads/main/profile/github_hero.png)
 
             ## Come Hang Out
-            Questions? Join us on [Discord](https://discord.gg/your-server-link)
-            Found a bug? Open an issue on [GitHub](https://github.com/your-repo/issues)
-
-            ${{ steps.changelog.outputs.contributors }}
+            - Questions? Join us on [Discord](https://discord.gg/gPpvhNvc5R)
+            - Found a bug? Open an issue on [GitHub](https://github.com/steel-dev/steel-browser/issues)
