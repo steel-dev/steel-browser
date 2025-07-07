@@ -33,18 +33,15 @@ jobs:
           mode: "HYBRID"
           configurationJson: |
             {
-              "template": "#{{CHANGELOG}}",
+              "template": "#{{CHANGELOG}} #{{CONTRIBUTORS}}",
+              "pr_template": "#{{URL}} #{{TITLE}} #{{PR_NUMBER}}",
               "categories": [
-                {
-                    "title": "## Improvements",
-                    "labels": ["feat", "feature"]
-                },
                 {
                     "title": "## Bug Fixes",
                     "labels": ["fix", "bug"]
                 },
                 {
-                    "title": "## Other",
+                    "title": "## Improvements",
                     "labels": []
                 }
               ],
