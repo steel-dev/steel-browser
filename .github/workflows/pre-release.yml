@@ -30,17 +30,17 @@ jobs:
         uses: mikepenz/release-changelog-builder-action@v5
         id: changelog
         with:
-          mode: "COMMIT"
+          mode: "HYBRID"
           configurationJson: |
             {
               "template": "#{{CHANGELOG}}",
               "categories": [
                 {
-                    "title": "## Feature",
+                    "title": "## Improvements",
                     "labels": ["feat", "feature"]
                 },
                 {
-                    "title": "## Fix",
+                    "title": "## Bug Fixes",
                     "labels": ["fix", "bug"]
                 },
                 {
@@ -54,7 +54,8 @@ jobs:
                   "on_property": "title",
                   "target": "$1"
                 }
-              ]
+              ],
+              fetchReleaseInformation: true
             }
           toTag: ${{ steps.bump_version.outputs.newTag }}
           fromTag: ""
@@ -68,7 +69,6 @@ jobs:
           prerelease: false
           name: "Release ${{ steps.bump_version.outputs.newTag }}-beta"
           body: |
-            ## Changelog
             ${{ steps.changelog.outputs.changelog }}
 
             ![release-image](https://raw.githubusercontent.com/steel-dev/.github/refs/heads/main/profile/github_hero.png)
