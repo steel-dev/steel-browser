@@ -6,7 +6,7 @@ import { cleanHtml, getMarkdown, getReadabilityContent } from "../../utils/scrap
 import { ScrapeFormat } from "../../types/index.js";
 import { BrowserContext, Page } from "puppeteer-core";
 import { updateLog } from "../../utils/logging.js";
-import { getProxyServer } from "../../utils/proxy.js";
+import { IProxyServer } from "../../utils/proxy.js";
 import { SessionService } from "../../services/session.service.js";
 
 export const handleScrape = async (
@@ -18,13 +18,19 @@ export const handleScrape = async (
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, format, screenshot, pdf, proxyUrl, logUrl, delay } = request.body;
+
+  let proxy: IProxyServer | null = null;
+  let context: BrowserContext | null = null;
+
   try {
-    const proxy = await getProxyServer(proxyUrl, sessionService);
+    if (proxyUrl) {
+      proxy = await sessionService.proxyFactory(proxyUrl);
+      await proxy.listen();
+    }
 
     times.proxyTime = Date.now() - startTime;
 
     let page: Page;
-    let context: BrowserContext;
 
     if (!browserService.isRunning()) {
       await browserService.launch();
@@ -93,11 +99,15 @@ export const handleScrape = async (
       }
       if (format.includes(ScrapeFormat.CLEANED_HTML)) {
         scrapeResponse.content.cleaned_html = cleanHtml(html);
-        times.cleanedHtmlTime = (Date.now() - times.readabilityTime || Date.now() - times.extractionTime) - startTime;
+        times.cleanedHtmlTime =
+          (Date.now() - times.readabilityTime || Date.now() - times.extractionTime) - startTime;
       }
       if (format.includes(ScrapeFormat.MARKDOWN)) {
-        const readabilityContent = scrapeResponse.content.readability ?? getReadabilityContent(html);
-        scrapeResponse.content.markdown = getMarkdown(readabilityContent ? readabilityContent?.content : html);
+        const readabilityContent =
+          scrapeResponse.content.readability ?? getReadabilityContent(html);
+        scrapeResponse.content.markdown = getMarkdown(
+          readabilityContent ? readabilityContent?.content : html,
+        );
         times.markdownTime =
           (Date.now() - times.cleanedHtmlTime ||
             Date.now() - times.readabilityTime ||
@@ -117,14 +127,6 @@ export const handleScrape = async (
 
     times.totalInstanceTime = Date.now() - startTime;
 
-    if (url) {
-      if (proxy) {
-        await page.browserContext().close();
-      } else {
-        await browserService.refreshPrimaryPage();
-      }
-    }
-
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
@@ -141,6 +143,13 @@ export const handleScrape = async (
       await browserService.refreshPrimaryPage();
     }
     return reply.code(500).send({ message: error });
+  } finally {
+    if (context) {
+      await context.close().catch(() => {});
+    }
+    if (proxy) {
+      await proxy.close(true).catch(() => {});
+    }
   }
 };
 
@@ -153,16 +162,23 @@ export const handleScreenshot = async (
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay, fullPage } = request.body;
+
+  let proxy: IProxyServer | null = null;
+  let context: BrowserContext | null = null;
+
   if (!browserService.isRunning()) {
     await browserService.launch();
   }
+
   try {
-    const proxy = await getProxyServer(proxyUrl, sessionService);
+    if (proxyUrl) {
+      proxy = await sessionService.proxyFactory(proxyUrl);
+      await proxy.listen();
+    }
 
     times.proxyTime = Date.now() - startTime;
 
     let page: Page;
-    let context: BrowserContext;
 
     if (proxy) {
       context = await browserService.createBrowserContext(proxy.url);
@@ -172,6 +188,7 @@ export const handleScreenshot = async (
       page = await browserService.getPrimaryPage();
       times.pageTime = Date.now() - startTime;
     }
+
     if (url) {
       await page.goto(url, { timeout: 30000, waitUntil: "domcontentloaded" });
       times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
@@ -182,15 +199,8 @@ export const handleScreenshot = async (
     }
 
     const screenshot = await page.screenshot({ fullPage, type: "jpeg", quality: 100 });
-    times.screenshotTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
-
-    if (url) {
-      if (proxy) {
-        await page.browserContext().close();
-      } else {
-        await browserService.refreshPrimaryPage();
-      }
-    }
+    times.screenshotTime =
+      Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
 
     if (logUrl) {
       await updateLog(logUrl, { times });
@@ -209,6 +219,13 @@ export const handleScreenshot = async (
     }
 
     return reply.code(500).send({ message: error });
+  } finally {
+    if (context) {
+      await context.close().catch(() => {});
+    }
+    if (proxy) {
+      await proxy.close(true).catch(() => {});
+    }
   }
 };
 
@@ -222,17 +239,22 @@ export const handlePDF = async (
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay } = request.body;
 
+  let proxy: IProxyServer | null = null;
+  let context: BrowserContext | null = null;
+
   if (!browserService.isRunning()) {
     await browserService.launch();
   }
 
   try {
-    const proxy = await getProxyServer(proxyUrl, sessionService);
+    if (proxyUrl) {
+      proxy = await sessionService.proxyFactory(proxyUrl);
+      await proxy.listen();
+    }
 
     times.proxyTime = Date.now() - startTime;
 
     let page: Page;
-    let context: BrowserContext;
 
     if (proxy) {
       context = await browserService.createBrowserContext(proxy.url);
@@ -255,26 +277,29 @@ export const handlePDF = async (
     const pdf = await page.pdf();
     times.pdfTime = Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;
 
-    if (url) {
-      if (proxy) {
-        await page.browserContext().close();
-      } else {
-        await browserService.refreshPrimaryPage();
-      }
-    }
-
     if (logUrl) {
       await updateLog(logUrl, { times });
     }
+
     return reply.send(pdf);
   } catch (e: unknown) {
     const error = getErrors(e);
+
     if (logUrl) {
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
+
     if (url) {
       await browserService.refreshPrimaryPage();
     }
+
     return reply.code(500).send({ message: error });
+  } finally {
+    if (context) {
+      await context.close().catch(() => {});
+    }
+    if (proxy) {
+      await proxy.close(true).catch(() => {});
+    }
   }
 };

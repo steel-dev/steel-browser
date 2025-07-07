@@ -1,14 +1,13 @@
-import { Server } from "proxy-chain";
 import { env } from "../env.js";
 import { SessionService } from "../services/session.service.js";
 import { makePassthrough, PassthroughServer } from "./passthough-proxy.js";
+import { Server } from "proxy-chain";
 
 export interface IProxyServer {
   readonly url: string;
   readonly upstreamProxyUrl: string;
   readonly txBytes: number;
   readonly rxBytes: number;
-
   listen(): Promise<void>;
   close(force?: boolean): Promise<void>;
 }
@@ -67,28 +66,4 @@ export class ProxyServer extends Server implements IProxyServer {
     await super.listen();
     this.url = `http://127.0.0.1:${this.port}`;
   }
-}
-
-const proxyReclaimRegistry = new FinalizationRegistry((heldValue: Function) => heldValue());
-
-export async function createProxyServer(proxyUrl: string): Promise<IProxyServer> {
-  const proxy = new ProxyServer(proxyUrl);
-  await proxy.listen();
-  proxyReclaimRegistry.register(proxy, proxy.close);
-  return proxy;
-}
-
-export async function getProxyServer(
-  proxyUrl: string | null | undefined,
-  session: SessionService,
-): Promise<IProxyServer | null> {
-  if (proxyUrl === null) {
-    return null;
-  }
-
-  if (proxyUrl === undefined || proxyUrl === session.activeSession.proxyServer?.upstreamProxyUrl) {
-    return session.activeSession.proxyServer ?? null;
-  }
-
-  return createProxyServer(proxyUrl);
 }

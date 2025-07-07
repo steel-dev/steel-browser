@@ -50,7 +50,7 @@ export class SessionService {
   private seleniumService: SeleniumService;
   private fileService: FileService;
   private timezoneFetcher: TimezoneFetcher;
-  private proxyFactory: ProxyFactory = (proxyUrl) => new ProxyServer(proxyUrl);
+  public proxyFactory: ProxyFactory = (proxyUrl) => new ProxyServer(proxyUrl);
 
   public pastSessions: Session[] = [];
   public activeSession: Session;
