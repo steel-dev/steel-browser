@@ -27,7 +27,7 @@ jobs:
 
       # Generate changelog file from previous commits
       - name: Generate changelog
-        uses: mikepenz/release-changelog-builder-action@v4
+        uses: mikepenz/release-changelog-builder-action@v5
         id: changelog
         with:
           mode: "COMMIT"
@@ -61,7 +61,7 @@ jobs:
 
       # Create automatic GitHub release
       - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@v1.18.0
         with:
           token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
           tag: ${{ steps.bump_version.outputs.newTag }}
