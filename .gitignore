@@ -25,3 +25,5 @@ out
 dist
 .aider*
 extensions/*
+.env/
+docker
