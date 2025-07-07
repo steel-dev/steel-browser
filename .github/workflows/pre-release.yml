@@ -34,7 +34,7 @@ jobs:
           configurationJson: |
             {
               "template": "#{{CHANGELOG}}",
-              "pr_template": "[#{{MERGE_SHA_SUBSTRING}}](#{{URL}}/#{{MERGE_SHA}}) #{{TITLE}} (shoutout @#{{AUTHOR}}) ([##{{NUMBER}}](#{{URL}}))",
+              "pr_template": " - [#{{MERGE_SHA_SUBSTRING}}](#{{URL}}/#{{MERGE_SHA}}) #{{TITLE}} (shoutout @#{{AUTHOR}}) ([##{{NUMBER}}](#{{URL}}))",
               "custom_placeholders": [
                 {
                   "name": "MERGE_SHA_SUBSTRING",
@@ -52,11 +52,11 @@ jobs:
                   "labels": ["feat", "feature"]
                 },
                 {
-                  "title": "--- \n\n## Bug Fixes",
+                  "title": "## Bug Fixes",
                   "labels": ["fix", "bug"]
                 },
                 {
-                  "title": "--- \n\n## Housekeeping",
+                  "title": "## Housekeeping",
                   "labels": []
                 }
               ],
