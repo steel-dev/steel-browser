@@ -33,7 +33,7 @@ jobs:
           mode: "PR"
           configurationJson: |
             {
-              "template": "#{{CHANGELOG}} ## Contributors\n\n #{{CONTRIBUTORS}}",
+              "template": "#{{CHANGELOG}}",
               "pr_template": "[#{{MERGE_SHA_SUBSTRING}}](#{{URL}}/#{{MERGE_SHA}}) #{{TITLE}} (shoutout @#{{AUTHOR}}) ([##{{NUMBER}}](#{{URL}}))",
               "custom_placeholders": [
                 {
@@ -48,7 +48,7 @@ jobs:
               ],
               "categories": [
                 {
-                  "title": "--- \n\n ## Improvements",
+                  "title": "## Improvements",
                   "labels": ["feat", "feature"]
                 },
                 {
