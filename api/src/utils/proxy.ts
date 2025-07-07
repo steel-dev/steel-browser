@@ -1,6 +1,7 @@
 import { env } from "../env.js";
 import { SessionService } from "../services/session.service.js";
 import { Server } from "proxy-chain";
+import { makePassthrough, PassthroughServer } from "./passthough-proxy.js";
 
 export class ProxyServer extends Server {
   public url: string;
@@ -13,7 +14,9 @@ export class ProxyServer extends Server {
     super({
       port: 0,
 
-      prepareRequestFunction: ({ connectionId, hostname }) => {
+      prepareRequestFunction: (options) => {
+        const { connectionId, hostname } = options;
+        
         const internalBypassTests = new Set([
           "0.0.0.0",
           process.env.HOST,
@@ -30,8 +33,8 @@ export class ProxyServer extends Server {
         if (isInternalBypass) {
           this.hostConnections.add(connectionId);
           return {
-            requestAuthentication: false,
-            upstreamProxyUrl: null, // This will ensure that events sent back to the api are not proxied
+            customConnectServer: PassthroughServer,
+            customResponseFunction: makePassthrough(options),
           };
         }
         return {
