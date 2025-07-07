@@ -1,9 +1,19 @@
+import { Server } from "proxy-chain";
 import { env } from "../env.js";
 import { SessionService } from "../services/session.service.js";
-import { Server } from "proxy-chain";
 import { makePassthrough, PassthroughServer } from "./passthough-proxy.js";
 
-export class ProxyServer extends Server {
+export interface IProxyServer {
+  readonly url: string;
+  readonly upstreamProxyUrl: string;
+  readonly txBytes: number;
+  readonly rxBytes: number;
+
+  listen(): Promise<void>;
+  close(force?: boolean): Promise<void>;
+}
+
+export class ProxyServer extends Server implements IProxyServer {
   public url: string;
   public upstreamProxyUrl: string;
   public txBytes = 0;
@@ -16,11 +26,8 @@ export class ProxyServer extends Server {
 
       prepareRequestFunction: (options) => {
         const { connectionId, hostname } = options;
-        
-        const internalBypassTests = new Set([
-          "0.0.0.0",
-          process.env.HOST,
-        ]);
+
+        const internalBypassTests = new Set(["0.0.0.0", process.env.HOST]);
 
         if (env.PROXY_INTERNAL_BYPASS) {
           for (const host of env.PROXY_INTERNAL_BYPASS.split(",")) {
@@ -64,7 +71,7 @@ export class ProxyServer extends Server {
 
 const proxyReclaimRegistry = new FinalizationRegistry((heldValue: Function) => heldValue());
 
-export async function createProxyServer(proxyUrl: string): Promise<ProxyServer> {
+export async function createProxyServer(proxyUrl: string): Promise<IProxyServer> {
   const proxy = new ProxyServer(proxyUrl);
   await proxy.listen();
   proxyReclaimRegistry.register(proxy, proxy.close);
@@ -74,7 +81,7 @@ export async function createProxyServer(proxyUrl: string): Promise<ProxyServer> 
 export async function getProxyServer(
   proxyUrl: string | null | undefined,
   session: SessionService,
-): Promise<ProxyServer | null> {
+): Promise<IProxyServer | null> {
   if (proxyUrl === null) {
     return null;
   }
