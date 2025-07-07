@@ -43,6 +43,7 @@ jobs:
           prerelease: false
           name: "Release ${{ steps.bump_version.outputs.newTag }}-beta"
           body: |
+            ## Changelog
             ${{ steps.changelog.outputs.changelog }}
 
             ![release-image](https://raw.githubusercontent.com/steel-dev/.github/refs/heads/main/profile/github_hero.png)
