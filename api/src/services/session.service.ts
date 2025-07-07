@@ -133,14 +133,12 @@ export class SessionService {
     });
 
     const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
-    const promises: Promise<any>[] = [mkdir(userDataDir, { recursive: true })];
+    await mkdir(userDataDir, { recursive: true });
 
     if (proxyUrl) {
       this.activeSession.proxyServer = new ProxyServer(proxyUrl);
-      promises.push(this.activeSession.proxyServer.listen());
+      await this.activeSession.proxyServer.listen();
     }
-
-    await Promise.all(promises);
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
