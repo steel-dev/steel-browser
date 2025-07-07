@@ -73,3 +73,5 @@ jobs:
             ## Come Hang Out
             Questions? Join us on [Discord](https://discord.gg/your-server-link)
             Found a bug? Open an issue on [GitHub](https://github.com/your-repo/issues)
+
+            ${{ steps.changelog.outputs.contributors }}
