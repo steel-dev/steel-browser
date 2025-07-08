@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { env } from "../env.js";
 import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
 import { BrowserLauncherOptions } from "../types/index.js";
-import { ProxyServer } from "../utils/proxy.js";
+import { IProxyServer, ProxyServer } from "../utils/proxy.js";
 import { getBaseUrl, getUrl } from "../utils/url.js";
 import { CDPService } from "./cdp/cdp.service.js";
 import { CookieData } from "./context/types.js";
@@ -18,7 +18,7 @@ import { deepMerge } from "../utils/context.js";
 type Session = SessionDetails & {
   completion: Promise<void>;
   complete: (value: void) => void;
-  proxyServer: ProxyServer | undefined;
+  proxyServer: IProxyServer | undefined;
 };
 
 const sessionStats = {
@@ -43,12 +43,15 @@ const defaultSession = {
   solveCaptcha: false,
 };
 
+export type ProxyFactory = (proxyUrl: string) => Promise<IProxyServer> | IProxyServer;
+
 export class SessionService {
   private logger: FastifyBaseLogger;
   private cdpService: CDPService;
   private seleniumService: SeleniumService;
   private fileService: FileService;
   private timezoneFetcher: TimezoneFetcher;
+  public proxyFactory: ProxyFactory = (proxyUrl) => new ProxyServer(proxyUrl);
 
   public pastSessions: Session[] = [];
   public activeSession: Session;
@@ -139,7 +142,7 @@ export class SessionService {
     await mkdir(userDataDir, { recursive: true });
 
     if (proxyUrl) {
-      this.activeSession.proxyServer = new ProxyServer(proxyUrl);
+      this.activeSession.proxyServer = await this.proxyFactory(proxyUrl);
       await this.activeSession.proxyServer.listen();
     }
 
@@ -254,5 +257,9 @@ export class SessionService {
     };
 
     return this.activeSession;
+  }
+
+  public setProxyFactory(factory: ProxyFactory) {
+    this.proxyFactory = factory;
   }
 }
