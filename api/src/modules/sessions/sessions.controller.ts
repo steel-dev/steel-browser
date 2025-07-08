@@ -25,6 +25,7 @@ export const handleLaunchBrowserSession = async (
       extra,
       credentials,
       skipFingerprintInjection,
+      userPreferences,
     } = request.body;
 
     return await server.sessionService.startSession({
@@ -44,6 +45,7 @@ export const handleLaunchBrowserSession = async (
       extra,
       credentials,
       skipFingerprintInjection,
+      userPreferences,
     });
   } catch (e: unknown) {
     server.log.error("Failed lauching browser session", e);
@@ -113,10 +115,15 @@ export const handleGetSessionDetails = async (
   });
 };
 
-export const handleGetSessions = async (server: FastifyInstance, request: FastifyRequest, reply: FastifyReply) => {
+export const handleGetSessions = async (
+  server: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) => {
   const currentSession = {
     ...server.sessionService.activeSession,
-    duration: new Date().getTime() - new Date(server.sessionService.activeSession.createdAt).getTime(),
+    duration:
+      new Date().getTime() - new Date(server.sessionService.activeSession.createdAt).getTime(),
   };
   const pastSessions = server.sessionService.pastSessions;
   return reply.send([currentSession, ...pastSessions]);
@@ -167,7 +174,9 @@ export const handleGetSessionLiveDetails = async (
           let favicon: string | null = null;
           try {
             favicon = await page.evaluate(() => {
-              const iconLink = document.querySelector('link[rel="icon"], link[rel="shortcut icon"]');
+              const iconLink = document.querySelector(
+                'link[rel="icon"], link[rel="shortcut icon"]',
+              );
               if (iconLink) {
                 const href = iconLink.getAttribute("href");
                 if (href?.startsWith("http")) return href;
@@ -200,7 +209,10 @@ export const handleGetSessionLiveDetails = async (
       status: server.sessionService.activeSession.status,
       userAgent: server.sessionService.activeSession.userAgent,
       browserVersion,
-      initialDimensions: server.sessionService.activeSession.dimensions || { width: 1920, height: 1080 },
+      initialDimensions: server.sessionService.activeSession.dimensions || {
+        width: 1920,
+        height: 1080,
+      },
       pageCount: validPagesInfo.length,
     };
 
