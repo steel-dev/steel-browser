@@ -1,0 +1,113 @@
+name: Automatic Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Automatic semantic version bump (major/minor/patch from commit messages)
+      - name: Bump version and push tag
+        id: bump_version
+        uses: phips28/gh-action-bump-version@v11.0.3
+        with:
+          tag-prefix: "v"
+          tag-suffix: "-beta"
+          skip-commit: true
+          patch-wording: "patch,fix,fixes,docs"
+          minor-wording: "feat,feature,minor"
+          major-wording: "breaking,breaking-change,major"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Generate changelog file from previous commits
+      - name: Generate changelog
+        uses: mikepenz/release-changelog-builder-action@v5
+        id: changelog
+        with:
+          mode: "COMMIT"
+          configurationJson: |
+            {
+                "template": "#{{CHANGELOG}}",
+                "commit_template": "- [`#{{MERGE_SHA_SUBSTRING}}`](${{ github.server_url }}/${{ github.repository }}/commit/#{{MERGE_SHA}}): #{{TITLE}} (@#{{AUTHOR}})",
+                "custom_placeholders": [
+                    {
+                        "name": "MERGE_SHA_SUBSTRING",
+                        "source": "MERGE_SHA",
+                        "transformer": {
+                            "pattern": "^(.{6})",
+                            "method": "regexr",
+                            "target": "$1"
+                        }
+                    }
+                ],
+                "categories": [
+                    {
+                        "title": "## Improvements",
+                        "labels": [
+                            "feat",
+                            "feature"
+                        ]
+                    },
+                    {
+                        "title": "## Bug Fixes",
+                        "labels": [
+                            "fix",
+                            "bug"
+                        ]
+                    },
+                    {
+                        "title": "## Documentation",
+                        "labels": [
+                            "docs"
+                        ]
+                    },
+                    {
+                        "title": "## Housekeeping",
+                        "labels": []
+                    }
+                ],
+                "sort": {
+                    "order": "ASC",
+                    "on_property": "mergedAt"
+                },
+                "label_extractor": [
+                    {
+                        "pattern": "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test){1}(\\([\\w\\-\\.]+\\))?(!)?: ([\\w ])+([\\s\\S]*)",
+                        "on_property": "title",
+                        "target": "$1"
+                    }
+                ]
+            }
+          toTag: ${{ steps.bump_version.outputs.newTag }}
+          fromTag: ""
+
+      # Create automatic GitHub release
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1.18.0
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: ${{ steps.bump_version.outputs.newTag }}
+          prerelease: false
+          name: "Release ${{ steps.bump_version.outputs.newTag }}"
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+
+            ---
+
+            ![release-image](https://raw.githubusercontent.com/steel-dev/.github/refs/heads/main/profile/github_hero.png)
+
+            ## Come Hang Out
+            - Questions? Join us on [Discord](https://discord.gg/gPpvhNvc5R)
+            - Found a bug? Open an issue on [GitHub](https://github.com/steel-dev/steel-browser/issues)
+
