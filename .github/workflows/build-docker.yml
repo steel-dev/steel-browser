@@ -29,4 +29,5 @@ jobs:
           docker buildx build --platform linux/amd64,linux/arm64 --push -t ghcr.io/steel-dev/steel-browser-api:latest . -f ./api/Dockerfile
       - name: Build and push the latest Steel Browser UI image
         run: |
-          docker buildx build --platform linux/amd64,linux/arm64 --push -t ghcr.io/steel-dev/steel-browser-ui:latest . -f ./ui/Dockerfile
+          docker build -t ghcr.io/steel-dev/steel-browser-ui:latest . -f ./ui/Dockerfile
+          docker push ghcr.io/steel-dev/steel-browser-ui:latest
