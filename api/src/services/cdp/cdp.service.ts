@@ -759,9 +759,7 @@ export class CDPService extends EventEmitter {
           "--disable-gpu",
           "--no-sandbox",
           "--disable-setuid-sandbox",
-          "--use-angle=disabled",
-          "--disable-web-security",
-          "--disable-features=IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching",
+          "--disable-features=IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--no-first-run",
@@ -800,7 +798,7 @@ export class CDPService extends EventEmitter {
 
         const finalLaunchOptions = {
           ...options,
-          defaultViewport: this.launchConfig.dimensions ? this.launchConfig.dimensions : null,
+          defaultViewport: null,
           args: launchArgs,
           executablePath: this.chromeExecPath,
           timeout: 0,
@@ -1287,6 +1285,8 @@ export class CDPService extends EventEmitter {
 
         await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
 
+        await session.send("Emulation.clearDeviceMetricsOverride");
+
         await session.send("Emulation.setUserAgentOverride", {
           userAgent: userAgent,
           acceptLanguage: headers["accept-language"],
@@ -1318,6 +1318,11 @@ export class CDPService extends EventEmitter {
           fixedRenderer: fingerprint.videoCard.renderer,
           fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
           fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
+          fixedArchitecture: userAgentMetadata.architecture || "x86",
+          fixedBitness: userAgentMetadata.bitness || "64",
+          fixedModel: userAgentMetadata.model || "",
+          fixedPlatformVersion: userAgentMetadata.platformVersion || "15.0.0",
+          fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
         }),
       );
     } catch (error) {
