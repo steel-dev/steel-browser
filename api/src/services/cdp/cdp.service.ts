@@ -1323,6 +1323,10 @@ export class CDPService extends EventEmitter {
           fixedModel: userAgentMetadata.model || "",
           fixedPlatformVersion: userAgentMetadata.platformVersion || "15.0.0",
           fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
+          fixedBrands: userAgentMetadata.brands as unknown as Array<{
+            brand: string;
+            version: string;
+          }>,
         }),
       );
     } catch (error) {

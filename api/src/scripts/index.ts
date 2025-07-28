@@ -25,6 +25,7 @@ export const loadFingerprintScript = ({
   fixedModel,
   fixedPlatformVersion,
   fixedUaFullVersion,
+  fixedBrands,
 }: {
   fixedVendor: string;
   fixedRenderer: string;
@@ -38,6 +39,7 @@ export const loadFingerprintScript = ({
   fixedModel?: string;
   fixedPlatformVersion?: string;
   fixedUaFullVersion?: string;
+  fixedBrands: Array<{ brand: string; version: string }>;
 }): string => {
   const fingerprintScript = loadScript("fingerprint.js");
 
@@ -64,6 +66,7 @@ export const loadFingerprintScript = ({
     const FIXED_MODEL = ${safeStringValue(fixedModel, "")};
     const FIXED_PLATFORM_VERSION = ${safeStringValue(fixedPlatformVersion, "15.0.0")};
     const FIXED_UA_FULL_VERSION = ${safeStringValue(fixedUaFullVersion, "131.0.6778.86")};
+    const FIXED_BRANDS = ${JSON.stringify(fixedBrands)};
     ${fingerprintScript}
   `;
 };
