@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Code formatting and linting
+echo "🎨 Running code formatting..."
+npm run pretty -w api
+
+echo "🔍 Running linting..."
+npm run lint -w ui --fix
+
+# Type checking
+echo "🔧 Running type checking..."
+npm run build
+
+# Add formatted files back to staging
+git add .
+
+echo "✅ Pre-commit checks passed!" 

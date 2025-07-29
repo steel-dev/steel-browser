@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discord Community
+    url: https://discord.gg/steel-dev
+    about: Join our Discord server for real-time help, discussions, and community support
+  - name: 📚 Documentation
+    url: https://docs.steel.dev/
+    about: Check our comprehensive documentation for guides and API reference
+  - name: 🍳 Steel Cookbook
+    url: https://github.com/steel-dev/steel-cookbook
+    about: Browse code examples and common use cases
+  - name: 🔒 Security Issues
+    url: mailto:security@steel.dev
+    about: Please report security vulnerabilities privately via email
+  - name: 🤖 Automated Issue Creation
+    url: https://github.com/steel-dev/steel-browser/issues/new/choose
+    about: Use our templates for better issue tracking 

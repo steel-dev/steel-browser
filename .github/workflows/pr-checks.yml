@@ -1,0 +1,41 @@
+# .github/workflows/pr-checks.yml
+name: PR Quality Checks
+
+on:
+  pull_request_target:
+    branches: [main]
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Check PR title follows conventional commits
+      - name: Validate PR Title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Auto-assign labels based on files changed
+      - name: Label PR
+        uses: actions/labeler@v4
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+
+      # Check for breaking changes
+      - name: Check Breaking Changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
+          echo "Changed files: $CHANGED_FILES"
+
+          # Check for potential breaking changes in specific files
+          if echo "$CHANGED_FILES" | grep -E "(api/src/types/|api/src/steel-browser-plugin.ts|api/src/services/cdp/plugins/core/)"; then
+            echo "::warning::Potential breaking changes detected in core APIs"
+          fi
+
+          # Check for package.json changes
+          if echo "$CHANGED_FILES" | grep -E "package\.json$"; then
+            echo "::warning::Package.json changes detected - review dependencies carefully"
+          fi

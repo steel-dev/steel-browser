@@ -42,7 +42,8 @@ export async function handleCastSession(
   const requestedPageId = params?.pageId || queryParams.get("pageId") || null;
   const requestedPageIndex = params?.pageIndex || queryParams.get("pageIndex") || null;
 
-  const tabDiscoveryMode = queryParams.get("tabInfo") === "true" || (!requestedPageId && !requestedPageIndex);
+  const tabDiscoveryMode =
+    queryParams.get("tabInfo") === "true" || (!requestedPageId && !requestedPageIndex);
 
   const { height, width } = (session.dimensions as { width: number; height: number }) ?? {
     width: 1920,
@@ -141,7 +142,9 @@ export async function handleCastSession(
       }
     };
 
-    const findTargetPage = async (pages: Page[]): Promise<{ page: Page; pageId: string } | null> => {
+    const findTargetPage = async (
+      pages: Page[],
+    ): Promise<{ page: Page; pageId: string } | null> => {
       if (tabDiscoveryMode) return null; // No target page in tab discovery mode
 
       if (requestedPageId) {
@@ -279,9 +282,12 @@ export async function handleCastSession(
 
         ws.on("message", async (message) => {
           try {
-            const data: MouseEvent | KeyEvent | NavigationEvent | CloseTabEvent | GetSelectedTextEvent = JSON.parse(
-              message.toString(),
-            );
+            const data:
+              | MouseEvent
+              | KeyEvent
+              | NavigationEvent
+              | CloseTabEvent
+              | GetSelectedTextEvent = JSON.parse(message.toString());
             const { type } = data;
 
             if (!targetClient || !targetPage) {

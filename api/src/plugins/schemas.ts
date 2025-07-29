@@ -52,7 +52,8 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  await fastify.register(fastifyScalar as any, { // scalar still uses fastify v4
+  await fastify.register(fastifyScalar as any, {
+    // scalar still uses fastify v4
     routePrefix: "/documentation",
     configuration: {
       customCss: scalarTheme,

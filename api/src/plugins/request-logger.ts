@@ -20,7 +20,12 @@ const logger: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.addHook("onResponse", (req, reply, done) => {
-    if (req.method !== "OPTIONS" && req.raw.url !== "/status" && req.raw.url !== "/v1/events" && req.raw.url !== "/") {
+    if (
+      req.method !== "OPTIONS" &&
+      req.raw.url !== "/status" &&
+      req.raw.url !== "/v1/events" &&
+      req.raw.url !== "/"
+    ) {
       req.log.info(
         {
           ip: getClientIp(req),

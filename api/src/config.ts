@@ -30,7 +30,10 @@ export const loggingConfig: LoggingConfig = {
                   }
                   return method.apply(this, [resultingMessage]);
                 } catch (error) {
-                  console.error("Error trying to process logs with verbose logging enabled: ", error);
+                  console.error(
+                    "Error trying to process logs with verbose logging enabled: ",
+                    error,
+                  );
                 }
               }
               return method.apply(this, inputArgs);

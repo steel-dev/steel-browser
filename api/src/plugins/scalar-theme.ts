@@ -195,4 +195,3 @@ export default `
   background: rgba(17, 17, 16, 0.7) !important;
 }
 `;
-

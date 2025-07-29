@@ -7,7 +7,9 @@ declare module "fastify" {
   interface FastifyInstance {
     cdpService: CDPService;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
-    registerCDPShutdownHook: (hook: (config: BrowserLauncherOptions | null) => Promise<void> | void) => void;
+    registerCDPShutdownHook: (
+      hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
+    ) => void;
   }
 }
 
@@ -15,9 +17,12 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
   const cdpService = new CDPService({}, fastify.log);
 
   fastify.decorate("cdpService", cdpService);
-  fastify.decorate("registerCDPLaunchHook", (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => {
-    cdpService.registerLaunchHook(hook);
-  });
+  fastify.decorate(
+    "registerCDPLaunchHook",
+    (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => {
+      cdpService.registerLaunchHook(hook);
+    },
+  );
   fastify.decorate(
     "registerCDPShutdownHook",
     (hook: (config: BrowserLauncherOptions | null) => Promise<void> | void) => {

@@ -1,0 +1,53 @@
+# GitHub Labeler Configuration for Steel Browser
+# This file is used by the actions/labeler@v4 action in pr-checks.yml
+
+# Component labels based on file paths
+api:
+  - 'api/**/*'
+  
+ui:
+  - 'ui/**/*'
+  
+documentation:
+  - 'docs/**/*'
+  - '*.md'
+  - 'README.md'
+  - 'CONTRIBUTING.md'
+  
+plugin-system:
+  - 'api/src/services/cdp/plugins/**/*'
+  
+cdp:
+  - 'api/src/services/cdp/**/*'
+  - 'api/src/modules/cdp/**/*'
+  
+session-management:
+  - 'api/src/services/session.service.ts'
+  - 'api/src/modules/sessions/**/*'
+  
+file-storage:
+  - 'api/src/services/file.service.ts'
+  - 'api/src/modules/files/**/*'
+
+docker:
+  - 'docker-compose*.yml'
+  - 'api/Dockerfile'
+  - 'ui/Dockerfile'
+  - '.dockerignore'
+
+dependencies:
+  - 'package-lock.json'
+  - '**/package-lock.json'
+  - 'package.json'
+  - '**/package.json'
+
+github-actions:
+  - '.github/workflows/**/*'
+  - '.github/**/*'
+
+testing:
+  - '**/*.test.ts'
+  - '**/*.test.js'
+  - '**/*.spec.ts'
+  - '**/*.spec.js'
+  - 'tsconfig.test.json' 

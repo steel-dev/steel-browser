@@ -3,8 +3,8 @@ import type { Span } from "@opentelemetry/api";
 export const noopSpan: Span = {
   spanContext() {
     return {
-      traceId: '',
-      spanId: '',
+      traceId: "",
+      spanId: "",
       traceFlags: 0,
       isRemote: false,
     };

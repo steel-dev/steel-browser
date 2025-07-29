@@ -79,7 +79,12 @@ export abstract class BaseLaunchError extends Error {
   public readonly isRetryable: boolean;
   public readonly context?: Record<string, any>;
 
-  constructor(type: LaunchErrorType, message: string, isRetryable: boolean = false, context?: Record<string, any>) {
+  constructor(
+    type: LaunchErrorType,
+    message: string,
+    isRetryable: boolean = false,
+    context?: Record<string, any>,
+  ) {
     super(message);
     this.name = this.constructor.name;
     this.type = type;
@@ -99,7 +104,9 @@ export abstract class BaseLaunchError extends Error {
  */
 export class LaunchTimeoutError extends BaseLaunchError {
   constructor(timeoutMs: number = 30000) {
-    super(LaunchErrorType.TIMEOUT, `Browser launch timeout after ${timeoutMs}ms`, true, { timeoutMs });
+    super(LaunchErrorType.TIMEOUT, `Browser launch timeout after ${timeoutMs}ms`, true, {
+      timeoutMs,
+    });
   }
 }
 
@@ -109,7 +116,10 @@ export class LaunchTimeoutError extends BaseLaunchError {
  */
 export class ConfigurationError extends BaseLaunchError {
   constructor(message: string, configField?: ConfigurationField, configValue?: any) {
-    super(LaunchErrorType.CONFIGURATION, `Configuration error: ${message}`, false, { configField, configValue });
+    super(LaunchErrorType.CONFIGURATION, `Configuration error: ${message}`, false, {
+      configField,
+      configValue,
+    });
   }
 }
 
@@ -142,7 +152,9 @@ export class SystemError extends BaseLaunchError {
  */
 export class NetworkError extends BaseLaunchError {
   constructor(message: string, networkOperation: NetworkOperation) {
-    super(LaunchErrorType.NETWORK, `Network error during ${networkOperation}: ${message}`, true, { networkOperation });
+    super(LaunchErrorType.NETWORK, `Network error during ${networkOperation}: ${message}`, true, {
+      networkOperation,
+    });
   }
 }
 
@@ -152,7 +164,9 @@ export class NetworkError extends BaseLaunchError {
  */
 export class FingerprintError extends BaseLaunchError {
   constructor(message: string, stage: FingerprintStage) {
-    super(LaunchErrorType.FINGERPRINT, `Fingerprint error during ${stage}: ${message}`, true, { stage });
+    super(LaunchErrorType.FINGERPRINT, `Fingerprint error during ${stage}: ${message}`, true, {
+      stage,
+    });
   }
 }
 
@@ -161,11 +175,21 @@ export class FingerprintError extends BaseLaunchError {
  * May or may not be retryable depending on the plugin
  */
 export class PluginError extends BaseLaunchError {
-  constructor(message: string, pluginName: PluginName, operation: PluginOperation, isRetryable: boolean = true) {
-    super(LaunchErrorType.PLUGIN, `Plugin error in ${pluginName} during ${operation}: ${message}`, isRetryable, {
-      pluginName,
-      operation,
-    });
+  constructor(
+    message: string,
+    pluginName: PluginName,
+    operation: PluginOperation,
+    isRetryable: boolean = true,
+  ) {
+    super(
+      LaunchErrorType.PLUGIN,
+      `Plugin error in ${pluginName} during ${operation}: ${message}`,
+      isRetryable,
+      {
+        pluginName,
+        operation,
+      },
+    );
   }
 }
 
@@ -175,7 +199,9 @@ export class PluginError extends BaseLaunchError {
  */
 export class CleanupError extends BaseLaunchError {
   constructor(message: string, cleanupType: CleanupType) {
-    super(LaunchErrorType.CLEANUP, `Cleanup error during ${cleanupType}: ${message}`, true, { cleanupType });
+    super(LaunchErrorType.CLEANUP, `Cleanup error during ${cleanupType}: ${message}`, true, {
+      cleanupType,
+    });
   }
 }
 
@@ -185,10 +211,15 @@ export class CleanupError extends BaseLaunchError {
  */
 export class BrowserProcessError extends BaseLaunchError {
   constructor(message: string, processState: BrowserProcessState, exitCode?: number) {
-    super(LaunchErrorType.BROWSER_PROCESS, `Browser process error (${processState}): ${message}`, true, {
-      processState,
-      exitCode,
-    });
+    super(
+      LaunchErrorType.BROWSER_PROCESS,
+      `Browser process error (${processState}): ${message}`,
+      true,
+      {
+        processState,
+        exitCode,
+      },
+    );
   }
 }
 
@@ -198,9 +229,14 @@ export class BrowserProcessError extends BaseLaunchError {
  */
 export class SessionContextError extends BaseLaunchError {
   constructor(message: string, contextType: SessionContextType) {
-    super(LaunchErrorType.SESSION_CONTEXT, `Session context error with ${contextType}: ${message}`, true, {
-      contextType,
-    });
+    super(
+      LaunchErrorType.SESSION_CONTEXT,
+      `Session context error with ${contextType}: ${message}`,
+      true,
+      {
+        contextType,
+      },
+    );
   }
 }
 
@@ -222,12 +258,19 @@ export function categorizeError(error: unknown, context?: string): BaseLaunchErr
     return new LaunchTimeoutError();
   }
 
-  if (lowerMessage.includes("enoent") || lowerMessage.includes("not found") || lowerMessage.includes("no such file")) {
+  if (
+    lowerMessage.includes("enoent") ||
+    lowerMessage.includes("not found") ||
+    lowerMessage.includes("no such file")
+  ) {
     return new ResourceError(errorMessage, ResourceType.FILE, false);
   }
 
   if (lowerMessage.includes("eacces") || lowerMessage.includes("permission denied")) {
-    return new SystemError(errorMessage, context ? SystemOperation.UNKNOWN_OPERATION : SystemOperation.FILE_ACCESS);
+    return new SystemError(
+      errorMessage,
+      context ? SystemOperation.UNKNOWN_OPERATION : SystemOperation.FILE_ACCESS,
+    );
   }
 
   if (lowerMessage.includes("eaddrinuse") || lowerMessage.includes("address already in use")) {
@@ -235,7 +278,10 @@ export function categorizeError(error: unknown, context?: string): BaseLaunchErr
   }
 
   if (lowerMessage.includes("proxy") || lowerMessage.includes("websocket")) {
-    return new NetworkError(errorMessage, context ? NetworkOperation.NETWORK_SETUP : NetworkOperation.NETWORK_SETUP);
+    return new NetworkError(
+      errorMessage,
+      context ? NetworkOperation.NETWORK_SETUP : NetworkOperation.NETWORK_SETUP,
+    );
   }
 
   if (lowerMessage.includes("fingerprint")) {
@@ -243,14 +289,22 @@ export function categorizeError(error: unknown, context?: string): BaseLaunchErr
   }
 
   if (lowerMessage.includes("plugin")) {
-    return new PluginError(errorMessage, PluginName.UNKNOWN, context ? PluginOperation.LAUNCH : PluginOperation.LAUNCH);
+    return new PluginError(
+      errorMessage,
+      PluginName.UNKNOWN,
+      context ? PluginOperation.LAUNCH : PluginOperation.LAUNCH,
+    );
   }
 
   if (lowerMessage.includes("cleanup") || lowerMessage.includes("clean")) {
     return new CleanupError(errorMessage, context ? CleanupType.GENERAL : CleanupType.GENERAL);
   }
 
-  if (lowerMessage.includes("chrome") || lowerMessage.includes("browser") || lowerMessage.includes("process")) {
+  if (
+    lowerMessage.includes("chrome") ||
+    lowerMessage.includes("browser") ||
+    lowerMessage.includes("process")
+  ) {
     return new BrowserProcessError(errorMessage, BrowserProcessState.UNKNOWN);
   }
 
