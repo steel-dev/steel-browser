@@ -52,7 +52,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: CreateSessionRequest, reply: FastifyReply) => handleLaunchBrowserSession(server, request, reply),
+    async (request: CreateSessionRequest, reply: FastifyReply) =>
+      handleLaunchBrowserSession(server, request, reply),
   );
 
   server.get(
@@ -68,7 +69,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => handleGetSessions(server, request, reply),
+    async (request: FastifyRequest, reply: FastifyReply) =>
+      handleGetSessions(server, request, reply),
   );
 
   server.get(
@@ -101,7 +103,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => handleGetBrowserContext(server.cdpService, request, reply),
+    async (request: FastifyRequest, reply: FastifyReply) =>
+      handleGetBrowserContext(server.cdpService, request, reply),
   );
 
   server.post(
@@ -117,7 +120,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => handleExitBrowserSession(server, request, reply),
+    async (request: FastifyRequest, reply: FastifyReply) =>
+      handleExitBrowserSession(server, request, reply),
   );
 
   server.post(
@@ -133,7 +137,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => handleExitBrowserSession(server, request, reply),
+    async (request: FastifyRequest, reply: FastifyReply) =>
+      handleExitBrowserSession(server, request, reply),
   );
 
   server.get(
@@ -151,7 +156,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: SessionStreamRequest, reply: FastifyReply) => handleGetSessionStream(server, request, reply),
+    async (request: SessionStreamRequest, reply: FastifyReply) =>
+      handleGetSessionStream(server, request, reply),
   );
 
   server.post(
@@ -177,7 +183,8 @@ async function routes(server: FastifyInstance) {
       onRequest: [],
       schema: {
         operationId: "get_session_live_details",
-        description: "Returns the live state of the session, including pages, tabs, and browser state",
+        description:
+          "Returns the live state of the session, including pages, tabs, and browser state",
         tags: ["Sessions"],
         summary: "Get session live details",
         response: {

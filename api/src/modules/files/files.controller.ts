@@ -71,7 +71,11 @@ export class FilesController {
           } else if (part.type === "field" && typeof part.value === "string") {
             fileUrl = part.value;
           }
-        } else if (part.fieldname === "path" && part.type === "field" && typeof part.value === "string") {
+        } else if (
+          part.fieldname === "path" &&
+          part.type === "field" &&
+          typeof part.value === "string"
+        ) {
           filePath = part.value;
         }
       }
@@ -152,7 +156,9 @@ export class FilesController {
     }
   }
 
-  private async createStreamFromUrl(url: string): Promise<{ stream: Readable; contentType?: string; name: string }> {
+  private async createStreamFromUrl(
+    url: string,
+  ): Promise<{ stream: Readable; contentType?: string; name: string }> {
     return new Promise((resolve, reject) => {
       const protocol = url.startsWith("https") ? https : http;
 

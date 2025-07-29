@@ -99,7 +99,9 @@ export const CDPCookieSchema = z.object({
         ),
       hasCrossSiteAncestor: z
         .boolean()
-        .describe("Indicates if the cookie has any ancestors that are cross-site to the topLevelSite."),
+        .describe(
+          "Indicates if the cookie has any ancestors that are cross-site to the topLevelSite.",
+        ),
     })
     .optional()
     .describe("The partition key of the cookie"),
@@ -141,7 +143,10 @@ export const IndexedDBDatabaseSchema = z.object({
 
 // Update the existing schema to use the new schemas
 export const SessionContextSchema = z.object({
-  [StorageProviderName.Cookies]: z.array(CDPCookieSchema).optional().describe("Cookies to initialize in the session"),
+  [StorageProviderName.Cookies]: z
+    .array(CDPCookieSchema)
+    .optional()
+    .describe("Cookies to initialize in the session"),
   [StorageProviderName.LocalStorage]: z
     .record(z.string(), z.record(z.string(), z.string()))
     .optional()

@@ -22,6 +22,7 @@
   "scripts": {
     "start": "node ./build/index.js",
     "build": "tsc && npm run copy:templates && npm run copy:fingerprint",
+    "lint": "eslint . --ext ts --report-unused-disable-directives --max-warnings 10",
     "copy:templates": "mkdir -p build/templates && cp -r src/templates/* build/templates/",
     "copy:fingerprint": "cp src/scripts/fingerprint.js build/scripts/fingerprint.js",
     "prepare:recorder": "cd extensions/recorder && npm install && npm run build",

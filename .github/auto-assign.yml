@@ -1,0 +1,21 @@
+# Auto-assign configuration for Steel Browser
+# This file is used by the kentaro-m/auto-assign-action
+
+# Add reviewers to pull requests
+addReviewers: true
+
+# Add assignees to pull requests  
+addAssignees: false
+
+# Number of reviewers to add to each pull request
+numberOfReviewers: 1
+
+# Reviewers to be added to pull requests (GitHub usernames)
+reviewers:
+  - fukouda
+
+# Skip draft pull requests
+skipDraftPR: true
+
+# Only assign reviewers if no reviewers are already assigned
+assignWhenNoReviewers: true 

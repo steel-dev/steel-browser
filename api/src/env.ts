@@ -4,7 +4,9 @@ import { config } from "dotenv";
 config();
 
 const envSchema = z.object({
-  NODE_ENV: z.enum(["test", "development", "staging", "production", "preview"]).default("development"),
+  NODE_ENV: z
+    .enum(["test", "development", "staging", "production", "preview"])
+    .default("development"),
   HOST: z.string().optional().default("0.0.0.0"),
   DOMAIN: z.string().optional(),
   PORT: z.string().optional().default("3000"),

@@ -1,15 +1,14 @@
 import type { Span, SpanOptions } from "@opentelemetry/api";
 import { noopSpan } from "./noop.js";
 
-let otel: typeof import('@opentelemetry/api') | undefined;
+let otel: typeof import("@opentelemetry/api") | undefined;
 try {
-	otel = await import('@opentelemetry/api');
+  otel = await import("@opentelemetry/api");
 } catch (err: any) {
-	if (err?.code !== 'MODULE_NOT_FOUND' && err?.code !== 'ERR_MODULE_NOT_FOUND') {
-		throw err;
-	}
+  if (err?.code !== "MODULE_NOT_FOUND" && err?.code !== "ERR_MODULE_NOT_FOUND") {
+    throw err;
+  }
 }
-
 
 interface TracerOptions extends SpanOptions {
   spanName?: string;
@@ -20,11 +19,11 @@ export const tracer = {
   startActiveSpan<F extends (span: Span) => unknown>(
     name: string,
     fn: F,
-    opts?: Omit<TracerOptions, 'spanName'>
+    opts?: Omit<TracerOptions, "spanName">,
   ): ReturnType<F> {
     if (!otel) {
-			return fn(noopSpan) as ReturnType<F>;
-		}
+      return fn(noopSpan) as ReturnType<F>;
+    }
 
     const { tracerName, ...options } = opts ?? {};
     const rawTracer = otel.trace.getTracer(tracerName ?? "steel");
@@ -67,7 +66,7 @@ export const tracer = {
       startActiveSpan<F extends (span: Span) => unknown>(
         name: string,
         fn: F,
-        opts?: Omit<TracerOptions, 'spanName' | 'tracerName'>
+        opts?: Omit<TracerOptions, "spanName" | "tracerName">,
       ): ReturnType<F> {
         return tracer.startActiveSpan(name, fn, { ...opts, tracerName });
       },
@@ -75,15 +74,19 @@ export const tracer = {
   },
 };
 
-export function traceable(target: Object, propertyKey: string, descriptor: PropertyDescriptor): void;
+export function traceable(
+  target: Object,
+  propertyKey: string,
+  descriptor: PropertyDescriptor,
+): void;
 export function traceable(opts?: TracerOptions): MethodDecorator;
 export function traceable(
   targetOrOpts?: any,
   propertyKey?: string,
-  descriptor?: PropertyDescriptor
+  descriptor?: PropertyDescriptor,
 ): any {
   // Used as @traceable
-  if (typeof targetOrOpts === 'object' && propertyKey !== undefined && descriptor !== undefined) {
+  if (typeof targetOrOpts === "object" && propertyKey !== undefined && descriptor !== undefined) {
     return createDecorator()(targetOrOpts, propertyKey, descriptor);
   }
 
@@ -93,14 +96,10 @@ export function traceable(
 
 function createDecorator(opts?: TracerOptions) {
   const { spanName, tracerName, ...options } = opts ?? {};
-  return function (
-    target: any,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-  ) {
+  return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
     if (!otel) {
-			return descriptor;
-		}
+      return descriptor;
+    }
 
     const originalMethod = descriptor.value;
 
@@ -124,7 +123,7 @@ function createDecorator(opts?: TracerOptions) {
 
 function toKebabCase(str: string) {
   return str
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1-$2")
     .toLowerCase();
 }

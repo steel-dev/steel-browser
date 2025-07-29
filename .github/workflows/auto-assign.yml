@@ -1,0 +1,15 @@
+# .github/workflows/auto-assign.yml
+name: Auto Assign
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto Assign
+        uses: kentaro-m/auto-assign-action@v1.2.5
+        with:
+          configuration-path: ".github/auto-assign.yml"

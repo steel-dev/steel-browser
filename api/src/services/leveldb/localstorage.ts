@@ -129,7 +129,9 @@ export class ChromeLocalStorageReader {
    * Reads a Chrome Local Storage LevelDB directory and returns a nested record of items
    * grouped by domain / storage key.
    */
-  public static async readLocalStorage(dir: string): Promise<Record<string, Record<string, string>>> {
+  public static async readLocalStorage(
+    dir: string,
+  ): Promise<Record<string, Record<string, string>>> {
     const ldb = await LocalStoreDb.open(dir);
     try {
       await ldb.load();

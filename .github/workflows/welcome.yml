@@ -1,0 +1,23 @@
+# .github/workflows/welcome.yml
+name: Welcome
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Welcome new contributors
+        uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            Thanks for opening your first issue! 🎉 
+            Please check our [Contributing Guide](CONTRIBUTING.md) and [Troubleshooting Guide](docs/TROUBLESHOOTING.md).
+          pr-message: |
+            Thanks for your first contribution! 🚀 
+            Please ensure you've followed our [Contributing Guidelines](CONTRIBUTING.md).

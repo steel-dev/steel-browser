@@ -1,0 +1,153 @@
+# GitHub Labels Configuration for Steel Browser
+# This file can be used with the github-labels CLI tool to sync labels
+
+# Type labels
+- name: "bug"
+  color: "d73a4a"
+  description: "Something isn't working"
+
+- name: "enhancement"
+  color: "a2eeef"
+  description: "New feature or request"
+
+- name: "documentation"
+  color: "0075ca"
+  description: "Improvements or additions to documentation"
+
+- name: "question"
+  color: "d876e3"
+  description: "Further information is requested"
+
+# Priority labels
+- name: "priority: critical"
+  color: "b60205"
+  description: "Critical issue that needs immediate attention"
+
+- name: "priority: high"
+  color: "d93f0b"
+  description: "High priority issue"
+
+- name: "priority: medium"
+  color: "fbca04"
+  description: "Medium priority issue"
+
+- name: "priority: low"
+  color: "0e8a16"
+  description: "Low priority issue"
+
+# Difficulty labels
+- name: "good first issue"
+  color: "7057ff"
+  description: "Good for newcomers"
+
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is needed"
+
+- name: "difficulty: easy"
+  color: "c2e0c6"
+  description: "Easy to implement"
+
+- name: "difficulty: medium"
+  color: "fef2c0"
+  description: "Moderate difficulty"
+
+- name: "difficulty: hard"
+  color: "f9d0c4"
+  description: "Hard to implement"
+
+# Component labels
+- name: "api"
+  color: "1f77b4"
+  description: "Related to the API backend"
+
+- name: "ui"
+  color: "ff7f0e"
+  description: "Related to the frontend UI"
+
+- name: "plugin-system"
+  color: "2ca02c"
+  description: "Related to the plugin architecture"
+
+- name: "cdp"
+  color: "d62728"
+  description: "Related to Chrome DevTools Protocol"
+
+- name: "session-management"
+  color: "9467bd"
+  description: "Related to browser session handling"
+
+- name: "file-storage"
+  color: "8c564b"
+  description: "Related to file upload/download functionality"
+
+- name: "docker"
+  color: "0db7ed"
+  description: "Related to Docker configuration"
+
+- name: "testing"
+  color: "17becf"
+  description: "Related to testing infrastructure"
+
+# Status labels
+- name: "status: blocked"
+  color: "b60205"
+  description: "Blocked by another issue or external dependency"
+
+- name: "status: in progress"
+  color: "fbca04"
+  description: "Currently being worked on"
+
+- name: "status: needs review"
+  color: "0052cc"
+  description: "Needs code review"
+
+- name: "status: needs testing"
+  color: "1d76db"
+  description: "Needs testing before merge"
+
+- name: "status: ready to merge"
+  color: "0e8a16"
+  description: "Ready to be merged"
+
+# Breaking change labels
+- name: "breaking change"
+  color: "b60205"
+  description: "Introduces breaking changes"
+
+- name: "backwards compatible"
+  color: "0e8a16"
+  description: "Backwards compatible changes"
+
+# Special labels
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "This issue or pull request already exists"
+
+- name: "invalid"
+  color: "e4e669"
+  description: "This doesn't seem right"
+
+- name: "wontfix"
+  color: "ffffff"
+  description: "This will not be worked on"
+
+- name: "dependencies"
+  color: "0366d6"
+  description: "Pull requests that update a dependency file"
+
+- name: "security"
+  color: "d73a4a"
+  description: "Security-related issue"
+
+- name: "performance"
+  color: "ff9500"
+  description: "Performance improvement"
+
+- name: "refactor"
+  color: "5319e7"
+  description: "Code refactoring"
+
+- name: "chore"
+  color: "fef2c0"
+  description: "Maintenance tasks" 
