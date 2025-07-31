@@ -103,10 +103,11 @@ export const handleScrape = async (
           (Date.now() - times.readabilityTime || Date.now() - times.extractionTime) - startTime;
       }
       if (format.includes(ScrapeFormat.MARKDOWN)) {
+        const cleanedHtml = scrapeResponse.content.cleaned_html ?? cleanHtml(html);
         const readabilityContent =
-          scrapeResponse.content.readability ?? getReadabilityContent(html);
+          scrapeResponse.content.readability ?? getReadabilityContent(cleanedHtml);
         scrapeResponse.content.markdown = getMarkdown(
-          readabilityContent ? readabilityContent?.content : html,
+          readabilityContent ? readabilityContent?.content : cleanedHtml,
         );
         times.markdownTime =
           (Date.now() - times.cleanedHtmlTime ||
