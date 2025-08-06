@@ -2,9 +2,9 @@
   "compilerOptions": {
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "module": "ESNext",
+    "module": "Node16",
     "target": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "Node16",
     "skipLibCheck": true,
     "sourceMap": true,
     "outDir": "build",
@@ -14,8 +14,12 @@
     "declaration": true,
     "declarationMap": true,
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
+    "emitDecoratorMetadata": true
   },
   "include": ["src"],
-  "files": ["./src/types/fastify.d.ts", "src/services/cdp/plugins/pptr-extensions.d.ts"]
+  "files": [
+    "./src/types/fastify.d.ts",
+    "src/services/cdp/plugins/pptr-extensions.d.ts",
+    "src/types/turndown.d.ts"
+  ]
 }

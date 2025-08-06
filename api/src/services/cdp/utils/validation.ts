@@ -1,4 +1,4 @@
-import { BrowserLauncherOptions } from "../../../types";
+import { BrowserLauncherOptions } from "../../../types/index.js";
 import { ConfigurationError, ConfigurationField } from "../errors/launch-errors.js";
 
 /**
