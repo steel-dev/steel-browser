@@ -1,17 +1,17 @@
 import { IncomingMessage } from "http";
 import puppeteer, { Browser, CDPSession, Page } from "puppeteer-core";
 import { Duplex } from "stream";
-import WebSocket from "ws";
+import WebSocket, { Server } from "ws";
 
-import { SessionService } from "../../services/session.service.js";
 import { env } from "../../env.js";
+import { SessionService } from "../../services/session.service.js";
 import {
-  PageInfo,
-  MouseEvent,
-  NavigationEvent,
-  KeyEvent,
   CloseTabEvent,
   GetSelectedTextEvent,
+  KeyEvent,
+  MouseEvent,
+  NavigationEvent,
+  PageInfo,
 } from "../../types/casting.js";
 import { getPageFavicon, getPageTitle, navigatePage } from "../../utils/casting.js";
 
@@ -19,7 +19,7 @@ export async function handleCastSession(
   request: IncomingMessage,
   socket: Duplex,
   head: Buffer,
-  wss: WebSocket.Server,
+  wss: Server,
   sessionService: SessionService,
   params: Record<string, string> | undefined,
 ): Promise<void> {
