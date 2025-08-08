@@ -206,7 +206,7 @@ export class CDPService extends EventEmitter {
       this.emit(event, payload);
 
       if (env.LOG_CUSTOM_EMIT_EVENTS) {
-        this.logger.info("EmitEvent", { event, payload });
+        this.logger.info("EmitEvent", { event, payload } as any);
       }
 
       if (event === EmitEvent.Log) {
@@ -472,38 +472,38 @@ export class CDPService extends EventEmitter {
       await session.send("Network.enable");
       await session.send("Console.enable");
 
-      session.on("Runtime.executionContextCreated", (event) => {
-        this.logger.info(`[CDP] Execution Context Created for ${targetType}`, { event });
+      session.on("Runtime.executionContextCreated", (event: any) => {
+        this.logger.info(`[CDP] Execution Context Created for ${targetType}`, { event } as any);
       });
 
       session.on("Runtime.executionContextDestroyed", async () => {
         this.logger.info(`[CDP] Execution Context Destroyed for ${targetType}`);
       });
 
-      session.on("Runtime.consoleAPICalled", (event) => {
-        this.logger.info(`[CDP] Console API called for ${targetType}`, { event });
+      session.on("Runtime.consoleAPICalled", (event: any) => {
+        this.logger.info(`[CDP] Console API called for ${targetType}`, { event } as any);
       });
 
       // Capture browser logs (security issues, CSP violations, fetch failures)
-      session.on("Log.entryAdded", (event) => {
-        this.logger.warn(`[CDP] Log entry added for ${targetType}`, { event });
+      session.on("Log.entryAdded", (event: any) => {
+        this.logger.warn(`[CDP] Log entry added for ${targetType}`, { event } as any);
       });
 
       // Capture JavaScript exceptions
-      session.on("Runtime.exceptionThrown", (event) => {
-        this.logger.error(`[CDP] Runtime exception thrown for ${targetType}`, { event });
+      session.on("Runtime.exceptionThrown", (event: any) => {
+        this.logger.error(`[CDP] Runtime exception thrown for ${targetType}`, { event } as any);
       });
 
       // Capture failed network requests
-      session.on("Network.loadingFailed", (event) => {
-        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event });
+      session.on("Network.loadingFailed", (event: any) => {
+        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event } as any);
       });
 
       // Capture failed fetch requests (when a fetch() call fails)
-      session.on("Network.requestFailed", (event) => {
-        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event });
+      session.on("Network.requestFailed", (event: any) => {
+        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event } as any);
       });
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`[CDP] Error setting up CDP logging for ${targetType}: ${error}`);
     }
   }
@@ -719,14 +719,32 @@ export class CDPService extends EventEmitter {
 
         this.currentSessionConfig = this.launchConfig;
 
-        const defaultExtensions = ["recorder"];
-        const customExtensions = this.launchConfig.extensions
-          ? [...this.launchConfig.extensions]
-          : [];
-
         let extensionPaths: string[] = [];
         try {
-          extensionPaths = await getExtensionPaths([...defaultExtensions, ...customExtensions]);
+          const defaultExtensions = ["recorder"];
+          const customExtensions = this.launchConfig.extensions
+            ? [...this.launchConfig.extensions]
+            : [];
+
+          let extensionPaths: string[] = [];
+
+          // Get named extension paths
+          const namedExtensionPaths = await getExtensionPaths([
+            ...defaultExtensions,
+            ...customExtensions,
+          ]);
+
+          // Check for session extensions passed from the API
+          let sessionExtensionPaths: string[] = [];
+          if (this.launchConfig.extra?.orgExtensions?.paths) {
+            sessionExtensionPaths = this.launchConfig.extra.orgExtensions
+              .paths as unknown as string[];
+            this.logger.info(
+              `[CDPService] Found ${sessionExtensionPaths.length} session extension paths`,
+            );
+          }
+
+          extensionPaths = [...namedExtensionPaths, ...sessionExtensionPaths];
         } catch (error) {
           throw new ResourceError(
             `Failed to resolve extension paths: ${error}`,
@@ -926,7 +944,7 @@ export class CDPService extends EventEmitter {
             isRetryable: categorizedError.isRetryable,
             context: categorizedError.context,
           },
-        },
+        } as any,
       );
 
       throw categorizedError;

@@ -14,7 +14,7 @@ function handlePageIdWebSocket(context: WebSocketHandlerContext, ws: WebSocket) 
 
   fastify.cdpService.on("pageId", messageHandler);
 
-  ws.on("error", (err) => {
+  ws.on("error", (err: any) => {
     fastify.log.error("PageId WebSocket error:", err);
   });
 
