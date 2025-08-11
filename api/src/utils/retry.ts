@@ -97,7 +97,7 @@ export class RetryManager {
             isRetryable,
             isLastAttempt,
             errorType: err instanceof BaseLaunchError ? err.type : "unknown",
-          },
+          } as any,
         );
 
         if (!isRetryable || isLastAttempt) {

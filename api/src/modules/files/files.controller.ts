@@ -324,7 +324,7 @@ export class FilesController {
       if (!reply.sent) {
         try {
           reply.code(500).send({ message: "Failed to process archive request" });
-        } catch (sendError) {
+        } catch (sendError: any) {
           server.log.error("Error sending 500 response after archive handling error:", sendError);
         }
       }
