@@ -22,15 +22,29 @@ const ScrapeResponse = z.object({
   content: z.record(z.nativeEnum(ScrapeFormat), z.any()),
   metadata: z.object({
     title: z.string().optional(),
-    ogImage: z.string().optional(),
-    ogTitle: z.string().optional(),
-    urlSource: z.string().optional(),
-    description: z.string().optional(),
-    ogDescription: z.string().optional(),
-    statusCode: z.number().int(),
     language: z.string().optional(),
+    urlSource: z.string().optional(),
     timestamp: z.string().datetime().optional(),
-    published_timestamp: z.string().datetime().optional(),
+
+    description: z.string().optional(),
+    keywords: z.string().optional(),
+    author: z.string().optional(),
+
+    ogTitle: z.string().optional(),
+    ogDescription: z.string().optional(),
+    ogImage: z.string().optional(),
+    ogUrl: z.string().optional(),
+    ogSiteName: z.string().optional(),
+
+    articleAuthor: z.string().optional(),
+    publishedTime: z.string().optional(),
+    modifiedTime: z.string().optional(),
+
+    canonical: z.string().optional(),
+    favicon: z.string().optional(),
+
+    jsonLd: z.any().optional(),
+    statusCode: z.number().int(),
   }),
   links: z.array(
     z.object({
@@ -65,7 +79,7 @@ const PDFRequest = z.object({
     .nullable()
     .optional()
     .describe(
-      "Proxy URL to use for PDF export. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
+      "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
     ),
   delay: z.number().optional(),
   logUrl: z.string().optional(),

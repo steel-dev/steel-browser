@@ -32,3 +32,32 @@ export function getUrl(path: string, protocolType: "http" | "ws" = "http"): stri
   const formattedPath = path.startsWith("/") ? path.substring(1) : path;
   return `${base}${formattedPath}`;
 }
+
+/**
+ * Normalizes a URL by adding https:// protocol if missing
+ * @param url The URL to normalize
+ * @returns The normalized URL with proper protocol, or null if invalid
+ */
+export function normalizeUrl(url: string): string | null {
+  if (!url || typeof url !== "string") {
+    return null;
+  }
+
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) {
+    return null;
+  }
+
+  if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+    return trimmedUrl;
+  }
+
+  const normalizedUrl = `https://${trimmedUrl}`;
+
+  try {
+    new URL(normalizedUrl);
+    return normalizedUrl;
+  } catch {
+    return null;
+  }
+}

@@ -1,5 +1,6 @@
 import { Page } from "puppeteer-core";
 import { NavigationEvent } from "../types/casting.js";
+import { normalizeUrl } from "./url.js";
 
 export const navigatePage = async (
   event: NavigationEvent["event"],
@@ -12,8 +13,7 @@ export const navigatePage = async (
   } else if (event.action === "refresh") {
     await targetPage.reload();
   } else if (event.url) {
-    const formattedUrl = event.url.startsWith("http") ? event.url : `https://${event.url}`;
-
+    const formattedUrl = normalizeUrl(event.url) || event.url;
     await targetPage.goto(formattedUrl);
   }
 };

@@ -1,27 +1,4 @@
-import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
-import Turndown from "turndown";
-
-type ReadabilityResult = {
-  title: string;
-  content: string;
-  textContent: string;
-  length: number;
-  excerpt: string;
-  byline: string;
-  dir: string;
-  siteName: string;
-  lang: string;
-  publishedTime: string;
-};
-
-export function getReadabilityContent(htmlString: string): ReadabilityResult | null {
-  const doc = new JSDOM(htmlString);
-  const reader = new Readability(doc.window.document);
-  const articleContent = reader.parse();
-  if (!articleContent) return null;
-  return articleContent;
-}
 
 export const cleanHtml = (html: string): string => {
   const blacklistedElements = new Set([
@@ -86,10 +63,4 @@ export const cleanHtml = (html: string): string => {
   const sourceCode = document.documentElement.outerHTML;
 
   return sourceCode;
-};
-
-export const getMarkdown = (html: string): string => {
-  const turndownService = new Turndown();
-  const markdown = turndownService.turndown(html);
-  return markdown;
 };
