@@ -65,6 +65,13 @@ export const handleScrape = async (
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
+    // Polyfill the __name function injected by esbuild
+    // https://github.com/evanw/esbuild/issues/2605#issuecomment-2146054255
+    // https://github.com/cloudflare/workers-sdk/issues/7107
+    await page.evaluate(() => {
+      (window as any).__name = (func: Function) => func;
+    });
+
     const [{ html, metadata, links }, base64Screenshot, pdfBuffer] = await Promise.all([
       page.evaluate(() => {
         const getMetaContent = (selector: string) => {
