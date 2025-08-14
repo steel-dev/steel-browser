@@ -26,7 +26,10 @@ RUN apt-get update && \
     build-essential \
     pkg-config \
     python-is-python3 \
-    xvfb
+    xvfb \
+    x11-utils \
+    xdotool \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy root workspace files first
 COPY --link package.json package-lock.json ./
@@ -51,7 +54,7 @@ RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
 FROM base AS production
 # Install dependencies
-RUN apt-get update && \ 
+RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
     wget \
     nginx \
@@ -69,7 +72,11 @@ RUN apt-get update && \
     dbus \
     dbus-x11 \
     procps \
-    x11-xserver-utils
+    x11-xserver-utils \
+    x11-utils \
+    xdotool \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Chrome and ChromeDriver
 RUN apt-get update && \

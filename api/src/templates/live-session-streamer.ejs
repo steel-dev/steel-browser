@@ -506,10 +506,13 @@
           let tabs = {};
           let activeTabId = null;
 
-          // WebSocket connection management
+          // WebSocket and WebRTC connection management
           const baseWsUrl = '<%= wsUrl %>';
           let tabDiscoveryWebSocket = null; // WebSocket for discovering tabs (multi-page mode)
           let activeConnectionRetries = {}; // Track reconnection attempts
+
+          // WebRTC variables
+          let peerConnections = {};
 
           // Default dimensions until we get first image
           const defaultWidth = <%= dimensions?.width || 1920 %>;
@@ -591,6 +594,7 @@
               // Set up event handlers
               ws.onopen = () => {
                   console.log(`WebSocket connection opened for tab ${pageId}`);
+                  console.log("TABS: ", tabs[pageId])
 
                   // Clear reconnection status
                   if (tabs[pageId]) {
@@ -601,7 +605,12 @@
                       // Reset retry counter on successful connection
                       activeConnectionRetries[pageId] = 0;
 
-                      if (pageId !== 'tab-discovery') {
+                      if(pageId === 'tab-discovery'){
+                          console.log("Setting up WebRTC connection")
+                          // Request WebRTC connection
+                          if (ws.readyState === WebSocket.OPEN) {
+                              setupWebRTC(pageId, ws);
+                          }
                           // Remove loading indicator
                           tabs[pageId].canvasContainer.classList.remove('loading');
                           tabs[pageId].canvasContainer.classList.remove('error');
@@ -655,20 +664,28 @@
               ws.onmessage = (event) => {
                   const payload = JSON.parse(event.data);
 
-                  // Handle tab-discovery messages
+                  console.log("PAGE ID:", pageId, payload)
+
+                  // Handle WebRTC signaling messages
                   if (pageId === 'tab-discovery') {
-                      if (payload.type === "tabList") {
+                    if (payload.type === "tabList") {
                           handleTabList(payload.tabs, payload.firstTabId);
                           return;
-                      } else if (payload.type === "tabClosed") {
+                    } else if (payload.type === "tabClosed") {
                           handleTabClosed(payload.pageId);
                           return;
-                      } else if (payload.type === "activeTabChange") {
+                    } else if (payload.type === "activeTabChange") {
                         // Handle tab activation from server
                         if (tabs[payload.pageId] && activeTabId !== payload.pageId) {
                             activateTab(payload.pageId);
                         }
                         return;
+                    } else if (payload.type === 'offer') {
+                      handleWebRTCOffer(pageId, payload.sdp, ws);
+                    } else if (payload.type === 'ice') {
+                      if (payload.candidate) {
+                          handleWebRTCIceCandidate(pageId, payload.candidate);
+                      }
                     }
                       return;
                   }
@@ -682,8 +699,8 @@
                       return;
                   }
 
-                  // Handle canvas image data
-                  if (payload.data) {
+                  // Handle legacy canvas image data (for backwards compatibility)
+                  if (payload.data && !tabs[pageId]?.usingWebRTC) {
                       if (!tabs[pageId]) {
                           // console.error(`Received data for nonexistent tab ${pageId}`);
                           return;
@@ -830,6 +847,7 @@
                   reconnecting: false,
                   intentionalClose: false,
                   currentImageWidth: defaultWidth,
+                  usingWebRTC: false,
                   currentImageHeight: defaultHeight,
                   lastImageData: null,
                   receivedFirstFrame: false,
@@ -958,9 +976,351 @@
               }
           }
 
+          // WebRTC setup and handling functions
+          function setupWebRTC(pageId, ws) {
+              if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+              console.log(`Setting up WebRTC for tab ${pageId}`);
+
+              // Create video element to replace canvas
+              const videoElement = document.createElement('video');
+              videoElement.autoplay = true;
+              videoElement.muted = true;
+              videoElement.playsInline = true;
+              videoElement.className = 'canvas'; // Reuse canvas CSS class
+
+              // Replace canvas with video or add to container
+              if (tabs[pageId]) {
+                  if (tabs[pageId].canvas && tabs[pageId].canvas.parentNode) {
+                      tabs[pageId].canvas.parentNode.replaceChild(videoElement, tabs[pageId].canvas);
+                  } else {
+                      tabs[pageId].canvasContainer.appendChild(videoElement);
+                  }
+                  tabs[pageId].video = videoElement;
+                  tabs[pageId].usingWebRTC = true;
+
+                  // Set up event listeners on video
+                  if (interactive) {
+                      setupVideoEventListeners(videoElement, pageId, ws);
+                  }
+              }
+
+              // Create peer connection for this tab
+              const pc = new RTCPeerConnection({
+                  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+              });
+
+              // Store the connection
+              peerConnections[pageId] = pc;
+
+              // Handle incoming tracks (the browser's screen)
+              pc.ontrack = (event) => {
+                  console.log(`Received track for tab ${pageId}`);
+                  if (tabs[pageId] && tabs[pageId].video) {
+                      tabs[pageId].video.srcObject = event.streams[0];
+
+                      // Remove loading indicator when video starts playing
+                      tabs[pageId].video.onloadeddata = () => {
+                          if (tabs[pageId]) {
+                              tabs[pageId].canvasContainer.classList.remove('loading');
+                              tabs[pageId].canvasContainer.classList.remove('error');
+                              tabs[pageId].canvasContainer.classList.remove('tab-switching');
+                          }
+                      };
+                  }
+              };
+
+              // Send ICE candidates to server
+              pc.onicecandidate = (event) => {
+                  if (event.candidate && ws.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify({
+                          type: 'ice',
+                          candidate: event.candidate
+                      }));
+                  }
+              };
+
+              pc.onconnectionstatechange = () => {
+                  console.log(`WebRTC connection state for tab ${pageId}: ${pc.connectionState}`);
+
+                  if (pc.connectionState === 'failed') {
+                      console.error(`WebRTC connection failed for tab ${pageId}`);
+                      if (tabs[pageId]) {
+                          tabs[pageId].canvasContainer.classList.add('error');
+                      }
+                  } else if (pc.connectionState === 'connected') {
+                      console.log(`WebRTC connected for tab ${pageId}`);
+                      if (tabs[pageId]) {
+                          tabs[pageId].canvasContainer.classList.remove('loading');
+                          tabs[pageId].canvasContainer.classList.remove('error');
+                          tabs[pageId].canvasContainer.classList.remove('tab-switching');
+                      }
+                  }
+              };
+          }
+
+          // Handle WebRTC offer from server
+          async function handleWebRTCOffer(pageId, sdp, ws) {
+              try {
+                  const pc = peerConnections[pageId];
+                  if (!pc) {
+                      console.error(`No peer connection for tab ${pageId}`);
+                      return;
+                  }
+
+                  console.log(`Received WebRTC offer for tab ${pageId}`);
+                  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+                  // Create answer
+                  const answer = await pc.createAnswer();
+                  await pc.setLocalDescription(answer);
+
+                  // Send answer to server
+                  if (ws.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify({
+                          type: 'answer',
+                          sdp: pc.localDescription
+                      }));
+                  }
+              } catch (error) {
+                  console.error(`Error handling WebRTC offer for tab ${pageId}:`, error);
+                  if (tabs[pageId]) {
+                      tabs[pageId].canvasContainer.classList.add('error');
+                  }
+              }
+          }
+
+          // Handle ICE candidate from server
+          async function handleWebRTCIceCandidate(pageId, candidate) {
+              try {
+                  const pc = peerConnections[pageId];
+                  if (!pc) {
+                      console.error(`No peer connection for tab ${pageId}`);
+                      return;
+                  }
+
+                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch (error) {
+                  console.error(`Error adding ICE candidate for tab ${pageId}:`, error);
+              }
+          }
+
+          // Set up WebRTC video element event listeners
+          function setupVideoEventListeners(video, pageId, ws) {
+              if (!video || !ws || !interactive) return;
+
+              // Reuse the same event listeners as for canvas, but adjust for video element
+              const eventHandlers = createEventHandlers(pageId, ws);
+
+              video.addEventListener('mousedown', eventHandlers.mousedown);
+              video.addEventListener('mouseup', eventHandlers.mouseup);
+              video.addEventListener('mousemove', eventHandlers.mousemove);
+              video.addEventListener('wheel', eventHandlers.wheel);
+              video.addEventListener('contextmenu', eventHandlers.contextmenu);
+
+              // Focus handling for keyboard events
+              video.addEventListener('click', () => video.focus());
+              video.tabIndex = 0; // Make video focusable
+
+              // Keyboard events
+              video.addEventListener('keydown', eventHandlers.keydown);
+              video.addEventListener('keyup', eventHandlers.keyup);
+          }
+
           // Set up WebSocket-related event listeners for a canvas
+          // Create reusable event handlers for both canvas and video elements
+          function createEventHandlers(pageId, ws) {
+              return {
+                  mousedown: (e) => {
+                      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+                      const rect = e.target.getBoundingClientRect();
+                      const x = (e.clientX - rect.left) * (e.target.width / rect.width);
+                      const y = (e.clientY - rect.top) * (e.target.height / rect.height);
+
+                      let button = 'none';
+                      switch (e.button) {
+                          case 0: button = 'left'; break;
+                          case 1: button = 'middle'; break;
+                          case 2: button = 'right'; break;
+                      }
+
+                      ws.send(JSON.stringify({
+                          type: 'mouseEvent',
+                          pageId: pageId,
+                          event: {
+                              type: 'mousePressed',
+                              x: x,
+                              y: y,
+                              button: button,
+                              modifiers: getEventModifiers(e),
+                              clickCount: 1
+                          }
+                      }));
+                  },
+                  mouseup: (e) => {
+                      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+                      const rect = e.target.getBoundingClientRect();
+                      const x = (e.clientX - rect.left) * (e.target.width / rect.width);
+                      const y = (e.clientY - rect.top) * (e.target.height / rect.height);
+
+                      let button = 'none';
+                      switch (e.button) {
+                          case 0: button = 'left'; break;
+                          case 1: button = 'middle'; break;
+                          case 2: button = 'right'; break;
+                      }
+
+                      ws.send(JSON.stringify({
+                          type: 'mouseEvent',
+                          pageId: pageId,
+                          event: {
+                              type: 'mouseReleased',
+                              x: x,
+                              y: y,
+                              button: button,
+                              modifiers: getEventModifiers(e)
+                          }
+                      }));
+                  },
+                  mousemove: (e) => {
+                      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+                      const rect = e.target.getBoundingClientRect();
+                      const x = (e.clientX - rect.left) * (e.target.width / rect.width);
+                      const y = (e.clientY - rect.top) * (e.target.height / rect.height);
+
+                      ws.send(JSON.stringify({
+                          type: 'mouseEvent',
+                          pageId: pageId,
+                          event: {
+                              type: 'mouseMoved',
+                              x: x,
+                              y: y,
+                              button: 'none',
+                              modifiers: getEventModifiers(e)
+                          }
+                      }));
+                  },
+                  wheel: (e) => {
+                      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+                      const rect = e.target.getBoundingClientRect();
+                      const x = (e.clientX - rect.left) * (e.target.width / rect.width);
+                      const y = (e.clientY - rect.top) * (e.target.height / rect.height);
+
+                      ws.send(JSON.stringify({
+                          type: 'mouseEvent',
+                          pageId: pageId,
+                          event: {
+                              type: 'mouseWheel',
+                              x: x,
+                              y: y,
+                              button: 'none',
+                              deltaX: e.deltaX,
+                              deltaY: e.deltaY,
+                              modifiers: getEventModifiers(e)
+                          }
+                      }));
+
+                      e.preventDefault();
+                  },
+                  contextmenu: (e) => {
+                      e.preventDefault();
+                      return false;
+                  },
+                  keydown: (e) => {
+                      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+                      // Special handling for Escape key to maintain browser functionality
+                      if (e.key === 'Escape' && e.keyCode === 27) {
+                          return;
+                      }
+
+                      ws.send(JSON.stringify({
+                          type: 'keyEvent',
+                          pageId: pageId,
+                          event: {
+                              type: 'keyDown',
+                              key: e.key,
+                              code: e.code,
+                              keyCode: e.keyCode,
+                              modifiers: getEventModifiers(e)
+                          }
+                      }));
+
+                      // Send char event for printable characters
+                      if (e.key.length === 1) {
+                          ws.send(JSON.stringify({
+                              type: 'keyEvent',
+                              pageId: pageId,
+                              event: {
+                                  type: 'char',
+                                  text: e.key,
+                                  key: e.key,
+                                  code: e.code,
+                                  keyCode: e.keyCode,
+                                  modifiers: getEventModifiers(e)
+                              }
+                          }));
+                      }
+
+                      // Prevent default for most keys to avoid browser shortcuts,
+                      // but allow some basic ones like Ctrl+C, Ctrl+V
+                      if (!(e.ctrlKey && (e.key === 'c' || e.key === 'v'))) {
+                          e.preventDefault();
+                      }
+                  },
+                  keyup: (e) => {
+                      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+                      ws.send(JSON.stringify({
+                          type: 'keyEvent',
+                          pageId: pageId,
+                          event: {
+                              type: 'keyUp',
+                              key: e.key,
+                              code: e.code,
+                              keyCode: e.keyCode,
+                              modifiers: getEventModifiers(e)
+                          }
+                      }));
+
+                      // Prevent default to avoid browser shortcuts
+                      e.preventDefault();
+                  }
+              };
+          }
+
+          // Helper function to get keyboard/mouse modifiers
+          function getEventModifiers(e) {
+              let modifiers = 0;
+              if (e.altKey) modifiers |= 1;
+              if (e.ctrlKey) modifiers |= 2;
+              if (e.metaKey) modifiers |= 4;
+              if (e.shiftKey) modifiers |= 8;
+              return modifiers;
+          }
+
           function setupCanvasEventListeners(canvas, pageId, ws) {
               if (!canvas || !ws || !interactive) return;
+
+              const eventHandlers = createEventHandlers(pageId, ws);
+
+              canvas.addEventListener('mousedown', eventHandlers.mousedown);
+              canvas.addEventListener('mouseup', eventHandlers.mouseup);
+              canvas.addEventListener('mousemove', eventHandlers.mousemove);
+              canvas.addEventListener('wheel', eventHandlers.wheel);
+              canvas.addEventListener('contextmenu', eventHandlers.contextmenu);
+
+              // Focus handling for keyboard events
+              canvas.addEventListener('click', () => canvas.focus());
+              canvas.tabIndex = 0; // Make canvas focusable
+
+              // Keyboard events
+              canvas.addEventListener('keydown', eventHandlers.keydown);
+              canvas.addEventListener('keyup', eventHandlers.keyup);
 
               // Remove any existing event listeners first to prevent duplicates
               canvas.removeEventListener('mousedown', canvas._mouseDownHandler);
@@ -1274,7 +1634,7 @@
           function handleTabList(tabList, firstTabId = null) {
               if (!tabList || !Array.isArray(tabList)) return;
 
-              // console.log("Received tab list:", tabList);
+              console.log("Received tab list:", tabList);
 
               // Create any tabs that don't exist
               tabList.forEach((tab, index) => {

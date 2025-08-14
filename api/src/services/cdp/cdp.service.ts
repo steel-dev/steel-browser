@@ -804,6 +804,7 @@ export class CDPService extends EventEmitter {
           timeout: 0,
           env: {
             TZ: timezone,
+            DISPLAY: env.DISPLAY || ":10",
           },
           userDataDir,
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
