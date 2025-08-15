@@ -146,14 +146,16 @@ export const handleGetSessionStream = async (
     wsUrl += `?pageIndex=${encodeURIComponent(pageIndex)}`;
   }
 
-  return reply.view("live-session-streamer.ejs", {
-    wsUrl,
-    showControls,
-    theme,
-    interactive,
-    dimensions: server.sessionService.activeSession.dimensions,
-    singlePageMode,
-  });
+  // return reply.view("live-session-streamer.ejs", {
+  //   wsUrl,
+  //   showControls,
+  //   theme,
+  //   interactive,
+  //   dimensions: server.sessionService.activeSession.dimensions,
+  //   singlePageMode,
+  // });
+  // return reply.view("webrtc-session.html");
+  return reply.view("webrtc-experimental.html");
 };
 
 export const handleGetSessionLiveDetails = async (

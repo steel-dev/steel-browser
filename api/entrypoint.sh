@@ -176,31 +176,31 @@ main() {
        start_xvfb || exit 1
        xdpyinfo -display :10 || echo "Cannot connect to X server"
 
-       WINDOW_ID=$(xdotool search --name Chromium | while read id; do
-           geom=$(xwininfo -id $id | awk '/geometry/{print $2}')
-           if [[ "$geom" == "1919x1079--9--9" ]]; then
-               echo $id
-               break
-           fi
-       done)
+      #  WINDOW_ID=$(xdotool search --name Chromium | while read id; do
+      #      geom=$(xwininfo -id $id | awk '/geometry/{print $2}')
+      #      if [[ "$geom" == "1919x1079--9--9" ]]; then
+      #          echo $id
+      #          break
+      #      fi
+      #  done)
 
-      ffmpeg -f x11grab -framerate 30 -video_size 1920x1080 \
-            -i :10.0 \
-            -use_wallclock_as_timestamps 1 \
-            -c:v libvpx \
-            -deadline realtime \
-            -cpu-used 8 \
-            -threads 4 \
-            -error-resilient 1 \
-            -auto-alt-ref 0 \
-            -lag-in-frames 0 \
-            -b:v 2M \
-            -maxrate 2.5M \
-            -bufsize 500k \
-            -g 15 \
-            -keyint_min 10 \
-            -pix_fmt yuv420p \
-            -an -f rtp rtp://127.0.0.1:5004 &
+      # ffmpeg -f x11grab -framerate 30 -video_size 1920x1080 \
+      #       -i :10.0 \
+      #       -use_wallclock_as_timestamps 1 \
+      #       -c:v libvpx \
+      #       -deadline realtime \
+      #       -cpu-used 8 \
+      #       -threads 4 \
+      #       -error-resilient 1 \
+      #       -auto-alt-ref 0 \
+      #       -lag-in-frames 0 \
+      #       -b:v 2M \
+      #       -maxrate 2.5M \
+      #       -bufsize 500k \
+      #       -g 15 \
+      #       -keyint_min 10 \
+      #       -pix_fmt yuv420p \
+      #       -an -f rtp rtp://127.0.0.1:5004 &
 
        # Initialize services
        init_dbus || exit 1

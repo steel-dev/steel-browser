@@ -21,6 +21,30 @@ services:
     networks:
       - steel-network
 
+  webrtc:
+    build:
+      context: webrtc
+      dockerfile: Dockerfile
+    container_name: webrtc-server
+    depends_on:
+      - api
+    environment:
+      - BROWSER_CONTAINER=api
+      - DISPLAY=:10
+      - XAUTHORITY=/tmp/.Xauthority
+      - EXTERNAL_IP=45.13.200.118
+      # - ICE_HOST=0.0.0.0
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - x11-auth:/tmp
+      # - recordings:/recordings
+    ports:
+      - "8080:8080"
+      - "10000-11000:10000-11000/udp" # Pion's ephemeral UDP ports for ICE
+      - "5004:5004/udp"
+    networks:
+      - steel-network
+
   ui:
     build:
       context: .
@@ -33,6 +57,10 @@ services:
       - api
     networks:
       - steel-network
+
+volumes:
+  x11-auth:
+  # recordings:
 
 networks:
   steel-network:

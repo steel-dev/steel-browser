@@ -542,9 +542,9 @@
               if (singlePageMode) return baseWsUrl;
 
               // For tab discovery, add tabInfo parameter
-              if (pageId === 'tab-discovery') {
-                  return `${baseWsUrl}?tabInfo=true`;
-              }
+              // if (pageId === 'tab-discovery') {
+              //     return `${baseWsUrl}?tabInfo=true`;
+              // }
 
               // Regular tab connection
               return `${baseWsUrl}?pageId=${encodeURIComponent(pageId)}`;
@@ -594,7 +594,7 @@
               // Set up event handlers
               ws.onopen = () => {
                   console.log(`WebSocket connection opened for tab ${pageId}`);
-                  console.log("TABS: ", tabs[pageId])
+                  createTab(pageId,'','New Tab',null);
 
                   // Clear reconnection status
                   if (tabs[pageId]) {
@@ -1051,6 +1051,7 @@
                   } else if (pc.connectionState === 'connected') {
                       console.log(`WebRTC connected for tab ${pageId}`);
                       if (tabs[pageId]) {
+                        console.log(`WebRTC on`);
                           tabs[pageId].canvasContainer.classList.remove('loading');
                           tabs[pageId].canvasContainer.classList.remove('error');
                           tabs[pageId].canvasContainer.classList.remove('tab-switching');
