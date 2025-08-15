@@ -53,6 +53,7 @@
     "@fastify/multipart": "^9.0.3",
     "@fastify/reply-from": "^12.0.2",
     "@fastify/sensible": "^6.0.3",
+    "@fastify/static": "^8.2.0",
     "@fastify/swagger": "^9.4.2",
     "@fastify/view": "10.0.2",
     "@mozilla/readability": "^0.5.0",

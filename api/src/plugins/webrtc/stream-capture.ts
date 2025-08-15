@@ -3,6 +3,8 @@ import dgram from "dgram";
 import { spawn, ChildProcess } from "child_process";
 import { exec } from "child_process";
 import { promisify } from "util";
+import * as fs from "fs/promises";
+import * as path from "path";
 import webRTCServer from "./webrtc-server.js";
 
 const execAsync = promisify(exec);
@@ -120,6 +122,7 @@ export class StreamCapture {
   private statsInterval: NodeJS.Timeout | null = null;
   private ffmpegHealthCheckInterval: NodeJS.Timeout | null = null;
   private lastStatsReset = new Date();
+  private saveRecording: boolean = false;
 
   constructor() {
     this.logger.info("Stream capture initializing...");
@@ -137,6 +140,7 @@ export class StreamCapture {
     this.width = parseInt(process.env.CAPTURE_WIDTH || "1920", 10);
     this.height = parseInt(process.env.CAPTURE_HEIGHT || "1080", 10);
     this.framerate = parseInt(process.env.CAPTURE_FRAMERATE || "30", 10);
+    this.saveRecording = JSON.parse(process.env.SESSION_SAVE_RECORDINGS || "false");
 
     this.logger.info("Environment configuration", {
       display: this.display,
@@ -567,6 +571,23 @@ export class StreamCapture {
     this.logger.info("Starting internal FFmpeg process...");
 
     try {
+      const recordingDir = path.resolve(process.cwd(), "recordings");
+      // TODO: use session id maybe?
+      const recordingFilename = `rec-${new Date().toISOString().replace(/:/g, "-")}.mkv`;
+      const recordingPath = path.join(recordingDir, recordingFilename);
+
+      if (this.saveRecording) {
+        try {
+          await fs.mkdir(recordingDir, { recursive: true });
+          this.logger.debug(`Ensured recording directory exists: ${recordingDir}`);
+        } catch (error) {
+          this.logger.error("Could not create recording directory", error);
+          throw error;
+        }
+      }
+
+      this.logger.info(`Recording will be saved to: ${recordingPath}`);
+
       const ffmpegArgs = [
         "-f",
         "x11grab",
@@ -605,9 +626,13 @@ export class StreamCapture {
         "-pix_fmt",
         "yuv420p",
         "-an",
-        "-f",
-        "rtp",
-        `rtp://127.0.0.1:${this.rtpPort}`,
+        ...(this.saveRecording
+          ? [
+              "-f",
+              "tee",
+              `[f=rtp]rtp://127.0.0.1:${this.rtpPort}|[f=matroska:c:v=copy]${recordingPath}`,
+            ]
+          : ["-f", "rtp", `rtp://127.0.0.1:${this.rtpPort}`]),
       ];
 
       this.logger.debug("Starting FFmpeg with args", { args: ffmpegArgs });
@@ -640,11 +665,32 @@ export class StreamCapture {
       });
 
       // Handle exit
-      this.ffmpegProcess.on("exit", (code, signal) => {
+      this.ffmpegProcess.on("exit", async (code, signal) => {
         this.logger.warn("Internal FFmpeg process exited", { code, signal });
         this.ffmpegStatus.isRunning = false;
         this.ffmpegStatus.pid = undefined;
         this.ffmpegProcess = null;
+
+        if (code === 0) {
+          this.logger.info(`Recording to ${recordingPath} finished. Starting conversion to MP4.`);
+          const mp4Path = recordingPath.replace(/\.mkv$/, ".mp4");
+
+          try {
+            // Use -i for input, -c copy to remux without re-encoding,
+            // and -movflags +faststart for web-friendliness.
+            const command = `ffmpeg -i "${recordingPath}" -c copy -movflags +faststart "${mp4Path}"`;
+            this.logger.debug("Executing remux command", { command });
+
+            await execAsync(command);
+            this.logger.info(`Successfully converted MKV to MP4: ${mp4Path}`);
+
+            // Optional: Clean up the original MKV file
+            await fs.unlink(recordingPath);
+            this.logger.info(`Deleted original MKV file: ${recordingPath}`);
+          } catch (error) {
+            this.logger.error("Failed to convert MKV to MP4", error);
+          }
+        }
 
         if (code !== 0 && this.active) {
           this.ffmpegStatus.errorCount++;

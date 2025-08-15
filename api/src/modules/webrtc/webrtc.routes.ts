@@ -7,6 +7,9 @@ import {
 import webRTCServer from "../../plugins/webrtc/webrtc-server.js";
 import streamCapture from "../../plugins/webrtc/stream-capture.js";
 import { webRTCDebugUtils } from "../../plugins/webrtc/debug-utils.js";
+import fastifyStatic from "@fastify/static";
+import * as path from "path";
+import * as fs from "fs/promises";
 
 interface DebugQueryParams {
   clientId?: string;
@@ -385,6 +388,46 @@ const webRTCRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       fastify.log.error("Error logging system status:", error as undefined);
       return reply.code(500).send({
         error: "Failed to log system status",
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  fastify.register(fastifyStatic, {
+    root: path.resolve(process.cwd(), "recordings"),
+    prefix: "/recordings/",
+    decorateReply: false,
+  });
+
+  fastify.get("/webrtc/recordings", async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const recordingsDir = path.resolve(process.cwd(), "recordings");
+      const files = await fs.readdir(recordingsDir);
+      const mp4Files = files
+        .filter((file) => file.endsWith(".mp4"))
+        .map((file) => {
+          const url = `/recordings/${file}`;
+          return {
+            filename: file,
+            url: url,
+          };
+        });
+
+      return reply.code(200).send({
+        timestamp: new Date().toISOString(),
+        recordings: mp4Files,
+      });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        fastify.log.warn("Recordings directory does not exist yet.");
+        return reply.code(200).send({
+          timestamp: new Date().toISOString(),
+          recordings: [],
+        });
+      }
+      fastify.log.error("Error listing recordings:", error as undefined);
+      return reply.code(500).send({
+        error: "Failed to list recordings",
         message: error instanceof Error ? error.message : "Unknown error",
       });
     }

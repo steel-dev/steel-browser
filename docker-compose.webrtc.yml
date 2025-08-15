@@ -15,7 +15,7 @@ services:
       - DISPLAY=:10
       - XAUTHORITY=/tmp/.Xauthority
     volumes:
-      - ./.cache:/app/.cache
+      - cache:/app/.cache
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # - x11-auth:/tmp
     networks:
@@ -38,3 +38,6 @@ networks:
   steel-network:
     name: steel-network
     driver: bridge
+
+volumes:
+  cache:
