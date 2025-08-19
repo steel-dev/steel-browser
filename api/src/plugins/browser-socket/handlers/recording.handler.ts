@@ -24,7 +24,7 @@ function handleRecordingWebSocket(context: WebSocketHandlerContext, ws: WebSocke
   });
 
   ws.on("error", (err) => {
-    fastify.log.error("Recording WebSocket error:", err);
+    fastify.log.error({ err }, "Recording WebSocket error");
   });
 }
 

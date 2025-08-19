@@ -91,13 +91,13 @@ export class RetryManager {
         const isLastAttempt = attempt === opts.maxAttempts;
 
         this.logger.warn(
-          `[RetryManager] ${operationName} failed on attempt ${attempt}/${opts.maxAttempts}`,
           {
             error: err.message,
             isRetryable,
             isLastAttempt,
             errorType: err instanceof BaseLaunchError ? err.type : "unknown",
           },
+          `[RetryManager] ${operationName} failed on attempt ${attempt}/${opts.maxAttempts}`,
         );
 
         if (!isRetryable || isLastAttempt) {
