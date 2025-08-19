@@ -55,7 +55,7 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
       try {
         await handler.handler(request, socket, head, context);
       } catch (err) {
-        fastify.log.error(`WebSocket handler error for ${url}:`, err);
+        fastify.log.error({ err }, `WebSocket handler error for ${url}`);
         socket.destroy();
       }
     } else {
@@ -63,7 +63,7 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
       try {
         await fastify.cdpService.proxyWebSocket(request, socket, head);
       } catch (err) {
-        fastify.log.error("CDP WebSocket error:", err);
+        fastify.log.error({ err }, "CDP WebSocket error");
         socket.destroy();
       }
     }

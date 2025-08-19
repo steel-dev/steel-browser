@@ -320,12 +320,15 @@ export class FilesController {
       await emptyArchive.finalize();
       return;
     } catch (err: any) {
-      server.log.error("Error during handleFileArchive:", err);
+      server.log.error({ err }, "Error during handleFileArchive");
       if (!reply.sent) {
         try {
           reply.code(500).send({ message: "Failed to process archive request" });
-        } catch (sendError) {
-          server.log.error("Error sending 500 response after archive handling error:", sendError);
+        } catch (sendError: unknown) {
+          server.log.error(
+            { err: sendError },
+            "Error sending 500 response after archive handling error",
+          );
         }
       }
     }

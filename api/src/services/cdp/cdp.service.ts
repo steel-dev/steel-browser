@@ -206,7 +206,7 @@ export class CDPService extends EventEmitter {
       this.emit(event, payload);
 
       if (env.LOG_CUSTOM_EMIT_EVENTS) {
-        this.logger.info("EmitEvent", { event, payload });
+        this.logger.info({ event, payload }, "EmitEvent");
       }
 
       if (event === EmitEvent.Log) {
@@ -472,36 +472,42 @@ export class CDPService extends EventEmitter {
       await session.send("Network.enable");
       await session.send("Console.enable");
 
-      session.on("Runtime.executionContextCreated", (event) => {
-        this.logger.info(`[CDP] Execution Context Created for ${targetType}`, { event });
-      });
+      session.on(
+        "Runtime.executionContextCreated",
+        (event: Protocol.Runtime.ExecutionContextCreatedEvent) => {
+          this.logger.info({ event }, `[CDP] Execution Context Created for ${targetType}`);
+        },
+      );
 
-      session.on("Runtime.executionContextDestroyed", async () => {
-        this.logger.info(`[CDP] Execution Context Destroyed for ${targetType}`);
-      });
+      session.on(
+        "Runtime.executionContextDestroyed",
+        async (_event: Protocol.Runtime.ExecutionContextDestroyedEvent) => {
+          this.logger.info(`[CDP] Execution Context Destroyed for ${targetType}`);
+        },
+      );
 
-      session.on("Runtime.consoleAPICalled", (event) => {
-        this.logger.info(`[CDP] Console API called for ${targetType}`, { event });
+      session.on("Runtime.consoleAPICalled", (event: Protocol.Runtime.ConsoleAPICalledEvent) => {
+        this.logger.info({ event }, `[CDP] Console API called for ${targetType}`);
       });
 
       // Capture browser logs (security issues, CSP violations, fetch failures)
-      session.on("Log.entryAdded", (event) => {
-        this.logger.warn(`[CDP] Log entry added for ${targetType}`, { event });
+      session.on("Log.entryAdded", (event: Protocol.Log.EntryAddedEvent) => {
+        this.logger.warn({ event }, `[CDP] Log entry added for ${targetType}`);
       });
 
       // Capture JavaScript exceptions
-      session.on("Runtime.exceptionThrown", (event) => {
-        this.logger.error(`[CDP] Runtime exception thrown for ${targetType}`, { event });
+      session.on("Runtime.exceptionThrown", (event: Protocol.Runtime.ExceptionThrownEvent) => {
+        this.logger.error({ event }, `[CDP] Runtime exception thrown for ${targetType}`);
       });
 
       // Capture failed network requests
-      session.on("Network.loadingFailed", (event) => {
-        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event });
+      session.on("Network.loadingFailed", (event: Protocol.Network.LoadingFailedEvent) => {
+        this.logger.error({ event }, `[CDP] Network request failed for ${targetType}`);
       });
 
       // Capture failed fetch requests (when a fetch() call fails)
-      session.on("Network.requestFailed", (event) => {
-        this.logger.error(`[CDP] Network request failed for ${targetType}`, { event });
+      session.on("Network.requestFailed", (event: unknown) => {
+        this.logger.error({ event }, `[CDP] Network request failed for ${targetType}`);
       });
     } catch (error) {
       this.logger.error(`[CDP] Error setting up CDP logging for ${targetType}: ${error}`);
@@ -914,12 +920,11 @@ export class CDPService extends EventEmitter {
       })();
 
       return (await Promise.race([launchProcess, launchTimeout])) as Browser;
-    } catch (error) {
+    } catch (error: unknown) {
       const categorizedError =
         error instanceof BaseLaunchError ? error : categorizeError(error, "browser launch");
 
       this.logger.error(
-        `[CDPService] LAUNCH ERROR (${categorizedError.type}): ${categorizedError.message}`,
         {
           error: {
             errorType: categorizedError.type,
@@ -927,6 +932,7 @@ export class CDPService extends EventEmitter {
             context: categorizedError.context,
           },
         },
+        `[CDPService] LAUNCH ERROR (${categorizedError.type}): ${categorizedError.message}`,
       );
 
       throw categorizedError;

@@ -48,7 +48,7 @@ export const handleLaunchBrowserSession = async (
       userPreferences,
     });
   } catch (e: unknown) {
-    server.log.error("Failed lauching browser session", e);
+    server.log.error({ err: e }, "Failed lauching browser session");
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
   }
