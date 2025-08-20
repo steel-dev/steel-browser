@@ -732,8 +732,6 @@ export class CDPService extends EventEmitter {
             ? [...this.launchConfig.extensions]
             : [];
 
-          let extensionPaths: string[] = [];
-
           // Get named extension paths
           const namedExtensionPaths = await getExtensionPaths([
             ...defaultExtensions,
