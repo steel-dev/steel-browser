@@ -22,7 +22,7 @@ function handleRecordingWebSocket(context: WebSocketHandlerContext, ws: WebSocke
     fastify.log.info("Recording WebSocket connection closed");
     fastify.cdpService.removeListener(EmitEvent.Recording, messageHandler);
   });
-
+  
   ws.on("error", (err) => {
     fastify.log.error({ err }, "Recording WebSocket error");
   });

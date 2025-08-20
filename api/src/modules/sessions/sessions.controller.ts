@@ -63,7 +63,7 @@ export const handleExitBrowserSession = async (
     const sessionDetails = await server.sessionService.endSession();
 
     reply.send({ success: true, ...sessionDetails });
-  } catch (e: unknown) {
+  } catch (e: any) {
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
   }

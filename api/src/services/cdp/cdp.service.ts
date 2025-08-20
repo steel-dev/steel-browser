@@ -486,6 +486,7 @@ export class CDPService extends EventEmitter {
         },
       );
 
+
       session.on("Runtime.consoleAPICalled", (event: Protocol.Runtime.ConsoleAPICalledEvent) => {
         this.logger.info({ event }, `[CDP] Console API called for ${targetType}`);
       });
@@ -509,7 +510,7 @@ export class CDPService extends EventEmitter {
       session.on("Network.requestFailed", (event: unknown) => {
         this.logger.error({ event }, `[CDP] Network request failed for ${targetType}`);
       });
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`[CDP] Error setting up CDP logging for ${targetType}: ${error}`);
     }
   }
@@ -725,14 +726,32 @@ export class CDPService extends EventEmitter {
 
         this.currentSessionConfig = this.launchConfig;
 
-        const defaultExtensions = ["recorder"];
-        const customExtensions = this.launchConfig.extensions
-          ? [...this.launchConfig.extensions]
-          : [];
-
         let extensionPaths: string[] = [];
         try {
-          extensionPaths = await getExtensionPaths([...defaultExtensions, ...customExtensions]);
+          const defaultExtensions = ["recorder"];
+          const customExtensions = this.launchConfig.extensions
+            ? [...this.launchConfig.extensions]
+            : [];
+
+          let extensionPaths: string[] = [];
+
+          // Get named extension paths
+          const namedExtensionPaths = await getExtensionPaths([
+            ...defaultExtensions,
+            ...customExtensions,
+          ]);
+
+          // Check for session extensions passed from the API
+          let sessionExtensionPaths: string[] = [];
+          if (this.launchConfig.extra?.orgExtensions?.paths) {
+            sessionExtensionPaths = this.launchConfig.extra.orgExtensions
+              .paths as unknown as string[];
+            this.logger.info(
+              `[CDPService] Found ${sessionExtensionPaths.length} session extension paths`,
+            );
+          }
+
+          extensionPaths = [...namedExtensionPaths, ...sessionExtensionPaths];
         } catch (error) {
           throw new ResourceError(
             `Failed to resolve extension paths: ${error}`,

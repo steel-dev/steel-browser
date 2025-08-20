@@ -329,6 +329,7 @@ export class FilesController {
             { err: sendError },
             "Error sending 500 response after archive handling error",
           );
+
         }
       }
     }
