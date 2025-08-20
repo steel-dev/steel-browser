@@ -486,7 +486,6 @@ export class CDPService extends EventEmitter {
         },
       );
 
-
       session.on("Runtime.consoleAPICalled", (event: Protocol.Runtime.ConsoleAPICalledEvent) => {
         this.logger.info({ event }, `[CDP] Console API called for ${targetType}`);
       });
