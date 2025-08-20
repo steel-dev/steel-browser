@@ -13,6 +13,6 @@ echo "🔧 Running type checking..."
 npm run build
 
 # Add formatted files back to staging
-git add .
+git add -u
 
 echo "✅ Pre-commit checks passed!" 

@@ -13,8 +13,6 @@ jobs:
   validate-pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       # Check PR title follows conventional commits
       - name: Validate PR Title
         uses: amannn/action-semantic-pull-request@v5
@@ -23,15 +21,15 @@ jobs:
 
       # Auto-assign labels based on files changed
       - name: Label PR
-        uses: actions/labeler@v4
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          configuration-path: .github/labeler.yml
+        uses: actions/labeler@v5
 
       # Check for breaking changes
       - name: Check Breaking Changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
+          # Get list of changed files in this PR
+          CHANGED_FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[].path' | tr '\n' ' ')
           echo "Changed files: $CHANGED_FILES"
 
           # Check for potential breaking changes in specific files
