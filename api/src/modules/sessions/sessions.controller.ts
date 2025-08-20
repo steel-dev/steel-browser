@@ -47,8 +47,8 @@ export const handleLaunchBrowserSession = async (
       skipFingerprintInjection,
       userPreferences,
     });
-  } catch (e: any) {
-    server.log.error("Failed lauching browser session", e);
+  } catch (e: unknown) {
+    server.log.error({ err: e }, "Failed lauching browser session");
     const error = getErrors(e);
     return reply.code(500).send({ success: false, message: error });
   }

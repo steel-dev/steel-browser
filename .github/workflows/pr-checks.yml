@@ -5,6 +5,10 @@ on:
   pull_request_target:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   validate-pr:
     runs-on: ubuntu-latest
