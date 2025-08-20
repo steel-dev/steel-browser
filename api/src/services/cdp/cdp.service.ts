@@ -486,7 +486,6 @@ export class CDPService extends EventEmitter {
         },
       );
 
-
       session.on("Runtime.consoleAPICalled", (event: Protocol.Runtime.ConsoleAPICalledEvent) => {
         this.logger.info({ event }, `[CDP] Console API called for ${targetType}`);
       });
@@ -752,6 +751,7 @@ export class CDPService extends EventEmitter {
           }
 
           extensionPaths = [...namedExtensionPaths, ...sessionExtensionPaths];
+          this.logger.info(`[CDPService] Extension paths: ${extensionPaths}`);
         } catch (error) {
           throw new ResourceError(
             `Failed to resolve extension paths: ${error}`,
