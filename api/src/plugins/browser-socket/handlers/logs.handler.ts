@@ -14,7 +14,7 @@ function handleLogsWebSocket(context: WebSocketHandlerContext, ws: WebSocket) {
   };
 
   fastify.cdpService.on(EmitEvent.Log, messageHandler);
-  
+
   ws.on("error", (err) => {
     fastify.log.error({ err }, "Logs WebSocket error");
   });
