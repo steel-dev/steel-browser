@@ -10,12 +10,12 @@
         background: #f0f0f0;
       }
       .container {
-        max-width: 1200px;
+        max-width: 1800px;
         margin: 0 auto;
       }
       #videoCanvas {
         width: 100%;
-        max-width: 800px;
+        /*max-width: 800px;*/
         border: 2px solid #333;
         cursor: none;
         display: block;
@@ -66,16 +66,15 @@
   </head>
   <body>
     <div class="container">
-      <h1>Interactive WebRTC Stream</h1>
-      <div id="status" class="status disconnected">Disconnected</div>
-
+      <!-- <h1>Interactive WebRTC Stream</h1> -->
+      <!-- <div id="status" class="status disconnected">Disconnected</div> -->
       <video id="hiddenVideo" autoplay playsinline muted></video>
       <canvas id="videoCanvas"></canvas>
-
       <!-- <div class="controls">
         <div class="control-group">
           <h3>Clipboard</h3>
-          <textarea id="clipboardText" placeholder="Text to paste..."></textarea><br />
+          <textarea id="clipboardText" placeholder="Text to paste..."></textarea
+          ><br />
           <button onclick="pasteText()">Paste to Stream</button>
           <button onclick="copyFromStream()">Copy from Stream</button>
         </div>
@@ -96,7 +95,7 @@
     </div>
 
     <script>
-      const ws = new WebSocket("ws://0.0.0.0:8080/signal");
+      const ws = new WebSocket("ws://localhost:8080/signal");
       const pc = new RTCPeerConnection({
         iceServers: [
           {

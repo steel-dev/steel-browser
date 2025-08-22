@@ -27,12 +27,33 @@
     <canvas id="videoCanvas" tabindex="0"></canvas>
 
     <script>
-      const ws = new WebSocket("ws://localhost:8080/signal");
+      const ws = new WebSocket("ws://172.56.253.95:8080/signal");
+
       const pc = new RTCPeerConnection({
         iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:19302" },
+          {
+            urls: "stun:stun.relay.metered.ca:80",
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80",
+            username: "f5a4e67eeccfa1291bfd824c",
+            credential: "HJ+o8FRYh6/9xJKI",
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80?transport=tcp",
+            username: "f5a4e67eeccfa1291bfd824c",
+            credential: "HJ+o8FRYh6/9xJKI",
+          },
+          {
+            urls: "turn:global.relay.metered.ca:443",
+            username: "f5a4e67eeccfa1291bfd824c",
+            credential: "HJ+o8FRYh6/9xJKI",
+          },
+          {
+            urls: "turns:global.relay.metered.ca:443?transport=tcp",
+            username: "f5a4e67eeccfa1291bfd824c",
+            credential: "HJ+o8FRYh6/9xJKI",
+          },
         ],
       });
 

@@ -6,14 +6,26 @@ WINDOW_TITLE="Chromium"
 # Function to clean up background processes when the script exits
 cleanup() {
   echo "Cleaning up processes..."
-  pkill -P $$ || true  # Kill all child processes
+
+  if kill -0 "$FFMPEG_PID" 2>/dev/null; then
+    kill -SIGTERM "$FFMPEG_PID" 2>/dev/null || true
+    # Give ffmpeg max 3s to exit, then force kill
+    for i in {1..30}; do
+      if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+    kill -9 "$FFMPEG_PID" 2>/dev/null || true
+  fi
+
+  pkill -P $$ || true  # Kill all other child processes
   exit 0
 }
-
 # Set trap to call cleanup function when script receives termination signal
 trap cleanup SIGINT SIGTERM EXIT
 
-sleep 10
+sleep 1
 
 # Ensure we have proper X11 permissions
 if [ -f "/tmp/.Xauthority" ]; then
@@ -35,7 +47,8 @@ WINDOW_ID=$(xdotool search --name Chromium | while read id; do
     fi
 done)
 
-ffmpeg -f x11grab -framerate 30 -video_size 1920x1080 \
+ffmpeg -fflags +nobuffer -nostats -hide_banner \
+      -f x11grab -framerate 30 -video_size 1920x1080 \
       -i :10.0 \
       -use_wallclock_as_timestamps 1 \
       -c:v libvpx \
@@ -51,8 +64,12 @@ ffmpeg -f x11grab -framerate 30 -video_size 1920x1080 \
       -g 15 \
       -keyint_min 10 \
       -pix_fmt yuv420p \
-      -an -f rtp rtp://127.0.0.1:5004 &
+      -an \
+      -f rtp rtp://127.0.0.1:5004 &
+      # -f tee "[f=matroska]/recordings/$(date +%s)_$(hostname).webm|[f=rtp]rtp://127.0.0.1:5004"
+    # -f matroska /recordings/$(date +%s)_$(hostname).webm
+    # -f rtp rtp://127.0.0.1:5004
 
 # Start Pion WebRTC server
 echo "Starting Pion WebRTC server..."
-cd /app && ./server
+exec /app/server

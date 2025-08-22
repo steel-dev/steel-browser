@@ -12,6 +12,6 @@ export const webRTCHandler: WebSocketHandler = {
     context: WebSocketHandlerContext,
   ) => {
     context.fastify.log.info("Connecting to cast...");
-    spawn("../webrtc/webrtc");
+    spawn("../../webrtc/webrtc");
   },
 };

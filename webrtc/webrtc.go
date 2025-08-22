@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -9,8 +10,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -22,6 +25,7 @@ var (
 	upgrader       = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	videoTracks    []*webrtc.TrackLocalStaticRTP
 	videoTrackLock sync.RWMutex
+	udpConn        *net.UDPConn // so we can close it on shutdown
 )
 
 // Message types for signaling and interactions
@@ -50,13 +54,26 @@ type ClipboardEvent struct {
 	Action string `json:"action"` // "copy", "paste"
 }
 
+// Add this function to get your actual local IP
+// func getLocalIP() string {
+// 	conn, err := net.Dial("udp", "8.8.8.8:80")
+// 	if err != nil {
+// 		return "127.0.0.1"
+// 	}
+// 	defer conn.Close()
+// 	localAddr := conn.LocalAddr().(*net.UDPAddr)
+// 	return localAddr.IP.String()
+// }
+
 func createPeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP, error) {
 	publicIP := os.Getenv("EXTERNAL_IP")
 	if publicIP == "" {
-		publicIP = "45.13.200.118" // Your external IP as fallback
+		publicIP = "172.56.253.95" // Your external IP as fallback
 	}
 
 	log.Println("Using external IP for ICE:", publicIP)
+	// localIP := getLocalIP()
+	// log.Println("Using local IP for ICE:", localIP)
 
 	// Create a MediaEngine and register VP8 codec
 	m := &webrtc.MediaEngine{}
@@ -79,7 +96,19 @@ func createPeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 		log.Printf("Invalid external IP: %s", publicIP)
 	}
 
-	settingEngine.SetICETimeouts(20*time.Second, 10*time.Second, 2*time.Second)
+	// if net.ParseIP(localIP) != nil {
+	// 	settingEngine.SetNAT1To1IPs([]string{localIP}, webrtc.ICECandidateTypeHost)
+	// 	log.Printf("Set NAT1To1IP to: %s", localIP)
+	// } else {
+	// 	log.Printf("Invalid external IP: %s", localIP)
+	// }
+	settingEngine.SetICETimeouts(10*time.Second, 5*time.Second, 1*time.Second)
+
+	settingEngine.SetNetworkTypes([]webrtc.NetworkType{
+		webrtc.NetworkTypeUDP4,
+		webrtc.NetworkTypeUDP6,
+		webrtc.NetworkTypeTCP4, // ICE-TCP passive
+	})
 
 	// Create API with media engine and setting engine
 	api := webrtc.NewAPI(
@@ -90,11 +119,37 @@ func createPeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 	// Create a new PeerConnection
 	peerConnection, err := api.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
+			// {
+			// 	URLs: []string{"stun:stun.l.google.com:19302"},
+			// },
+			// {
+			// 	URLs: []string{"stun:stun1.l.google.com:19302"},
+			// },
+			// {
+			// 	URLs: []string{"stun:stun2.l.google.com:19302"},
+			// },
 			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
+				URLs: []string{"stun:stun.relay.metered.ca:80"},
 			},
 			{
-				URLs: []string{"stun:stun1.l.google.com:19302"},
+				URLs:       []string{"turn:global.relay.metered.ca:80"},
+				Username:   "f5a4e67eeccfa1291bfd824c",
+				Credential: "HJ+o8FRYh6/9xJKI",
+			},
+			{
+				URLs:       []string{"turn:global.relay.metered.ca:80?transport=tcp"},
+				Username:   "f5a4e67eeccfa1291bfd824c",
+				Credential: "HJ+o8FRYh6/9xJKI",
+			},
+			{
+				URLs:       []string{"turn:global.relay.metered.ca:443"},
+				Username:   "f5a4e67eeccfa1291bfd824c",
+				Credential: "HJ+o8FRYh6/9xJKI",
+			},
+			{
+				URLs:       []string{"turns:global.relay.metered.ca:443?transport=tcp"},
+				Username:   "f5a4e67eeccfa1291bfd824c",
+				Credential: "HJ+o8FRYh6/9xJKI",
 			},
 		},
 	})
@@ -127,6 +182,16 @@ func createPeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 			}
 		}
 	}()
+
+	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate != nil {
+			log.Printf("Generated ICE candidate: %s (type: %s)", candidate.String(), candidate.Typ.String())
+		}
+	})
+
+	peerConnection.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
+		log.Printf("ICE Gathering State: %s", state.String())
+	})
 
 	// Setup ICE connection monitoring
 	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
@@ -264,6 +329,10 @@ func handleClipboardEvent(event ClipboardEvent) error {
 func main() {
 	log.Println("Starting WebRTC server with interaction support...")
 
+	// --- Signal handling ---
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
 	// Start RTP listener for ffmpeg stream
 	go func() {
 		log.Println("Starting RTP listener on port 5004...")
@@ -280,11 +349,12 @@ func main() {
 
 		// Listen for RTP packets
 		addr := net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 5004}
-		conn, err := net.ListenUDP("udp", &addr)
+		udpConn, err := net.ListenUDP("udp", &addr)
 		if err != nil {
 			log.Fatal("Failed to listen on UDP: ", err)
 		}
-		defer conn.Close()
+
+		defer udpConn.Close()
 
 		log.Println("RTP listener started successfully on port 5004")
 
@@ -293,7 +363,7 @@ func main() {
 		lastLog := time.Now()
 
 		for {
-			n, _, err := conn.ReadFromUDP(buf)
+			n, _, err := udpConn.ReadFromUDP(buf)
 			if err != nil {
 				log.Println("Error reading RTP:", err)
 				continue
@@ -322,6 +392,9 @@ func main() {
 			videoTrackLock.RUnlock()
 		}
 	}()
+
+	// --- HTTP server with graceful shutdown ---
+	srv := &http.Server{Addr: ":8080", Handler: nil}
 
 	// WebSocket handler for signaling and interactions
 	http.HandleFunc("/signal", func(w http.ResponseWriter, r *http.Request) {
@@ -505,390 +578,428 @@ func main() {
 	// Serve HTML page with interaction support
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Interactive WebRTC Stream</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 20px;
-            font-family: Arial, sans-serif;
-            background: #f0f0f0;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        #videoCanvas {
-            width: 100%;
-            max-width: 800px;
-            border: 2px solid #333;
-            cursor: none;
-            display: block;
-            margin: 0 auto 20px auto;
-            background: #000;
-        }
-        #videoCanvas:focus {
-            outline: 2px solid #007bff;
-            outline-offset: 2px;
-        }
-        #hiddenVideo {
-            display: none;
-        }
-        .controls {
-            text-align: center;
-            margin: 20px 0;
-        }
-        .control-group {
-            margin: 10px;
-            display: inline-block;
-        }
-        input, textarea, button {
-            padding: 8px;
-            margin: 5px;
-            font-size: 14px;
-        }
-        #clipboardText {
-            width: 300px;
-            height: 60px;
-        }
-        .status {
-            text-align: center;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        .status.connected { background: #d4edda; color: #155724; }
-        .status.disconnected { background: #f8d7da; color: #721c24; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Interactive WebRTC Stream</h1>
-        <div id="status" class="status disconnected">Disconnected</div>
+	<!DOCTYPE html>
+	<html>
+	<head>
+	    <title>Interactive WebRTC Stream</title>
+	    <style>
+	        body {
+	            margin: 0;
+	            padding: 20px;
+	            font-family: Arial, sans-serif;
+	            background: #f0f0f0;
+	        }
+	        .container {
+	            max-width: 1200px;
+	            margin: 0 auto;
+	        }
+	        #videoCanvas {
+	            width: 100%;
+	            max-width: 1200px;
+	            border: 2px solid #333;
+	            cursor: none;
+	            display: block;
+	            margin: 0 auto 20px auto;
+	            background: #000;
+	        }
+	        #videoCanvas:focus {
+	            outline: 2px solid #007bff;
+	            outline-offset: 2px;
+	        }
+	        #hiddenVideo {
+	            display: none;
+	        }
+	        .controls {
+	            text-align: center;
+	            margin: 20px 0;
+	        }
+	        .control-group {
+	            margin: 10px;
+	            display: inline-block;
+	        }
+	        input, textarea, button {
+	            padding: 8px;
+	            margin: 5px;
+	            font-size: 14px;
+	        }
+	        #clipboardText {
+	            width: 300px;
+	            height: 60px;
+	        }
+	        .status {
+	            text-align: center;
+	            padding: 10px;
+	            margin: 10px 0;
+	            border-radius: 4px;
+	        }
+	        .status.connected { background: #d4edda; color: #155724; }
+	        .status.disconnected { background: #f8d7da; color: #721c24; }
+	    </style>
+	</head>
+	<body>
+	    <div class="container">
+	        <h1>Interactive WebRTC Stream</h1>
+	        <div id="status" class="status disconnected">Disconnected</div>
 
-        <video id="hiddenVideo" autoplay playsinline muted></video>
-        <canvas id="videoCanvas"></canvas>
+	        <video id="hiddenVideo" autoplay playsinline muted></video>
+	        <canvas id="videoCanvas"></canvas>
 
-        <div class="controls">
-            <div class="control-group">
-                <h3>Clipboard</h3>
-                <textarea id="clipboardText" placeholder="Text to paste..."></textarea><br>
-                <button onclick="pasteText()">Paste to Stream</button>
-                <button onclick="copyFromStream()">Copy from Stream</button>
-            </div>
+	        <div class="controls">
+	            <div class="control-group">
+	                <h3>Clipboard</h3>
+	                <textarea id="clipboardText" placeholder="Text to paste..."></textarea><br>
+	                <button onclick="pasteText()">Paste to Stream</button>
+	                <button onclick="copyFromStream()">Copy from Stream</button>
+	            </div>
 
-            <div class="control-group">
-                <h3>Keyboard</h3>
-                <input type="text" id="keyInput" placeholder="Type here to send keys..." style="width: 200px;">
-                <button onclick="sendSpecialKey('ctrl+c')">Ctrl+C</button>
-                <button onclick="sendSpecialKey('ctrl+v')">Ctrl+V</button>
-                <button onclick="sendSpecialKey('ctrl+a')">Ctrl+A</button>
-            </div>
-        </div>
-    </div>
+	            <div class="control-group">
+	                <h3>Keyboard</h3>
+	                <input type="text" id="keyInput" placeholder="Type here to send keys..." style="width: 200px;">
+	                <button onclick="sendSpecialKey('ctrl+c')">Ctrl+C</button>
+	                <button onclick="sendSpecialKey('ctrl+v')">Ctrl+V</button>
+	                <button onclick="sendSpecialKey('ctrl+a')">Ctrl+A</button>
+	            </div>
+	        </div>
+	    </div>
 
-    <script>
-        const ws = new WebSocket('ws://localhost:8080/signal');
-        const pc = new RTCPeerConnection({
-            iceServers: [
-                {urls: 'stun:stun.l.google.com:19302'},
-                {urls: 'stun:stun1.l.google.com:19302'},
-                {urls: 'stun:stun2.l.google.com:19302'}
-            ]
-        });
+	    <script>
+	        const ws = new WebSocket('ws://localhost:8080/signal');
+	        const pc = new RTCPeerConnection({
+	            iceServers: [
+	            	{
+	                   urls: "stun:stun.relay.metered.ca:80",
+	                 },
+	                 {
+	                   urls: "turn:global.relay.metered.ca:80",
+	                   username: "f5a4e67eeccfa1291bfd824c",
+	                   credential: "HJ+o8FRYh6/9xJKI",
+	                 },
+	                 {
+	                   urls: "turn:global.relay.metered.ca:80?transport=tcp",
+	                   username: "f5a4e67eeccfa1291bfd824c",
+	                   credential: "HJ+o8FRYh6/9xJKI",
+	                 },
+	                 {
+	                   urls: "turn:global.relay.metered.ca:443",
+	                   username: "f5a4e67eeccfa1291bfd824c",
+	                   credential: "HJ+o8FRYh6/9xJKI",
+	                 },
+	                 {
+	                   urls: "turns:global.relay.metered.ca:443?transport=tcp",
+	                   username: "f5a4e67eeccfa1291bfd824c",
+	                   credential: "HJ+o8FRYh6/9xJKI",
+	                 },
+	            ]
+	        });
 
-        const hiddenVideo = document.getElementById('hiddenVideo');
-        const canvas = document.getElementById('videoCanvas');
-        const ctx = canvas.getContext('2d');
-        const status = document.getElementById('status');
-        let animationFrame;
+	        const hiddenVideo = document.getElementById('hiddenVideo');
+	        const canvas = document.getElementById('videoCanvas');
+	        const ctx = canvas.getContext('2d');
+	        const status = document.getElementById('status');
+	        let animationFrame;
 
-        // Add transceiver to receive video
-        pc.addTransceiver('video', { direction: 'recvonly' });
+	        // Add transceiver to receive video
+	        pc.addTransceiver('video', { direction: 'recvonly' });
 
-        pc.ontrack = (event) => {
-            console.log('Received track:', event.track);
-            hiddenVideo.srcObject = event.streams[0];
+	        pc.ontrack = (event) => {
+	            console.log('Received track:', event.track);
+	            hiddenVideo.srcObject = event.streams[0];
 
-            hiddenVideo.addEventListener('loadedmetadata', () => {
-                // Set canvas size to match video
-                canvas.width = hiddenVideo.videoWidth;
-                canvas.height = hiddenVideo.videoHeight;
+	            hiddenVideo.addEventListener('loadedmetadata', () => {
+	                // Set canvas size to match video
+	                canvas.width = hiddenVideo.videoWidth;
+	                canvas.height = hiddenVideo.videoHeight;
 
-                // Start rendering video to canvas
-                renderVideoToCanvas();
-            });
-        };
+	                // Start rendering video to canvas
+	                renderVideoToCanvas();
+	            });
+	        };
 
-        function renderVideoToCanvas() {
-            if (hiddenVideo.videoWidth > 0 && hiddenVideo.videoHeight > 0) {
-                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
-            }
-            animationFrame = requestAnimationFrame(renderVideoToCanvas);
-        }
+	        function renderVideoToCanvas() {
+	            if (hiddenVideo.videoWidth > 0 && hiddenVideo.videoHeight > 0) {
+	                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+	            }
+	            animationFrame = requestAnimationFrame(renderVideoToCanvas);
+	        }
 
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                ws.send(JSON.stringify({
-                    type: 'ice-candidate',
-                    data: {
-                        candidate: event.candidate.candidate,
-                        sdpMid: event.candidate.sdpMid,
-                        sdpMLineIndex: event.candidate.sdpMLineIndex
-                    }
-                }));
-            }
-        };
+	        pc.onicecandidate = (event) => {
+	            if (event.candidate) {
+	                ws.send(JSON.stringify({
+	                    type: 'ice-candidate',
+	                    data: {
+	                        candidate: event.candidate.candidate,
+	                        sdpMid: event.candidate.sdpMid,
+	                        sdpMLineIndex: event.candidate.sdpMLineIndex
+	                    }
+	                }));
+	            }
+	        };
 
-        pc.oniceconnectionstatechange = () => {
-            console.log('ICE connection state:', pc.iceConnectionState);
-            updateStatus(pc.iceConnectionState);
-        };
+	        pc.oniceconnectionstatechange = () => {
+	            console.log('ICE connection state:', pc.iceConnectionState);
+	            updateStatus(pc.iceConnectionState);
+	        };
 
-        function updateStatus(state) {
-            if (state === 'connected' || state === 'completed') {
-                status.textContent = 'Connected';
-                status.className = 'status connected';
-            } else {
-                status.textContent = 'Disconnected (' + state + ')';
-                status.className = 'status disconnected';
-            }
-        }
+	        function updateStatus(state) {
+	            if (state === 'connected' || state === 'completed') {
+	                status.textContent = 'Connected';
+	                status.className = 'status connected';
+	            } else {
+	                status.textContent = 'Disconnected (' + state + ')';
+	                status.className = 'status disconnected';
+	            }
+	        }
 
-        // Mouse event handling on canvas
-        canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = Math.floor((e.clientX - rect.left) * scaleX);
-            const y = Math.floor((e.clientY - rect.top) * scaleY);
+	        // Mouse event handling on canvas
+	        canvas.addEventListener('mousemove', (e) => {
+	            const rect = canvas.getBoundingClientRect();
+	            const scaleX = canvas.width / rect.width;
+	            const scaleY = canvas.height / rect.height;
+	            const x = Math.floor((e.clientX - rect.left) * scaleX);
+	            const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-            ws.send(JSON.stringify({
-                type: 'mouse',
-                data: { x, y, action: 'move' }
-            }));
-        });
+	            ws.send(JSON.stringify({
+	                type: 'mouse',
+	                data: { x, y, action: 'move' }
+	            }));
+	        });
 
-        canvas.addEventListener('click', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = Math.floor((e.clientX - rect.left) * scaleX);
-            const y = Math.floor((e.clientY - rect.top) * scaleY);
+	        canvas.addEventListener('click', (e) => {
+	            e.preventDefault();
+	            const rect = canvas.getBoundingClientRect();
+	            const scaleX = canvas.width / rect.width;
+	            const scaleY = canvas.height / rect.height;
+	            const x = Math.floor((e.clientX - rect.left) * scaleX);
+	            const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-            ws.send(JSON.stringify({
-                type: 'mouse',
-                data: { x, y, button: 'left', action: 'click' }
-            }));
-        });
+	            ws.send(JSON.stringify({
+	                type: 'mouse',
+	                data: { x, y, button: 'left', action: 'click' }
+	            }));
+	        });
 
-        canvas.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = Math.floor((e.clientX - rect.left) * scaleX);
-            const y = Math.floor((e.clientY - rect.top) * scaleY);
+	        canvas.addEventListener('contextmenu', (e) => {
+	            e.preventDefault();
+	            const rect = canvas.getBoundingClientRect();
+	            const scaleX = canvas.width / rect.width;
+	            const scaleY = canvas.height / rect.height;
+	            const x = Math.floor((e.clientX - rect.left) * scaleX);
+	            const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-            ws.send(JSON.stringify({
-                type: 'mouse',
-                data: { x, y, button: 'right', action: 'click' }
-            }));
-        });
+	            ws.send(JSON.stringify({
+	                type: 'mouse',
+	                data: { x, y, button: 'right', action: 'click' }
+	            }));
+	        });
 
-        // Mouse down/up for drag operations
-        canvas.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = Math.floor((e.clientX - rect.left) * scaleX);
-            const y = Math.floor((e.clientY - rect.top) * scaleY);
+	        // Mouse down/up for drag operations
+	        canvas.addEventListener('mousedown', (e) => {
+	            e.preventDefault();
+	            const rect = canvas.getBoundingClientRect();
+	            const scaleX = canvas.width / rect.width;
+	            const scaleY = canvas.height / rect.height;
+	            const x = Math.floor((e.clientX - rect.left) * scaleX);
+	            const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-            let button = 'left';
-            if (e.button === 1) button = 'middle';
-            if (e.button === 2) button = 'right';
+	            let button = 'left';
+	            if (e.button === 1) button = 'middle';
+	            if (e.button === 2) button = 'right';
 
-            ws.send(JSON.stringify({
-                type: 'mouse',
-                data: { x, y, button, action: 'down' }
-            }));
-        });
+	            ws.send(JSON.stringify({
+	                type: 'mouse',
+	                data: { x, y, button, action: 'down' }
+	            }));
+	        });
 
-        canvas.addEventListener('mouseup', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = Math.floor((e.clientX - rect.left) * scaleX);
-            const y = Math.floor((e.clientY - rect.top) * scaleY);
+	        canvas.addEventListener('mouseup', (e) => {
+	            e.preventDefault();
+	            const rect = canvas.getBoundingClientRect();
+	            const scaleX = canvas.width / rect.width;
+	            const scaleY = canvas.height / rect.height;
+	            const x = Math.floor((e.clientX - rect.left) * scaleX);
+	            const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-            let button = 'left';
-            if (e.button === 1) button = 'middle';
-            if (e.button === 2) button = 'right';
+	            let button = 'left';
+	            if (e.button === 1) button = 'middle';
+	            if (e.button === 2) button = 'right';
 
-            ws.send(JSON.stringify({
-                type: 'mouse',
-                data: { x, y, button, action: 'up' }
-            }));
-        });
+	            ws.send(JSON.stringify({
+	                type: 'mouse',
+	                data: { x, y, button, action: 'up' }
+	            }));
+	        });
 
-        // Scroll wheel support
-        canvas.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = Math.floor((e.clientX - rect.left) * scaleX);
-            const y = Math.floor((e.clientY - rect.top) * scaleY);
+	        // Scroll wheel support
+	        canvas.addEventListener('wheel', (e) => {
+	            e.preventDefault();
+	            const rect = canvas.getBoundingClientRect();
+	            const scaleX = canvas.width / rect.width;
+	            const scaleY = canvas.height / rect.height;
+	            const x = Math.floor((e.clientX - rect.left) * scaleX);
+	            const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-            // Send scroll as mouse button 4 (scroll up) or 5 (scroll down)
-            const button = e.deltaY < 0 ? '4' : '5';
-            ws.send(JSON.stringify({
-                type: 'mouse',
-                data: { x, y, button, action: 'click' }
-            }));
-        });
+	            // Send scroll as mouse button 4 (scroll up) or 5 (scroll down)
+	            const button = e.deltaY < 0 ? '4' : '5';
+	            ws.send(JSON.stringify({
+	                type: 'mouse',
+	                data: { x, y, button, action: 'click' }
+	            }));
+	        });
 
-        // Make canvas focusable for keyboard events
-        canvas.setAttribute('tabindex', '0');
-        canvas.addEventListener('focus', () => {
-            console.log('Canvas focused - keyboard input enabled');
-        });
+	        // Make canvas focusable for keyboard events
+	        canvas.setAttribute('tabindex', '0');
+	        canvas.addEventListener('focus', () => {
+	            console.log('Canvas focused - keyboard input enabled');
+	        });
 
-        canvas.addEventListener('keydown', (e) => {
-            e.preventDefault();
+	        canvas.addEventListener('keydown', (e) => {
+	            e.preventDefault();
 
-            let key = e.key;
-            // Handle special key combinations
-            if (e.ctrlKey && e.key !== 'Control') {
-                key = 'ctrl+' + e.key.toLowerCase();
-            } else if (e.altKey && e.key !== 'Alt') {
-                key = 'alt+' + e.key.toLowerCase();
-            } else if (e.shiftKey && e.key !== 'Shift') {
-                // For printable characters, shift is handled naturally
-                // For special keys, we might want to handle them
-                if (e.key.length > 1) {
-                    key = 'shift+' + e.key.toLowerCase();
-                }
-            }
+	            let key = e.key;
+	            // Handle special key combinations
+	            if (e.ctrlKey && e.key !== 'Control') {
+	                key = 'ctrl+' + e.key.toLowerCase();
+	            } else if (e.altKey && e.key !== 'Alt') {
+	                key = 'alt+' + e.key.toLowerCase();
+	            } else if (e.shiftKey && e.key !== 'Shift') {
+	                // For printable characters, shift is handled naturally
+	                // For special keys, we might want to handle them
+	                if (e.key.length > 1) {
+	                    key = 'shift+' + e.key.toLowerCase();
+	                }
+	            }
 
-            ws.send(JSON.stringify({
-                type: 'keyboard',
-                data: { key: key, action: 'down' }
-            }));
-        });
+	            ws.send(JSON.stringify({
+	                type: 'keyboard',
+	                data: { key: key, action: 'down' }
+	            }));
+	        });
 
-        canvas.addEventListener('keyup', (e) => {
-            e.preventDefault();
+	        canvas.addEventListener('keyup', (e) => {
+	            e.preventDefault();
 
-            let key = e.key;
-            if (e.ctrlKey && e.key !== 'Control') {
-                key = 'ctrl+' + e.key.toLowerCase();
-            } else if (e.altKey && e.key !== 'Alt') {
-                key = 'alt+' + e.key.toLowerCase();
-            } else if (e.shiftKey && e.key !== 'Shift') {
-                if (e.key.length > 1) {
-                    key = 'shift+' + e.key.toLowerCase();
-                }
-            }
+	            let key = e.key;
+	            if (e.ctrlKey && e.key !== 'Control') {
+	                key = 'ctrl+' + e.key.toLowerCase();
+	            } else if (e.altKey && e.key !== 'Alt') {
+	                key = 'alt+' + e.key.toLowerCase();
+	            } else if (e.shiftKey && e.key !== 'Shift') {
+	                if (e.key.length > 1) {
+	                    key = 'shift+' + e.key.toLowerCase();
+	                }
+	            }
 
-            ws.send(JSON.stringify({
-                type: 'keyboard',
-                data: { key: key, action: 'up' }
-            }));
-        });
+	            ws.send(JSON.stringify({
+	                type: 'keyboard',
+	                data: { key: key, action: 'up' }
+	            }));
+	        });
 
-        // Keyboard event handling
-        document.getElementById('keyInput').addEventListener('input', (e) => {
-            const text = e.target.value;
-            if (text) {
-                ws.send(JSON.stringify({
-                    type: 'keyboard',
-                    data: { key: text, action: 'type' }
-                }));
-                e.target.value = ''; // Clear input
-            }
-        });
+	        // Keyboard event handling
+	        document.getElementById('keyInput').addEventListener('input', (e) => {
+	            const text = e.target.value;
+	            if (text) {
+	                ws.send(JSON.stringify({
+	                    type: 'keyboard',
+	                    data: { key: text, action: 'type' }
+	                }));
+	                e.target.value = ''; // Clear input
+	            }
+	        });
 
-        // Global keyboard capture when video is focused
-        canvas.addEventListener('keydown', (e) => {
-            e.preventDefault();
-            ws.send(JSON.stringify({
-                type: 'keyboard',
-                data: { key: e.key, action: 'down' }
-            }));
-        });
+	        // Global keyboard capture when video is focused
+	        canvas.addEventListener('keydown', (e) => {
+	            e.preventDefault();
+	            ws.send(JSON.stringify({
+	                type: 'keyboard',
+	                data: { key: e.key, action: 'down' }
+	            }));
+	        });
 
-        // Clipboard functions
-        function pasteText() {
-            const text = document.getElementById('clipboardText').value;
-            if (text) {
-                ws.send(JSON.stringify({ type: 'clipboard', data: { text: text, action: 'paste' }}));
-            }
-        }
+	        // Clipboard functions
+	        function pasteText() {
+	            const text = document.getElementById('clipboardText').value;
+	            if (text) {
+	                ws.send(JSON.stringify({ type: 'clipboard', data: { text: text, action: 'paste' }}));
+	            }
+	        }
 
-        function copyFromStream() {
-            ws.send(JSON.stringify({
-                type: 'clipboard',
-                data: { action: 'copy' }
-            }));
-        }
+	        function copyFromStream() {
+	            ws.send(JSON.stringify({
+	                type: 'clipboard',
+	                data: { action: 'copy' }
+	            }));
+	        }
 
-        function sendSpecialKey(key) {
-            ws.send(JSON.stringify({
-                type: 'keyboard',
-                data: { key: key, action: 'down' }
-            }));
-        }
+	        function sendSpecialKey(key) {
+	            ws.send(JSON.stringify({
+	                type: 'keyboard',
+	                data: { key: key, action: 'down' }
+	            }));
+	        }
 
-        // WebSocket handling
-        ws.onopen = async () => {
-            console.log('WebSocket connected');
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            ws.send(JSON.stringify({
-                type: 'offer',
-                data: {
-                    type: offer.type,
-                    sdp: offer.sdp
-                }
-            }));
-        };
+	        // WebSocket handling
+	        ws.onopen = async () => {
+	            console.log('WebSocket connected');
+	            const offer = await pc.createOffer();
+	            await pc.setLocalDescription(offer);
+	            ws.send(JSON.stringify({
+	                type: 'offer',
+	                data: {
+	                    type: offer.type,
+	                    sdp: offer.sdp
+	                }
+	            }));
+	        };
 
-        ws.onmessage = async (event) => {
-            const msg = JSON.parse(event.data);
+	        ws.onmessage = async (event) => {
+	            const msg = JSON.parse(event.data);
 
-            if (msg.type === 'answer') {
-                await pc.setRemoteDescription(msg.data);
-            } else if (msg.type === 'ice-candidate') {
-                await pc.addIceCandidate(msg.data);
-            }
-        };
+	            if (msg.type === 'answer') {
+	                await pc.setRemoteDescription(msg.data);
+	            } else if (msg.type === 'ice-candidate') {
+	                await pc.addIceCandidate(msg.data);
+	            }
+	        };
 
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
+	        ws.onerror = (error) => {
+	            console.error('WebSocket error:', error);
+	        };
 
-        ws.onclose = () => {
-            console.log('WebSocket closed');
-            updateStatus('disconnected');
-            // Stop animation frame when connection closes
-            if (animationFrame) {
-                cancelAnimationFrame(animationFrame);
-            }
-        };
-    </script>
-</body>
-</html>
-        `))
+	        ws.onclose = () => {
+	            console.log('WebSocket closed');
+	            updateStatus('disconnected');
+	            // Stop animation frame when connection closes
+	            if (animationFrame) {
+	                cancelAnimationFrame(animationFrame);
+	            }
+	        };
+	    </script>
+	</body>
+	</html>
+	        `))
 	})
 
-	log.Println("Starting HTTP server on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal("HTTP server error: ", err)
+	go func() {
+		log.Println("HTTP server listening on :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("HTTP server error:", err)
+		}
+	}()
+
+	// --- Wait for signal ---
+	<-sigCh
+	log.Println("Shutdown signal received")
+
+	if udpConn != nil {
+		udpConn.Close() // unblock ReadFromUDP
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Println("HTTP server shutdown error:", err)
+	}
+
+	log.Println("Exit complete")
 }
