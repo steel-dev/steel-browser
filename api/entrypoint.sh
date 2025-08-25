@@ -37,8 +37,22 @@ cleanup() {
         mv /tmp/.X11-unix.backup /tmp/.X11-unix
     fi
 
+    echo "Cleaning up processes..."
+    "$NODE_PID" && kill -SIGTERM "$NODE_PID" 2>/dev/null || true
+    "$FFMPEG_PID" && kill -SIGTERM "$FFMPEG_PID" 2>/dev/null || true
+
+    # Give them a few seconds to exit gracefully
+    sleep 3
+
+    "$NODE_PID" && kill -SIGKILL "$NODE_PID" 2>/dev/null || true
+    "$FFMPEG_PID" && kill -SIGKILL "$FFMPEG_PID" 2>/dev/null || true
+
+
     sleep 1
 }
+
+# Trap termination signals
+# trap cleanup SIGINT SIGTERM EXIT
 
 # Start Xvfb (virtual X server)
 start_xvfb() {
@@ -176,32 +190,6 @@ main() {
        start_xvfb || exit 1
        xdpyinfo -display :10 || echo "Cannot connect to X server"
 
-      #  WINDOW_ID=$(xdotool search --name Chromium | while read id; do
-      #      geom=$(xwininfo -id $id | awk '/geometry/{print $2}')
-      #      if [[ "$geom" == "1919x1079--9--9" ]]; then
-      #          echo $id
-      #          break
-      #      fi
-      #  done)
-
-      # ffmpeg -f x11grab -framerate 30 -video_size 1920x1080 \
-      #       -i :10.0 \
-      #       -use_wallclock_as_timestamps 1 \
-      #       -c:v libvpx \
-      #       -deadline realtime \
-      #       -cpu-used 8 \
-      #       -threads 4 \
-      #       -error-resilient 1 \
-      #       -auto-alt-ref 0 \
-      #       -lag-in-frames 0 \
-      #       -b:v 2M \
-      #       -maxrate 2.5M \
-      #       -bufsize 500k \
-      #       -g 15 \
-      #       -keyint_min 10 \
-      #       -pix_fmt yuv420p \
-      #       -an -f rtp rtp://127.0.0.1:5004 &
-
        # Initialize services
        init_dbus || exit 1
        verify_chrome || exit 1
@@ -234,8 +222,40 @@ main() {
     # NPM will introduce its own signal handling
     # which will prevent the container from waiting
     # for a session to be released before stopping gracefully
-    log "Starting Node.js application..."
-    exec node ./api/build/index.js
+    # Start Node.js in background
+    echo "Starting Node.js application..."
+    node ./api/build/index.js &
+    NODE_PID=$!
+    echo "Node.js PID: $NODE_PID"
+
+    sleep 3  # Give Node a bit to start
+
+    # Find Chromium window
+    WINDOW_ID=$(xdotool search --name Chromium | while read id; do
+        geom=$(xwininfo -id $id | awk '/geometry/{print $2}')
+        if "$geom" == "1919x1079--9--9"; then
+            echo $id
+            break
+        fi
+    done)
+
+    # Start ffmpeg in background
+    echo "Starting ffmpeg capture..."
+    ffmpeg -fflags +nobuffer -nostats -hide_banner \
+            -f x11grab -framerate 30 -video_size 1920x1080 \
+            -i :10.0 \
+            -use_wallclock_as_timestamps 1 \
+            -c:v libvpx -deadline realtime -cpu-used 8 \
+            -threads 4 -error-resilient 1 -auto-alt-ref 0 \
+           -lag-in-frames 0 -b:v 2M -maxrate 2.5M \
+            -bufsize 500k -g 15 -keyint_min 10 -pix_fmt yuv420p \
+            -an -f rtp rtp://127.0.0.1:5004 &
+    FFMPEG_PID=$!
+    echo "ffmpeg PID: $FFMPEG_PID"
+
+    # Start Go server in foreground (PID 1)
+    echo "Starting Go server..."
+    ./api/pion_server
 }
 
 main "$@"

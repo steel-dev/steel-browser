@@ -188,7 +188,7 @@ export function SessionViewer({ id }: SessionViewerProps) {
         }clipboardBridge=true`}
         sandbox="allow-same-origin allow-scripts allow-clipboard-write allow-clipboard-read"
         className="w-full max-h-full aspect-[16/10] border border-[var(--gray-6)]"
-        allow="clipboard-read; clipboard-write"
+        allow="clipboard-read; clipboard-write; camera; microphone; display-capture; autoplay"
       />
     </div>
   );

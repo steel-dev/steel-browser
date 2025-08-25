@@ -140,6 +140,7 @@ export const handleGetSessionStream = async (
 
   // Construct WebSocket URL with page parameters if present
   let wsUrl = getUrl("v1/sessions/cast", "ws");
+  console.log("WEBSOCKET URL:", wsUrl); // ws://localhost:3000/v1/sessions/webrtc
   if (pageId) {
     wsUrl += `?pageId=${encodeURIComponent(pageId)}`;
   } else if (pageIndex) {
@@ -154,8 +155,15 @@ export const handleGetSessionStream = async (
   //   dimensions: server.sessionService.activeSession.dimensions,
   //   singlePageMode,
   // });
-  // return reply.view("webrtc-session.html");
-  return reply.view("webrtc-experimental.html");
+  return reply.view("webrtc-session.html");
+  // return reply.view("webrtc-experimental.ejs", {
+  //   wsUrl,
+  //   showControls,
+  //   theme,
+  //   interactive,
+  //   dimensions: server.sessionService.activeSession.dimensions,
+  //   singlePageMode,
+  // });
 };
 
 export const handleGetSessionLiveDetails = async (

@@ -9,7 +9,8 @@ ENV NODE_ENV="production" \
     DISPLAY=:10 \
     PATH="/usr/bin:/app/selenium/driver:${PATH}" \
     CHROME_BIN=/usr/bin/chromium \
-    CHROME_PATH=/usr/bin/chromium
+    CHROME_PATH=/usr/bin/chromium \
+    DEBIAN_FRONTEND=noninteractive
 
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
@@ -51,6 +52,13 @@ RUN cd api/extensions/recorder && \
 # Prune dev dependencies
 RUN npm prune --omit=dev -w api
 RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
+
+FROM golang:1.24 AS go-build
+
+WORKDIR /app
+COPY ./api/src/webrtc/go.mod ./api/src/webrtc/go.sum ./api/src/webrtc/webrtc.go ./
+RUN go mod tidy
+RUN GOOS=linux GOARCH=$(go env GOARCH) go build -o pion_server .
 
 FROM base AS production
 # Install dependencies
@@ -96,7 +104,10 @@ RUN mkdir -p /files
 
 COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
 
-EXPOSE 3000 9223
+# Copy Go server binary
+COPY --from=go-build /app/pion_server /app/api/pion_server
+
+EXPOSE 3000 9223 8080
 
 ENV HOST_IP=localhost \
     DBUS_SESSION_BUS_ADDRESS=autolaunch:

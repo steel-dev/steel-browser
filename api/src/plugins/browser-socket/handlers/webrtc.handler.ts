@@ -1,7 +1,7 @@
 import { IncomingMessage } from "http";
 import { Duplex } from "stream";
 import { WebSocketHandler, WebSocketHandlerContext } from "../../../types/websocket.js";
-import { spawn } from "child_process";
+import { handleWebRTCCastSession } from "../webrtc.handler.js";
 
 export const webRTCHandler: WebSocketHandler = {
   path: "/v1/sessions/webrtc",
@@ -12,6 +12,6 @@ export const webRTCHandler: WebSocketHandler = {
     context: WebSocketHandlerContext,
   ) => {
     context.fastify.log.info("Connecting to cast...");
-    spawn("../../webrtc/webrtc");
+    await handleWebRTCCastSession(request, socket, context.fastify.sessionService, context.params);
   },
 };

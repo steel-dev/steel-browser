@@ -27,7 +27,7 @@
     <canvas id="videoCanvas" tabindex="0"></canvas>
 
     <script>
-      const ws = new WebSocket("ws://172.56.253.95:8080/signal");
+      const ws = new WebSocket("/ws/signal");
 
       const pc = new RTCPeerConnection({
         iceServers: [

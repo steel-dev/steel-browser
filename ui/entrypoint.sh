@@ -7,6 +7,7 @@ log() {
 
 substitute_env_vars() {
     log "Substituting environment variables in nginx config template..."
+    log ${API_URL}
     sed -e "s|__API_URL__|${API_URL}|g" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 }
 

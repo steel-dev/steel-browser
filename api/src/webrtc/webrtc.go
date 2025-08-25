@@ -590,12 +590,12 @@ func main() {
 	            background: #f0f0f0;
 	        }
 	        .container {
-	            max-width: 1200px;
+	            max-width: 1800px;
 	            margin: 0 auto;
 	        }
 	        #videoCanvas {
 	            width: 100%;
-	            max-width: 1200px;
+	            max-width: 1800px;
 	            border: 2px solid #333;
 	            cursor: none;
 	            display: block;

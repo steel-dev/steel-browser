@@ -16,7 +16,8 @@ http {
     }
 
     location /ws/ {
-      proxy_pass __API_URL__/;
+      # proxy_pass __API_URL__/;
+      proxy_pass http://api:8080;
       # Required for WebSocket
       proxy_http_version 1.1;
       proxy_set_header Upgrade $http_upgrade;

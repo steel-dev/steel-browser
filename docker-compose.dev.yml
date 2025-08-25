@@ -8,6 +8,9 @@ services:
     ports:
       - "3000:3000"
       - "9223:9223"
+      - "8080:8080"
+      - "10000-11000:10000-11000/udp" # Pion's ephemeral UDP ports for ICE
+      - "5004:5004/udp"
     environment:
       - DOMAIN=${DOMAIN:-localhost:3000}
       - CDP_DOMAIN=${CDP_DOMAIN:-localhost:9223}
