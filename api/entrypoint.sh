@@ -255,7 +255,7 @@ main() {
 
     # Start Go server in foreground (PID 1)
     echo "Starting Go server..."
-    ./api/pion_server
+    ./api/steelrtc
 }
 
 main "$@"

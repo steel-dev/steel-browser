@@ -56,9 +56,17 @@ RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 FROM golang:1.24 AS go-build
 
 WORKDIR /app
-COPY ./api/src/webrtc/go.mod ./api/src/webrtc/go.sum ./api/src/webrtc/webrtc.go ./
-RUN go mod tidy
-RUN GOOS=linux GOARCH=$(go env GOARCH) go build -o pion_server .
+
+# Copy go.mod for caching
+COPY ./api/src/webrtc/go.mod ./
+COPY ./api/src/webrtc/go.sum ./
+RUN go mod download
+
+# Copy all source including cmd, internal, and web
+COPY ./api/src/webrtc/ ./
+
+# Build
+RUN GOOS=linux GOARCH=$(go env GOARCH) go build -o steelrtc ./cmd
 
 FROM base AS production
 # Install dependencies
@@ -105,9 +113,10 @@ RUN mkdir -p /files
 COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
 
 # Copy Go server binary
-COPY --from=go-build /app/pion_server /app/api/pion_server
+COPY --from=go-build /app/steelrtc /app/api/steelrtc
+# COPY --from=go-build /app/live-session-streamer.html /app/api/live-session-streamer.html
 
-EXPOSE 3000 9223 8080
+EXPOSE 3000 9223 3001
 
 ENV HOST_IP=localhost \
     DBUS_SESSION_BUS_ADDRESS=autolaunch:

@@ -186,6 +186,7 @@ export function SessionViewer({ id }: SessionViewerProps) {
         src={`${session?.debugUrl}${
           session?.debugUrl?.includes("?") ? "&" : "?"
         }clipboardBridge=true`}
+        // src="http://localhost:3001/"
         sandbox="allow-same-origin allow-scripts allow-clipboard-write allow-clipboard-read"
         className="w-full max-h-full aspect-[16/10] border border-[var(--gray-6)]"
         allow="clipboard-read; clipboard-write; camera; microphone; display-capture; autoplay"
