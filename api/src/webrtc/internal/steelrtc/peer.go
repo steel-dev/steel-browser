@@ -2,12 +2,11 @@ package steelrtc
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
-	"os"
 	"sync"
 	"time"
+	"webrtc/internal/config"
 
 	"github.com/pion/webrtc/v3"
 )
@@ -28,7 +27,7 @@ func CreatePeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 		videoTrackLock sync.RWMutex
 	)
 
-	publicIP := os.Getenv("EXTERNAL_IP")
+	publicIP := config.ExternalIP
 
 	log.Println("Using external IP for ICE:", publicIP)
 	// localIP := getLocalIP()
@@ -45,7 +44,7 @@ func CreatePeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 
 	// Set ICE settings
 	settingEngine := webrtc.SettingEngine{}
-	settingEngine.SetEphemeralUDPPortRange(10000, 11000)
+	settingEngine.SetEphemeralUDPPortRange(10000, 10010) // Port range for ephemeral UDP ports, when changed it needs to be changed in Docker
 
 	// Use actual external IP instead of host.docker.internal
 	if net.ParseIP(publicIP) != nil {
@@ -66,8 +65,8 @@ func CreatePeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 	settingEngine.SetNetworkTypes([]webrtc.NetworkType{
 		webrtc.NetworkTypeUDP4,
 		webrtc.NetworkTypeUDP6,
-		webrtc.NetworkTypeTCP4, // ICE-TCP passive
-		webrtc.NetworkTypeTCP6, // ICE-TCP passive
+		// webrtc.NetworkTypeTCP4, // ICE-TCP passive
+		// webrtc.NetworkTypeTCP6, // ICE-TCP passive
 	})
 
 	// Create API with media engine and setting engine
@@ -77,22 +76,19 @@ func CreatePeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 	)
 
 	// Create a new PeerConnection
-	if serversJSON := os.Getenv("ICE_SERVERS_JSON"); serversJSON != "" {
-		var iceServers []webrtc.ICEServer
-		if err := json.Unmarshal([]byte(serversJSON), &iceServers); err != nil {
-			log.Fatal("Invalid ICE_SERVERS_JSON:", err)
-		}
+	var iceServers []webrtc.ICEServer
+	if err := json.Unmarshal([]byte(config.IceServersJSON), &iceServers); err != nil {
+		log.Fatal("Invalid ICE_SERVERS_JSON:", err)
+	}
 
-		// Use in PeerConnection
-		peerConnection, err := api.NewPeerConnection(webrtc.Configuration{
-			ICEServers: iceServers,
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
+	log.Println("ICE Servers:", iceServers)
 
-		defer peerConnection.Close()
-		fmt.Println("PeerConnection created with ICE servers:", iceServers)
+	// Use in PeerConnection
+	peerConnection, err := api.NewPeerConnection(webrtc.Configuration{
+		ICEServers: iceServers,
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// Create a video track

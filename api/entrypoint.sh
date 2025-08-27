@@ -228,7 +228,7 @@ main() {
     NODE_PID=$!
     echo "Node.js PID: $NODE_PID"
 
-    sleep 3  # Give Node a bit to start
+    sleep 6  # Give Node a bit to start
 
     # Find Chromium window
     WINDOW_ID=$(xdotool search --name Chromium | while read id; do
@@ -241,15 +241,30 @@ main() {
 
     # Start ffmpeg in background
     echo "Starting ffmpeg capture..."
-    ffmpeg -fflags +nobuffer -nostats -hide_banner \
-            -f x11grab -framerate 30 -video_size 1920x1080 \
-            -i :10.0 \
-            -use_wallclock_as_timestamps 1 \
-            -c:v libvpx -deadline realtime -cpu-used 8 \
-            -threads 4 -error-resilient 1 -auto-alt-ref 0 \
-           -lag-in-frames 0 -b:v 2M -maxrate 2.5M \
-            -bufsize 500k -g 15 -keyint_min 10 -pix_fmt yuv420p \
-            -an -f rtp rtp://127.0.0.1:5004 &
+    ffmpeg -fflags +nobuffer -flags low_delay -nostats -hide_banner \
+    -f x11grab -framerate 30 -video_size 1920x1080 -i :10.0 \
+    -use_wallclock_as_timestamps 1 \
+    -c:v libvpx -deadline realtime -cpu-used 5 -threads 4 -error-resilient 1 \
+    -auto-alt-ref 0 -lag-in-frames 0 -g 12 -keyint_min 10 \
+    -b:v 2M -maxrate 2.5M -bufsize 500k -pix_fmt yuv420p \
+    -an -f rtp rtp://0.0.0.0:5004 &
+    # ffmpeg -fflags +nobuffer -nostats -hide_banner \
+    #         -f x11grab -framerate 30 -video_size 1920x1080 \
+    #         -i :10.0 \
+    #         -use_wallclock_as_timestamps 1 \
+    #         -c:v libvpx -deadline realtime -cpu-used 8 \
+    #         -threads 4 -error-resilient 1 -auto-alt-ref 0 \
+    #        -lag-in-frames 0 -b:v 2M -maxrate 2.5M \
+    #         -bufsize 500k -g 15 -keyint_min 10 -pix_fmt yuv420p \
+    #         -an -f rtp rtp://127.0.0.1:5004 &
+    # ffmpeg -f x11grab -i :10.0 \
+    #   -c:v libx264 -preset ultrafast -tune zerolatency \
+    #   -g 30 -pix_fmt yuv420p -profile:v baseline -level 3.1 \
+    #   -b:v 1500k -maxrate 2000k -bufsize 3000k \
+    #   -movflags +frag_keyframe+empty_moov \
+    #   -map 0:v \
+    #   -f matroska /recordings/$(date +%s)_$(hostname).webm &
+       # -f tee "[f=rtp]rtp://127.0.0.1:5004|[f=mp4]/recordings/session.mp4" &
     FFMPEG_PID=$!
     echo "ffmpeg PID: $FFMPEG_PID"
 

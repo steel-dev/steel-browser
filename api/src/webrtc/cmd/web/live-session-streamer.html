@@ -67,7 +67,7 @@
   <body>
     <div class="container">
       <!-- <h1>Interactive WebRTC Stream</h1> -->
-      <!-- <div id="status" class="status disconnected">Disconnected</div> -->
+      <div id="status" class="status disconnected">Disconnected</div>
       <video id="hiddenVideo" autoplay playsinline muted></video>
       <canvas id="videoCanvas"></canvas>
       <!-- <div class="controls">
@@ -95,9 +95,35 @@
     </div>
 
     <script>
-      const ws = new WebSocket({{.WS_URL}});
+      // const ws = new WebSocket({{.WS_URL}});
+      const ws = new WebSocket("ws://localhost:3001/v1/sessions/webrtc");
       const pc = new RTCPeerConnection({
-        iceServers: [{"urls":["stun:stun.l.google.com:19302"]},{"urls":["stun:stun1.l.google.com:19302"]},{"urls":["stun:stun2.l.google.com:19302"]},{"urls":["stun:stun.relay.metered.ca:80"]},{"urls":["turn:standard.relay.metered.ca:80"], "username":"682a9f0e2d3dbb6e12d6d1f2","credential":"qbXBULME/7DxQA6X"},{"urls":["turn:standard.relay.metered.ca:80?transport=tcp"], "username":"682a9f0e2d3dbb6e12d6d1f2","credential":"qbXBULME/7DxQA6X"},{"urls":["turn:standard.relay.metered.ca:443"], "username":"682a9f0e2d3dbb6e12d6d1f2","credential":"qbXBULME/7DxQA6X"},{"urls":["turns:standard.relay.metered.ca:443?transport=tcp"], "username":"682a9f0e2d3dbb6e12d6d1f2","credential":"qbXBULME/7DxQA6X"}]
+        // iceServers: {{.ICE_SERVERS}}
+        iceServers: [
+          {
+            urls: "stun:stun.relay.metered.ca:80",
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80",
+            username: "0ee5e77192b5e67f471b8bc9",
+            credential: "6K8IOBskAee2gm7i",
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80?transport=tcp",
+            username: "0ee5e77192b5e67f471b8bc9",
+            credential: "6K8IOBskAee2gm7i",
+          },
+          {
+            urls: "turn:global.relay.metered.ca:443",
+            username: "0ee5e77192b5e67f471b8bc9",
+            credential: "6K8IOBskAee2gm7i",
+          },
+          {
+            urls: "turns:global.relay.metered.ca:443?transport=tcp",
+            username: "0ee5e77192b5e67f471b8bc9",
+            credential: "6K8IOBskAee2gm7i",
+          },
+        ],
       });
 
       const hiddenVideo = document.getElementById("hiddenVideo");
