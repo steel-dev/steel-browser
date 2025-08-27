@@ -65,8 +65,8 @@ func CreatePeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 	settingEngine.SetNetworkTypes([]webrtc.NetworkType{
 		webrtc.NetworkTypeUDP4,
 		webrtc.NetworkTypeUDP6,
-		// webrtc.NetworkTypeTCP4, // ICE-TCP passive
-		// webrtc.NetworkTypeTCP6, // ICE-TCP passive
+		webrtc.NetworkTypeTCP4, // ICE-TCP passive
+		webrtc.NetworkTypeTCP6, // ICE-TCP passive
 	})
 
 	// Create API with media engine and setting engine
@@ -107,7 +107,7 @@ func CreatePeerConnection() (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP
 		return nil, nil, err
 	}
 
-	// Read RTCP packets
+	// Read RTP packets
 	go func() {
 		rtcpBuf := make([]byte, 1500)
 		for {

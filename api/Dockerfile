@@ -82,6 +82,7 @@ RUN apt-get update && \
     fonts-freefont-ttf \
     libxss1 \
     xvfb \
+    xauth \
     curl \
     unzip \
     default-jre \
@@ -114,9 +115,8 @@ COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
 
 # Copy Go server binary
 COPY --from=go-build /app/steelrtc /app/api/steelrtc
-# COPY --from=go-build /app/live-session-streamer.html /app/api/live-session-streamer.html
 
-EXPOSE 3000 9223 3001
+EXPOSE 3000 3001 9223
 
 ENV HOST_IP=localhost \
     DBUS_SESSION_BUS_ADDRESS=autolaunch:

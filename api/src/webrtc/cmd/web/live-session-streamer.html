@@ -15,7 +15,7 @@
       }
       #videoCanvas {
         width: 100%;
-        /*max-width: 800px;*/
+        max-width: 1800px;
         border: 2px solid #333;
         cursor: none;
         display: block;
@@ -66,15 +66,16 @@
   </head>
   <body>
     <div class="container">
-      <!-- <h1>Interactive WebRTC Stream</h1> -->
+      <h1>Interactive WebRTC Stream</h1>
       <div id="status" class="status disconnected">Disconnected</div>
-      <video id="hiddenVideo" autoplay playsinline muted></video>
+
+      <video autoplay playsinline muted style="display: block; width: 640px; height: auto"></video>
       <canvas id="videoCanvas"></canvas>
-      <!-- <div class="controls">
+
+      <div class="controls">
         <div class="control-group">
           <h3>Clipboard</h3>
-          <textarea id="clipboardText" placeholder="Text to paste..."></textarea
-          ><br />
+          <textarea id="clipboardText" placeholder="Text to paste..."></textarea><br />
           <button onclick="pasteText()">Paste to Stream</button>
           <button onclick="copyFromStream()">Copy from Stream</button>
         </div>
@@ -91,39 +92,43 @@
           <button onclick="sendSpecialKey('ctrl+v')">Ctrl+V</button>
           <button onclick="sendSpecialKey('ctrl+a')">Ctrl+A</button>
         </div>
-      </div> -->
+      </div>
     </div>
 
     <script>
-      // const ws = new WebSocket({{.WS_URL}});
-      const ws = new WebSocket("ws://localhost:3001/v1/sessions/webrtc");
+      // const ws = new WebSocket("ws://localhost:3001/v1/sessions/webrtc");
+      const ws = new WebSocket({{.WS_URL}});
+      const iceServers = JSON.parse({{.ICE_SERVERS}} || '[]');
+      console.log(iceServers)
+      // const pc = new RTCPeerConnection({
+      //   iceServers: [
+      //     {
+      //       urls: "stun:stun.relay.metered.ca:80",
+      //     },
+      //     {
+      //       urls: "turn:global.relay.metered.ca:80",
+      //       username: "0ee5e77192b5e67f471b8bc9",
+      //       credential: "6K8IOBskAee2gm7i",
+      //     },
+      //     {
+      //       urls: "turn:global.relay.metered.ca:80?transport=tcp",
+      //       username: "0ee5e77192b5e67f471b8bc9",
+      //       credential: "6K8IOBskAee2gm7i",
+      //     },
+      //     {
+      //       urls: "turn:global.relay.metered.ca:443",
+      //       username: "0ee5e77192b5e67f471b8bc9",
+      //       credential: "6K8IOBskAee2gm7i",
+      //     },
+      //     {
+      //       urls: "turns:global.relay.metered.ca:443?transport=tcp",
+      //       username: "0ee5e77192b5e67f471b8bc9",
+      //       credential: "6K8IOBskAee2gm7i",
+      //     },
+      //   ],
+      // });
       const pc = new RTCPeerConnection({
-        // iceServers: {{.ICE_SERVERS}}
-        iceServers: [
-          {
-            urls: "stun:stun.relay.metered.ca:80",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80",
-            username: "0ee5e77192b5e67f471b8bc9",
-            credential: "6K8IOBskAee2gm7i",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80?transport=tcp",
-            username: "0ee5e77192b5e67f471b8bc9",
-            credential: "6K8IOBskAee2gm7i",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:443",
-            username: "0ee5e77192b5e67f471b8bc9",
-            credential: "6K8IOBskAee2gm7i",
-          },
-          {
-            urls: "turns:global.relay.metered.ca:443?transport=tcp",
-            username: "0ee5e77192b5e67f471b8bc9",
-            credential: "6K8IOBskAee2gm7i",
-          },
-        ],
+        iceServers
       });
 
       const hiddenVideo = document.getElementById("hiddenVideo");
@@ -140,6 +145,7 @@
         hiddenVideo.srcObject = event.streams[0];
 
         hiddenVideo.addEventListener("loadedmetadata", () => {
+          console.log("Video metadata loaded:", hiddenVideo.videoWidth, hiddenVideo.videoHeight);
           // Set canvas size to match video
           canvas.width = hiddenVideo.videoWidth;
           canvas.height = hiddenVideo.videoHeight;
@@ -376,12 +382,7 @@
       function pasteText() {
         const text = document.getElementById("clipboardText").value;
         if (text) {
-          ws.send(
-            JSON.stringify({
-              type: "clipboard",
-              data: { text: text, action: "paste" },
-            }),
-          );
+          ws.send(JSON.stringify({ type: "clipboard", data: { text: text, action: "paste" } }));
         }
       }
 

@@ -4,7 +4,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"sync"
 	"time"
 
@@ -15,16 +14,6 @@ import (
 func StartRTPListener(videoTracks []*webrtc.TrackLocalStaticRTP,
 	videoTrackLock *sync.RWMutex) {
 	log.Println("Starting RTP listener on port 5004...")
-
-	// Check for SDP file
-	sdpFile := "/cache/stream.sdp"
-	if _, err := os.Stat(sdpFile); os.IsNotExist(err) {
-		log.Printf("Warning: SDP file %s not found.", sdpFile)
-	} else {
-		if sdpData, err := os.ReadFile(sdpFile); err == nil {
-			log.Printf("Using SDP: %s", string(sdpData))
-		}
-	}
 
 	// Listen for RTP packets
 	addr := net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 5004}

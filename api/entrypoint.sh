@@ -13,10 +13,12 @@ cleanup() {
         pkill chrome || true
         pkill dbus-daemon || true
         pkill Xvfb || true
+        pkill ffmpeg || true
     else
         kill $(pidof chrome) >/dev/null 2>&1 || true
         kill $(pidof dbus-daemon) >/dev/null 2>&1 || true
         kill $(pidof Xvfb) >/dev/null 2>&1 || true
+        kill $(pidof ffmpeg) >/dev/null 2>&1 || true
     fi
 
     rm -f /run/dbus/pid
@@ -38,21 +40,9 @@ cleanup() {
     fi
 
     echo "Cleaning up processes..."
-    "$NODE_PID" && kill -SIGTERM "$NODE_PID" 2>/dev/null || true
-    "$FFMPEG_PID" && kill -SIGTERM "$FFMPEG_PID" 2>/dev/null || true
-
-    # Give them a few seconds to exit gracefully
-    sleep 3
-
-    "$NODE_PID" && kill -SIGKILL "$NODE_PID" 2>/dev/null || true
-    "$FFMPEG_PID" && kill -SIGKILL "$FFMPEG_PID" 2>/dev/null || true
-
 
     sleep 1
 }
-
-# Trap termination signals
-# trap cleanup SIGINT SIGTERM EXIT
 
 # Start Xvfb (virtual X server)
 start_xvfb() {
@@ -183,12 +173,15 @@ main() {
            fi
        done
 
+       # Use standard DISPLAY format since we're using standard Xvfb
+       export DISPLAY=:10
+
        # Initial cleanup
        cleanup
 
        # Start Xvfb before anything else
        start_xvfb || exit 1
-       xdpyinfo -display :10 || echo "Cannot connect to X server"
+       xdpyinfo -display $DISPLAY || echo "Cannot connect to X server"
 
        # Initialize services
        init_dbus || exit 1
@@ -198,12 +191,9 @@ main() {
        # Set required environment variables
        export CDP_REDIRECT_PORT=9223
 
-       # Use standard DISPLAY format since we're using standard Xvfb
-       export DISPLAY=:10
-
        # Verify the display is working
        log "Testing display connection..."
-       if DISPLAY=:10 xdpyinfo >/dev/null 2>&1; then
+       if DISPLAY=$DISPLAY xdpyinfo >/dev/null 2>&1; then
            log "Display connection verified successfully"
        else
            log "ERROR: Display connection test failed"
@@ -225,10 +215,7 @@ main() {
     # Start Node.js in background
     echo "Starting Node.js application..."
     node ./api/build/index.js &
-    NODE_PID=$!
-    echo "Node.js PID: $NODE_PID"
-
-    sleep 6  # Give Node a bit to start
+    sleep 3  # Give Node a bit to start
 
     # Find Chromium window
     WINDOW_ID=$(xdotool search --name Chromium | while read id; do
@@ -241,32 +228,14 @@ main() {
 
     # Start ffmpeg in background
     echo "Starting ffmpeg capture..."
-    ffmpeg -fflags +nobuffer -flags low_delay -nostats -hide_banner \
-    -f x11grab -framerate 30 -video_size 1920x1080 -i :10.0 \
-    -use_wallclock_as_timestamps 1 \
-    -c:v libvpx -deadline realtime -cpu-used 5 -threads 4 -error-resilient 1 \
-    -auto-alt-ref 0 -lag-in-frames 0 -g 12 -keyint_min 10 \
-    -b:v 2M -maxrate 2.5M -bufsize 500k -pix_fmt yuv420p \
-    -an -f rtp rtp://0.0.0.0:5004 &
-    # ffmpeg -fflags +nobuffer -nostats -hide_banner \
-    #         -f x11grab -framerate 30 -video_size 1920x1080 \
-    #         -i :10.0 \
-    #         -use_wallclock_as_timestamps 1 \
-    #         -c:v libvpx -deadline realtime -cpu-used 8 \
-    #         -threads 4 -error-resilient 1 -auto-alt-ref 0 \
-    #        -lag-in-frames 0 -b:v 2M -maxrate 2.5M \
-    #         -bufsize 500k -g 15 -keyint_min 10 -pix_fmt yuv420p \
-    #         -an -f rtp rtp://127.0.0.1:5004 &
-    # ffmpeg -f x11grab -i :10.0 \
-    #   -c:v libx264 -preset ultrafast -tune zerolatency \
-    #   -g 30 -pix_fmt yuv420p -profile:v baseline -level 3.1 \
-    #   -b:v 1500k -maxrate 2000k -bufsize 3000k \
-    #   -movflags +frag_keyframe+empty_moov \
-    #   -map 0:v \
-    #   -f matroska /recordings/$(date +%s)_$(hostname).webm &
-       # -f tee "[f=rtp]rtp://127.0.0.1:5004|[f=mp4]/recordings/session.mp4" &
-    FFMPEG_PID=$!
-    echo "ffmpeg PID: $FFMPEG_PID"
+    ffmpeg -f x11grab -i :10.0 \
+      -c:v libx264 -preset ultrafast -tune zerolatency \
+      -g 30 -pix_fmt yuv420p -profile:v baseline -level 3.1 \
+      -b:v 1500k -maxrate 2000k -bufsize 3000k \
+      -movflags +frag_keyframe+empty_moov \
+      -map 0:v \
+      -f tee "[f=rtp]rtp://127.0.0.1:5004|[f=mp4]/recordings/session.mp4" &
+      # -sdp_file /cache/stream.sdp \
 
     # Start Go server in foreground (PID 1)
     echo "Starting Go server..."

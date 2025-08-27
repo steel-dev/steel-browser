@@ -14,7 +14,10 @@ function getProtocol(protocolType: "http" | "ws"): string {
  * @param protocolType 'http' or 'ws' - determines the protocol prefix
  * @returns Formatted base URL with appropriate protocol and trailing slash
  */
-export function getBaseUrl(protocolType: "http" | "ws" = "http"): string {
+export function getBaseUrl(
+  protocolType: "http" | "ws" = "http",
+  headless: boolean = false,
+): string {
   const baseUrl = env.DOMAIN ?? `${env.HOST}:${env.PORT}`;
   const protocol = getProtocol(protocolType);
   return `${protocol}://${baseUrl}/`;
