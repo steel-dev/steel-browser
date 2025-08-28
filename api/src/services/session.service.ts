@@ -129,6 +129,20 @@ export class SessionService {
       );
     }
 
+    // Extract WHIP URL from extra streaming config and set environment variable
+    if (extra?.streaming?.whipUrl) {
+      process.env.WHIP_URL = extra.streaming.whipUrl;
+      this.logger.info(
+        `WHIP publishing enabled for session ${sessionId}: ${extra.streaming.whipUrl}`,
+      );
+    } else {
+      // Clear any existing WHIP_URL to avoid conflicts
+      delete process.env.WHIP_URL;
+      this.logger.info(
+        `No WHIP URL provided for session ${sessionId}, MediaMTX publishing disabled`,
+      );
+    }
+
     const sessionInfo = await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",

@@ -62,6 +62,16 @@ export class PluginManager {
     await Promise.all(promises);
   }
 
+  public onBrowserReady(context: BrowserLauncherOptions): void {
+    for (const plugin of this.plugins.values()) {
+      try {
+        plugin.onBrowserReady(context);
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onBrowserReady: ${error}`);
+      }
+    }
+  }
+
   /**
    * Notify all plugins about a page creation
    */
