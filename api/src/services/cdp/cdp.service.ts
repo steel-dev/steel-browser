@@ -639,6 +639,9 @@ export class CDPService extends EventEmitter {
               BrowserProcessState.PAGE_REFRESH,
             );
           }
+
+          this.pluginManager.onBrowserReady(this.launchConfig);
+
           return this.browserInstance!;
         } else if (this.browserInstance) {
           this.logger.info(
@@ -931,6 +934,8 @@ export class CDPService extends EventEmitter {
             `[CDPService] ${setupError.message} - browser may not function correctly`,
           );
         }
+
+        this.pluginManager.onBrowserReady(this.launchConfig);
 
         return this.browserInstance;
       })();

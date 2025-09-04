@@ -24,6 +24,7 @@ export abstract class BasePlugin {
 
   // Lifecycle methods
   public async onBrowserLaunch(browser: Browser): Promise<void> {}
+  public onBrowserReady(context: BrowserLauncherOptions): void {}
   public async onPageCreated(page: Page): Promise<void> {}
   public async onPageNavigate(page: Page): Promise<void> {}
   public async onPageUnload(page: Page): Promise<void> {}
@@ -32,3 +33,5 @@ export abstract class BasePlugin {
   public async onShutdown(): Promise<void> {}
   public async onSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {}
 }
+
+export type { BrowserLauncherOptions };
