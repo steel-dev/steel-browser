@@ -30,6 +30,7 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("true"),
+  DISPLAY: z.string().optional().default(":10"),
   ENABLE_CDP_LOGGING: z
     .string()
     .optional()
