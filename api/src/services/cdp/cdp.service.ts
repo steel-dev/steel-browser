@@ -874,10 +874,14 @@ export class CDPService extends EventEmitter {
           }
         }
 
+        const isHeadless = !!this.launchConfig?.options?.headless;
+
         const extensionArgs = extensionPaths.length
           ? [
               `--load-extension=${extensionPaths.join(",")}`,
               `--disable-extensions-except=${extensionPaths.join(",")}`,
+              // hide the puzzle menu, keep your extensions
+              `--disable-features=ExtensionsToolbarMenu`,
             ]
           : [];
 
@@ -899,6 +903,16 @@ export class CDPService extends EventEmitter {
           "--disable-touch-drag-drop",
         ];
 
+        const headfulArgs = [
+          "--ozone-platform=x11",
+          "--disable-renderer-backgrounding",
+          "--disable-backgrounding-occluded-windows",
+          "--use-gl=swiftshader",
+          "--in-process-gpu",
+        ];
+
+        const headlessArgs = ["--headless=new", "--hide-crash-restore-bubble"];
+
         const dynamicArgs = [
           this.launchConfig.dimensions ? "" : "--start-maximized",
           `--remote-debugging-address=${env.HOST}`,
@@ -914,15 +928,16 @@ export class CDPService extends EventEmitter {
             : "",
         ];
 
-        const launchArgs = [
+        const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
+
+        const launchArgs = uniq([
           ...staticDefaultArgs,
+          ...(isHeadless ? headlessArgs : headfulArgs),
           ...dynamicArgs,
           ...extensionArgs,
           ...(options.args || []),
-          ...env.CHROME_ARGS,
-        ]
-          .filter(Boolean)
-          .filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
+          ...(env.CHROME_ARGS || []),
+        ]).filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
 
         const finalLaunchOptions = {
           ...options,
@@ -933,7 +948,7 @@ export class CDPService extends EventEmitter {
           timeout: 0,
           env: {
             TZ: timezone,
-            ...(!this.launchConfig.options.headless && { DISPLAY: env.DISPLAY }),
+            ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }), // Xvfb provided by entrypoint
           },
           userDataDir,
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
