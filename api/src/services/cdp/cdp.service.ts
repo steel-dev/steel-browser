@@ -909,6 +909,8 @@ export class CDPService extends EventEmitter {
           "--disable-backgrounding-occluded-windows",
           "--use-gl=swiftshader",
           "--in-process-gpu",
+          "--enable-crashpad",
+          "--crash-dumps-dir=/tmp/chrome-dumps",
         ];
 
         const headlessArgs = ["--headless=new", "--hide-crash-restore-bubble"];
@@ -953,6 +955,10 @@ export class CDPService extends EventEmitter {
           userDataDir,
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
         };
+
+        this.logger.info(
+          `[CDPService] Fly Metadata: Machine: ${process.env.FLY_MACHINE_ID}, App: ${process.env.FLY_APP_NAME}`,
+        );
 
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
@@ -1001,6 +1007,16 @@ export class CDPService extends EventEmitter {
             timestamp: new Date(),
           });
         });
+
+        // Monitor browser process exit for diagnostics
+        const browserProcess = this.browserInstance.process();
+        if (browserProcess) {
+          browserProcess.on("exit", (exitCode, signal) => {
+            this.logger.error(
+              `[CDPService] Chrome process exited: exitCode=${exitCode} signal=${signal} pid=${browserProcess.pid}`,
+            );
+          });
+        }
 
         try {
           this.primaryPage = (await this.browserInstance.pages())[0];
