@@ -4,6 +4,7 @@ import {
   BrowserFingerprintWithHeaders,
   FingerprintGenerator,
   FingerprintGeneratorOptions,
+  VideoCard,
 } from "fingerprint-generator";
 import { FingerprintInjector } from "fingerprint-injector";
 import fs from "fs";
@@ -449,8 +450,7 @@ export class CDPService extends EventEmitter {
         });
       });
 
-      //@ts-ignore
-      const session = await page.target().createCDPSession();
+      const session = await page.createCDPSession();
       await this.setupCDPLogging(session, targetType);
     } catch (error) {
       this.logger.error(`[CDPService] Error setting up page logging: ${error}`);
@@ -1228,7 +1228,7 @@ export class CDPService extends EventEmitter {
       this.trackedOrigins.add(origin);
     }
 
-    const client = await page.target().createCDPSession();
+    const client = await page.createCDPSession();
     try {
       if (context.cookies?.length) {
         await client.send("Network.setCookies", {
@@ -1284,7 +1284,7 @@ export class CDPService extends EventEmitter {
 
       await page.setUserAgent(userAgent);
 
-      const session = await page.target().createCDPSession();
+      const session = await page.createCDPSession();
 
       try {
         await session.send("Page.setDeviceMetricsOverride", {
@@ -1342,8 +1342,8 @@ export class CDPService extends EventEmitter {
       await page.evaluateOnNewDocument(
         loadFingerprintScript({
           fixedPlatform: fingerprint.navigator.platform || "Linux x86_64",
-          fixedVendor: fingerprint.videoCard.vendor,
-          fixedRenderer: fingerprint.videoCard.renderer,
+          fixedVendor: (fingerprint.videoCard as VideoCard | null)?.vendor,
+          fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
           fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
           fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
           fixedArchitecture: userAgentMetadata.architecture || "x86",
