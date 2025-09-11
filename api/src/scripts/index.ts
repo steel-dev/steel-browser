@@ -27,8 +27,8 @@ export const loadFingerprintScript = ({
   fixedUaFullVersion,
   fixedBrands,
 }: {
-  fixedVendor: string;
-  fixedRenderer: string;
+  fixedVendor: string | undefined;
+  fixedRenderer: string | undefined;
   fixedHardwareConcurrency: number;
   fixedDeviceMemory: number;
   fixedVersion?: string;
