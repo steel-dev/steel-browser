@@ -72,3 +72,43 @@ export async function validateTimezone(
     );
   }
 }
+
+/**
+ * Checks if two launch configurations are reusable
+ * @param current - The current launch configuration
+ * @param next - The next launch configuration
+ * @returns True if the configurations are reusable, false otherwise
+ */
+
+export function isSimilarConfig(
+  current?: BrowserLauncherOptions,
+  next?: BrowserLauncherOptions,
+): boolean {
+  if (!current || !next) return false;
+
+  const normalizeArgs = (args?: string[]) => (args || []).filter(Boolean).slice().sort();
+  const normalizeExt = (ext?: string[]) => (ext || []).slice().sort();
+
+  const currentHeadless = current.options?.headless ?? true;
+  const nextHeadless = next.options?.headless ?? true;
+
+  const currentProxy = current.options?.proxyUrl || "";
+  const nextProxy = next.options?.proxyUrl || "";
+
+  const currentArgs = normalizeArgs(current.options?.args);
+  const nextArgs = normalizeArgs(next.options?.args);
+
+  const currentExt = normalizeExt(current.extensions);
+  const nextExt = normalizeExt(next.extensions);
+
+  const currentBlockAds = current.blockAds ?? true;
+  const nextBlockAds = next.blockAds ?? true;
+
+  return (
+    currentHeadless === nextHeadless &&
+    currentProxy === nextProxy &&
+    JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
+    JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
+    currentBlockAds === nextBlockAds
+  );
+}

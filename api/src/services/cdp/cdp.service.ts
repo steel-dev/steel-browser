@@ -10,6 +10,7 @@ import { FingerprintInjector } from "fingerprint-injector";
 import fs from "fs";
 import { IncomingMessage } from "http";
 import httpProxy from "http-proxy";
+import os from "os";
 import path from "path";
 import puppeteer, {
   Browser,
@@ -67,7 +68,7 @@ import {
 } from "./errors/launch-errors.js";
 import { BasePlugin } from "./plugins/core/base-plugin.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
-import { validateLaunchConfig, validateTimezone } from "./utils/validation.js";
+import { isSimilarConfig, validateLaunchConfig, validateTimezone } from "./utils/validation.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -132,6 +133,7 @@ export class CDPService extends EventEmitter {
       options: { headless: env.CHROME_HEADLESS, args: [] },
       blockAds: true,
       extensions: [],
+      userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
     };
 
     this.pluginManager = new PluginManager(this, logger);
@@ -591,13 +593,6 @@ export class CDPService extends EventEmitter {
     return this.browserInstance.createBrowserContext({ proxyServer: proxyUrl });
   }
 
-  private isDefaultConfig(config?: BrowserLauncherOptions) {
-    if (!config) return false;
-    const { logSinkUrl: _nlsu, ...newConfig } = config || {};
-    const { logSinkUrl: _olsu, ...oldConfig } = this.defaultLaunchConfig || {};
-    return JSON.stringify(newConfig) === JSON.stringify(oldConfig);
-  }
-
   @traceable
   public async launch(
     config?: BrowserLauncherOptions,
@@ -623,8 +618,7 @@ export class CDPService extends EventEmitter {
       const launchProcess = (async () => {
         const shouldReuseInstance =
           this.browserInstance &&
-          this.isDefaultConfig(config) &&
-          this.isDefaultConfig(this.launchConfig);
+          isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig);
 
         if (shouldReuseInstance) {
           this.logger.info(
@@ -632,6 +626,7 @@ export class CDPService extends EventEmitter {
           );
           this.launchConfig = config || this.defaultLaunchConfig;
           try {
+            await this.clearBrowserState();
             await this.refreshPrimaryPage();
           } catch (error) {
             throw new BrowserProcessError(
@@ -1086,6 +1081,37 @@ export class CDPService extends EventEmitter {
       return {};
     }
   }
+
+  @traceable
+  private async clearBrowserState(): Promise<void> {
+    if (!this.browserInstance) return;
+    try {
+      const client = await this.browserInstance.target().createCDPSession();
+      try {
+        await client.send("Network.enable");
+        await client.send("Network.clearBrowserCookies");
+        await client.send("Network.clearBrowserCache");
+
+        // Clear per-origin data for tracked origins
+        const origins = Array.from(this.trackedOrigins);
+        for (const origin of origins) {
+          try {
+            await client.send("Storage.clearDataForOrigin", {
+              origin,
+              storageTypes:
+                "appcache,cache_storage,cookies,websql,indexeddb,local_storage,session_storage,service_workers",
+            });
+          } catch (err) {
+            this.logger.warn(`[CDPService] Failed to clear storage for origin ${origin}: ${err}`);
+          }
+        }
+      } finally {
+        await client.detach().catch(() => {});
+      }
+    } catch (error) {
+      this.logger.warn(`[CDPService] Failed to clear browser state: ${error}`);
+    }
+  }
   /**
    * Extract all storage data (localStorage, sessionStorage, IndexedDB) for all open pages
    */
@@ -1185,12 +1211,36 @@ export class CDPService extends EventEmitter {
 
   @traceable
   public async endSession(): Promise<void> {
-    this.logger.info("Ending current session and restarting with default configuration.");
+    this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
+
+    if (this.browserInstance && isSimilarConfig(this.launchConfig, this.defaultLaunchConfig)) {
+      try {
+        await this.pluginManager.onSessionEnd(sessionConfig);
+      } catch (err) {
+        this.logger.warn(`[CDPService] Plugin onSessionEnd error (reuse path): ${err}`);
+      }
+
+      this.currentSessionConfig = null;
+      this.trackedOrigins.clear();
+      this.launchConfig = this.defaultLaunchConfig;
+
+      try {
+        await this.clearBrowserState();
+        await this.refreshPrimaryPage();
+      } catch (error) {
+        this.logger.warn(
+          `[CDPService] Failed to clear state or refresh page on endSession reuse: ${error}`,
+        );
+      }
+
+      return;
+    }
+
     await this.shutdown();
     await this.pluginManager.onSessionEnd(sessionConfig);
     this.currentSessionConfig = null;
-    this.trackedOrigins.clear(); // Clear tracked origins
+    this.trackedOrigins.clear();
     await this.launch(this.defaultLaunchConfig);
   }
 
