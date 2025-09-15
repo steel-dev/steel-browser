@@ -138,7 +138,7 @@ export class SessionService {
       isSelenium,
     });
 
-    const userDataDir = path.join(os.tmpdir(), sessionInfo.id);
+    const userDataDir = env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
     await mkdir(userDataDir, { recursive: true });
 
     if (proxyUrl) {

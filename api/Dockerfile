@@ -17,7 +17,13 @@ LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browse
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
     apt-get update -qq && \
-    DEBIAN_FRONTEND=noninteractive apt-get -yq dist-upgrade
+    DEBIAN_FRONTEND=noninteractive apt-get -yq dist-upgrade && \
+    apt-get install -y --no-install-recommends \
+    expat \
+    libxslt1.1 \
+    libpam0g \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 FROM base AS build
 

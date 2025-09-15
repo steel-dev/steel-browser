@@ -68,6 +68,7 @@ const envSchema = z.object({
     .transform((val) => val === "true" || val === "1")
     .default("false"),
   PROXY_INTERNAL_BYPASS: z.string().optional(),
+  CHROME_USER_DATA_DIR: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
