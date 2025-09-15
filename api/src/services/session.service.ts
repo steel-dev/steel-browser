@@ -98,6 +98,7 @@ export class SessionService {
     credentials: CredentialsOptions;
     skipFingerprintInjection?: boolean;
     userPreferences?: Record<string, any>;
+    headless?: boolean;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -114,6 +115,7 @@ export class SessionService {
       credentials,
       skipFingerprintInjection,
       userPreferences,
+      headless,
     } = options;
 
     // start fetching timezone as early as possible
@@ -176,7 +178,7 @@ export class SessionService {
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
-        headless: env.CHROME_HEADLESS,
+        headless: headless ?? env.CHROME_HEADLESS,
         proxyUrl: this.activeSession.proxyServer?.url,
       },
       sessionContext,
