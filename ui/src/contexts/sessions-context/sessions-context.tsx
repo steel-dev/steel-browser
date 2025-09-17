@@ -1,8 +1,5 @@
 import { createContext, useState } from "react";
-import {
-  SessionsContextType,
-  SessionsProviderProps,
-} from "./sessions-context.types";
+import { SessionsContextType, SessionsProviderProps } from "./sessions-context.types";
 import {
   getSessions,
   getSessionDetails,
@@ -16,15 +13,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 import { ErrorResponse } from "@remix-run/router";
 
-export const SessionsContext = createContext<SessionsContextType | undefined>(
-  undefined
-);
+// eslint-disable-next-line react-refresh/only-export-components
+export const SessionsContext = createContext<SessionsContextType | undefined>(undefined);
 
-export function SessionsProvider({
-  children,
-}: SessionsProviderProps): JSX.Element {
-  const [currentSession, setCurrentSession] =
-    useState<GetSessionDetailsResponse | null>(null);
+export function SessionsProvider({ children }: SessionsProviderProps): JSX.Element {
+  const [currentSession, setCurrentSession] = useState<GetSessionDetailsResponse | null>(null);
 
   const useSession = (id: string) =>
     useQuery<SessionDetails, ErrorResponse>({
@@ -55,11 +48,7 @@ export function SessionsProvider({
     });
 
   const useReleaseSessionMutation = () =>
-    useMutation<
-      ReleaseBrowserSessionResponse,
-      ReleaseBrowserSessionsError,
-      string
-    >({
+    useMutation<ReleaseBrowserSessionResponse, ReleaseBrowserSessionsError, string>({
       mutationFn: async (id: string) => {
         const { error, data } = await releaseBrowserSession({
           path: {
@@ -84,9 +73,5 @@ export function SessionsProvider({
     useReleaseSessionMutation,
   };
 
-  return (
-    <SessionsContext.Provider value={contextValue}>
-      {children}
-    </SessionsContext.Provider>
-  );
+  return <SessionsContext.Provider value={contextValue}>{children}</SessionsContext.Provider>;
 }
