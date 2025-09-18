@@ -1,1 +1,1 @@
-export * from "./sessions-context";
+export { SessionsContext, SessionsProvider } from "./sessions-context";

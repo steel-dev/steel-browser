@@ -17,6 +17,10 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build the latest Steel Browser image
+        run: |
+          docker build -t steel-browser -f ./Dockerfile .
+
       - name: Build the latest Steel Browser API image
         run: |
           docker build -t steel-browser-api -f ./api/Dockerfile .

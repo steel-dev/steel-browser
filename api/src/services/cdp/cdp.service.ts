@@ -626,7 +626,6 @@ export class CDPService extends EventEmitter {
           );
           this.launchConfig = config || this.defaultLaunchConfig;
           try {
-            await this.clearBrowserState();
             await this.refreshPrimaryPage();
           } catch (error) {
             throw new BrowserProcessError(
@@ -1082,36 +1081,6 @@ export class CDPService extends EventEmitter {
     }
   }
 
-  @traceable
-  private async clearBrowserState(): Promise<void> {
-    if (!this.browserInstance) return;
-    try {
-      const client = await this.browserInstance.target().createCDPSession();
-      try {
-        await client.send("Network.enable");
-        await client.send("Network.clearBrowserCookies");
-        await client.send("Network.clearBrowserCache");
-
-        // Clear per-origin data for tracked origins
-        const origins = Array.from(this.trackedOrigins);
-        for (const origin of origins) {
-          try {
-            await client.send("Storage.clearDataForOrigin", {
-              origin,
-              storageTypes:
-                "appcache,cache_storage,cookies,websql,indexeddb,local_storage,session_storage,service_workers",
-            });
-          } catch (err) {
-            this.logger.warn(`[CDPService] Failed to clear storage for origin ${origin}: ${err}`);
-          }
-        }
-      } finally {
-        await client.detach().catch(() => {});
-      }
-    } catch (error) {
-      this.logger.warn(`[CDPService] Failed to clear browser state: ${error}`);
-    }
-  }
   /**
    * Extract all storage data (localStorage, sessionStorage, IndexedDB) for all open pages
    */
@@ -1213,29 +1182,6 @@ export class CDPService extends EventEmitter {
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
-
-    if (this.browserInstance && isSimilarConfig(this.launchConfig, this.defaultLaunchConfig)) {
-      try {
-        await this.pluginManager.onSessionEnd(sessionConfig);
-      } catch (err) {
-        this.logger.warn(`[CDPService] Plugin onSessionEnd error (reuse path): ${err}`);
-      }
-
-      this.currentSessionConfig = null;
-      this.trackedOrigins.clear();
-      this.launchConfig = this.defaultLaunchConfig;
-
-      try {
-        await this.clearBrowserState();
-        await this.refreshPrimaryPage();
-      } catch (error) {
-        this.logger.warn(
-          `[CDPService] Failed to clear state or refresh page on endSession reuse: ${error}`,
-        );
-      }
-
-      return;
-    }
 
     await this.shutdown();
     await this.pluginManager.onSessionEnd(sessionConfig);

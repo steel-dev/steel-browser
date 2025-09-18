@@ -1,1 +1,1 @@
-export * from "./session-viewer";
+export { SessionViewer } from "./session-viewer";

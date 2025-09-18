@@ -3,36 +3,23 @@ set -e  # Exit on error
 
 # Function to log with timestamp
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-}
-
-# Clean up any stale processes and files
-cleanup() {
-    log "Cleaning up stale processes and files..."
-    if command -v pkill >/dev/null 2>&1; then
-        pkill chrome || true
-        pkill dbus-daemon || true
-    else
-        kill $(pidof chrome) >/dev/null 2>&1 || true
-        kill $(pidof dbus-daemon) >/dev/null 2>&1 || true
+    if [ "$DEBUG" = "true" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
     fi
-    
-    rm -f /run/dbus/pid
-    sleep 1
 }
 
 # Initialize DBus
 init_dbus() {
     log "Initializing DBus..."
     mkdir -p /var/run/dbus
-    
+
     if [ -e /var/run/dbus/pid ]; then
         rm -f /var/run/dbus/pid
     fi
-    
+
     dbus-daemon --system --fork
     sleep 2  # Give DBus time to initialize
-    
+
     if dbus-send --system --print-reply --dest=org.freedesktop.DBus \
         /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
         log "DBus initialized successfully"
@@ -46,13 +33,13 @@ init_dbus() {
 # Verify Chrome and ChromeDriver installation
 verify_chrome() {
     log "Verifying Chrome installation..."
-    
+
     # Check Chrome binary and version
     if [ ! -f "/usr/bin/chromium" ] && [ -z "$CHROME_EXECUTABLE_PATH" ]; then
         log "ERROR: Chrome binary not found at /usr/bin/chromium and CHROME_EXECUTABLE_PATH not set"
         return 1
     fi
-    
+
     if [ -f "/usr/bin/chromium" ]; then
         chrome_version=$(chromium --version 2>/dev/null || echo "unknown")
     elif [ -n "$CHROME_EXECUTABLE_PATH" ] && [ -f "$CHROME_EXECUTABLE_PATH" ]; then
@@ -61,16 +48,16 @@ verify_chrome() {
         chrome_version="unknown"
     fi
     log "Chrome version: $chrome_version"
-    
+
     # Check ChromeDriver binary and version
     if [ ! -f "/usr/bin/chromedriver" ]; then
         log "ERROR: ChromeDriver not found at /usr/bin/chromedriver"
         return 1
     fi
-    
+
     chromedriver_version=$(chromedriver --version 2>/dev/null || echo "unknown")
     log "ChromeDriver version: $chromedriver_version"
-    
+
     log "Chrome environment configured successfully"
     return 0
 }
@@ -112,12 +99,10 @@ main() {
         fi
     done
     
-    # Initial cleanup
-    cleanup
-    
-    # Initialize services
-    init_dbus || exit 1
-    verify_chrome || exit 1
+    if [ "$DEBUG" = "true" ]; then
+        init_dbus || exit 1
+        verify_chrome || exit 1
+    fi
     start_nginx || exit 1
     
     # Set required environment variables
@@ -135,7 +120,7 @@ main() {
     # NPM will introduce its own signal handling
     # which will prevent the container from waiting
     # for a session to be released before stopping gracefully
-    log "Starting Node.js application..."
+    log "Starting Steel Browser API..."
     exec node ./api/build/index.js
 }
 
