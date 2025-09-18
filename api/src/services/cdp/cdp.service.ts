@@ -684,7 +684,7 @@ export class CDPService extends EventEmitter {
             const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
               devices: ["desktop"],
               operatingSystems: ["linux"],
-              browsers: [{ name: "chrome", minVersion: 130 }],
+              browsers: [{ name: "chrome", minVersion: 138 }],
               locales: ["en-US", "en"],
             };
 
