@@ -788,6 +788,8 @@ export class CDPService extends EventEmitter {
           "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
+          "--enable-logging=stderr",
+          "--v=1",
         ];
 
         const dynamicArgs = [
