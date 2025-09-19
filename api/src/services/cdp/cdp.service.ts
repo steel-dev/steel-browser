@@ -792,7 +792,7 @@ export class CDPService extends EventEmitter {
 
         const dynamicArgs = [
           this.launchConfig.dimensions ? "" : "--start-maximized",
-          `--remote-debugging-address=${env.HOST}`,
+          `--remote-debugging-address=127.0.0.1`,
           "--remote-debugging-port=9222",
           `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
