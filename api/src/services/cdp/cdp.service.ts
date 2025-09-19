@@ -788,7 +788,7 @@ export class CDPService extends EventEmitter {
           "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
-          "--enable-logging=stderr",
+          "--enable-logging",
           "--v=1",
         ];
 
