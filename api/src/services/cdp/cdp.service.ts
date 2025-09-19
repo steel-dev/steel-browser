@@ -828,7 +828,7 @@ export class CDPService extends EventEmitter {
             ...(!this.launchConfig.options.headless && { DISPLAY: env.DISPLAY }),
           },
           userDataDir,
-          dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
+          dumpio: true,
         };
 
         this.logger.info(`[CDPService] Launch Options:`);
