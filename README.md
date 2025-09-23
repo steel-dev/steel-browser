@@ -73,9 +73,11 @@ The easiest way to get started with Steel is by creating a [Steel Cloud](https:/
 ## ⚡ Quick Deploy
 If you're looking to deploy to a cloud provider, we've got you covered.
 
-| Deployment methods | Link                                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Pre-built Docker Image (API only) | [![Deploy with Github Container Redistry](https://img.shields.io/badge/GHCR-478CFF?style=for-the-badge&labelColor=478CFF&logo=github&logoColor=white)](https://github.com/steel-dev/steel-browser/pkgs/container/steel-browser-api) |
+| Deployment methods | Link |
+| -------------------- | ----- |
+| Pre-built Docker Image (combined API + UI) | [![Deploy with Github Container Registry](https://img.shields.io/badge/GHCR-478CFF?style=for-the-badge&labelColor=478CFF&logo=github&logoColor=white)](https://github.com/steel-dev/steel-browser/pkgs/container/steel-browser) |
+| API-only image | `ghcr.io/steel-dev/steel-browser-api` |
+| UI-only image | `ghcr.io/steel-dev/steel-browser-ui` |
 | 1-click deploy to Railway | [![Deploy on Railway](https://img.shields.io/badge/Railway-B039CB?style=for-the-badge&labelColor=B039CB&logo=railway&logoColor=white)](https://railway.app/template/FQG9Ca) |
 
 
@@ -86,13 +88,11 @@ If you're looking to deploy to a cloud provider, we've got you covered.
 The simplest way to run a Steel browser instance locally is to run the pre-built Docker images:
 
 ```bash
-# Clone and build the Docker image
-git clone https://github.com/steel-dev/steel-browser
-cd steel-browser
-docker compose up
+# Pull and run the Docker image
+docker run -p 3000:3000 -p 9223:9223 ghcr.io/steel-dev/steel-browser
 ```
 
-This will start the Steel server on port 3000 (http://localhost:3000) and the UI on port 5173 (http://localhost:5173).
+This will start the Steel server on port 3000 (http://localhost:3000) and the UI at http://localhost:3000/ui. The 9223 port is used for the console debugger.
 
 You can now create sessions, scrape pages, take screenshots, and more. Jump to the [Usage](#usage) section for some quick examples on how you can do that.
 
@@ -109,10 +109,10 @@ You will also need to run it with `--build` to ensure the Docker images are re-b
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-In case you run on a custom host, you need to copy .env.example to .env while changing the host or modify the environment variables used by the `docker-compose.dev.yml` to use your host.
+If you run on a custom host, create a `.env` file (see `docs/DEVELOPMENT_SETUP.md` for variables) or modify the environment variables used by `docker-compose.dev.yml` to use your host.
 
 ### Node.js
-Alternatively, if you have Node.js and Chrome installed, you can run the server directly:
+Alternatively, if you have Node.js and Chrome installed, you can run both the server and the UI directly:
 
 ```bash
 npm install
@@ -186,10 +186,11 @@ const client = new Steel({
 
 (async () => {
   try {
-    // Create a new browser session with custom options
+    // Create a new browser session with current API fields
     const session = await client.sessions.create({
-      sessionTimeout: 1800000, // 30 minutes
       blockAds: true,
+      proxyUrl: "user:pass@host:port", // optional
+      dimensions: { width: 1280, height: 800 }, // optional
     });
     console.log("Created session with ID:", session.id);
   } catch (error) {
@@ -214,8 +215,9 @@ client = Steel(
 try:
     # Create a new browser session with custom options
     session = client.sessions.create(
-        session_timeout=1800000,  # 30 minutes
         block_ads=True,
+        proxy_url="user:pass@host:port",  # optional
+        dimensions={"width": 1280, "height": 800},  # optional
     )
     print("Created session with ID:", session.id)
 except Exception as e:
@@ -232,10 +234,9 @@ except Exception as e:
 curl -X POST http://localhost:3000/v1/sessions \
   -H "Content-Type: application/json" \
   -d '{
-    "options": {
-      "proxy": "user:pass@host:port",
-      // Custom launch options
-    }
+    "proxyUrl": "user:pass@host:port",
+    "blockAds": true,
+    "dimensions": { "width": 1280, "height": 800 }
   }'
 ```
 </details>
@@ -263,10 +264,7 @@ session = client.sessions.create(is_selenium=True)
 curl -X POST http://localhost:3000/v1/sessions \
   -H "Content-Type: application/json" \
   -d '{
-    "options": {
-      "isSelenium": true,
-      // Selenium-compatible options
-    }
+    "isSelenium": true
   }'
 ```
 </details>
@@ -289,7 +287,7 @@ curl -X POST http://0.0.0.0:3000/v1/scrape \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://example.com",
-    "waitFor": 1000
+    "delay": 1000
   }'
 ```
 </details>
@@ -320,8 +318,7 @@ Download a PDF of a web page.
 curl -X POST http://0.0.0.0:3000/v1/pdf \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "https://example.com",
-    "fullPage": true
+    "url": "https://example.com"
   }' --output output.pdf
 ```
 </details>

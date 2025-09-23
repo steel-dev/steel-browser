@@ -165,7 +165,7 @@ npm run dev
 
 ```bash
 # Test API
-curl http://localhost:3000/health
+curl http://localhost:3000/v1/health
 
 # Test UI
 open http://localhost:5173

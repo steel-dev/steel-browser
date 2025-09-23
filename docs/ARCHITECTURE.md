@@ -191,7 +191,7 @@ await fastify.register(fileStoragePlugin);
 
 Routes are organized by functionality:
 
-- **Actions** (`/v1/actions/*`): Browser automation actions (scrape, screenshot, PDF)
+- **Actions** (`/v1/*`): Browser automation actions (scrape, screenshot, PDF)
 - **Sessions** (`/v1/sessions/*`): Session management
 - **CDP** (`/v1/cdp/*`): Direct CDP access
 - **Files** (`/v1/files/*`): File upload/download
@@ -203,10 +203,11 @@ All API endpoints use Zod schemas for validation:
 
 ```typescript
 const ScrapeRequestSchema = z.object({
-  url: z.string().url(),
-  sessionId: z.string().optional(),
-  waitFor: z.string().optional(),
-  format: z.enum(['text', 'markdown', 'html']).default('text')
+  url: z.string().url().optional(),
+  delay: z.number().optional(),
+  format: z.array(z.enum(['html','cleaned_html','markdown','readability'])).optional(),
+  screenshot: z.boolean().optional(),
+  pdf: z.boolean().optional(),
 });
 ```
 
