@@ -117,7 +117,6 @@ We welcome contributions to improve our documentation! Here's how you can help:
 - **Frontend/UI** → [Architecture](ARCHITECTURE.md) + UI source code
 - **Plugins** → [Plugin Development Guide](PLUGIN_DEVELOPMENT.md)
 - **Docker** → [Development Setup](DEVELOPMENT_SETUP.md) + [Troubleshooting](TROUBLESHOOTING.md)
-- **CI/CD** → GitHub workflows in `.github/workflows/`
 
 ## 📋 Documentation Roadmap
 

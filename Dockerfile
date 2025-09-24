@@ -30,7 +30,7 @@ COPY --link ui/ ./ui/
 
 # Install UI dependencies and build with correct base path
 RUN npm ci --include=dev -w ui --ignore-scripts
-RUN npm run build -w ui -- --base=/ui
+RUN VITE_API_URL="" VITE_WS_URL="" npm run build -w ui -- --base=/ui
 
 # Stage 2: Build API
 FROM base AS api-build

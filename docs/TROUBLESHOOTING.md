@@ -8,7 +8,7 @@ This guide helps you diagnose and resolve common issues with Steel Browser.
 
 ```bash
 # Check if services are running
-curl http://localhost:3000/health
+curl http://localhost:3000/v1/health
 
 # Check API documentation
 curl http://localhost:3000/documentation
@@ -313,7 +313,7 @@ ps aux | grep node          # Node processes
 
 ```bash
 # Check API health
-curl -s http://localhost:3000/health | jq
+curl -s http://localhost:3000/v1/health | jq
 
 # List active sessions
 curl -s http://localhost:3000/v1/sessions | jq
