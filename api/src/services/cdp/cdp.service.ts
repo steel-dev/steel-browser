@@ -634,6 +634,23 @@ export class CDPService extends EventEmitter {
             );
           }
 
+          // Session context injection - should throw error if it fails
+          if (this.launchConfig?.sessionContext) {
+            this.logger.debug(
+              `[CDPService] Session created with session context, injecting session context`,
+            );
+            try {
+              await this.injectSessionContext(this.primaryPage!, this.launchConfig.sessionContext);
+            } catch (error) {
+              const contextError = new SessionContextError(
+                error instanceof Error ? error.message : String(error),
+                SessionContextType.CONTEXT_INJECTION,
+              );
+              this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
+              throw contextError;
+            }
+          }
+
           this.pluginManager.onBrowserReady(this.launchConfig);
 
           return this.browserInstance!;
@@ -889,7 +906,7 @@ export class CDPService extends EventEmitter {
         // Session context injection - should throw error if it fails
         if (this.launchConfig?.sessionContext) {
           this.logger.debug(
-            `[CDPService] Page created with session context, injecting session context`,
+            `[CDPService] Session created with session context, injecting session context`,
           );
           try {
             await this.injectSessionContext(this.primaryPage, this.launchConfig.sessionContext);
