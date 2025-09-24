@@ -612,7 +612,7 @@ export class CDPService extends EventEmitter {
   private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
     try {
       const launchTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new LaunchTimeoutError(30000)), 30000);
+        setTimeout(() => reject(new LaunchTimeoutError(120000)), 120000);
       });
 
       const launchProcess = (async () => {
