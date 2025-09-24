@@ -83,16 +83,27 @@ If you're looking to deploy to a cloud provider, we've got you covered.
 
 ### Docker
 
-The simplest way to run a Steel browser instance locally is to run the pre-built Docker images:
+The simplest way to deploy/run a Steel browser instance locally is to run the pre-built Docker image:
 
 ```bash
 # Pull and run the Docker image
 docker run -p 3000:3000 -p 9223:9223 ghcr.io/steel-dev/steel-browser
 ```
 
-This will start the Steel server on port 3000 (http://localhost:3000) and the UI at http://localhost:3000/ui. The 9223 port is used for the console debugger.
+This will start the Steel browser server on port 3000 (http://localhost:3000) and the UI at http://localhost:3000/ui. The 9223 port is used for the console debugger.
 
 You can now create sessions, scrape pages, take screenshots, and more. Jump to the [Usage](#usage) section for some quick examples on how you can do that.
+
+Alternatively, you can run the API and UI separately with docker compose:
+
+```bash
+docker compose up
+```
+
+For Mac Silicon users, you will need to pass this env flag to the Docker compose command to run the images on the correct platform:
+```bash
+DOCKER_DEFAULT_PLATFORM=linux/arm64 docker compose up
+```
 
 ## Quickstart for Contributors
 When developing locally, you will need to run the [`docker-compose.dev.yml`](./docker-compose.dev.yml) file instead of the default [`docker-compose.yml`](./docker-compose.yml) file so that your local changes are reflected. Doing this will build the Docker images from the [`api`](./api) and [`ui`](./ui) directories and run the server and UI on port 3000 and 5173 respectively.
