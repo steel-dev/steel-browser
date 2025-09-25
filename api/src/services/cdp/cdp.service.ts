@@ -598,9 +598,25 @@ export class CDPService extends EventEmitter {
     config?: BrowserLauncherOptions,
     retryOptions?: Partial<RetryOptions>,
   ): Promise<Browser> {
+    const operation = async () => {
+      try {
+        return await this.launchInternal(config);
+      } catch (error) {
+        try {
+          await this.pluginManager.onShutdown();
+          await this.shutdownHook();
+        } catch (e) {
+          this.logger.warn(
+            `[CDPService] Error during retry cleanup (onShutdown/shutdownHook): ${e}`,
+          );
+        }
+        throw error;
+      }
+    };
+
     // Use retry mechanism for the launch process
     const result = await this.retryManager.executeWithRetry(
-      () => this.launchInternal(config),
+      operation,
       "Browser Launch",
       retryOptions,
     );
@@ -612,7 +628,7 @@ export class CDPService extends EventEmitter {
   private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
     try {
       const launchTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new LaunchTimeoutError(30000)), 30000);
+        setTimeout(() => reject(new LaunchTimeoutError(60000)), 60000);
       });
 
       const launchProcess = (async () => {
