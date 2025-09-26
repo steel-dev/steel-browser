@@ -717,7 +717,7 @@ export class CDPService extends EventEmitter {
             const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
               devices: ["desktop"],
               operatingSystems: ["linux"],
-              browsers: [{ name: "chrome", minVersion: 130 }],
+              browsers: [{ name: "chrome", minVersion: 136 }],
               locales: ["en-US", "en"],
             };
 
@@ -1355,7 +1355,7 @@ export class CDPService extends EventEmitter {
               userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
             fullVersion: userAgentMetadata.uaFullVersion,
             platform: fingerprint.navigator.platform || "Linux x86_64",
-            platformVersion: userAgentMetadata.platformVersion,
+            platformVersion: userAgentMetadata.platformVersion || "",
             architecture: userAgentMetadata.architecture || "x86",
             model: userAgentMetadata.model || "",
             mobile: userAgentMetadata.mobile as unknown as boolean,
