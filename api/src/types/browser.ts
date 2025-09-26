@@ -7,6 +7,14 @@ import type {
 } from "../services/context/types.js";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
+export type OptimizeBandwidthOptions = {
+  blockImages?: boolean;
+  blockMedia?: boolean;
+  blockStylesheets?: boolean;
+  blockHosts?: string[];
+  blockUrlPatterns?: string[];
+};
+
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
   req?: Request;
@@ -21,6 +29,7 @@ export interface BrowserLauncherOptions {
   extensions?: string[];
   logSinkUrl?: string;
   blockAds?: boolean;
+  optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
   customHeaders?: Record<string, string>;
   timezone?: Promise<string>;
   dimensions?: {

@@ -32,7 +32,13 @@ import {
   BrowserLauncherOptions,
   EmitEvent,
 } from "../../types/index.js";
-import { isAdRequest } from "../../utils/ads.js";
+import {
+  isAdRequest,
+  isHeavyMediaRequest,
+  isHostBlocked,
+  isUrlMatchingPatterns,
+  isImageRequest,
+} from "../../utils/requests.js";
 import { filterHeaders, getChromeExecutablePath } from "../../utils/browser.js";
 import {
   deepMerge,
@@ -354,10 +360,47 @@ export class CDPService extends EventEmitter {
     const headers = request.headers();
     delete headers["accept-language"]; // Patch to help with headless detection
 
+    const optimize = this.launchConfig?.optimizeBandwidth;
+    const blockedHosts = typeof optimize === "object" ? optimize.blockHosts : undefined;
+    const blockedUrlPatterns = typeof optimize === "object" ? optimize.blockUrlPatterns : undefined;
+
     if (this.launchConfig?.blockAds && isAdRequest(request.url())) {
       this.logger.info(`[CDPService] Blocked request to ad related resource: ${request.url()}`);
       await request.abort();
       return;
+    }
+
+    if (
+      isHostBlocked(request.url(), blockedHosts) ||
+      isUrlMatchingPatterns(request.url(), blockedUrlPatterns)
+    ) {
+      this.logger.info(`[CDPService] Blocked request to blocked host or pattern: ${request.url()}`);
+      await request.abort();
+      return;
+    }
+
+    // Block resources via optimizeBandwidth
+    const blockImages = typeof optimize === "object" ? !!optimize.blockImages : false;
+    const blockMedia = typeof optimize === "object" ? !!optimize.blockMedia : false;
+    const blockStylesheets = typeof optimize === "object" ? !!optimize.blockStylesheets : false;
+
+    if (blockImages || blockMedia || blockStylesheets) {
+      const resourceType = request.resourceType();
+      if (
+        (blockImages && (resourceType === "image" || isImageRequest(request.url()))) ||
+        (blockMedia && (resourceType === "media" || isHeavyMediaRequest(request.url()))) ||
+        (blockStylesheets && resourceType === "stylesheet")
+      ) {
+        this.logger.info(
+          `[CDPService] Blocked ${resourceType} resource due to optimizeBandwidth (${
+            blockImages ? "blockImages" : ""
+          }${blockMedia ? "blockMedia" : ""}${
+            blockStylesheets ? "blockStylesheets" : ""
+          }): ${request.url()}`,
+        );
+        await request.abort();
+        return;
+      }
     }
 
     if (request.url().startsWith("file://")) {
@@ -430,8 +473,6 @@ export class CDPService extends EventEmitter {
       page.on("console", (message) => {
         if (targetType === TargetType.BACKGROUND_PAGE) {
           this.logger.info(`[CDPService] Extension console: ${message.type()}: ${message.text()}`);
-        } else {
-          this.logger.info(`[CDPService] Console message: ${message.type()}: ${message.text()}`);
         }
         this.customEmit(EmitEvent.Log, {
           type: BrowserEventType.Console,
