@@ -5,7 +5,7 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env.js";
 import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
-import { BrowserLauncherOptions } from "../types/index.js";
+import { BrowserLauncherOptions, OptimizeBandwidthOptions } from "../types/index.js";
 import { IProxyServer, ProxyServer } from "../utils/proxy.js";
 import { getBaseUrl, getUrl } from "../utils/url.js";
 import { CDPService } from "./cdp/cdp.service.js";
@@ -90,6 +90,7 @@ export class SessionService {
     isSelenium?: boolean;
     logSinkUrl?: string;
     blockAds?: boolean;
+    optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
     extensions?: string[];
     timezone?: string;
     dimensions?: { width: number; height: number };
@@ -108,6 +109,7 @@ export class SessionService {
       dimensions,
       isSelenium,
       blockAds,
+      optimizeBandwidth,
       extra,
       credentials,
       skipFingerprintInjection,
@@ -129,7 +131,7 @@ export class SessionService {
       );
     }
 
-    const sessionInfo = await this.resetSessionInfo({
+    await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
       proxy: proxyUrl,
@@ -157,6 +159,21 @@ export class SessionService {
       ? deepMerge(defaultUserPreferences, userPreferences)
       : defaultUserPreferences;
 
+    // Normalize optimizeBandwidth: true => enable all flags (except lists)
+    const normalizeOptimizeBandwidth = (
+      value: boolean | OptimizeBandwidthOptions | undefined,
+    ): OptimizeBandwidthOptions | undefined => {
+      if (value === true) {
+        return { blockImages: true, blockMedia: true, blockStylesheets: true };
+      }
+      if (value && typeof value === "object") {
+        return { ...value };
+      }
+      return undefined;
+    };
+
+    const normalizedOptimize = normalizeOptimizeBandwidth(optimizeBandwidth);
+
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
@@ -165,6 +182,7 @@ export class SessionService {
       sessionContext,
       userAgent,
       blockAds,
+      optimizeBandwidth: normalizedOptimize,
       extensions: extensions || [],
       logSinkUrl,
       timezone: timezonePromise,

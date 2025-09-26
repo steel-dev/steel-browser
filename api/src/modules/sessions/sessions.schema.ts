@@ -30,6 +30,23 @@ const CreateSession = z.object({
     .boolean()
     .optional()
     .describe("Flag to indicate if ads should be blocked in the session"),
+  optimizeBandwidth: z
+    .union([
+      z.boolean(),
+      z
+        .object({
+          blockImages: z.boolean().optional(),
+          blockMedia: z.boolean().optional(),
+          blockStylesheets: z.boolean().optional(),
+          blockHosts: z.array(z.string()).optional(),
+          blockUrlPatterns: z.array(z.string()).optional(),
+        })
+        .strict(),
+    ])
+    .optional()
+    .describe(
+      "Enable bandwidth optimizations. Passing true enables all flags (except hosts/patterns). Object allows granular control.",
+    ),
   skipFingerprintInjection: z
     .boolean()
     .optional()
