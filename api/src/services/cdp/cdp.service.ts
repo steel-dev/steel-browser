@@ -924,7 +924,7 @@ export class CDPService extends EventEmitter {
             },
           )) as unknown as Browser;
         } catch (error) {
-          console.log("error A", error);
+          console.log("error A", JSON.stringify(error, null, 2));
           throw new BrowserProcessError(
             error instanceof Error ? error.message : String(error),
             BrowserProcessState.LAUNCH_FAILED,
