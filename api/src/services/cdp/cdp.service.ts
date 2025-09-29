@@ -90,6 +90,7 @@ export class CDPService extends EventEmitter {
   private defaultLaunchConfig: BrowserLauncherOptions;
   private currentSessionConfig: BrowserLauncherOptions | null;
   private shuttingDown: boolean;
+  private launching: boolean;
   private defaultTimezone: string;
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
@@ -135,6 +136,7 @@ export class CDPService extends EventEmitter {
     this.primaryPage = null;
     this.currentSessionConfig = null;
     this.shuttingDown = false;
+    this.launching = false;
     this.defaultLaunchConfig = {
       options: { headless: env.CHROME_HEADLESS, args: [] },
       blockAds: true,
@@ -174,6 +176,10 @@ export class CDPService extends EventEmitter {
 
   public isRunning(): boolean {
     return this.browserInstance?.process() !== null;
+  }
+
+  public isLaunching(): boolean {
+    return this.launching;
   }
 
   public getTargetId(page: Page) {
@@ -572,6 +578,7 @@ export class CDPService extends EventEmitter {
 
   @traceable
   public async shutdown(): Promise<void> {
+    this.launching = false;
     if (this.browserInstance) {
       this.shuttingDown = true;
       this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
@@ -639,30 +646,34 @@ export class CDPService extends EventEmitter {
     config?: BrowserLauncherOptions,
     retryOptions?: Partial<RetryOptions>,
   ): Promise<Browser> {
-    const operation = async () => {
-      try {
-        return await this.launchInternal(config);
-      } catch (error) {
+    this.launching = true;
+    try {
+      const operation = async () => {
         try {
-          await this.pluginManager.onShutdown();
-          await this.shutdownHook();
-        } catch (e) {
-          this.logger.warn(
-            `[CDPService] Error during retry cleanup (onShutdown/shutdownHook): ${e}`,
-          );
+          return await this.launchInternal(config);
+        } catch (error) {
+          try {
+            await this.pluginManager.onShutdown();
+            await this.shutdownHook();
+          } catch (e) {
+            this.logger.warn(
+              `[CDPService] Error during retry cleanup (onShutdown/shutdownHook): ${e}`,
+            );
+          }
+          throw error;
         }
-        throw error;
-      }
-    };
+      };
 
-    // Use retry mechanism for the launch process
-    const result = await this.retryManager.executeWithRetry(
-      operation,
-      "Browser Launch",
-      retryOptions,
-    );
+      const result = await this.retryManager.executeWithRetry(
+        operation,
+        "Browser Launch",
+        retryOptions,
+      );
 
-    return result.result;
+      return result.result;
+    } finally {
+      this.launching = false;
+    }
   }
 
   @traceable
