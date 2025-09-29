@@ -1,4 +1,4 @@
-import { EventEmitter } from "events";
+import { EventEmitter, once as eventsOnce } from "events";
 import { FastifyBaseLogger } from "fastify";
 import {
   BrowserFingerprintWithHeaders,
@@ -564,6 +564,37 @@ export class CDPService extends EventEmitter {
     return this.browserInstance.newPage();
   }
 
+  private async waitForProcessExit(proc: ReturnType<Browser["process"]> | null): Promise<void> {
+    if (!proc) return;
+    if (proc.exitCode !== null) return;
+    try {
+      await eventsOnce(proc as any, "close");
+    } catch (_) {
+      if (proc.exitCode === null) {
+        await eventsOnce(proc as any, "exit");
+      }
+    }
+  }
+
+  private async waitForProfileUnlock(userDataDir?: string): Promise<void> {
+    try {
+      if (!userDataDir) return;
+      const lockPath = path.join(userDataDir, "SingletonLock");
+      while (true) {
+        try {
+          await fs.promises.stat(lockPath);
+          await new Promise((r) => setTimeout(r, 50));
+          continue;
+        } catch {
+          throw new Error("Profile lock file still exists: " + lockPath);
+        }
+        break;
+      }
+    } catch (e) {
+      throw new Error("Profile lock file still exists: " + e);
+    }
+  }
+
   private async shutdownHook() {
     for (const mutator of this.shutdownMutators) {
       await mutator(this.currentSessionConfig);
@@ -583,9 +614,19 @@ export class CDPService extends EventEmitter {
 
         await this.pluginManager.onShutdown();
 
+        const proc = this.browserInstance.process();
         this.removeAllHandlers();
-        await this.browserInstance.close();
-        await this.browserInstance.process()?.kill();
+        try {
+          await this.browserInstance.close();
+        } catch (e) {
+          this.logger.warn(`[CDPService] Error during browser.close(): ${e}`);
+        }
+        try {
+          proc?.kill("SIGTERM");
+        } catch (e) {
+          this.logger.warn(`[CDPService] Error during process.kill(): ${e}`);
+        }
+        await this.waitForProcessExit(proc);
         await this.shutdownHook();
 
         this.logger.info("[CDPService] Cleaning up files during shutdown");
@@ -605,8 +646,14 @@ export class CDPService extends EventEmitter {
       } catch (error) {
         this.logger.error(`[CDPService] Error during shutdown: ${error}`);
         // Ensure we complete the shutdown even if plugins throw errors
-        await this.browserInstance?.close();
-        await this.browserInstance?.process()?.kill();
+        const proc = this.browserInstance?.process() || null;
+        try {
+          await this.browserInstance?.close();
+        } catch (_) {}
+        try {
+          proc?.kill("SIGTERM");
+        } catch (_) {}
+        await this.waitForProcessExit(proc);
         await this.shutdownHook();
 
         try {
@@ -914,6 +961,9 @@ export class CDPService extends EventEmitter {
             this.logger.warn(`[CDPService] Failed to set up user preferences: ${error}`);
           }
         }
+
+        // Ensure profile lock is released before launching
+        await this.waitForProfileUnlock(userDataDir);
 
         // Browser process launch - most critical step
         try {
