@@ -182,6 +182,10 @@ export class CDPService extends EventEmitter {
     return this.launching;
   }
 
+  public isShuttingDown(): boolean {
+    return this.shuttingDown;
+  }
+
   public getTargetId(page: Page) {
     //@ts-ignore
     return page.target()._targetId;
