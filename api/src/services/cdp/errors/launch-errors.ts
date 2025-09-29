@@ -213,7 +213,7 @@ export class BrowserProcessError extends BaseLaunchError {
   constructor(message: string, processState: BrowserProcessState, exitCode?: number) {
     super(
       LaunchErrorType.BROWSER_PROCESS,
-      `Browser process error (${processState}): ${message}`,
+      `Browser process error (${processState}): ${JSON.stringify(message, null, 2)}`,
       true,
       {
         processState,
