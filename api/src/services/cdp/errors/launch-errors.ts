@@ -305,6 +305,7 @@ export function categorizeError(error: unknown, context?: string): BaseLaunchErr
     lowerMessage.includes("browser") ||
     lowerMessage.includes("process")
   ) {
+    console.log("BrowserProcessError", errorMessage);
     return new BrowserProcessError(errorMessage, BrowserProcessState.UNKNOWN);
   }
 

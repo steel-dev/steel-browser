@@ -924,6 +924,7 @@ export class CDPService extends EventEmitter {
             },
           )) as unknown as Browser;
         } catch (error) {
+          console.log("error A", error);
           throw new BrowserProcessError(
             error instanceof Error ? error.message : String(error),
             BrowserProcessState.LAUNCH_FAILED,
@@ -995,6 +996,7 @@ export class CDPService extends EventEmitter {
           await this.handleNewTarget(this.primaryPage.target());
           await this.handleTargetChange(this.primaryPage.target());
         } catch (error) {
+          console.error("error B", error);
           const setupError = new BrowserProcessError(
             error instanceof Error ? error.message : String(error),
             BrowserProcessState.TARGET_SETUP,
