@@ -145,7 +145,7 @@ export class SessionService {
 
     const userDataDir =
       options.userDataDir || options.persist === true
-        ? path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "usr-data-dir")
+        ? path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "user-data-dir")
         : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
     await mkdir(userDataDir, { recursive: true });
 
