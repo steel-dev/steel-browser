@@ -54,6 +54,8 @@ const CreateSession = z.object({
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
+  persist: z.boolean().optional().describe("Flag to indicate if session should be persisted"),
+  userDataDir: z.string().optional().describe("User data directory path to use for the session"),
   timezone: z.string().optional().describe("Timezone to use for the session"),
   dimensions: z
     .object({
