@@ -1,9 +1,10 @@
 import { FastifyBaseLogger } from "fastify";
 import { createClient, RedisClientType } from "redis";
 import { env } from "../env.js";
+import { CookieData } from "./context/types.js";
 
-export interface SessionData {
-  cookies: any[];
+export interface PersistedSessionData {
+  cookies: CookieData[];
   localStorage: Record<string, Record<string, any>>;
   sessionStorage: Record<string, Record<string, any>>;
   userAgent?: string;
@@ -34,22 +35,37 @@ export class SessionPersistenceService {
       return;
     }
 
-    try {
-      const redisUrl = env.REDIS_URL || this.buildRedisUrl();
+    const maxRetries = 3;
+    let attempt = 0;
 
-      this.client = createClient({
-        url: redisUrl,
-      });
+    while (attempt < maxRetries) {
+      try {
+        const redisUrl = env.REDIS_URL || this.buildRedisUrl();
 
-      this.client.on("error", (err) => {
-        this.logger.error({ err }, "Redis client error");
-      });
+        this.client = createClient({
+          url: redisUrl,
+        });
 
-      await this.client.connect();
-      this.logger.info("Session persistence service connected to Redis");
-    } catch (error) {
-      this.logger.error({ error }, "Failed to connect to Redis for session persistence");
-      this.client = null;
+        this.client.on("error", (err) => {
+          this.logger.error({ err }, "Redis client error");
+        });
+
+        await this.client.connect();
+        this.logger.info("Session persistence service connected to Redis");
+        return;
+      } catch (error) {
+        attempt++;
+        this.logger.error({ error, attempt }, `Failed to connect to Redis (attempt ${attempt}/${maxRetries})`);
+
+        if (attempt >= maxRetries) {
+          this.logger.warn("Max Redis connection retries reached. Session persistence will be disabled.");
+          this.client = null;
+          return;
+        }
+
+        // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
     }
   }
 
@@ -82,7 +98,7 @@ export class SessionPersistenceService {
   /**
    * Save session data for a user
    */
-  async saveSession(userId: string, sessionData: SessionData): Promise<void> {
+  async saveSession(userId: string, sessionData: PersistedSessionData): Promise<void> {
     if (!this.client || !this.isEnabled) {
       return;
     }
@@ -99,7 +115,7 @@ export class SessionPersistenceService {
   /**
    * Load session data for a user
    */
-  async loadSession(userId: string): Promise<SessionData | null> {
+  async loadSession(userId: string): Promise<PersistedSessionData | null> {
     if (!this.client || !this.isEnabled) {
       return null;
     }
@@ -116,9 +132,16 @@ export class SessionPersistenceService {
       // Refresh TTL on access
       await this.client.expire(key, this.TTL_SECONDS);
 
-      const sessionData = JSON.parse(data) as SessionData;
-      this.logger.debug({ userId }, "Session data loaded for user");
-      return sessionData;
+      try {
+        const sessionData = JSON.parse(data) as PersistedSessionData;
+        this.logger.debug({ userId }, "Session data loaded for user");
+        return sessionData;
+      } catch (parseError) {
+        this.logger.error({ error: parseError, userId }, "Failed to parse session data, removing corrupt data");
+        // Clean up corrupt data
+        await this.client.del(key);
+        return null;
+      }
     } catch (error) {
       this.logger.error({ error, userId }, "Failed to load session data");
       return null;

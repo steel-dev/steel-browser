@@ -21,6 +21,7 @@ type Session = SessionDetails & {
   complete: (value: void) => void;
   proxyServer: IProxyServer | undefined;
   userId?: string;
+  timezone?: string;
 };
 
 const sessionStats = {
@@ -256,6 +257,9 @@ export class SessionService {
       });
     }
 
+    // Store timezone in activeSession for later persistence
+    this.activeSession.timezone = await timezonePromise;
+
     return this.activeSession;
   }
 
@@ -279,7 +283,7 @@ export class SessionService {
           localStorage: browserState.localStorage || {},
           sessionStorage: browserState.sessionStorage || {},
           userAgent: this.activeSession.userAgent,
-          timezone: await this.cdpService.getTimezone?.() || undefined,
+          timezone: this.activeSession.timezone,
         };
 
         await this.persistenceService.saveSession(this.activeSession.userId, sessionData);
