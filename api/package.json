@@ -85,6 +85,7 @@
     "pino-pretty": "^13.0.0",
     "proxy-chain": "^2.5.6",
     "puppeteer-core": "23.6.0",
+    "redis": "^4.7.0",
     "socks-proxy-agent": "^8.0.5",
     "uuid": "^11.0.5",
     "zod": "^3.24.2",

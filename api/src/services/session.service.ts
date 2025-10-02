@@ -14,11 +14,13 @@ import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
 import { TimezoneFetcher } from "./timezone-fetcher.service.js";
 import { deepMerge } from "../utils/context.js";
+import { SessionPersistenceService } from "./session-persistence.service.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
   complete: (value: void) => void;
   proxyServer: IProxyServer | undefined;
+  userId?: string;
 };
 
 const sessionStats = {
@@ -51,6 +53,7 @@ export class SessionService {
   private seleniumService: SeleniumService;
   private fileService: FileService;
   private timezoneFetcher: TimezoneFetcher;
+  private persistenceService: SessionPersistenceService;
   public proxyFactory: ProxyFactory = (proxyUrl) => new ProxyServer(proxyUrl);
 
   public pastSessions: Session[] = [];
@@ -67,6 +70,7 @@ export class SessionService {
     this.fileService = config.fileService;
     this.logger = config.logger;
     this.timezoneFetcher = new TimezoneFetcher(config.logger);
+    this.persistenceService = new SessionPersistenceService(config.logger);
     this.activeSession = {
       id: uuidv4(),
       createdAt: new Date().toISOString(),
@@ -81,6 +85,7 @@ export class SessionService {
 
   public async startSession(options: {
     sessionId?: string;
+    userId?: string;
     proxyUrl?: string;
     userAgent?: string;
     sessionContext?: {
@@ -101,6 +106,7 @@ export class SessionService {
   }): Promise<SessionDetails> {
     const {
       sessionId,
+      userId,
       proxyUrl,
       userAgent,
       sessionContext,
@@ -116,10 +122,22 @@ export class SessionService {
       userPreferences,
     } = options;
 
+    // Load persisted session data if userId is provided
+    let persistedData = null;
+    if (userId) {
+      persistedData = await this.persistenceService.loadSession(userId);
+      if (persistedData) {
+        this.logger.info({ userId }, "Loaded persisted session data for user");
+      }
+    }
+
     // start fetching timezone as early as possible
     let timezonePromise: Promise<string>;
     if (options.timezone) {
       timezonePromise = Promise.resolve(options.timezone);
+    } else if (persistedData?.timezone) {
+      // Use persisted timezone if available
+      timezonePromise = Promise.resolve(persistedData.timezone);
     } else if (proxyUrl) {
       timezonePromise = this.timezoneFetcher.getTimezone(
         proxyUrl,
@@ -138,6 +156,7 @@ export class SessionService {
       solveCaptcha: false,
       dimensions,
       isSelenium,
+      userId,
     });
 
     const userDataDir = env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
@@ -174,13 +193,28 @@ export class SessionService {
 
     const normalizedOptimize = normalizeOptimizeBandwidth(optimizeBandwidth);
 
+    // Merge persisted session context with provided context
+    let mergedSessionContext = sessionContext;
+    if (persistedData) {
+      mergedSessionContext = {
+        cookies: sessionContext?.cookies || persistedData.cookies || [],
+        localStorage: deepMerge(
+          persistedData.localStorage || {},
+          sessionContext?.localStorage || {},
+        ),
+      };
+    }
+
+    // Use persisted user agent if available and not explicitly provided
+    const effectiveUserAgent = userAgent || persistedData?.userAgent;
+
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
         proxyUrl: this.activeSession.proxyServer?.url,
       },
-      sessionContext,
-      userAgent,
+      sessionContext: mergedSessionContext,
+      userAgent: effectiveUserAgent,
       blockAds,
       optimizeBandwidth: normalizedOptimize,
       extensions: extensions || [],
@@ -236,6 +270,25 @@ export class SessionService {
       this.activeSession.proxyRxBytes = this.activeSession.proxyServer.rxBytes;
     }
 
+    // Save session data before ending if userId is present
+    if (this.activeSession.userId) {
+      try {
+        const browserState = await this.cdpService.getBrowserState();
+        const sessionData = {
+          cookies: browserState.cookies || [],
+          localStorage: browserState.localStorage || {},
+          sessionStorage: browserState.sessionStorage || {},
+          userAgent: this.activeSession.userAgent,
+          timezone: await this.cdpService.getTimezone?.() || undefined,
+        };
+
+        await this.persistenceService.saveSession(this.activeSession.userId, sessionData);
+        this.logger.info({ userId: this.activeSession.userId }, "Saved session data for user");
+      } catch (error) {
+        this.logger.error({ error, userId: this.activeSession.userId }, "Failed to save session data");
+      }
+    }
+
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
       await this.cdpService.launch();
@@ -279,5 +332,13 @@ export class SessionService {
 
   public setProxyFactory(factory: ProxyFactory) {
     this.proxyFactory = factory;
+  }
+
+  public async initializePersistence(): Promise<void> {
+    await this.persistenceService.connect();
+  }
+
+  public async shutdownPersistence(): Promise<void> {
+    await this.persistenceService.disconnect();
   }
 }

@@ -13,6 +13,7 @@ export const handleLaunchBrowserSession = async (
   try {
     const {
       sessionId,
+      userId,
       proxyUrl,
       userAgent,
       sessionContext,
@@ -31,6 +32,7 @@ export const handleLaunchBrowserSession = async (
 
     return await server.sessionService.startSession({
       sessionId,
+      userId,
       proxyUrl,
       userAgent,
       sessionContext: sessionContext as {

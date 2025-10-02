@@ -69,6 +69,23 @@ const envSchema = z.object({
     .default("false"),
   PROXY_INTERNAL_BYPASS: z.string().optional(),
   CHROME_USER_DATA_DIR: z.string().optional(),
+  // Session persistence (Redis) configuration
+  ENABLE_SESSION_PERSISTENCE: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
+  REDIS_URL: z.string().optional(),
+  REDIS_HOST: z.string().optional(),
+  REDIS_PORT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : undefined)),
+  REDIS_PASSWORD: z.string().optional(),
+  REDIS_DB: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : undefined)),
 });
 
 export const env = envSchema.parse(process.env);
