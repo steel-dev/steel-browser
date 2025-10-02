@@ -3,10 +3,16 @@ import { createClient, RedisClientType } from "redis";
 import { env } from "../env.js";
 import { CookieData } from "./context/types.js";
 
+/**
+ * Interface for session data that is persisted to Redis
+ * @interface PersistedSessionData
+ */
 export interface PersistedSessionData {
   cookies: CookieData[];
-  localStorage: Record<string, Record<string, any>>;
-  sessionStorage: Record<string, Record<string, any>>;
+  /** Domain-specific localStorage entries. Note: localStorage values are strings per web standards */
+  localStorage: Record<string, Record<string, string>>;
+  /** Domain-specific sessionStorage entries. Note: sessionStorage is intentionally persisted to maintain browser fingerprint consistency across sessions */
+  sessionStorage: Record<string, Record<string, string>>;
   userAgent?: string;
   timezone?: string;
 }
@@ -27,7 +33,8 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Initialize Redis connection
+   * Initialize Redis connection with exponential backoff retry logic
+   * Attempts to connect up to 3 times with delays of 1s, 2s, and 4s
    */
   async connect(): Promise<void> {
     if (!this.isEnabled) {
@@ -63,8 +70,9 @@ export class SessionPersistenceService {
           return;
         }
 
-        // Exponential backoff
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        // Exponential backoff: 2^attempt * 1000ms (1s, 2s, 4s)
+        const backoffMs = Math.pow(2, attempt) * 1000;
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
       }
     }
   }
@@ -96,7 +104,10 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Save session data for a user
+   * Save session data for a user to Redis with automatic TTL
+   * @param userId - Unique identifier for the user
+   * @param sessionData - Browser session data to persist
+   * @throws Will log error but not throw if save fails (graceful degradation)
    */
   async saveSession(userId: string, sessionData: PersistedSessionData): Promise<void> {
     if (!this.client || !this.isEnabled) {
@@ -105,7 +116,15 @@ export class SessionPersistenceService {
 
     try {
       const key = this.getKey(userId);
-      await this.client.setEx(key, this.TTL_SECONDS, JSON.stringify(sessionData));
+      const serialized = JSON.stringify(sessionData);
+      const sizeInMB = Buffer.byteLength(serialized, 'utf8') / (1024 * 1024);
+
+      // Warn if session data is larger than 1MB
+      if (sizeInMB > 1) {
+        this.logger.warn({ userId, sizeInMB: sizeInMB.toFixed(2) }, 'Large session data detected - consider reviewing what is being stored');
+      }
+
+      await this.client.setEx(key, this.TTL_SECONDS, serialized);
       this.logger.debug({ userId }, "Session data saved for user");
     } catch (error) {
       this.logger.error({ error, userId }, "Failed to save session data");
@@ -113,7 +132,11 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Load session data for a user
+   * Load session data for a user from Redis
+   * Automatically refreshes TTL on access to keep active sessions alive
+   * @param userId - Unique identifier for the user
+   * @returns Session data if found, null if not found or on error
+   * @throws Will log error but return null if load fails (graceful degradation)
    */
   async loadSession(userId: string): Promise<PersistedSessionData | null> {
     if (!this.client || !this.isEnabled) {
@@ -138,7 +161,7 @@ export class SessionPersistenceService {
         return sessionData;
       } catch (parseError) {
         this.logger.error({ error: parseError, userId }, "Failed to parse session data, removing corrupt data");
-        // Clean up corrupt data
+        // Clean up corrupt data automatically
         await this.client.del(key);
         return null;
       }
@@ -149,7 +172,9 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Delete session data for a user
+   * Delete session data for a user from Redis
+   * @param userId - Unique identifier for the user
+   * @throws Will log error but not throw if deletion fails (graceful degradation)
    */
   async deleteSession(userId: string): Promise<void> {
     if (!this.client || !this.isEnabled) {
@@ -174,6 +199,7 @@ export class SessionPersistenceService {
 
   /**
    * Check if the service is ready to use
+   * @returns True if session persistence is enabled and Redis client is connected
    */
   isReady(): boolean {
     return this.isEnabled && this.client !== null;

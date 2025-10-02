@@ -84,6 +84,12 @@ export class SessionService {
     };
   }
 
+  /**
+   * Start a new browser session with the specified configuration
+   * Loads persisted session data if userId is provided and session exists
+   * @param options - Session configuration options
+   * @returns Session details including websocket URLs and session metadata
+   */
   public async startSession(options: {
     sessionId?: string;
     userId?: string;
@@ -258,11 +264,21 @@ export class SessionService {
     }
 
     // Store timezone in activeSession for later persistence
-    this.activeSession.timezone = await timezonePromise;
+    try {
+      this.activeSession.timezone = await timezonePromise;
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to resolve timezone, using undefined');
+      this.activeSession.timezone = undefined;
+    }
 
     return this.activeSession;
   }
 
+  /**
+   * End the current browser session and persist session data if userId is present
+   * Automatically saves cookies, localStorage, sessionStorage, userAgent, and timezone to Redis
+   * @returns Session details including duration and final statistics
+   */
   public async endSession(): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
@@ -334,14 +350,26 @@ export class SessionService {
     return this.activeSession;
   }
 
+  /**
+   * Set a custom proxy factory for creating proxy servers
+   * @param factory - Factory function that creates IProxyServer instances
+   */
   public setProxyFactory(factory: ProxyFactory) {
     this.proxyFactory = factory;
   }
 
+  /**
+   * Initialize the Redis-based session persistence service
+   * Should be called during application startup
+   */
   public async initializePersistence(): Promise<void> {
     await this.persistenceService.connect();
   }
 
+  /**
+   * Shutdown the Redis-based session persistence service
+   * Should be called during application shutdown
+   */
   public async shutdownPersistence(): Promise<void> {
     await this.persistenceService.disconnect();
   }
