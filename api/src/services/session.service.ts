@@ -96,6 +96,7 @@ export class SessionService {
     sessionContext?: {
       cookies?: CookieData[];
       localStorage?: Record<string, Record<string, string>>;
+      sessionStorage?: Record<string, Record<string, string>>;
     };
     isSelenium?: boolean;
     logSinkUrl?: string;
@@ -129,10 +130,14 @@ export class SessionService {
 
     // Load persisted session data if userId is provided
     let persistedData: PersistedSessionData | null = null;
+    let shouldClearCookies = false;
     if (userId) {
       persistedData = await this.persistenceService.loadSession(userId);
       if (persistedData) {
         this.logger.info({ userId }, "Loaded persisted session data for user");
+      } else {
+        this.logger.info({ userId }, "No persisted data found - will start with fresh session");
+        shouldClearCookies = true; // Clear cookies for new user to ensure isolation
       }
     }
 
@@ -199,19 +204,43 @@ export class SessionService {
     const normalizedOptimize = normalizeOptimizeBandwidth(optimizeBandwidth);
 
     // Merge persisted session context with provided context
-    let mergedSessionContext = sessionContext;
+    let mergedSessionContext: BrowserLauncherOptions["sessionContext"] = sessionContext;
     if (persistedData) {
+      // Merge cookies: prefer persisted cookies if no explicit cookies provided or if provided array is empty
+      const effectiveCookies =
+        sessionContext?.cookies && sessionContext.cookies.length > 0
+          ? sessionContext.cookies
+          : persistedData.cookies || [];
+
+      this.logger.info(
+        {
+          persistedCookies: persistedData.cookies?.length || 0,
+          providedCookies: sessionContext?.cookies?.length || 0,
+          effectiveCookies: effectiveCookies.length,
+          hasPersistedLocalStorage: Object.keys(persistedData.localStorage || {}).length > 0,
+          hasPersistedSessionStorage: Object.keys(persistedData.sessionStorage || {}).length > 0,
+        },
+        "Restoring persisted session data for user",
+      );
+
       mergedSessionContext = {
-        cookies: sessionContext?.cookies || persistedData.cookies || [],
+        cookies: effectiveCookies,
         localStorage: deepMerge(
           persistedData.localStorage || {},
           sessionContext?.localStorage || {},
+        ),
+        sessionStorage: deepMerge(
+          persistedData.sessionStorage || {},
+          sessionContext?.sessionStorage || {},
         ),
       };
     }
 
     // Use persisted user agent if available and not explicitly provided
     const effectiveUserAgent = userAgent || persistedData?.userAgent;
+
+    // Use persisted fingerprint if available
+    const effectiveFingerprint = persistedData?.fingerprint;
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
@@ -229,8 +258,12 @@ export class SessionService {
       userDataDir,
       userPreferences: mergedUserPreferences,
       extra,
-      credentials,
+      credentials: {
+        ...credentials,
+        userId, // Pass userId for fingerprint seeding
+      },
       skipFingerprintInjection,
+      fingerprint: effectiveFingerprint,
     };
 
     if (isSelenium) {
@@ -249,6 +282,12 @@ export class SessionService {
       return this.activeSession;
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
+
+      // Clear cookies if this is a new user with no persisted data
+      if (shouldClearCookies) {
+        await this.cdpService.clearAllCookies();
+        this.logger.info({ userId }, "Cleared all cookies for fresh user session");
+      }
 
       Object.assign(this.activeSession, {
         websocketUrl: getBaseUrl("ws"),
@@ -295,16 +334,19 @@ export class SessionService {
         // Wait for any pending operations to complete
         await new Promise((resolve) => setTimeout(resolve, 100));
         const browserState = await this.cdpService.getBrowserState();
+        const fingerprintData = this.cdpService.getFingerprintData();
+
         const sessionData = {
           cookies: browserState.cookies || [],
           localStorage: browserState.localStorage || {},
           sessionStorage: browserState.sessionStorage || {},
           userAgent: this.activeSession.userAgent,
           timezone: this.activeSession.timezone,
+          fingerprint: fingerprintData || undefined,
         };
 
         await this.persistenceService.saveSession(this.activeSession.userId, sessionData);
-        this.logger.info({ userId: this.activeSession.userId }, "Saved session data for user");
+        this.logger.info({ userId: this.activeSession.userId }, "Saved session data for user (including fingerprint)");
       } catch (error) {
         this.logger.error(
           { error, userId: this.activeSession.userId },

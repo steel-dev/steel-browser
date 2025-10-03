@@ -3,6 +3,7 @@ import { createClient, RedisClientType } from "redis";
 import { z } from "zod";
 import { env } from "../env.js";
 import { CookieData } from "./context/types.js";
+import type { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 
 /**
  * Zod schema for validating persisted session data
@@ -13,6 +14,7 @@ const PersistedSessionDataSchema = z.object({
   sessionStorage: z.record(z.string(), z.record(z.string(), z.string())),
   userAgent: z.string().optional(),
   timezone: z.string().optional(),
+  fingerprint: z.any().optional(), // BrowserFingerprintWithHeaders is complex, using z.any() for flexibility
 });
 
 /**
@@ -27,6 +29,8 @@ export interface PersistedSessionData {
   sessionStorage: Record<string, Record<string, string>>;
   userAgent?: string;
   timezone?: string;
+  /** Browser fingerprint data to maintain consistent fingerprinting across sessions */
+  fingerprint?: BrowserFingerprintWithHeaders;
 }
 
 /**
