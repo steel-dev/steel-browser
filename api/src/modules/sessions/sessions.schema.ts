@@ -22,7 +22,7 @@ const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
   userId: z
     .string()
-    .regex(/^[a-zA-Z0-9_-]+$/)
+    .regex(/^[a-zA-Z0-9_-]+$/, "userId must contain only alphanumeric characters, underscores, and dashes")
     .min(1)
     .max(128)
     .optional()
@@ -30,11 +30,11 @@ const CreateSession = z.object({
       (val) => {
         if (!val) return true;
         // Prevent Redis key injection patterns
-        return !val.includes('..') && !val.startsWith('-') && !val.startsWith('_');
+        return !val.startsWith('-') && !val.startsWith('_');
       },
-      { message: "userId cannot start with dash or underscore, or contain consecutive dots" }
+      { message: "userId cannot start with dash or underscore" }
     )
-    .describe("User identifier for session persistence across multiple browser instances"),
+    .describe("User identifier for session persistence across multiple browser instances. Must be alphanumeric with optional underscores/dashes (not at start)."),
   proxyUrl: z.string().optional().describe("Proxy URL to use for the session"),
   userAgent: z.string().optional().describe("User agent string to use for the session"),
   sessionContext: SessionContextSchema.optional().describe(

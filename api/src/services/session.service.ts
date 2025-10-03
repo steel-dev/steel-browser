@@ -97,7 +97,7 @@ export class SessionService {
     userAgent?: string;
     sessionContext?: {
       cookies?: CookieData[];
-      localStorage?: Record<string, Record<string, any>>;
+      localStorage?: Record<string, Record<string, string>>;
     };
     isSelenium?: boolean;
     logSinkUrl?: string;
@@ -267,8 +267,9 @@ export class SessionService {
     try {
       this.activeSession.timezone = await timezonePromise;
     } catch (error) {
-      this.logger.error({ error }, 'Failed to resolve timezone, using undefined');
-      this.activeSession.timezone = undefined;
+      this.logger.error({ error }, 'Failed to resolve timezone, using fallback');
+      // Fallback to persisted timezone if available
+      this.activeSession.timezone = persistedData?.timezone;
     }
 
     return this.activeSession;
@@ -293,6 +294,8 @@ export class SessionService {
     // Save session data before ending if userId is present
     if (this.activeSession.userId) {
       try {
+        // Wait for any pending operations to complete
+        await new Promise(resolve => setTimeout(resolve, 100));
         const browserState = await this.cdpService.getBrowserState();
         const sessionData = {
           cookies: browserState.cookies || [],

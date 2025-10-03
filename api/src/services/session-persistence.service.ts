@@ -1,7 +1,19 @@
 import { FastifyBaseLogger } from "fastify";
 import { createClient, RedisClientType } from "redis";
+import { z } from "zod";
 import { env } from "../env.js";
 import { CookieData } from "./context/types.js";
+
+/**
+ * Zod schema for validating persisted session data
+ */
+const PersistedSessionDataSchema = z.object({
+  cookies: z.array(z.any()), // CookieData validation would require importing the full schema
+  localStorage: z.record(z.string(), z.record(z.string(), z.string())),
+  sessionStorage: z.record(z.string(), z.record(z.string(), z.string())),
+  userAgent: z.string().optional(),
+  timezone: z.string().optional(),
+});
 
 /**
  * Interface for session data that is persisted to Redis
@@ -26,6 +38,7 @@ export class SessionPersistenceService {
   private logger: FastifyBaseLogger;
   private isEnabled: boolean;
   private readonly TTL_SECONDS = 90 * 24 * 60 * 60; // 90 days in seconds
+  private readonly MAX_SESSION_SIZE_MB = 1; // Warn when session data exceeds this size
 
   constructor(logger: FastifyBaseLogger) {
     this.logger = logger;
@@ -57,6 +70,14 @@ export class SessionPersistenceService {
           this.logger.error({ err }, "Redis client error");
         });
 
+        this.client.on("disconnect", () => {
+          this.logger.warn("Redis client disconnected - session persistence unavailable");
+        });
+
+        this.client.on("reconnecting", () => {
+          this.logger.info("Redis client reconnecting...");
+        });
+
         await this.client.connect();
         this.logger.info("Session persistence service connected to Redis");
         return;
@@ -66,6 +87,9 @@ export class SessionPersistenceService {
 
         if (attempt >= maxRetries) {
           this.logger.warn("Max Redis connection retries reached. Session persistence will be disabled.");
+          if (this.client) {
+            this.client.removeAllListeners(); // Clean up event listeners
+          }
           this.client = null;
           return;
         }
@@ -119,8 +143,8 @@ export class SessionPersistenceService {
       const serialized = JSON.stringify(sessionData);
       const sizeInMB = Buffer.byteLength(serialized, 'utf8') / (1024 * 1024);
 
-      // Warn if session data is larger than 1MB
-      if (sizeInMB > 1) {
+      // Warn if session data is larger than threshold
+      if (sizeInMB > this.MAX_SESSION_SIZE_MB) {
         this.logger.warn({ userId, sizeInMB: sizeInMB.toFixed(2) }, 'Large session data detected - consider reviewing what is being stored');
       }
 
@@ -156,11 +180,13 @@ export class SessionPersistenceService {
       await this.client.expire(key, this.TTL_SECONDS);
 
       try {
-        const sessionData = JSON.parse(data) as PersistedSessionData;
+        const parsed = JSON.parse(data);
+        // Validate the parsed data against schema
+        const sessionData = PersistedSessionDataSchema.parse(parsed);
         this.logger.debug({ userId }, "Session data loaded for user");
-        return sessionData;
+        return sessionData as PersistedSessionData;
       } catch (parseError) {
-        this.logger.error({ error: parseError, userId }, "Failed to parse session data, removing corrupt data");
+        this.logger.error({ error: parseError, userId }, "Failed to parse or validate session data, removing corrupt data");
         // Clean up corrupt data automatically
         await this.client.del(key);
         return null;
