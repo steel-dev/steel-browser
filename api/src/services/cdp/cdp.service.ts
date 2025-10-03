@@ -1428,10 +1428,47 @@ export class CDPService extends EventEmitter {
         }),
       );
     } catch (error) {
+      // Check if error is due to page/target being closed
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isPageClosedError =
+        errorMessage.includes("Target closed") ||
+        errorMessage.includes("Session closed") ||
+        errorMessage.includes("Page has been closed");
+
+      if (isPageClosedError) {
+        this.logger.warn(
+          `[Fingerprint] Skipping fingerprint injection - page/session is closing: ${errorMessage}`,
+        );
+        return; // Gracefully skip injection if page is being closed
+      }
+
       this.logger.error(`[Fingerprint] Error injecting fingerprint safely: ${error}`);
-      const fingerprintInjector = new FingerprintInjector();
-      // @ts-ignore - Ignore type mismatch between puppeteer versions
-      await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
+
+      // Try fallback injection only if page is still active
+      try {
+        // Check if page is still valid before attempting fallback
+        if (!page.isClosed()) {
+          const fingerprintInjector = new FingerprintInjector();
+          // @ts-ignore - Ignore type mismatch between puppeteer versions
+          await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
+          this.logger.debug("[Fingerprint] Fallback injection successful");
+        } else {
+          this.logger.warn("[Fingerprint] Skipping fallback injection - page is already closed");
+        }
+      } catch (fallbackError) {
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        if (
+          fallbackMessage.includes("Target closed") ||
+          fallbackMessage.includes("Session closed")
+        ) {
+          this.logger.warn(`[Fingerprint] Fallback injection skipped - page closed during attempt`);
+        } else {
+          this.logger.error(
+            `[Fingerprint] Fallback fingerprint injection also failed: ${fallbackError}`,
+          );
+        }
+      }
     }
   }
 
