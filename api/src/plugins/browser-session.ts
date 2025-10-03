@@ -9,6 +9,15 @@ const browserSessionPlugin: FastifyPluginAsync = async (fastify, _options) => {
     fileService: fastify.fileService,
     logger: fastify.log,
   });
+
+  // Initialize session persistence (Redis connection)
+  await sessionService.initializePersistence();
+
+  // Cleanup on server close
+  fastify.addHook("onClose", async () => {
+    await sessionService.shutdownPersistence();
+  });
+
   fastify.decorate("sessionService", sessionService);
 };
 

@@ -20,6 +20,21 @@ export const SessionCredentials = z
 
 const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
+  userId: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]+$/, "userId must contain only alphanumeric characters, underscores, and dashes")
+    .min(1)
+    .max(128)
+    .optional()
+    .refine(
+      (val) => {
+        if (!val) return true;
+        // Prevent Redis key injection patterns
+        return !val.startsWith('-') && !val.startsWith('_');
+      },
+      { message: "userId cannot start with dash or underscore" }
+    )
+    .describe("User identifier for session persistence across multiple browser instances. Must be alphanumeric with optional underscores/dashes (not at start)."),
   proxyUrl: z.string().optional().describe("Proxy URL to use for the session"),
   userAgent: z.string().optional().describe("User agent string to use for the session"),
   sessionContext: SessionContextSchema.optional().describe(
@@ -54,7 +69,23 @@ const CreateSession = z.object({
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
-  timezone: z.string().optional().describe("Timezone to use for the session"),
+  timezone: z
+    .string()
+    .optional()
+    .refine(
+      (tz) => {
+        if (!tz) return true;
+        try {
+          // Validate timezone by attempting to use it with Intl.DateTimeFormat
+          Intl.DateTimeFormat(undefined, { timeZone: tz });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: "Invalid IANA timezone identifier" }
+    )
+    .describe("IANA timezone identifier to use for the session (e.g., 'America/New_York')"),
   dimensions: z
     .object({
       width: z.number(),
