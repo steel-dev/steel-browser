@@ -1,4 +1,4 @@
-ARG NODE_VERSION=22.13.0
+ARG NODE_VERSION=22
 
 FROM node:${NODE_VERSION}-slim AS base
 
@@ -14,9 +14,9 @@ ENV NODE_ENV="production" \
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
 # Install dependencies
-RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
-    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
-    apt-get update -qq && \
+# RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
+    # echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
+RUN apt-get update -qq && \
     DEBIAN_FRONTEND=noninteractive apt-get -yq dist-upgrade && \
     apt-get install -y --no-install-recommends \
     expat \
@@ -57,7 +57,7 @@ RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
 FROM base AS production
 # Install dependencies
-RUN apt-get update && \ 
+RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
     wget \
     nginx \
