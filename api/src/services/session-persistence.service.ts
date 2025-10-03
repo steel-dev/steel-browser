@@ -83,10 +83,15 @@ export class SessionPersistenceService {
         return;
       } catch (error) {
         attempt++;
-        this.logger.error({ error, attempt }, `Failed to connect to Redis (attempt ${attempt}/${maxRetries})`);
+        this.logger.error(
+          { error, attempt },
+          `Failed to connect to Redis (attempt ${attempt}/${maxRetries})`,
+        );
 
         if (attempt >= maxRetries) {
-          this.logger.warn("Max Redis connection retries reached. Session persistence will be disabled.");
+          this.logger.warn(
+            "Max Redis connection retries reached. Session persistence will be disabled.",
+          );
           if (this.client) {
             this.client.removeAllListeners(); // Clean up event listeners
           }
@@ -96,7 +101,7 @@ export class SessionPersistenceService {
 
         // Exponential backoff: 2^attempt * 1000ms (1s, 2s, 4s)
         const backoffMs = Math.pow(2, attempt) * 1000;
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
   }
@@ -141,11 +146,14 @@ export class SessionPersistenceService {
     try {
       const key = this.getKey(userId);
       const serialized = JSON.stringify(sessionData);
-      const sizeInMB = Buffer.byteLength(serialized, 'utf8') / (1024 * 1024);
+      const sizeInMB = Buffer.byteLength(serialized, "utf8") / (1024 * 1024);
 
       // Warn if session data is larger than threshold
       if (sizeInMB > this.MAX_SESSION_SIZE_MB) {
-        this.logger.warn({ userId, sizeInMB: sizeInMB.toFixed(2) }, 'Large session data detected - consider reviewing what is being stored');
+        this.logger.warn(
+          { userId, sizeInMB: sizeInMB.toFixed(2) },
+          "Large session data detected - consider reviewing what is being stored",
+        );
       }
 
       await this.client.setEx(key, this.TTL_SECONDS, serialized);
@@ -186,7 +194,10 @@ export class SessionPersistenceService {
         this.logger.debug({ userId }, "Session data loaded for user");
         return sessionData as PersistedSessionData;
       } catch (parseError) {
-        this.logger.error({ error: parseError, userId }, "Failed to parse or validate session data, removing corrupt data");
+        this.logger.error(
+          { error: parseError, userId },
+          "Failed to parse or validate session data, removing corrupt data",
+        );
         // Clean up corrupt data automatically
         await this.client.del(key);
         return null;

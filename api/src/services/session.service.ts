@@ -14,14 +14,12 @@ import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
 import { TimezoneFetcher } from "./timezone-fetcher.service.js";
 import { deepMerge } from "../utils/context.js";
-import { SessionPersistenceService } from "./session-persistence.service.js";
+import { SessionPersistenceService, PersistedSessionData } from "./session-persistence.service.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
   complete: (value: void) => void;
   proxyServer: IProxyServer | undefined;
-  userId?: string;
-  timezone?: string;
 };
 
 const sessionStats = {
@@ -130,7 +128,7 @@ export class SessionService {
     } = options;
 
     // Load persisted session data if userId is provided
-    let persistedData = null;
+    let persistedData: PersistedSessionData | null = null;
     if (userId) {
       persistedData = await this.persistenceService.loadSession(userId);
       if (persistedData) {
@@ -267,7 +265,7 @@ export class SessionService {
     try {
       this.activeSession.timezone = await timezonePromise;
     } catch (error) {
-      this.logger.error({ error }, 'Failed to resolve timezone, using fallback');
+      this.logger.error({ error }, "Failed to resolve timezone, using fallback");
       // Fallback to persisted timezone if available
       this.activeSession.timezone = persistedData?.timezone;
     }
@@ -295,7 +293,7 @@ export class SessionService {
     if (this.activeSession.userId) {
       try {
         // Wait for any pending operations to complete
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
         const browserState = await this.cdpService.getBrowserState();
         const sessionData = {
           cookies: browserState.cookies || [],
@@ -308,7 +306,10 @@ export class SessionService {
         await this.persistenceService.saveSession(this.activeSession.userId, sessionData);
         this.logger.info({ userId: this.activeSession.userId }, "Saved session data for user");
       } catch (error) {
-        this.logger.error({ error, userId: this.activeSession.userId }, "Failed to save session data");
+        this.logger.error(
+          { error, userId: this.activeSession.userId },
+          "Failed to save session data",
+        );
       }
     }
 

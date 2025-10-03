@@ -15,6 +15,9 @@ services:
       - ./.cache:/app/.cache
     networks:
       - steel-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
   ui:
     build:
@@ -28,6 +31,9 @@ services:
       - api
     networks:
       - steel-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
 networks:
   steel-network:

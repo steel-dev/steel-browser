@@ -22,7 +22,10 @@ const CreateSession = z.object({
   sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
   userId: z
     .string()
-    .regex(/^[a-zA-Z0-9_-]+$/, "userId must contain only alphanumeric characters, underscores, and dashes")
+    .regex(
+      /^[a-zA-Z0-9_-]+$/,
+      "userId must contain only alphanumeric characters, underscores, and dashes",
+    )
     .min(1)
     .max(128)
     .optional()
@@ -30,11 +33,13 @@ const CreateSession = z.object({
       (val) => {
         if (!val) return true;
         // Prevent Redis key injection patterns
-        return !val.startsWith('-') && !val.startsWith('_');
+        return !val.startsWith("-") && !val.startsWith("_");
       },
-      { message: "userId cannot start with dash or underscore" }
+      { message: "userId cannot start with dash or underscore" },
     )
-    .describe("User identifier for session persistence across multiple browser instances. Must be alphanumeric with optional underscores/dashes (not at start)."),
+    .describe(
+      "User identifier for session persistence across multiple browser instances. Must be alphanumeric with optional underscores/dashes (not at start).",
+    ),
   proxyUrl: z.string().optional().describe("Proxy URL to use for the session"),
   userAgent: z.string().optional().describe("User agent string to use for the session"),
   sessionContext: SessionContextSchema.optional().describe(
@@ -83,7 +88,7 @@ const CreateSession = z.object({
           return false;
         }
       },
-      { message: "Invalid IANA timezone identifier" }
+      { message: "Invalid IANA timezone identifier" },
     )
     .describe("IANA timezone identifier to use for the session (e.g., 'America/New_York')"),
   dimensions: z
@@ -139,6 +144,8 @@ const SessionDetails = z.object({
     .describe("Amount of data received through the proxy"),
   solveCaptcha: z.boolean().optional().describe("Indicates if captcha solving is enabled"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
+  userId: z.string().optional().describe("User ID for session persistence"),
+  timezone: z.string().optional().describe("Timezone used for the session"),
 });
 
 const ReleaseSession = SessionDetails.merge(
