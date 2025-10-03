@@ -86,6 +86,12 @@ export function isSimilarConfig(
 ): boolean {
   if (!current || !next) return false;
 
+  // If next config has a persisted fingerprint, force browser restart
+  // This ensures sticky sessions always get the correct fingerprint
+  if (next.fingerprint) {
+    return false;
+  }
+
   const normalizeArgs = (args?: string[]) => (args || []).filter(Boolean).slice().sort();
   const normalizeExt = (ext?: string[]) => (ext || []).slice().sort();
 

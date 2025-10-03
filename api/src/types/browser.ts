@@ -6,6 +6,7 @@ import type {
   SessionStorageData,
 } from "../services/context/types.js";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
+import type { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 
 export type OptimizeBandwidthOptions = {
   blockImages?: boolean;
@@ -41,6 +42,8 @@ export interface BrowserLauncherOptions {
   extra?: Record<string, Record<string, string>>;
   credentials?: CredentialsOptions;
   skipFingerprintInjection?: boolean;
+  /** Persisted fingerprint data to reuse across sessions */
+  fingerprint?: BrowserFingerprintWithHeaders;
 }
 
 export interface BrowserServerOptions {

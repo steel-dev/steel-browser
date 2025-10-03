@@ -673,15 +673,26 @@ export class CDPService extends EventEmitter {
       });
 
       const launchProcess = (async () => {
+        const nextConfig = config || this.defaultLaunchConfig;
         const shouldReuseInstance =
-          this.browserInstance &&
-          isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig);
+          this.browserInstance && isSimilarConfig(this.launchConfig, nextConfig);
+
+        this.logger.debug(
+          `[CDPService] Browser reuse check: hasFingerprint=${!!nextConfig.fingerprint}, shouldReuse=${shouldReuseInstance}`,
+        );
 
         if (shouldReuseInstance) {
           this.logger.info(
             "[CDPService] Reusing existing browser instance with default configuration.",
           );
           this.launchConfig = config || this.defaultLaunchConfig;
+
+          // Restore persisted fingerprint if available
+          if (this.launchConfig?.fingerprint && !this.fingerprintData) {
+            this.fingerprintData = this.launchConfig.fingerprint;
+            this.logger.info("[CDPService] Restored persisted fingerprint when reusing browser instance");
+          }
+
           try {
             await this.refreshPrimaryPage();
           } catch (error) {
@@ -748,31 +759,64 @@ export class CDPService extends EventEmitter {
 
         const { options, userAgent, userDataDir } = this.launchConfig;
 
-        // Fingerprint generation - can fail gracefully
-        if (
-          !env.SKIP_FINGERPRINT_INJECTION &&
-          !userAgent &&
-          !this.launchConfig.skipFingerprintInjection
-        ) {
+        // Fingerprint generation - use persisted fingerprint if available, otherwise generate new one
+        if (!env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig.skipFingerprintInjection) {
           try {
-            const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
-              devices: ["desktop"],
-              operatingSystems: ["linux"],
-              browsers: [{ name: "chrome", minVersion: 136 }],
-              locales: ["en-US", "en"],
-            };
+            // Use persisted fingerprint if available
+            if (this.launchConfig.fingerprint) {
+              this.fingerprintData = this.launchConfig.fingerprint;
+              this.logger.info("[CDPService] Using persisted fingerprint from previous session");
+            } else if (!userAgent) {
+              // Generate new fingerprint only if no persisted fingerprint exists and no custom userAgent
+              // Use userId from credentials to create deterministic fingerprint variation
+              const userIdForSeed = this.launchConfig.credentials?.userId;
 
-            const fingerprintGen = new FingerprintGenerator({
-              ...defaultFingerprintOptions,
-              screen: {
-                minWidth: this.launchConfig.dimensions?.width ?? 1920,
-                minHeight: this.launchConfig.dimensions?.height ?? 1080,
-                maxWidth: this.launchConfig.dimensions?.width ?? 1920,
-                maxHeight: this.launchConfig.dimensions?.height ?? 1080,
-              },
-            });
+              // Create hash from userId to determine fingerprint parameters
+              let browserMinVersion = 136;
+              let browserMaxVersion = undefined;
 
-            this.fingerprintData = fingerprintGen.getFingerprint();
+              if (userIdForSeed) {
+                // Use userId to deterministically vary browser version
+                // Hash different parts of UUID for better distribution
+                const uuidParts = userIdForSeed.split('-');
+                const hash1 = uuidParts[0]?.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) || 0;
+                const hash2 = uuidParts[1]?.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) || 0;
+
+                // Use first hash for browser version (136-139)
+                browserMinVersion = 136 + (hash1 % 4);
+
+                // Use second hash to occasionally set a more specific version range
+                if (hash2 % 3 === 0) {
+                  browserMaxVersion = browserMinVersion; // Force specific version
+                }
+              }
+
+              const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
+                devices: ["desktop"],
+                operatingSystems: ["linux"],
+                browsers: browserMaxVersion
+                  ? [{ name: "chrome", minVersion: browserMinVersion, maxVersion: browserMaxVersion }]
+                  : [{ name: "chrome", minVersion: browserMinVersion }],
+                locales: ["en-US", "en"],
+              };
+
+              const fingerprintGen = new FingerprintGenerator({
+                ...defaultFingerprintOptions,
+                screen: {
+                  minWidth: this.launchConfig.dimensions?.width ?? 1920,
+                  minHeight: this.launchConfig.dimensions?.height ?? 1080,
+                  maxWidth: this.launchConfig.dimensions?.width ?? 1920,
+                  maxHeight: this.launchConfig.dimensions?.height ?? 1080,
+                },
+              });
+
+              this.fingerprintData = fingerprintGen.getFingerprint();
+              this.logger.info(`[CDPService] Generated new fingerprint for session (minVersion: ${browserMinVersion}, maxVersion: ${browserMaxVersion || 'latest'})`);
+            } else {
+              this.logger.debug(
+                "[CDPService] Skipping fingerprint generation - custom userAgent provided without fingerprint",
+              );
+            }
           } catch (error) {
             throw new FingerprintError(
               error instanceof Error ? error.message : String(error),
@@ -1097,6 +1141,10 @@ export class CDPService extends EventEmitter {
     );
   }
 
+  public getFingerprintData(): BrowserFingerprintWithHeaders | null {
+    return this.fingerprintData;
+  }
+
   public async getCookies(): Promise<Protocol.Network.Cookie[]> {
     if (!this.primaryPage) {
       throw new Error("Primary page not initialized");
@@ -1105,6 +1153,19 @@ export class CDPService extends EventEmitter {
     const { cookies } = await client.send("Network.getAllCookies");
     await client.detach();
     return cookies;
+  }
+
+  public async clearAllCookies(): Promise<void> {
+    if (!this.primaryPage) {
+      throw new Error("Primary page not initialized");
+    }
+    const client = await this.primaryPage.createCDPSession();
+    try {
+      await client.send("Network.clearBrowserCookies");
+      this.logger.info("[CDPService] Cleared all browser cookies");
+    } finally {
+      await client.detach();
+    }
   }
 
   public async getBrowserState(): Promise<SessionData> {
@@ -1301,13 +1362,38 @@ export class CDPService extends EventEmitter {
     const client = await page.createCDPSession();
     try {
       if (context.cookies?.length) {
-        await client.send("Network.setCookies", {
-          cookies: context.cookies.map((cookie) => ({
-            ...cookie,
-            partitionKey: cookie.partitionKey as unknown as Protocol.Network.Cookie["partitionKey"],
-          })),
+        // Map cookies to only include valid fields for setCookies
+        // Remove read-only fields: size, session, sameParty, sourceScheme, sourcePort
+        const validCookies = context.cookies.map((cookie) => {
+          const { size, session, sameParty, sourceScheme, sourcePort, partitionKey, ...validFields } = cookie;
+          return validFields;
         });
-        this.logger.info(`[CDPService] Set ${context.cookies.length} cookies`);
+
+        // Set cookies one by one to catch failures
+        let successCount = 0;
+        let failedCookies: string[] = [];
+
+        for (const cookie of validCookies) {
+          try {
+            await client.send("Network.setCookie", cookie);
+            successCount++;
+          } catch (err) {
+            failedCookies.push(`${cookie.name}@${cookie.domain}`);
+            this.logger.debug(
+              `[CDPService] Failed to set cookie ${cookie.name} for ${cookie.domain}: ${err}`,
+            );
+          }
+        }
+
+        this.logger.info(`[CDPService] Set ${successCount}/${context.cookies.length} cookies`);
+
+        if (failedCookies.length > 0) {
+          this.logger.debug(`[CDPService] Failed cookies: ${failedCookies.join(", ")}`);
+        }
+
+        // Verify cookies were actually set
+        const { cookies: actualCookies } = await client.send("Network.getAllCookies");
+        this.logger.info(`[CDPService] Verification: ${actualCookies.length} total cookies in browser`);
       }
     } catch (error) {
       this.logger.error(`[CDPService] Error setting cookies: ${error}`);
