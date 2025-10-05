@@ -15,6 +15,7 @@ import { SeleniumService } from "./selenium.service.js";
 import { TimezoneFetcher } from "./timezone-fetcher.service.js";
 import { deepMerge } from "../utils/context.js";
 import { SessionPersistenceService, PersistedSessionData } from "./session-persistence.service.js";
+import { generateRandomDimensions } from "../utils/dimensions.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -131,14 +132,41 @@ export class SessionService {
     // Load persisted session data if userId is provided
     let persistedData: PersistedSessionData | null = null;
     let shouldClearCookies = false;
+    let effectiveDimensions = dimensions;
+
     if (userId) {
       persistedData = await this.persistenceService.loadSession(userId);
       if (persistedData) {
         this.logger.info({ userId }, "Loaded persisted session data for user");
+
+        // Use persisted dimensions if available and no explicit dimensions provided
+        if (!dimensions && persistedData.dimensions) {
+          effectiveDimensions = persistedData.dimensions;
+          this.logger.info(
+            { dimensions: effectiveDimensions, userId },
+            "Using persisted dimensions for sticky session",
+          );
+        }
       } else {
         this.logger.info({ userId }, "No persisted data found - will start with fresh session");
         shouldClearCookies = true; // Clear cookies for new user to ensure isolation
+
+        // Generate random dimensions for new user if not explicitly provided
+        if (!dimensions) {
+          effectiveDimensions = generateRandomDimensions(userId);
+          this.logger.info(
+            { dimensions: effectiveDimensions, userId },
+            "Generated random dimensions for new user",
+          );
+        }
       }
+    } else if (!dimensions) {
+      // No userId provided - generate random dimensions without seed for non-persistent sessions
+      effectiveDimensions = generateRandomDimensions();
+      this.logger.info(
+        { dimensions: effectiveDimensions },
+        "Generated random dimensions for anonymous session",
+      );
     }
 
     // start fetching timezone as early as possible
@@ -164,7 +192,7 @@ export class SessionService {
       status: "live",
       proxy: proxyUrl,
       solveCaptcha: false,
-      dimensions,
+      dimensions: effectiveDimensions,
       isSelenium,
       userId,
     });
@@ -254,16 +282,14 @@ export class SessionService {
       extensions: extensions || [],
       logSinkUrl,
       timezone: timezonePromise,
-      dimensions,
+      dimensions: effectiveDimensions,
       userDataDir,
       userPreferences: mergedUserPreferences,
       extra,
-      credentials: {
-        ...credentials,
-        userId, // Pass userId for fingerprint seeding
-      },
+      credentials,
       skipFingerprintInjection,
       fingerprint: effectiveFingerprint,
+      userId, // Pass userId for fingerprint seeding and dimension generation
     };
 
     if (isSelenium) {
@@ -343,10 +369,17 @@ export class SessionService {
           userAgent: this.activeSession.userAgent,
           timezone: this.activeSession.timezone,
           fingerprint: fingerprintData || undefined,
+          dimensions: this.activeSession.dimensions,
         };
 
         await this.persistenceService.saveSession(this.activeSession.userId, sessionData);
-        this.logger.info({ userId: this.activeSession.userId }, "Saved session data for user (including fingerprint)");
+        this.logger.info(
+          {
+            userId: this.activeSession.userId,
+            dimensions: this.activeSession.dimensions,
+          },
+          "Saved session data for user (including fingerprint and dimensions)",
+        );
       } catch (error) {
         this.logger.error(
           { error, userId: this.activeSession.userId },

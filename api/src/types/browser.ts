@@ -44,6 +44,8 @@ export interface BrowserLauncherOptions {
   skipFingerprintInjection?: boolean;
   /** Persisted fingerprint data to reuse across sessions */
   fingerprint?: BrowserFingerprintWithHeaders;
+  /** User ID for deterministic fingerprint generation and session persistence */
+  userId?: string;
 }
 
 export interface BrowserServerOptions {

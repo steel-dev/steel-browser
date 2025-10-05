@@ -92,6 +92,14 @@ export function isSimilarConfig(
     return false;
   }
 
+  // If userId changed, force browser restart to generate new fingerprint
+  // Different users should get different fingerprints for variety
+  const currentUserId = current.userId;
+  const nextUserId = next.userId;
+  if (currentUserId !== nextUserId) {
+    return false;
+  }
+
   const normalizeArgs = (args?: string[]) => (args || []).filter(Boolean).slice().sort();
   const normalizeExt = (ext?: string[]) => (ext || []).slice().sort();
 

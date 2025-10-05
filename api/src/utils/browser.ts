@@ -2,8 +2,19 @@ import fs from "fs";
 import path from "path";
 import { Page } from "puppeteer-core";
 import { env } from "../env.js";
+import { execSync } from "child_process";
+import os from "os";
 
+/**
+ * Get Chrome/Chromium executable path
+ * Priority:
+ * 1. Custom CHROME_EXECUTABLE_PATH from env
+ * 2. Playwright Chrome (if available)
+ * 3. System Google Chrome
+ * 4. System Chromium (fallback)
+ */
 export const getChromeExecutablePath = () => {
+  // 1. Custom path from environment
   if (env.CHROME_EXECUTABLE_PATH) {
     const executablePath = env.CHROME_EXECUTABLE_PATH;
     const normalizedPath = path.normalize(executablePath);
@@ -14,6 +25,14 @@ export const getChromeExecutablePath = () => {
     }
   }
 
+  // 2. Try Playwright Chrome first (preferred for better anti-detection)
+  const playwrightChrome = getPlaywrightChromePath();
+  if (playwrightChrome && fs.existsSync(playwrightChrome)) {
+    console.info(`Using Playwright Chrome: ${playwrightChrome}`);
+    return playwrightChrome;
+  }
+
+  // 3. System Google Chrome
   if (process.platform === "win32") {
     const programFilesPath = `${process.env["ProgramFiles"]}\\Google\\Chrome\\Application\\chrome.exe`;
     const programFilesX86Path = `C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`;
@@ -26,11 +45,109 @@ export const getChromeExecutablePath = () => {
   }
 
   if (process.platform === "darwin") {
-    return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+    const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+    if (fs.existsSync(chromePath)) {
+      return chromePath;
+    }
   }
 
+  if (process.platform === "linux") {
+    // Try common Chrome paths on Linux
+    const chromePaths = [
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+    ];
+
+    for (const chromePath of chromePaths) {
+      if (fs.existsSync(chromePath)) {
+        return chromePath;
+      }
+    }
+  }
+
+  // 4. Fallback to chromium
   return "/usr/bin/chromium";
 };
+
+/**
+ * Get Playwright Chrome browser path
+ * Playwright stores browsers in:
+ * - Linux/macOS: ~/.cache/ms-playwright/
+ * - Windows: %USERPROFILE%\AppData\Local\ms-playwright\
+ */
+function getPlaywrightChromePath(): string | null {
+  try {
+    const playwrightCacheDir =
+      process.env.PLAYWRIGHT_BROWSERS_PATH ||
+      path.join(
+        process.platform === "win32"
+          ? process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local")
+          : process.platform === "darwin"
+          ? path.join(os.homedir(), "Library", "Caches")
+          : path.join(os.homedir(), ".cache"),
+        "ms-playwright",
+      );
+
+    if (!fs.existsSync(playwrightCacheDir)) {
+      return null;
+    }
+
+    // Find Chrome directories (format: chromium-<version>)
+    const entries = fs.readdirSync(playwrightCacheDir);
+    const chromeDirs = entries
+      .filter((entry) => entry.startsWith("chromium-"))
+      .sort()
+      .reverse(); // Get latest version
+
+    if (chromeDirs.length === 0) {
+      return null;
+    }
+
+    const latestChromeDir = path.join(playwrightCacheDir, chromeDirs[0]);
+
+    // Construct executable path based on platform
+    let executablePath: string;
+    if (process.platform === "win32") {
+      executablePath = path.join(latestChromeDir, "chrome-win", "chrome.exe");
+    } else if (process.platform === "darwin") {
+      executablePath = path.join(
+        latestChromeDir,
+        "chrome-mac",
+        "Chromium.app",
+        "Contents",
+        "MacOS",
+        "Chromium",
+      );
+    } else {
+      executablePath = path.join(latestChromeDir, "chrome-linux", "chrome");
+    }
+
+    return fs.existsSync(executablePath) ? executablePath : null;
+  } catch (error) {
+    console.warn(`Failed to locate Playwright Chrome: ${error}`);
+    return null;
+  }
+}
+
+/**
+ * Install Playwright browsers programmatically
+ * Can be called to ensure Chrome is available
+ */
+export async function installPlaywrightBrowsers(): Promise<void> {
+  try {
+    console.info("Installing Playwright browsers...");
+    execSync("npx playwright install chromium", {
+      stdio: "inherit",
+      cwd: process.cwd(),
+    });
+    console.info("Playwright browsers installed successfully");
+  } catch (error) {
+    console.error(`Failed to install Playwright browsers: ${error}`);
+    throw error;
+  }
+}
 
 export async function installMouseHelper(page: Page) {
   await page.evaluateOnNewDocument(() => {

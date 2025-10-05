@@ -52,6 +52,11 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("false"),
+  USE_APIFY_FINGERPRINTS: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
   CHROME_ARGS: z
     .string()
     .optional()

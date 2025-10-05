@@ -7,6 +7,7 @@ import {
   VideoCard,
 } from "fingerprint-generator";
 import { FingerprintInjector } from "fingerprint-injector";
+import { selectRandomOS, selectRandomBrowser } from "../../utils/fingerprint-selection.js";
 import fs from "fs";
 import { IncomingMessage } from "http";
 import httpProxy from "http-proxy";
@@ -95,6 +96,9 @@ export class CDPService extends EventEmitter {
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
   private retryManager: RetryManager;
+  private sessionOS: string | null = null;
+  private sessionBrowser: string | null = null;
+  private sessionDevice: string | null = null;
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
@@ -690,7 +694,9 @@ export class CDPService extends EventEmitter {
           // Restore persisted fingerprint if available
           if (this.launchConfig?.fingerprint && !this.fingerprintData) {
             this.fingerprintData = this.launchConfig.fingerprint;
-            this.logger.info("[CDPService] Restored persisted fingerprint when reusing browser instance");
+            this.logger.info(
+              "[CDPService] Restored persisted fingerprint when reusing browser instance",
+            );
           }
 
           try {
@@ -766,37 +772,72 @@ export class CDPService extends EventEmitter {
             if (this.launchConfig.fingerprint) {
               this.fingerprintData = this.launchConfig.fingerprint;
               this.logger.info("[CDPService] Using persisted fingerprint from previous session");
+
+              // Restore session OS/browser info from extra config if available
+              if (this.launchConfig.extra?.sessionMetadata) {
+                const metadata = this.launchConfig.extra.sessionMetadata as any;
+                this.sessionOS = metadata.operatingSystem || null;
+                this.sessionBrowser = metadata.browserType || null;
+                this.sessionDevice = metadata.deviceType || null;
+              }
             } else if (!userAgent) {
               // Generate new fingerprint only if no persisted fingerprint exists and no custom userAgent
-              // Use userId from credentials to create deterministic fingerprint variation
-              const userIdForSeed = this.launchConfig.credentials?.userId;
+              // Use userId from launchConfig to create deterministic fingerprint variation
+              const userIdForSeed = this.launchConfig.userId;
 
-              // Create hash from userId to determine fingerprint parameters
+              // Determine OS, browser, and device type (persistent for each userId)
+              // Select randomly based on userId for variety, or use provided values
+              const operatingSystem =
+                (this.launchConfig.extra?.operatingSystem as
+                  | "windows"
+                  | "macos"
+                  | "linux"
+                  | undefined) || selectRandomOS(userIdForSeed);
+
+              const browserType =
+                (this.launchConfig.extra?.browserType as
+                  | "chrome"
+                  | "edge"
+                  | "firefox"
+                  | undefined) || selectRandomBrowser(userIdForSeed);
+
+              const deviceType =
+                (this.launchConfig.extra?.deviceType as "desktop" | "mobile" | undefined) ||
+                "desktop";
+
+              // Store session metadata for persistence
+              this.sessionOS = operatingSystem;
+              this.sessionBrowser = browserType;
+              this.sessionDevice = deviceType;
+
+              // Generate fingerprint with OS/browser variety
               let browserMinVersion = 136;
-              let browserMaxVersion = undefined;
+              let browserMaxVersion: number | undefined = undefined;
 
               if (userIdForSeed) {
-                // Use userId to deterministically vary browser version
-                // Hash different parts of UUID for better distribution
-                const uuidParts = userIdForSeed.split('-');
-                const hash1 = uuidParts[0]?.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) || 0;
-                const hash2 = uuidParts[1]?.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) || 0;
-
-                // Use first hash for browser version (136-139)
+                const uuidParts = userIdForSeed.split("-");
+                const hash1 =
+                  uuidParts[0]?.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0) || 0;
+                const hash2 =
+                  uuidParts[1]?.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0) || 0;
                 browserMinVersion = 136 + (hash1 % 4);
-
-                // Use second hash to occasionally set a more specific version range
                 if (hash2 % 3 === 0) {
-                  browserMaxVersion = browserMinVersion; // Force specific version
+                  browserMaxVersion = browserMinVersion;
                 }
               }
 
               const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
                 devices: ["desktop"],
-                operatingSystems: ["linux"],
+                operatingSystems: [operatingSystem as any],
                 browsers: browserMaxVersion
-                  ? [{ name: "chrome", minVersion: browserMinVersion, maxVersion: browserMaxVersion }]
-                  : [{ name: "chrome", minVersion: browserMinVersion }],
+                  ? [
+                      {
+                        name: browserType as any,
+                        minVersion: browserMinVersion,
+                        maxVersion: browserMaxVersion,
+                      },
+                    ]
+                  : [{ name: browserType as any, minVersion: browserMinVersion }],
                 locales: ["en-US", "en"],
               };
 
@@ -811,7 +852,11 @@ export class CDPService extends EventEmitter {
               });
 
               this.fingerprintData = fingerprintGen.getFingerprint();
-              this.logger.info(`[CDPService] Generated new fingerprint for session (minVersion: ${browserMinVersion}, maxVersion: ${browserMaxVersion || 'latest'})`);
+              this.logger.info(
+                `[CDPService] Generated fingerprint for session (os: ${operatingSystem}, browser: ${browserType}, minVersion: ${browserMinVersion}, maxVersion: ${
+                  browserMaxVersion || "latest"
+                })`,
+              );
             } else {
               this.logger.debug(
                 "[CDPService] Skipping fingerprint generation - custom userAgent provided without fingerprint",
@@ -893,6 +938,8 @@ export class CDPService extends EventEmitter {
         const staticDefaultArgs = [
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
+          // GPU disabled - will use fingerprint injection to spoof WebGL
+          // SwiftShader software rendering is a major bot signal, so avoid it
           "--disable-gpu",
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -902,8 +949,8 @@ export class CDPService extends EventEmitter {
           "--no-first-run",
           "--disable-search-engine-choice-screen",
           "--disable-blink-features=AutomationControlled",
-          "--webrtc-ip-handling-policy=disable_non_proxied_udp",
-          "--force-webrtc-ip-handling-policy",
+          // WebRTC enabled for stealth - blocking it is a major bot signal
+          // If using proxy, WebRTC will use proxy IP (safe)
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
         ];
@@ -1365,7 +1412,15 @@ export class CDPService extends EventEmitter {
         // Map cookies to only include valid fields for setCookies
         // Remove read-only fields: size, session, sameParty, sourceScheme, sourcePort
         const validCookies = context.cookies.map((cookie) => {
-          const { size, session, sameParty, sourceScheme, sourcePort, partitionKey, ...validFields } = cookie;
+          const {
+            size,
+            session,
+            sameParty,
+            sourceScheme,
+            sourcePort,
+            partitionKey,
+            ...validFields
+          } = cookie;
           return validFields;
         });
 
@@ -1393,7 +1448,9 @@ export class CDPService extends EventEmitter {
 
         // Verify cookies were actually set
         const { cookies: actualCookies } = await client.send("Network.getAllCookies");
-        this.logger.info(`[CDPService] Verification: ${actualCookies.length} total cookies in browser`);
+        this.logger.info(
+          `[CDPService] Verification: ${actualCookies.length} total cookies in browser`,
+        );
       }
     } catch (error) {
       this.logger.error(`[CDPService] Error setting cookies: ${error}`);
@@ -1404,7 +1461,59 @@ export class CDPService extends EventEmitter {
     this.logger.info(
       `[CDPService] Registered frame navigation handler for ${storageByOrigin.size} origins`,
     );
-    page.on("framenavigated", (frame) => handleFrameNavigated(frame, storageByOrigin, this.logger));
+    // CRITICAL FIX: Inject platform/GPU on EVERY frame navigation
+    // This solves the timing issue - runs AFTER page exists
+    page.on("framenavigated", async (frame) => {
+      handleFrameNavigated(frame, storageByOrigin, this.logger);
+
+      // Inject platform/GPU override directly into existing page
+      if (this.fingerprintData && frame === page.mainFrame()) {
+        try {
+          // @ts-ignore - Browser context code with custom window properties
+          await page.evaluate(
+            (platform, gpuVendor, gpuRenderer) => {
+              // Platform override
+              try {
+                Object.defineProperty(Navigator.prototype, "platform", {
+                  get: () => platform,
+                  configurable: true,
+                });
+                // @ts-ignore
+                window.__platformFixed = true;
+              } catch (e) {}
+
+              // GPU override
+              try {
+                const origGetContext = HTMLCanvasElement.prototype.getContext;
+                // @ts-ignore - Intentional prototype override
+                HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+                  const ctx = origGetContext.call(this, type, attrs);
+                  if (ctx && (type === "webgl" || type === "webgl2")) {
+                    // @ts-ignore
+                    const origGetParam = ctx.getParameter.bind(ctx);
+                    // @ts-ignore
+                    ctx.getParameter = function (param) {
+                      if (param === 0x9245) return gpuVendor; // UNMASKED_VENDOR
+                      if (param === 0x9246) return gpuRenderer; // UNMASKED_RENDERER
+                      return origGetParam(param);
+                    };
+                  }
+                  return ctx;
+                };
+                // @ts-ignore
+                window.__gpuFixed = true;
+              } catch (e) {}
+            },
+            this.fingerprintData.fingerprint.navigator.platform,
+            this.fingerprintData.fingerprint.videoCard.vendor,
+            this.fingerprintData.fingerprint.videoCard.renderer,
+          );
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          this.logger.debug(`[Platform/GPU Fix] Injection failed: ${errMsg}`);
+        }
+      }
+    });
 
     page.browser().on("targetcreated", async (target) => {
       if (target.type() === "page") {
@@ -1437,6 +1546,19 @@ export class CDPService extends EventEmitter {
       const userAgent = fingerprint.navigator.userAgent;
       const userAgentMetadata = fingerprint.navigator.userAgentData;
       const { screen } = fingerprint;
+
+      // Filter out "Chromium" brand to avoid detection (keep "Google Chrome" and "Not=A?Brand")
+      // Add null checks to prevent errors
+      const filteredBrands = userAgentMetadata?.brands
+        ? userAgentMetadata.brands.filter(
+            (brand: any) => !brand.brand.toLowerCase().includes("chromium"),
+          )
+        : [];
+      const filteredFullVersionList = userAgentMetadata?.fullVersionList
+        ? userAgentMetadata.fullVersionList.filter(
+            (brand: any) => !brand.brand.toLowerCase().includes("chromium"),
+          )
+        : [];
 
       await page.setUserAgent(userAgent);
 
@@ -1476,10 +1598,9 @@ export class CDPService extends EventEmitter {
           acceptLanguage: headers["accept-language"],
           platform: fingerprint.navigator.platform || "Linux x86_64",
           userAgentMetadata: {
-            brands:
-              userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
+            brands: filteredBrands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
             fullVersionList:
-              userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
+              filteredFullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
             fullVersion: userAgentMetadata.uaFullVersion,
             platform: fingerprint.navigator.platform || "Linux x86_64",
             platformVersion: userAgentMetadata.platformVersion || "",
@@ -1495,24 +1616,93 @@ export class CDPService extends EventEmitter {
         await session.detach().catch(() => {});
       }
 
+      // NOTE: page.evaluate() on about:blank pages is unreliable
+      // Chrome blocks prototype modifications on uninitialized contexts
+      // Using evaluateOnNewDocument is the correct approach (see below)
+
+      // Platform and GPU override - Minimal, proven implementation
+      // This executes on every new document (navigation) to ensure persistent overrides
+      const platformValue = fingerprint.navigator.platform || "Linux x86_64";
+      const gpuVendor = (fingerprint.videoCard as VideoCard | null)?.vendor || "Google Inc.";
+      const gpuRenderer =
+        (fingerprint.videoCard as VideoCard | null)?.renderer ||
+        "ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)";
+
+      // @ts-ignore - Browser context code with custom window properties
       await page.evaluateOnNewDocument(
-        loadFingerprintScript({
-          fixedPlatform: fingerprint.navigator.platform || "Linux x86_64",
-          fixedVendor: (fingerprint.videoCard as VideoCard | null)?.vendor,
-          fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
-          fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
-          fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
-          fixedArchitecture: userAgentMetadata.architecture || "x86",
-          fixedBitness: userAgentMetadata.bitness || "64",
-          fixedModel: userAgentMetadata.model || "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion || "15.0.0",
-          fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
-          fixedBrands: userAgentMetadata.brands as unknown as Array<{
-            brand: string;
-            version: string;
-          }>,
-        }),
+        (platform, vendor, renderer) => {
+          "use strict";
+
+          // Platform override - Critical for OS fingerprinting
+          try {
+            Object.defineProperty(Navigator.prototype, "platform", {
+              get: () => platform,
+              configurable: true,
+              enumerable: true,
+            });
+            // @ts-ignore
+            window.__platformOverrideApplied = true;
+          } catch (e: any) {
+            // @ts-ignore
+            window.__platformOverrideError = e.message;
+          }
+
+          // WebGL GPU override - Critical for hardware fingerprinting
+          try {
+            const _getContext = HTMLCanvasElement.prototype.getContext;
+            // @ts-ignore - Intentional prototype override
+            HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+              const ctx = _getContext.call(this, type, attrs);
+              if (ctx && /webgl/i.test(type)) {
+                // @ts-ignore
+                const _getParameter = ctx.getParameter.bind(ctx);
+                // @ts-ignore
+                ctx.getParameter = function (param) {
+                  // UNMASKED_VENDOR_WEBGL = 0x9245
+                  if (param === 0x9245) return vendor;
+                  // UNMASKED_RENDERER_WEBGL = 0x9246
+                  if (param === 0x9246) return renderer;
+                  return _getParameter(param);
+                };
+              }
+              return ctx;
+            };
+            // @ts-ignore
+            window.__gpuOverrideApplied = true;
+          } catch (e: any) {
+            // @ts-ignore
+            window.__gpuOverrideError = e.message;
+          }
+
+          // Debug marker for verification
+          // @ts-ignore
+          window.__stealthOverridesReady = true;
+        },
+        platformValue,
+        gpuVendor,
+        gpuRenderer,
       );
+
+      this.logger.info(
+        `[Stealth] Platform/GPU override registered: platform=${platformValue}, vendor=${gpuVendor}`,
+      );
+
+      // Additional fingerprinting via fingerprint-injector library
+      // This handles hardware concurrency, device memory, and other properties
+      try {
+        const fingerprintInjector = new FingerprintInjector();
+        // @ts-ignore - Type compatibility between puppeteer versions
+        await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
+        this.logger.debug(
+          "[Fingerprint] Additional fingerprinting applied via fingerprint-injector",
+        );
+      } catch (injectorError) {
+        this.logger.warn(
+          `[Fingerprint] fingerprint-injector failed (non-critical): ${
+            injectorError instanceof Error ? injectorError.message : String(injectorError)
+          }`,
+        );
+      }
     } catch (error) {
       // Check if error is due to page/target being closed
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1528,7 +1718,10 @@ export class CDPService extends EventEmitter {
         return; // Gracefully skip injection if page is being closed
       }
 
-      this.logger.error(`[Fingerprint] Error injecting fingerprint safely: ${error}`);
+      this.logger.error(`[Fingerprint] Error injecting fingerprint safely: ${errorMessage}`);
+      if (error instanceof Error) {
+        this.logger.debug({ stack: error.stack }, "[Fingerprint] Full error stack");
+      }
 
       // Try fallback injection only if page is still active
       try {

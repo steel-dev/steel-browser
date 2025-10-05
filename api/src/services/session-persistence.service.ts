@@ -15,6 +15,10 @@ const PersistedSessionDataSchema = z.object({
   userAgent: z.string().optional(),
   timezone: z.string().optional(),
   fingerprint: z.any().optional(), // BrowserFingerprintWithHeaders is complex, using z.any() for flexibility
+  dimensions: z.object({ width: z.number(), height: z.number() }).optional(),
+  operatingSystem: z.string().optional(),
+  browserType: z.string().optional(),
+  deviceType: z.string().optional(),
 });
 
 /**
@@ -31,6 +35,14 @@ export interface PersistedSessionData {
   timezone?: string;
   /** Browser fingerprint data to maintain consistent fingerprinting across sessions */
   fingerprint?: BrowserFingerprintWithHeaders;
+  /** Screen dimensions to maintain consistent fingerprinting across sessions */
+  dimensions?: { width: number; height: number };
+  /** Operating system for fingerprint consistency (windows, macos, linux) */
+  operatingSystem?: string;
+  /** Browser type for fingerprint consistency (chrome, edge, firefox) */
+  browserType?: string;
+  /** Device type for fingerprint consistency (desktop, mobile) */
+  deviceType?: string;
 }
 
 /**
