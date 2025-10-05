@@ -602,7 +602,7 @@ export class CDPService extends EventEmitter {
 
         this.removeAllHandlers();
         await this.browserInstance.close();
-        await this.browserInstance.process()?.kill();
+        // await this.browserInstance.process()?.kill();
         await this.shutdownHook();
 
         this.logger.info("[CDPService] Cleaning up files during shutdown");
@@ -623,7 +623,7 @@ export class CDPService extends EventEmitter {
         this.logger.error(`[CDPService] Error during shutdown: ${error}`);
         // Ensure we complete the shutdown even if plugins throw errors
         await this.browserInstance?.close();
-        await this.browserInstance?.process()?.kill();
+        // await this.browserInstance?.process()?.kill();
         await this.shutdownHook();
 
         try {
