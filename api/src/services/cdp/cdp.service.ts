@@ -748,11 +748,25 @@ export class CDPService extends EventEmitter {
 
         const { options, userAgent, userDataDir } = this.launchConfig;
 
+        // Run launch mutators - plugin errors should be caught
+        try {
+          for (const mutator of this.launchMutators) {
+            await mutator(this.launchConfig);
+          }
+        } catch (error) {
+          throw new PluginError(
+            error instanceof Error ? error.message : String(error),
+            PluginName.LAUNCH_MUTATOR,
+            PluginOperation.PRE_LAUNCH_HOOK,
+          );
+        }
+
         // Fingerprint generation - can fail gracefully
         if (
           !env.SKIP_FINGERPRINT_INJECTION &&
           !userAgent &&
-          !this.launchConfig.skipFingerprintInjection
+          !this.launchConfig.skipFingerprintInjection &&
+          !this.fingerprintData
         ) {
           try {
             const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
@@ -779,18 +793,9 @@ export class CDPService extends EventEmitter {
               FingerprintStage.GENERATION,
             );
           }
-        }
-
-        // Run launch mutators - plugin errors should be caught
-        try {
-          for (const mutator of this.launchMutators) {
-            await mutator(this.launchConfig);
-          }
-        } catch (error) {
-          throw new PluginError(
-            error instanceof Error ? error.message : String(error),
-            PluginName.LAUNCH_MUTATOR,
-            PluginOperation.PRE_LAUNCH_HOOK,
+        } else if (this.fingerprintData) {
+          this.logger.info(
+            `[CDPService] Using existing fingerprint with user agent: ${this.fingerprintData.fingerprint.navigator.userAgent}`,
           );
         }
 
