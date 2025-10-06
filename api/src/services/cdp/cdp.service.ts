@@ -26,6 +26,9 @@ import puppeteer, {
 import { Duplex } from "stream";
 import { env } from "../../env.js";
 import { loadFingerprintScript } from "../../scripts/index.js";
+import { createWorkerFingerprintScript } from "../../scripts/worker-fingerprint.js";
+import { createGPUOverrideScript } from "../../scripts/gpu-override-proxy.js";
+import { createWorkerBlockingScript } from "../../scripts/block-workers.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
 import {
   BrowserEvent,
@@ -1620,82 +1623,66 @@ export class CDPService extends EventEmitter {
       // Chrome blocks prototype modifications on uninitialized contexts
       // Using evaluateOnNewDocument is the correct approach (see below)
 
-      // Platform and GPU override - Minimal, proven implementation
-      // This executes on every new document (navigation) to ensure persistent overrides
       const platformValue = fingerprint.navigator.platform || "Linux x86_64";
       const gpuVendor = (fingerprint.videoCard as VideoCard | null)?.vendor || "Google Inc.";
       const gpuRenderer =
         (fingerprint.videoCard as VideoCard | null)?.renderer ||
         "ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)";
 
-      // @ts-ignore - Browser context code with custom window properties
-      await page.evaluateOnNewDocument(
-        (platform, vendor, renderer) => {
-          "use strict";
+      // =====================================================
+      // STEP 1: Block Workers (Prevent fingerprint leaks)
+      // =====================================================
+      // Workers leak real OS/GPU fingerprints in standard Puppeteer
+      // Blocking them prevents "2 devices" detection
+      // Tradeoff: Some sites may require Workers, but blocking is less suspicious than leaking
+      const workerBlockingScript = createWorkerBlockingScript();
 
-          // Platform override - Critical for OS fingerprinting
-          try {
-            Object.defineProperty(Navigator.prototype, "platform", {
-              get: () => platform,
-              configurable: true,
-              enumerable: true,
-            });
-            // @ts-ignore
-            window.__platformOverrideApplied = true;
-          } catch (e: any) {
-            // @ts-ignore
-            window.__platformOverrideError = e.message;
-          }
+      await page.evaluateOnNewDocument(workerBlockingScript);
+      this.logger.info("[Stealth] Workers blocked to prevent fingerprint leaks");
 
-          // WebGL GPU override - Critical for hardware fingerprinting
-          try {
-            const _getContext = HTMLCanvasElement.prototype.getContext;
-            // @ts-ignore - Intentional prototype override
-            HTMLCanvasElement.prototype.getContext = function (type, attrs) {
-              const ctx = _getContext.call(this, type, attrs);
-              if (ctx && /webgl/i.test(type)) {
-                // @ts-ignore
-                const _getParameter = ctx.getParameter.bind(ctx);
-                // @ts-ignore
-                ctx.getParameter = function (param) {
-                  // UNMASKED_VENDOR_WEBGL = 0x9245
-                  if (param === 0x9245) return vendor;
-                  // UNMASKED_RENDERER_WEBGL = 0x9246
-                  if (param === 0x9246) return renderer;
-                  return _getParameter(param);
-                };
-              }
-              return ctx;
-            };
-            // @ts-ignore
-            window.__gpuOverrideApplied = true;
-          } catch (e: any) {
-            // @ts-ignore
-            window.__gpuOverrideError = e.message;
-          }
+      // =====================================================
+      // STEP 2: GPU Override using Proxy Pattern (Main Page)
+      // =====================================================
+      // Use proven Proxy pattern from fingerprint-injector (more robust than function replacement)
+      const gpuOverrideScript = createGPUOverrideScript({
+        vendor: gpuVendor,
+        renderer: gpuRenderer,
+      });
 
-          // Debug marker for verification
+      await page.evaluateOnNewDocument(gpuOverrideScript);
+      this.logger.info(`[Stealth] GPU Proxy override registered: vendor=${gpuVendor}`);
+
+      // =====================================================
+      // STEP 3: Platform Override (Main Page)
+      // =====================================================
+      // @ts-ignore - Browser context code
+      await page.evaluateOnNewDocument((platform) => {
+        "use strict";
+        try {
+          Object.defineProperty(Navigator.prototype, "platform", {
+            get: () => platform,
+            configurable: true,
+            enumerable: true,
+          });
           // @ts-ignore
-          window.__stealthOverridesReady = true;
-        },
-        platformValue,
-        gpuVendor,
-        gpuRenderer,
-      );
+          window.__platformOverrideApplied = true;
+        } catch (e: any) {
+          // @ts-ignore
+          window.__platformOverrideError = e.message;
+        }
+      }, platformValue);
 
-      this.logger.info(
-        `[Stealth] Platform/GPU override registered: platform=${platformValue}, vendor=${gpuVendor}`,
-      );
+      this.logger.info(`[Stealth] Platform override registered: platform=${platformValue}`);
 
-      // Additional fingerprinting via fingerprint-injector library
-      // This handles hardware concurrency, device memory, and other properties
+      // =====================================================
+      // STEP 4: fingerprint-injector (Additional Properties)
+      // =====================================================
+      // Handles hardware concurrency, device memory, userAgentData, and other properties
       try {
         const fingerprintInjector = new FingerprintInjector();
         // @ts-ignore - Type compatibility between puppeteer versions
         await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
-        this.logger.debug(
-          "[Fingerprint] Additional fingerprinting applied via fingerprint-injector",
-        );
+        this.logger.debug("[Fingerprint] Additional properties via fingerprint-injector");
       } catch (injectorError) {
         this.logger.warn(
           `[Fingerprint] fingerprint-injector failed (non-critical): ${
