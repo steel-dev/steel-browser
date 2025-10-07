@@ -26,12 +26,7 @@ import { Duplex } from "stream";
 import { env } from "../../env.js";
 import { loadFingerprintScript } from "../../scripts/index.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
-import {
-  BrowserEvent,
-  BrowserEventType,
-  BrowserLauncherOptions,
-  EmitEvent,
-} from "../../types/index.js";
+import { BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types/index.js";
 import {
   isAdRequest,
   isHeavyMediaRequest,
@@ -75,6 +70,8 @@ import {
 import { BasePlugin } from "./plugins/core/base-plugin.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { isSimilarConfig, validateLaunchConfig, validateTimezone } from "./utils/validation.js";
+import { BrowserLogger, createBrowserLogger } from "../../plugins/logging/browser-logger.js";
+import { createBrowserLogTransport } from "./transports/browser-log-transport.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -96,6 +93,7 @@ export class CDPService extends EventEmitter {
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
   private retryManager: RetryManager;
+  private browserLogger: BrowserLogger;
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
@@ -106,7 +104,18 @@ export class CDPService extends EventEmitter {
 
   constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
-    this.logger = logger;
+
+    this.logger = logger.child({ component: "cdp" });
+    const browserLogTransport = createBrowserLogTransport({
+      getLogSinkUrl: () => this.launchConfig?.logSinkUrl,
+      baseLogger: this.logger,
+    });
+    this.browserLogger = createBrowserLogger(this.logger, {
+      transports: {
+        browser: browserLogTransport as any, // temporary work around
+      },
+    });
+
     const { keepAlive = true } = config;
 
     this.keepAlive = keepAlive;
@@ -156,6 +165,14 @@ export class CDPService extends EventEmitter {
     };
 
     this.pluginManager = new PluginManager(this, logger);
+  }
+
+  public setBrowserLogger(logger: BrowserLogger) {
+    this.browserLogger = logger;
+  }
+
+  public getBrowserLogger(): BrowserLogger {
+    return this.browserLogger;
   }
 
   public setProxyWebSocketHandler(
@@ -236,13 +253,13 @@ export class CDPService extends EventEmitter {
       }
 
       if (event === EmitEvent.Log) {
-        this.logEvent(payload);
+        const { type, text, ...rest } = payload;
+        this.browserLogger.browser({ type: payload.type, ...rest }, payload.text);
       } else if (event === EmitEvent.Recording) {
-        this.logEvent({
-          type: BrowserEventType.Recording,
-          text: JSON.stringify(payload),
-          timestamp: new Date(),
-        });
+        this.browserLogger.browser(
+          { type: BrowserEventType.Recording, timestamp: new Date() },
+          JSON.stringify(payload),
+        );
       }
     } catch (error) {
       this.logger.error({ err: error }, `Error emitting event`);
@@ -1261,27 +1278,6 @@ export class CDPService extends EventEmitter {
     } catch (error) {
       this.logger.error(`[CDPService] Error extracting storage with CDP: ${error}`);
       return result;
-    }
-  }
-
-  private async logEvent(event: BrowserEvent) {
-    if (!this.launchConfig?.logSinkUrl) return;
-
-    try {
-      const response = await fetch(this.launchConfig.logSinkUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(event),
-      });
-      if (!response.ok) {
-        this.logger.error(
-          `Error logging event from CDPService: ${event.type} ${response.statusText} at URL: ${this.launchConfig.logSinkUrl}`,
-        );
-      }
-    } catch (error) {
-      this.logger.error(
-        `Error logging event from CDPService: ${error} at URL: ${this.launchConfig.logSinkUrl}`,
-      );
     }
   }
 
