@@ -1,3 +1,4 @@
+import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../../../types/index.js";
 import { ConfigurationError, ConfigurationField } from "../errors/launch-errors.js";
 
@@ -106,32 +107,40 @@ export function isSimilarConfig(
   const currentBlockAds = current.blockAds ?? true;
   const nextBlockAds = next.blockAds ?? true;
 
-  const currentExtraExtensions = current?.extra?.orgExtensions ?? true;
-  const nextExtraExtensions = next?.extra?.orgExtensions ?? true;
+  const currentUserAgent = current.userAgent || "";
+  const nextUserAgent = next.userAgent || "";
 
-  const currentUserAgent = current?.userAgent ?? true;
-  const nextUserAgent = next?.userAgent ?? true;
+  const currentUserDataDir = current.userDataDir || "";
+  const nextUserDataDir = next.userDataDir || "";
 
-  const currentDimensions = current?.dimensions ?? true;
-  const nextDimensions = next?.dimensions ?? true;
+  const currentTimezone = current.timezone || "";
+  const nextTimezone = next.timezone || "";
 
-  const currentTimezone = next?.timezone ?? true;
-  const nextTimezone = next?.timezone ?? true;
+  const currentSkipFingerprint = current.skipFingerprintInjection ?? false;
+  const nextSkipFingerprint = next.skipFingerprintInjection ?? false;
 
-  const currentFingerprint = current?.fingerprint ?? true;
-  const nextFingerprint = next?.fingerprint ?? true;
+  const currentWidth = current.dimensions?.width ?? 1920;
+  const nextWidth = next.dimensions?.width ?? 1920;
 
-  const result =
+  const currentHeight = current.dimensions?.height ?? 1080;
+  const nextHeight = next.dimensions?.height ?? 1080;
+
+  const { session: _s1, ...currentExtra } = (current.extra ?? {}) as Record<string, unknown>;
+  const { session: _s2, ...nextExtra } = (next.extra ?? {}) as Record<string, unknown>;
+
+  return (
     currentHeadless === nextHeadless &&
     currentProxy === nextProxy &&
+    currentUserAgent === nextUserAgent &&
+    currentUserDataDir === nextUserDataDir &&
+    currentSkipFingerprint === nextSkipFingerprint &&
+    currentWidth === nextWidth &&
+    currentHeight === nextHeight &&
+    currentBlockAds === nextBlockAds &&
+    JSON.stringify(currentTimezone) === JSON.stringify(nextTimezone) &&
     JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
     JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
-    currentBlockAds === nextBlockAds &&
-    JSON.stringify(currentExtraExtensions) === JSON.stringify(nextExtraExtensions) &&
-    currentUserAgent === nextUserAgent &&
-    currentTimezone === nextTimezone &&
-    JSON.stringify(currentDimensions) === JSON.stringify(nextDimensions) &&
-    JSON.stringify(currentFingerprint) === JSON.stringify(nextFingerprint);
-
-  return result;
+    JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
+    JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences)
+  );
 }

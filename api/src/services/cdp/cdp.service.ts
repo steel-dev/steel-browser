@@ -138,10 +138,21 @@ export class CDPService extends EventEmitter {
     this.currentSessionConfig = null;
     this.shuttingDown = false;
     this.defaultLaunchConfig = {
-      options: { headless: env.CHROME_HEADLESS, args: [] },
+      options: {
+        headless: env.CHROME_HEADLESS,
+        args: [],
+        ignoreDefaultArgs: ["--enable-automation"],
+      },
       blockAds: true,
       extensions: [],
       userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
+      timezone: Promise.resolve(this.defaultTimezone),
+      userPreferences: {
+        plugins: {
+          always_open_pdf_externally: true,
+          plugins_disabled: ["Chrome PDF Viewer"],
+        },
+      },
     };
 
     this.pluginManager = new PluginManager(this, logger);
@@ -910,6 +921,7 @@ export class CDPService extends EventEmitter {
           defaultViewport: null,
           args: launchArgs,
           executablePath: this.chromeExecPath,
+          ignoreDefaultArgs: ["--enable-automation"],
           timeout: 0,
           env: {
             TZ: timezone,
