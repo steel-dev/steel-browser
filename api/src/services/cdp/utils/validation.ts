@@ -84,7 +84,13 @@ export function isSimilarConfig(
   current?: BrowserLauncherOptions,
   next?: BrowserLauncherOptions,
 ): boolean {
-  if (!current || !next) return false;
+  if (!current || !next) {
+    console.log(
+      "Either current or next config is missing:\n",
+      JSON.stringify({ current, next }, null, 2),
+    );
+    return false;
+  }
 
   const normalizeArgs = (args?: string[]) => (args || []).filter(Boolean).slice().sort();
   const normalizeExt = (ext?: string[]) => (ext || []).slice().sort();
@@ -104,11 +110,32 @@ export function isSimilarConfig(
   const currentBlockAds = current.blockAds ?? true;
   const nextBlockAds = next.blockAds ?? true;
 
-  return (
+  const currentExtraExtensions = current?.extra?.orgExtensions ?? true;
+  const nextExtraExtensions = next?.extra?.orgExtensions ?? true;
+
+  const currentUserAgent = current?.userAgent ?? true;
+  const nextUserAgent = next?.userAgent ?? true;
+
+  const currentDimensions = current?.dimensions ?? true;
+  const nextDimensions = next?.dimensions ?? true;
+
+  const currentTimezone = next?.timezone ?? true;
+  const nextTimezone = next?.timezone ?? true;
+
+  const currentFingerprint = current?.fingerprint ?? true;
+  const nextFingerprint = next?.fingerprint ?? true;
+
+  const result =
     currentHeadless === nextHeadless &&
     currentProxy === nextProxy &&
     JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
     JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
-    currentBlockAds === nextBlockAds
-  );
+    currentBlockAds === nextBlockAds &&
+    JSON.stringify(currentExtraExtensions) === JSON.stringify(nextExtraExtensions) &&
+    currentUserAgent === nextUserAgent &&
+    currentTimezone === nextTimezone &&
+    JSON.stringify(currentDimensions) === JSON.stringify(nextDimensions) &&
+    JSON.stringify(currentFingerprint) === JSON.stringify(nextFingerprint);
+
+  return result;
 }
