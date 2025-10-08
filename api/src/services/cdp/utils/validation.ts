@@ -1,3 +1,4 @@
+import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../../../types/index.js";
 import { ConfigurationError, ConfigurationField } from "../errors/launch-errors.js";
 
@@ -83,6 +84,7 @@ export async function validateTimezone(
 export function isSimilarConfig(
   current?: BrowserLauncherOptions,
   next?: BrowserLauncherOptions,
+  logger?: FastifyBaseLogger,
 ): boolean {
   if (!current || !next) return false;
 
@@ -104,11 +106,57 @@ export function isSimilarConfig(
   const currentBlockAds = current.blockAds ?? true;
   const nextBlockAds = next.blockAds ?? true;
 
+  const currentUserAgent = current.userAgent || "";
+  const nextUserAgent = next.userAgent || "";
+
+  const currentUserDataDir = current.userDataDir || "";
+  const nextUserDataDir = next.userDataDir || "";
+
+  const currentTimezone = current.timezone || "";
+  const nextTimezone = next.timezone || "";
+
+  const currentSkipFingerprint = current.skipFingerprintInjection ?? false;
+  const nextSkipFingerprint = next.skipFingerprintInjection ?? false;
+
+  const currentWidth = current.dimensions?.width ?? 1920;
+  const nextWidth = next.dimensions?.width ?? 1920;
+
+  const currentHeight = current.dimensions?.height ?? 1080;
+  const nextHeight = next.dimensions?.height ?? 1080;
+
+  const { session: _s1, ...currentExtra } = (current.extra ?? {}) as Record<string, unknown>;
+  const { session: _s2, ...nextExtra } = (next.extra ?? {}) as Record<string, unknown>;
+
+  logger?.info({
+    currentHeadless: currentHeadless === nextHeadless,
+    currentProxy: currentProxy === nextProxy,
+    currentUserAgent: currentUserAgent === nextUserAgent,
+    currentUserDataDir: currentUserDataDir === nextUserDataDir,
+    currentSkipFingerprint: currentSkipFingerprint === nextSkipFingerprint,
+    currentWidth: currentWidth === nextWidth,
+    currentHeight: currentHeight === nextHeight,
+    currentBlockAds: currentBlockAds === nextBlockAds,
+    currentTimezone: JSON.stringify(currentTimezone) === JSON.stringify(nextTimezone),
+    currentArgs: JSON.stringify(currentArgs) === JSON.stringify(nextArgs),
+    currentExt: JSON.stringify(currentExt) === JSON.stringify(nextExt),
+    currentExtra: JSON.stringify(currentExtra) === JSON.stringify(nextExtra),
+    currentUserPreferences:
+      JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences),
+  });
+
   return (
     currentHeadless === nextHeadless &&
     currentProxy === nextProxy &&
+    currentUserAgent === nextUserAgent &&
+    currentUserDataDir === nextUserDataDir &&
+    currentSkipFingerprint === nextSkipFingerprint &&
+    currentWidth === nextWidth &&
+    currentHeight === nextHeight &&
+    currentBlockAds === nextBlockAds &&
+    JSON.stringify(currentTimezone) === JSON.stringify(nextTimezone) &&
     JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
     JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
-    currentBlockAds === nextBlockAds
+    JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
+    JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences)
   );
 }

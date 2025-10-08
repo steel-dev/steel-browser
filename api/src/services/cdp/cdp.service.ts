@@ -140,6 +140,13 @@ export class CDPService extends EventEmitter {
       blockAds: true,
       extensions: [],
       userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
+      timezone: Promise.resolve(this.defaultTimezone),
+      userPreferences: {
+        plugins: {
+          always_open_pdf_externally: true,
+          plugins_disabled: ["Chrome PDF Viewer"],
+        },
+      },
     };
 
     this.pluginManager = new PluginManager(this, logger);
@@ -675,7 +682,7 @@ export class CDPService extends EventEmitter {
       const launchProcess = (async () => {
         const shouldReuseInstance =
           this.browserInstance &&
-          isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig);
+          isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig, this.logger);
 
         if (shouldReuseInstance) {
           this.logger.info(
