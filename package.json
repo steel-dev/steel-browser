@@ -33,5 +33,8 @@
     "fastify": "^5.2.1",
     "husky": "^9.1.7",
     "lodash-es": "^4.17.21"
+  },
+  "overrides": {
+    "tar-fs": ">=3.1.1"
   }
 }

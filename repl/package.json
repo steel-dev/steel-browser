@@ -14,5 +14,8 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "overrides": {
+    "tar-fs": ">=3.1.1"
   }
 }
