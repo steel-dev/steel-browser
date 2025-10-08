@@ -91,7 +91,8 @@
     "zod-to-json-schema": "^3.24.1"
   },
   "overrides": {
-    "cross-spawn": "^7.0.6"
+    "cross-spawn": "^7.0.6",
+    "tar-fs": ">=3.1.1"
   },
   "peerDependencies": {
     "@opentelemetry/api": "1.9.0",

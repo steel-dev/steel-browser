@@ -70,5 +70,8 @@
     "tailwindcss": "^3.4.13",
     "typescript": "^5.7.3",
     "vite": "^6.3.5"
+  },
+  "overrides": {
+    "tar-fs": ">=3.1.1"
   }
 }
