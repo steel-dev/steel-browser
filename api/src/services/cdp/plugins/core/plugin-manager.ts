@@ -1,6 +1,6 @@
 import { Browser, Page } from "puppeteer-core";
 import { CDPService } from "../../cdp.service.js";
-import { BasePlugin, type PluginContext } from "./base-plugin.js";
+import { BasePlugin } from "./base-plugin.js";
 import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../../../../types/browser.js";
 
@@ -52,10 +52,9 @@ export class PluginManager {
    * Notify all plugins about a browser launch
    */
   public async onBrowserLaunch(browser: Browser): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onBrowserLaunch(browser, ctx);
+        await plugin.onBrowserLaunch(browser);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBrowserLaunch: ${error}`);
       }
@@ -64,10 +63,9 @@ export class PluginManager {
   }
 
   public onBrowserReady(context: BrowserLauncherOptions): void {
-    const ctx = this.getContext();
     for (const plugin of this.plugins.values()) {
       try {
-        plugin.onBrowserReady(context, ctx);
+        plugin.onBrowserReady(context);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBrowserReady: ${error}`);
       }
@@ -78,10 +76,9 @@ export class PluginManager {
    * Notify all plugins about a page creation
    */
   public async onPageCreated(page: Page): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onPageCreated(page, ctx);
+        await plugin.onPageCreated(page);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onPageCreated: ${error}`);
       }
@@ -93,10 +90,9 @@ export class PluginManager {
    * Notify all plugins before browser closes
    */
   public async onBrowserClose(browser: Browser): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onBrowserClose(browser, ctx);
+        await plugin.onBrowserClose(browser);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBrowserClose: ${error}`);
       }
@@ -108,10 +104,9 @@ export class PluginManager {
    * Notify all plugins before a page navigates
    */
   public async onPageNavigate(page: Page): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onPageNavigate(page, ctx);
+        await plugin.onPageNavigate(page);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onPageNavigate: ${error}`);
       }
@@ -123,10 +118,9 @@ export class PluginManager {
    * Notify all plugins before a page unloads
    */
   public async onPageUnload(page: Page): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onPageUnload(page, ctx);
+        await plugin.onPageUnload(page);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onPageUnload: ${error}`);
       }
@@ -138,10 +132,9 @@ export class PluginManager {
    * Notify all plugins before a page closes
    */
   public async onBeforePageClose(page: Page): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onBeforePageClose(page, ctx);
+        await plugin.onBeforePageClose(page);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBeforePageClose: ${error}`);
       }
@@ -153,10 +146,9 @@ export class PluginManager {
    * Notify all plugins about shutdown
    */
   public async onShutdown(): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onShutdown(ctx);
+        await plugin.onShutdown();
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onShutdown: ${error}`);
       }
@@ -168,20 +160,13 @@ export class PluginManager {
    * Notify all plugins when a session has ended
    */
   public async onSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {
-    const ctx = this.getContext();
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onSessionEnd(sessionConfig, ctx);
+        await plugin.onSessionEnd(sessionConfig);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onSessionEnd: ${error}`);
       }
     });
     await Promise.all(promises);
-  }
-
-  private getContext(): PluginContext {
-    return {
-      logger: this.service.getBrowserLogger(),
-    };
   }
 }
