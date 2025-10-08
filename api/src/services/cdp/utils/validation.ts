@@ -84,7 +84,6 @@ export async function validateTimezone(
 export function isSimilarConfig(
   current?: BrowserLauncherOptions,
   next?: BrowserLauncherOptions,
-  logger?: FastifyBaseLogger,
 ): boolean {
   if (!current || !next) return false;
 
@@ -126,23 +125,6 @@ export function isSimilarConfig(
 
   const { session: _s1, ...currentExtra } = (current.extra ?? {}) as Record<string, unknown>;
   const { session: _s2, ...nextExtra } = (next.extra ?? {}) as Record<string, unknown>;
-
-  logger?.info({
-    currentHeadless: currentHeadless === nextHeadless,
-    currentProxy: currentProxy === nextProxy,
-    currentUserAgent: currentUserAgent === nextUserAgent,
-    currentUserDataDir: currentUserDataDir === nextUserDataDir,
-    currentSkipFingerprint: currentSkipFingerprint === nextSkipFingerprint,
-    currentWidth: currentWidth === nextWidth,
-    currentHeight: currentHeight === nextHeight,
-    currentBlockAds: currentBlockAds === nextBlockAds,
-    currentTimezone: JSON.stringify(currentTimezone) === JSON.stringify(nextTimezone),
-    currentArgs: JSON.stringify(currentArgs) === JSON.stringify(nextArgs),
-    currentExt: JSON.stringify(currentExt) === JSON.stringify(nextExt),
-    currentExtra: JSON.stringify(currentExtra) === JSON.stringify(nextExtra),
-    currentUserPreferences:
-      JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences),
-  });
 
   return (
     currentHeadless === nextHeadless &&
