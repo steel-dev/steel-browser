@@ -83,6 +83,7 @@ export class CDPService extends EventEmitter {
   private browserInstance: Browser | null;
   private wsEndpoint: string | null;
   private fingerprintData: BrowserFingerprintWithHeaders | null;
+  private sessionContext: SessionData | null;
   private chromeExecPath: string;
   private wsProxyServer: httpProxy;
   private primaryPage: Page | null;
@@ -112,6 +113,7 @@ export class CDPService extends EventEmitter {
     this.browserInstance = null;
     this.wsEndpoint = null;
     this.fingerprintData = null;
+    this.sessionContext = null;
     this.chromeExecPath = getChromeExecutablePath();
     this.defaultTimezone = env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
     this.trackedOrigins = new Set<string>();
@@ -161,6 +163,10 @@ export class CDPService extends EventEmitter {
 
   public getFingerprintData(): BrowserFingerprintWithHeaders | null {
     return this.fingerprintData;
+  }
+
+  public getSessionContext(): SessionData | null {
+    return this.sessionContext;
   }
 
   public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
@@ -589,7 +595,7 @@ export class CDPService extends EventEmitter {
 
         this.removeAllHandlers();
         await this.browserInstance.close();
-        // await this.browserInstance.process()?.kill();
+        await this.browserInstance.process()?.kill();
         await this.shutdownHook();
 
         this.logger.info("[CDPService] Cleaning up files during shutdown");
@@ -610,7 +616,7 @@ export class CDPService extends EventEmitter {
         this.logger.error(`[CDPService] Error during shutdown: ${error}`);
         // Ensure we complete the shutdown even if plugins throw errors
         await this.browserInstance?.close();
-        // await this.browserInstance?.process()?.kill();
+        await this.browserInstance?.process()?.kill();
         await this.shutdownHook();
 
         try {
@@ -677,6 +683,7 @@ export class CDPService extends EventEmitter {
       });
 
       const launchProcess = (async () => {
+        console.log(`TRUE LAUNCH: ${JSON.stringify(config)}`);
         const shouldReuseInstance =
           this.browserInstance &&
           isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig);
@@ -686,6 +693,8 @@ export class CDPService extends EventEmitter {
             "[CDPService] Reusing existing browser instance with default configuration.",
           );
           this.launchConfig = config || this.defaultLaunchConfig;
+
+          console.log(`AFTER SWAP: ${JSON.stringify(this.launchConfig)}`);
           try {
             await this.refreshPrimaryPage();
           } catch (error) {
@@ -711,10 +720,11 @@ export class CDPService extends EventEmitter {
               throw contextError;
             }
           }
+          console.log("WE MADE IT HERE");
 
           this.pluginManager.onBrowserReady(this.launchConfig);
 
-          return this.browserInstance!;
+          return this.browserInstance!; // RETURNS HERE
         } else if (this.browserInstance) {
           this.logger.info(
             "[CDPService] Existing browser instance detected. Closing it before launching a new one.",
@@ -750,13 +760,16 @@ export class CDPService extends EventEmitter {
           this.logger.warn(`[CDPService] ${cleanupError.message} - continuing with launch`);
         }
 
-        const { options, userAgent, userDataDir } = this.launchConfig;
+        const { options, userAgent, userDataDir, fingerprint } = this.launchConfig;
+        console.log(`LAUNCH CONFIG: ${JSON.stringify(this.launchConfig)}`);
+        this.fingerprintData = fingerprint ?? null;
 
         // Fingerprint generation - can fail gracefully
         if (
           !env.SKIP_FINGERPRINT_INJECTION &&
           !userAgent &&
-          !this.launchConfig.skipFingerprintInjection
+          !this.launchConfig.skipFingerprintInjection &&
+          !fingerprint
         ) {
           try {
             const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
@@ -1260,10 +1273,12 @@ export class CDPService extends EventEmitter {
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
+    this.sessionContext = await this.getBrowserState();
 
     await this.shutdown();
     await this.pluginManager.onSessionEnd(sessionConfig);
     this.currentSessionConfig = null;
+    this.sessionContext = null;
     this.trackedOrigins.clear();
     await this.launch(this.defaultLaunchConfig);
   }
