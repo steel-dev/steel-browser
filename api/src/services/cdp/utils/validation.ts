@@ -85,10 +85,6 @@ export function isSimilarConfig(
   next?: BrowserLauncherOptions,
 ): boolean {
   if (!current || !next) {
-    console.log(
-      "Either current or next config is missing:\n",
-      JSON.stringify({ current, next }, null, 2),
-    );
     return false;
   }
 
