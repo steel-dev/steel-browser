@@ -60,7 +60,6 @@
     "@fastify/swagger": "^9.4.2",
     "@fastify/view": "10.0.2",
     "@joplin/turndown": "^4.0.80",
-    "@mozilla/readability": "^0.5.0",
     "@scalar/fastify-api-reference": "^1.25.116",
     "archiver": "^7.0.1",
     "axios": "^1.12.0",
