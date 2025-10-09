@@ -1114,6 +1114,10 @@ export class CDPService extends EventEmitter {
     );
   }
 
+  public getDimensions() {
+    return this.currentSessionConfig?.dimensions || { width: 1920, height: 1080 };
+  }
+
   public getFingerprintData(): BrowserFingerprintWithHeaders | null {
     return this.fingerprintData;
   }

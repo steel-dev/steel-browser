@@ -73,6 +73,7 @@ export class SessionService {
       ...defaultSession,
       ...sessionStats,
       userAgent: this.cdpService.getUserAgent() ?? "",
+      dimensions: this.cdpService.getDimensions(),
       completion: Promise.resolve(),
       complete: () => {},
       proxyServer: undefined,
@@ -131,12 +132,15 @@ export class SessionService {
       );
     }
 
+    // If dimensions not provided, get from CDP service
+    const finalDimensions = dimensions || this.cdpService.getDimensions();
+
     await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
       proxy: proxyUrl,
       solveCaptcha: false,
-      dimensions,
+      dimensions: finalDimensions,
       isSelenium,
     });
 
@@ -205,6 +209,7 @@ export class SessionService {
         userAgent:
           userAgent ||
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        dimensions: this.cdpService.getDimensions(),
       });
 
       return this.activeSession;
@@ -219,6 +224,7 @@ export class SessionService {
         userAgent:
           this.cdpService.getUserAgent() ||
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        dimensions: this.cdpService.getDimensions(),
       });
     }
 
