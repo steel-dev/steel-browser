@@ -1114,6 +1114,10 @@ export class CDPService extends EventEmitter {
     );
   }
 
+  public getFingerprintData(): BrowserFingerprintWithHeaders | null {
+    return this.fingerprintData;
+  }
+
   public async getCookies(): Promise<Protocol.Network.Cookie[]> {
     if (!this.primaryPage) {
       throw new Error("Primary page not initialized");
