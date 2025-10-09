@@ -176,19 +176,10 @@ export class CDPService extends EventEmitter {
     return this.fingerprintData;
   }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 07bdef5 (fix: update validation for reusing browsers, add in passing fingerprints, update types)
   public getSessionContext(): SessionData | null {
     return this.sessionContext;
   }
 
-<<<<<<< HEAD
-=======
->>>>>>> 17d10af (feat: export fingerprint data in CDP service)
-=======
->>>>>>> 07bdef5 (fix: update validation for reusing browsers, add in passing fingerprints, update types)
   public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
     this.launchMutators.push(fn);
   }
@@ -615,7 +606,7 @@ export class CDPService extends EventEmitter {
 
         this.removeAllHandlers();
         await this.browserInstance.close();
-        await this.browserInstance.process()?.kill();
+        // await this.browserInstance.process()?.kill();
         await this.shutdownHook();
 
         this.logger.info("[CDPService] Cleaning up files during shutdown");
@@ -636,7 +627,7 @@ export class CDPService extends EventEmitter {
         this.logger.error(`[CDPService] Error during shutdown: ${error}`);
         // Ensure we complete the shutdown even if plugins throw errors
         await this.browserInstance?.close();
-        await this.browserInstance?.process()?.kill();
+        // await this.browserInstance?.process()?.kill();
         await this.shutdownHook();
 
         try {
@@ -703,7 +694,6 @@ export class CDPService extends EventEmitter {
       });
 
       const launchProcess = (async () => {
-        console.log(`TRUE LAUNCH: ${JSON.stringify(config)}`);
         const shouldReuseInstance =
           this.browserInstance &&
           isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig);
@@ -714,10 +704,6 @@ export class CDPService extends EventEmitter {
           );
           this.launchConfig = config || this.defaultLaunchConfig;
 
-<<<<<<< HEAD
-=======
-          console.log(`AFTER SWAP: ${JSON.stringify(this.launchConfig)}`);
->>>>>>> 07bdef5 (fix: update validation for reusing browsers, add in passing fingerprints, update types)
           try {
             await this.refreshPrimaryPage();
           } catch (error) {
@@ -743,11 +729,6 @@ export class CDPService extends EventEmitter {
               throw contextError;
             }
           }
-<<<<<<< HEAD
-=======
-          console.log("WE MADE IT HERE");
-
->>>>>>> 07bdef5 (fix: update validation for reusing browsers, add in passing fingerprints, update types)
           this.pluginManager.onBrowserReady(this.launchConfig);
 
           return this.browserInstance!; // RETURNS HERE
@@ -787,7 +768,6 @@ export class CDPService extends EventEmitter {
         }
 
         const { options, userAgent, userDataDir, fingerprint } = this.launchConfig;
-<<<<<<< HEAD
         this.fingerprintData = fingerprint ?? null;
 
         // Run launch mutators - plugin errors should be caught
@@ -802,21 +782,13 @@ export class CDPService extends EventEmitter {
             PluginOperation.PRE_LAUNCH_HOOK,
           );
         }
-=======
-        console.log(`LAUNCH CONFIG: ${JSON.stringify(this.launchConfig)}`);
-        this.fingerprintData = fingerprint ?? null;
->>>>>>> 07bdef5 (fix: update validation for reusing browsers, add in passing fingerprints, update types)
 
         // Fingerprint generation - can fail gracefully
         if (
           !env.SKIP_FINGERPRINT_INJECTION &&
           !userAgent &&
           !this.launchConfig.skipFingerprintInjection &&
-<<<<<<< HEAD
           !this.fingerprintData
-=======
-          !fingerprint
->>>>>>> 07bdef5 (fix: update validation for reusing browsers, add in passing fingerprints, update types)
         ) {
           try {
             const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {

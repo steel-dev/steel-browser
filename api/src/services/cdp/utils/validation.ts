@@ -86,13 +86,6 @@ export function isSimilarConfig(
   next?: BrowserLauncherOptions,
 ): boolean {
   if (!current || !next) {
-<<<<<<< HEAD
-=======
-    console.log(
-      "Either current or next config is missing:\n",
-      JSON.stringify({ current, next }, null, 2),
-    );
->>>>>>> 903ecd0 (fix: update validation for reusing browsers, add in passing fingerprints, update types)
     return false;
   }
 
