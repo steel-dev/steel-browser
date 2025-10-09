@@ -30,6 +30,19 @@ const sessionStats = {
   proxyRxBytes: 0,
 };
 
+const defaultSession = {
+  status: "idle" as SessionDetails["status"],
+  websocketUrl: getBaseUrl("ws"),
+  debugUrl: getUrl("v1/sessions/debug"),
+  debuggerUrl: getUrl("v1/devtools/inspector.html"),
+  sessionViewerUrl: getBaseUrl(),
+  dimensions: { width: 1920, height: 1080 },
+  userAgent: "",
+  isSelenium: false,
+  proxy: "",
+  solveCaptcha: false,
+};
+
 export type ProxyFactory = (proxyUrl: string) => Promise<IProxyServer> | IProxyServer;
 
 export class SessionService {
@@ -57,55 +70,13 @@ export class SessionService {
     this.activeSession = {
       id: uuidv4(),
       createdAt: new Date().toISOString(),
-      ...this.getDefaultSession(),
+      ...defaultSession,
       ...sessionStats,
       userAgent: this.cdpService.getUserAgent() ?? "",
       completion: Promise.resolve(),
       complete: () => {},
       proxyServer: undefined,
     };
-  }
-
-  /**
-   * Get default session configuration
-   */
-  private getDefaultSession() {
-    const launchConfig = this.cdpService.getLaunchConfig();
-    const dimensions = launchConfig?.dimensions || { width: 1920, height: 1080 };
-
-    return {
-      status: "idle" as SessionDetails["status"],
-      websocketUrl: getBaseUrl("ws"),
-      debugUrl: getUrl("v1/sessions/debug"),
-      debuggerUrl: getUrl("v1/devtools/inspector.html"),
-      sessionViewerUrl: getBaseUrl(),
-      dimensions,
-      userAgent: "",
-      isSelenium: false,
-      proxy: "",
-      solveCaptcha: false,
-    };
-  }
-
-  /**
-   * Update active session dimensions from CDP service launch config
-   */
-  public updateSessionDimensions(): void {
-    const launchConfig = this.cdpService.getLaunchConfig();
-    if (launchConfig?.dimensions) {
-      this.activeSession.dimensions = launchConfig.dimensions;
-      this.logger.info(`Updated session dimensions to: ${JSON.stringify(launchConfig.dimensions)}`);
-    }
-  }
-
-  /**
-   * Get current session dimensions (either from active session or CDP launch config)
-   */
-  public getCurrentDimensions(): { width: number; height: number } {
-    const launchConfig = this.cdpService.getLaunchConfig();
-    return (
-      launchConfig?.dimensions || this.activeSession.dimensions || { width: 1920, height: 1080 }
-    );
   }
 
   public async startSession(options: {
@@ -144,24 +115,6 @@ export class SessionService {
       skipFingerprintInjection,
       userPreferences,
     } = options;
-
-    // log the options
-    this.logger.info(
-      `Starting session with options: ${JSON.stringify({
-        sessionId,
-        proxyUrl,
-        userAgent,
-        extensions,
-        logSinkUrl,
-        dimensions,
-        isSelenium,
-        blockAds,
-        optimizeBandwidth,
-        extra,
-        skipFingerprintInjection,
-        userPreferences,
-      })}`,
-    );
 
     // start fetching timezone as early as possible
     let timezonePromise: Promise<string>;
@@ -269,9 +222,6 @@ export class SessionService {
       });
     }
 
-    // Update dimensions from CDP service launch config to ensure we have the latest values
-    this.updateSessionDimensions();
-
     return this.activeSession;
   }
 
@@ -314,7 +264,7 @@ export class SessionService {
     const { promise, resolve } = Promise.withResolvers<void>();
     this.activeSession = {
       id: uuidv4(),
-      ...this.getDefaultSession(),
+      ...defaultSession,
       ...overrides,
       ...sessionStats,
       userAgent: this.cdpService.getUserAgent() ?? "",
