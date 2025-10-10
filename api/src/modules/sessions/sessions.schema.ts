@@ -52,7 +52,7 @@ const CreateSession = z.object({
     .optional()
     .describe("Flag to indicate if fingerprint injection should be skipped for this session."),
   // Specific to hosted steel
-  logSinkUrl: z.string().optional().describe("Log sink URL to use for the session"),
+  logSinkUrl: z.string().optional().describe("Deprecated: Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
   timezone: z.string().optional().describe("Timezone to use for the session"),
   dimensions: z

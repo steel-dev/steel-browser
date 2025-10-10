@@ -17,6 +17,12 @@
         "types": "./build/services/cdp/plugins/core/base-plugin.d.ts",
         "default": "./build/services/cdp/plugins/core/base-plugin.js"
       }
+    },
+    "./logger": {
+      "import": {
+        "types": "./build/plugins/logging/browser-logger.d.ts",
+        "default": "./build/plugins/logging/browser-logger.js"
+      }
     }
   },
   "scripts": {
