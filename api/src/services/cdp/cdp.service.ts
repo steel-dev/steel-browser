@@ -889,7 +889,7 @@ export class CDPService extends EventEmitter {
           "--disable-gpu",
           "--no-sandbox",
           "--disable-setuid-sandbox",
-          "--disable-features=IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,ExtensionsToolbarMenu",
+          "--disable-features=ExtensionsToolbarMenu,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--no-first-run",
