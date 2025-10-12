@@ -602,7 +602,7 @@ export class CDPService extends EventEmitter {
 
         this.removeAllHandlers();
         await this.browserInstance.close();
-        // await this.browserInstance.process()?.kill();
+        this.browserInstance.process()?.kill();
         await this.shutdownHook();
 
         this.logger.info("[CDPService] Cleaning up files during shutdown");
@@ -623,7 +623,7 @@ export class CDPService extends EventEmitter {
         this.logger.error(`[CDPService] Error during shutdown: ${error}`);
         // Ensure we complete the shutdown even if plugins throw errors
         await this.browserInstance?.close();
-        // await this.browserInstance?.process()?.kill();
+        this.browserInstance?.process()?.kill();
         await this.shutdownHook();
 
         try {
@@ -727,7 +727,7 @@ export class CDPService extends EventEmitter {
           }
           this.pluginManager.onBrowserReady(this.launchConfig);
 
-          return this.browserInstance!; // RETURNS HERE
+          return this.browserInstance!;
         } else if (this.browserInstance) {
           this.logger.info(
             "[CDPService] Existing browser instance detected. Closing it before launching a new one.",
