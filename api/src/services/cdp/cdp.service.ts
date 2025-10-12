@@ -813,6 +813,7 @@ export class CDPService extends EventEmitter {
 
             this.fingerprintData = fingerprintGen.getFingerprint();
           } catch (error) {
+            this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
             throw new FingerprintError(
               error instanceof Error ? error.message : String(error),
               FingerprintStage.GENERATION,
