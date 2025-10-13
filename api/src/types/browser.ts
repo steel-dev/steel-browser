@@ -5,6 +5,7 @@ import type {
   LocalStorageData,
   SessionStorageData,
 } from "../services/context/types.js";
+import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
 export type OptimizeBandwidthOptions = {
@@ -29,6 +30,7 @@ export interface BrowserLauncherOptions {
   extensions?: string[];
   logSinkUrl?: string;
   blockAds?: boolean;
+  fingerprint?: BrowserFingerprintWithHeaders;
   optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
   customHeaders?: Record<string, string>;
   timezone?: Promise<string>;

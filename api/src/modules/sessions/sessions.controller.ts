@@ -14,6 +14,8 @@ export const handleLaunchBrowserSession = async (
     const {
       sessionId,
       proxyUrl,
+      userDataDir,
+      persist,
       userAgent,
       sessionContext,
       extensions,
@@ -32,6 +34,8 @@ export const handleLaunchBrowserSession = async (
     return await server.sessionService.startSession({
       sessionId,
       proxyUrl,
+      userDataDir,
+      persist,
       userAgent,
       sessionContext: sessionContext as {
         cookies?: CookieData[] | undefined;

@@ -1,9 +1,16 @@
 import { FastifyBaseLogger } from "fastify";
 import { mkdir } from "fs/promises";
 import os from "os";
-import path from "path";
+import path, { dirname } from "path";
+import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env.js";
+import {
+  BrowserFingerprintWithHeaders,
+  FingerprintGenerator,
+  FingerprintGeneratorOptions,
+  VideoCard,
+} from "fingerprint-generator";
 import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
 import { BrowserLauncherOptions, OptimizeBandwidthOptions } from "../types/index.js";
 import { IProxyServer, ProxyServer } from "../utils/proxy.js";
@@ -89,7 +96,10 @@ export class SessionService {
       localStorage?: Record<string, Record<string, any>>;
     };
     isSelenium?: boolean;
+    fingerprint?: BrowserFingerprintWithHeaders;
     logSinkUrl?: string;
+    userDataDir?: string;
+    persist?: boolean;
     blockAds?: boolean;
     optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
     extensions?: string[];
@@ -108,6 +118,7 @@ export class SessionService {
       extensions,
       logSinkUrl,
       dimensions,
+      fingerprint,
       isSelenium,
       blockAds,
       optimizeBandwidth,
@@ -144,7 +155,10 @@ export class SessionService {
       isSelenium,
     });
 
-    const userDataDir = env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
+    const userDataDir =
+      options.userDataDir || options.persist === true
+        ? path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "user-data-dir")
+        : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
     await mkdir(userDataDir, { recursive: true });
 
     if (proxyUrl) {
@@ -186,6 +200,7 @@ export class SessionService {
       sessionContext,
       userAgent,
       blockAds,
+      fingerprint,
       optimizeBandwidth: normalizedOptimize,
       extensions: extensions || [],
       logSinkUrl,

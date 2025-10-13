@@ -85,7 +85,9 @@ export function isSimilarConfig(
   current?: BrowserLauncherOptions,
   next?: BrowserLauncherOptions,
 ): boolean {
-  if (!current || !next) return false;
+  if (!current || !next) {
+    return false;
+  }
 
   const normalizeArgs = (args?: string[]) => (args || []).filter(Boolean).slice().sort();
   const normalizeExt = (ext?: string[]) => (ext || []).slice().sort();

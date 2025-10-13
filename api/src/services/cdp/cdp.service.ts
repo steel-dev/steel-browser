@@ -83,6 +83,7 @@ export class CDPService extends EventEmitter {
   private browserInstance: Browser | null;
   private wsEndpoint: string | null;
   private fingerprintData: BrowserFingerprintWithHeaders | null;
+  private sessionContext: SessionData | null;
   private chromeExecPath: string;
   private wsProxyServer: httpProxy;
   private primaryPage: Page | null;
@@ -112,6 +113,7 @@ export class CDPService extends EventEmitter {
     this.browserInstance = null;
     this.wsEndpoint = null;
     this.fingerprintData = null;
+    this.sessionContext = null;
     this.chromeExecPath = getChromeExecutablePath();
     this.defaultTimezone = env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
     this.trackedOrigins = new Set<string>();
@@ -168,6 +170,10 @@ export class CDPService extends EventEmitter {
 
   public getLaunchConfig(): BrowserLauncherOptions | undefined {
     return this.launchConfig;
+  }
+
+  public getSessionContext(): SessionData | null {
+    return this.sessionContext;
   }
 
   public registerLaunchHook(fn: (config: BrowserLauncherOptions) => Promise<void> | void) {
@@ -693,6 +699,7 @@ export class CDPService extends EventEmitter {
             "[CDPService] Reusing existing browser instance with default configuration.",
           );
           this.launchConfig = config || this.defaultLaunchConfig;
+
           try {
             await this.refreshPrimaryPage();
           } catch (error) {
@@ -718,7 +725,6 @@ export class CDPService extends EventEmitter {
               throw contextError;
             }
           }
-
           this.pluginManager.onBrowserReady(this.launchConfig);
 
           return this.browserInstance!;
@@ -757,7 +763,8 @@ export class CDPService extends EventEmitter {
           this.logger.warn(`[CDPService] ${cleanupError.message} - continuing with launch`);
         }
 
-        const { options, userAgent, userDataDir } = this.launchConfig;
+        const { options, userAgent, userDataDir, fingerprint } = this.launchConfig;
+        this.fingerprintData = fingerprint ?? null;
 
         // Run launch mutators - plugin errors should be caught
         try {
@@ -1281,10 +1288,12 @@ export class CDPService extends EventEmitter {
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
+    this.sessionContext = await this.getBrowserState();
 
     await this.shutdown();
     await this.pluginManager.onSessionEnd(sessionConfig);
     this.currentSessionConfig = null;
+    this.sessionContext = null;
     this.trackedOrigins.clear();
     await this.launch(this.defaultLaunchConfig);
   }
