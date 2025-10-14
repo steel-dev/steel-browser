@@ -170,7 +170,9 @@ const SessionLiveDetailsResponse = z.object({
 
 const SessionStreamResponse = z.string().describe("HTML content for the session streamer view");
 
-const MultipleSessions = z.array(SessionDetails);
+const MultipleSessions = z.object({
+  sessions: z.array(SessionDetails),
+});
 
 export type SessionsScrapeRequestBody = Omit<ScrapeRequestBody, "url">;
 export type SessionsScrapeRequest = FastifyRequest<{ Body: SessionsScrapeRequestBody }>;
