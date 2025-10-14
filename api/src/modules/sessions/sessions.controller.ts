@@ -134,7 +134,7 @@ export const handleGetSessions = async (
       new Date().getTime() - new Date(server.sessionService.activeSession.createdAt).getTime(),
   };
   const pastSessions = server.sessionService.pastSessions;
-  return reply.send([currentSession, ...pastSessions]);
+  return reply.send({ sessions: [currentSession, ...pastSessions] });
 };
 
 export const handleGetSessionStream = async (
