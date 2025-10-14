@@ -39,7 +39,7 @@ import {
   isUrlMatchingPatterns,
   isImageRequest,
 } from "../../utils/requests.js";
-import { filterHeaders, getChromeExecutablePath } from "../../utils/browser.js";
+import { filterHeaders, getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
 import {
   deepMerge,
   extractStorageForPage,
@@ -318,6 +318,8 @@ export class CDPService extends EventEmitter {
 
         // Notify plugins about the new page
         await this.pluginManager.onPageCreated(page);
+
+        installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
 
         if (this.currentSessionConfig?.timezone) {
           try {
