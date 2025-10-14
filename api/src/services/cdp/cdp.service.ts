@@ -158,6 +158,10 @@ export class CDPService extends EventEmitter {
     this.pluginManager = new PluginManager(this, logger);
   }
 
+  public getLogger(name: string) {
+    return this.logger.child({ component: name });
+  }
+
   public setProxyWebSocketHandler(
     handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
   ): void {
@@ -834,7 +838,8 @@ export class CDPService extends EventEmitter {
 
         let extensionPaths: string[] = [];
         try {
-          const defaultExtensions = ["recorder"];
+          // const defaultExtensions = ["recorder"];
+          const defaultExtensions = [];
           const customExtensions = this.launchConfig.extensions
             ? [...this.launchConfig.extensions]
             : [];
@@ -891,9 +896,11 @@ export class CDPService extends EventEmitter {
           "--no-sandbox",
           // "--disable-setuid-sandbox", unsupported
           // "--disable-features=ExtensionsToolbarMenu,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
-          "--disable-features=ExtensionsToolbarMenu",
+          "--disable-features=ExtensionsToolbarMenu,PermissionPromptSurvey",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
+          "--disable-sync",
+          "--disable-translate",
           "--no-first-run",
           "--disable-search-engine-choice-screen",
           "--disable-blink-features=AutomationControlled",
