@@ -141,6 +141,7 @@ export function isSimilarConfig(
     JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
     JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
     JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
-    JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences)
+    JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences) &&
+    JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig)
   );
 }

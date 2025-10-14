@@ -787,22 +787,27 @@ export class CDPService extends EventEmitter {
           !this.fingerprintData
         ) {
           try {
-            const defaultFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
+            let fingerprintOptions: Partial<FingerprintGeneratorOptions> = {
               devices: ["desktop"],
               operatingSystems: ["linux"],
               browsers: [{ name: "chrome", minVersion: 136 }],
               locales: ["en-US", "en"],
-            };
-
-            const fingerprintGen = new FingerprintGenerator({
-              ...defaultFingerprintOptions,
               screen: {
                 minWidth: this.launchConfig.dimensions?.width ?? 1920,
                 minHeight: this.launchConfig.dimensions?.height ?? 1080,
                 maxWidth: this.launchConfig.dimensions?.width ?? 1920,
                 maxHeight: this.launchConfig.dimensions?.height ?? 1080,
               },
-            });
+            };
+
+            if (this.launchConfig.deviceConfig?.device === "mobile") {
+              fingerprintOptions = {
+                devices: ["mobile"],
+                locales: ["en-US", "en"],
+              };
+            }
+
+            const fingerprintGen = new FingerprintGenerator(fingerprintOptions);
 
             this.fingerprintData = fingerprintGen.getFingerprint();
           } catch (error) {
@@ -817,7 +822,12 @@ export class CDPService extends EventEmitter {
           );
         }
 
-        this.currentSessionConfig = this.launchConfig;
+        this.currentSessionConfig = {
+          ...this.launchConfig,
+          dimensions: this.launchConfig.dimensions || this.fingerprintData?.fingerprint.screen,
+          userAgent:
+            this.launchConfig.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent,
+        };
 
         let extensionPaths: string[] = [];
         try {
@@ -1415,10 +1425,6 @@ export class CDPService extends EventEmitter {
 
         await page.setExtraHTTPHeaders(injectedHeaders);
 
-        await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
-
-        await session.send("Emulation.clearDeviceMetricsOverride");
-
         await session.send("Emulation.setUserAgentOverride", {
           userAgent: userAgent,
           acceptLanguage: headers["accept-language"],
@@ -1455,14 +1461,16 @@ export class CDPService extends EventEmitter {
           fixedModel: userAgentMetadata.model || "",
           fixedPlatformVersion: userAgentMetadata.platformVersion || "15.0.0",
           fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
-          fixedBrands: userAgentMetadata.brands as unknown as Array<{
-            brand: string;
-            version: string;
-          }>,
+          fixedBrands:
+            userAgentMetadata.brands ||
+            ([] as unknown as Array<{
+              brand: string;
+              version: string;
+            }>),
         }),
       );
     } catch (error) {
-      this.logger.error(`[Fingerprint] Error injecting fingerprint safely: ${error}`);
+      this.logger.error({ error }, `[Fingerprint] Error injecting fingerprint safely`);
       const fingerprintInjector = new FingerprintInjector();
       // @ts-ignore - Ignore type mismatch between puppeteer versions
       await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);

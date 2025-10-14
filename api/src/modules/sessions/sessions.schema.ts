@@ -51,6 +51,14 @@ const CreateSession = z.object({
     .boolean()
     .optional()
     .describe("Flag to indicate if fingerprint injection should be skipped for this session."),
+  deviceConfig: z
+    .object({
+      device: z.enum(["desktop", "mobile"]).default("desktop"),
+    })
+    .optional()
+    .describe(
+      "Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations.",
+    ),
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
