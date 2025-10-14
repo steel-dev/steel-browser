@@ -5,12 +5,7 @@ import path, { dirname } from "path";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env.js";
-import {
-  BrowserFingerprintWithHeaders,
-  FingerprintGenerator,
-  FingerprintGeneratorOptions,
-  VideoCard,
-} from "fingerprint-generator";
+import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
 import { BrowserLauncherOptions, OptimizeBandwidthOptions } from "../types/index.js";
 import { IProxyServer, ProxyServer } from "../utils/proxy.js";
@@ -109,6 +104,7 @@ export class SessionService {
     credentials: CredentialsOptions;
     skipFingerprintInjection?: boolean;
     userPreferences?: Record<string, any>;
+    deviceConfig?: { device: "desktop" | "mobile" };
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -126,6 +122,7 @@ export class SessionService {
       credentials,
       skipFingerprintInjection,
       userPreferences,
+      deviceConfig,
     } = options;
 
     // start fetching timezone as early as possible
@@ -211,6 +208,7 @@ export class SessionService {
       extra,
       credentials,
       skipFingerprintInjection,
+      deviceConfig,
     };
 
     if (isSelenium) {
