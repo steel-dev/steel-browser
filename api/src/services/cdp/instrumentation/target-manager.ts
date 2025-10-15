@@ -2,7 +2,7 @@ import { type Target, type CDPSession, TargetType } from "puppeteer-core";
 import type { FastifyBaseLogger } from "fastify";
 
 import { attachPageEvents } from "./page-events.js";
-import { attachCdpEvents } from "./cdp-events.js";
+import { attachCDPEvents } from "./cdp-events.js";
 import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
 import { BrowserLogger } from "./browser-logger.js";
@@ -40,7 +40,7 @@ export class TargetInstrumentationManager {
 
         const session = await target.createCDPSession();
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
-        attachCdpEvents(session, this.logger);
+        attachCDPEvents(session, this.logger);
 
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
@@ -51,7 +51,7 @@ export class TargetInstrumentationManager {
       case TargetType.SERVICE_WORKER: {
         const session = await target.createCDPSession();
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
-        attachCdpEvents(session, this.logger);
+        attachCDPEvents(session, this.logger);
 
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
@@ -64,7 +64,7 @@ export class TargetInstrumentationManager {
       case TargetType.SHARED_WORKER: {
         const session = await target.createCDPSession();
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
-        attachCdpEvents(session, this.logger);
+        attachCDPEvents(session, this.logger);
 
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
@@ -77,7 +77,7 @@ export class TargetInstrumentationManager {
       case TargetType.WEBVIEW: {
         const session = await target.createCDPSession();
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
-        attachCdpEvents(session, this.logger);
+        attachCDPEvents(session, this.logger);
 
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
@@ -92,7 +92,7 @@ export class TargetInstrumentationManager {
       default: {
         const session = await target.createCDPSession();
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
-        attachCdpEvents(session, this.logger);
+        attachCDPEvents(session, this.logger);
 
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);

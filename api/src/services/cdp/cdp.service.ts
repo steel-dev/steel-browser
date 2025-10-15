@@ -106,9 +106,14 @@ export class CDPService extends EventEmitter {
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
 
-  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
+  constructor(
+    config: { keepAlive?: boolean },
+    logger: FastifyBaseLogger,
+    storage?: any,
+    enableConsoleLogging?: boolean,
+  ) {
     super();
-    this.logger = logger.child({ component: "cdp" });
+    this.logger = logger.child({ component: "CDPService" });
     const { keepAlive = true } = config;
 
     this.keepAlive = keepAlive;
@@ -162,11 +167,16 @@ export class CDPService extends EventEmitter {
     this.instrumentationLogger = createInstrumentationLogger({
       baseLogger: this.logger,
       initialContext: {},
+      storage: storage || null,
+      enableConsoleLogging: enableConsoleLogging ?? true,
     });
     this.targetInstrumentationManager = new TargetInstrumentationManager(
       this.instrumentationLogger,
       this.logger,
     );
+    this.instrumentationLogger?.on?.(EmitEvent.Log, (event, context) => {
+      this.emit(EmitEvent.Log, event);
+    });
     this.logger.info("[CDPService] Target instrumentation enabled");
   }
 
@@ -1141,13 +1151,6 @@ export class CDPService extends EventEmitter {
     this.currentSessionConfig = sessionConfig;
     this.trackedOrigins.clear(); // Clear tracked origins when starting a new session
 
-    if (sessionConfig.extra?.sessionId) {
-      this.instrumentationLogger.setContext({
-        sessionId: sessionConfig.extra.sessionId,
-        orgId: sessionConfig.extra?.orgId,
-      });
-    }
-
     return this.launch(sessionConfig);
   }
 
@@ -1163,10 +1166,7 @@ export class CDPService extends EventEmitter {
     this.sessionContext = null;
     this.trackedOrigins.clear();
 
-    this.instrumentationLogger.setContext({
-      sessionId: undefined,
-      orgId: undefined,
-    });
+    this.instrumentationLogger.resetContext();
 
     await this.launch(this.defaultLaunchConfig);
   }

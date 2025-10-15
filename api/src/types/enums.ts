@@ -18,9 +18,9 @@ export enum BrowserEventType {
   BrowserError = "BrowserError",
   Recording = "Recording",
   ScreencastFrame = "ScreencastFrame",
-  CdpCommand = "CdpCommand",
-  CdpCommandResult = "CdpCommandResult",
-  CdpEvent = "CdpEvent",
+  CDPCommand = "CDPCommand",
+  CDPCommandResult = "CDPCommandResult",
+  CDPEvent = "CDPEvent",
 }
 
 export enum EmitEvent {

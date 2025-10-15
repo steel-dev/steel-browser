@@ -42,16 +42,16 @@ export interface RecordingEvent extends BaseBrowserEvent {
   data: any;
 }
 
-export interface CdpEvent extends BaseBrowserEvent {
-  type: BrowserEventType.CdpEvent;
+export interface CDPEvent extends BaseBrowserEvent {
+  type: BrowserEventType.CDPEvent;
   cdp: {
     name: string;
     params?: object;
   };
 }
 
-export interface CdpCommandEvent extends BaseBrowserEvent {
-  type: BrowserEventType.CdpCommand;
+export interface CDPCommandEvent extends BaseBrowserEvent {
+  type: BrowserEventType.CDPCommand;
   cdp: {
     command: string;
     params?: object;
@@ -59,8 +59,8 @@ export interface CdpCommandEvent extends BaseBrowserEvent {
   };
 }
 
-export interface CdpCommandResultEvent extends BaseBrowserEvent {
-  type: BrowserEventType.CdpCommandResult;
+export interface CDPCommandResultEvent extends BaseBrowserEvent {
+  type: BrowserEventType.CDPCommandResult;
   cdp: {
     command: string;
     duration: number;
@@ -87,7 +87,7 @@ export type BrowserEventUnion =
   | ConsoleEvent
   | ErrorEvent
   | RecordingEvent
-  | CdpEvent
-  | CdpCommandEvent
-  | CdpCommandResultEvent
+  | CDPEvent
+  | CDPCommandEvent
+  | CDPCommandResultEvent
   | ExtensionEvent;

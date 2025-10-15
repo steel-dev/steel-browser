@@ -1,25 +1,41 @@
 import pino from "pino";
 import type { FastifyBaseLogger } from "fastify";
 import { BrowserEventUnion } from "./types.js";
+import { LogStorage } from "./storage/index.js";
+import { EventEmitter } from "events";
+import { EmitEvent } from "../../../types/enums.js";
 
 export type Context = Record<string, any>;
 
 export interface BrowserLogger {
   record(event: BrowserEventUnion): void;
+  resetContext(): void;
   setContext(
     update: Partial<Context> | ((prev: Readonly<Context>) => Partial<Context> | Context),
   ): void;
   getContext(): Readonly<Context>;
   flush?(): Promise<void>;
+  getStorage?(): LogStorage | null;
+  on?(event: EmitEvent.Log, listener: (event: BrowserEventUnion, context: Context) => void): this;
+  off?(event: EmitEvent.Log, listener: (event: BrowserEventUnion, context: Context) => void): this;
 }
 
 export interface CreateBrowserLoggerOptions {
   baseLogger: pino.Logger | FastifyBaseLogger;
   initialContext?: Context;
+  storage?: LogStorage;
+  enableConsoleLogging?: boolean;
 }
 
 export function createBrowserLogger(options: CreateBrowserLoggerOptions): BrowserLogger {
   let context: Context = options.initialContext ?? {};
+  const storage = options.storage || null;
+  const enableConsoleLogging = options.enableConsoleLogging ?? true;
+  const eventEmitter = new EventEmitter();
+
+  const resetContext = () => {
+    context = options.initialContext ?? {};
+  };
 
   const setContext = (
     update: Partial<Context> | ((prev: Readonly<Context>) => Partial<Context> | Context),
@@ -36,12 +52,54 @@ export function createBrowserLogger(options: CreateBrowserLoggerOptions): Browse
 
   const record = (event: BrowserEventUnion) => {
     const mergedEvent = { ...context, ...event };
-    options.baseLogger.info(mergedEvent, event.type);
+
+    if (enableConsoleLogging) {
+      options.baseLogger.info(mergedEvent, event.type);
+    }
+
+    if (storage) {
+      storage.write(event, context).catch((err) => {
+        options.baseLogger.error({ err }, "Failed to write event to storage");
+      });
+    }
+
+    eventEmitter.emit(EmitEvent.Log, event, context);
   };
 
-  return {
+  const flush = async () => {
+    if (storage) {
+      await storage.flush();
+    }
+  };
+
+  const getStorage = () => storage;
+
+  const on = (
+    event: EmitEvent.Log,
+    listener: (event: BrowserEventUnion, context: Context) => void,
+  ) => {
+    eventEmitter.on(event, listener);
+    return logger;
+  };
+
+  const off = (
+    event: EmitEvent.Log,
+    listener: (event: BrowserEventUnion, context: Context) => void,
+  ) => {
+    eventEmitter.off(event, listener);
+    return logger;
+  };
+
+  const logger: BrowserLogger = {
     record,
+    resetContext,
     setContext,
     getContext,
+    flush,
+    getStorage,
+    on,
+    off,
   };
+
+  return logger;
 }

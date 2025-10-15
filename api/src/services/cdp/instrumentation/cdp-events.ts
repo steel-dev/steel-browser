@@ -6,7 +6,7 @@ import { BrowserLogger } from "./browser-logger.js";
  * Attaches protocol tracing to a CDP session.
  * Logs only protocol commands / notifications so you can diff automation flow between runs.
  */
-export function attachCdpEvents(session: CDPSession, logger: BrowserLogger): void {
+export function attachCDPEvents(session: CDPSession, logger: BrowserLogger): void {
   const sessionId = session.id?.() ?? "unknown";
   const ts = () => new Date().toISOString();
   const originalSend = session.send.bind(session);
@@ -16,7 +16,7 @@ export function attachCdpEvents(session: CDPSession, logger: BrowserLogger): voi
     const start = performance.now();
 
     logger.record({
-      type: BrowserEventType.CdpCommand,
+      type: BrowserEventType.CDPCommand,
       timestamp: ts(),
       cdp: { command: method, params, sessionId },
     });
@@ -24,7 +24,7 @@ export function attachCdpEvents(session: CDPSession, logger: BrowserLogger): voi
     try {
       const result = await originalSend(method, params);
       logger.record({
-        type: BrowserEventType.CdpCommandResult,
+        type: BrowserEventType.CDPCommandResult,
         timestamp: ts(),
         cdp: {
           command: method,
@@ -36,7 +36,7 @@ export function attachCdpEvents(session: CDPSession, logger: BrowserLogger): voi
       return result;
     } catch (err) {
       logger.record({
-        type: BrowserEventType.CdpCommandResult,
+        type: BrowserEventType.CDPCommandResult,
         timestamp: ts(),
         cdp: {
           command: method,
@@ -55,7 +55,7 @@ export function attachCdpEvents(session: CDPSession, logger: BrowserLogger): voi
     const { method, params } = event;
     if (ignore.has(method)) return;
     logger.record({
-      type: BrowserEventType.CdpEvent,
+      type: BrowserEventType.CDPEvent,
       timestamp: ts(),
       cdp: { name: method, params },
     });

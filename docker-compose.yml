@@ -4,11 +4,15 @@ services:
     ports:
       - "3000:3000"
       - "9223:9223"
+    volumes:
+      - logs:/data/logs
+      - exports:/tmp/steel-browser-exports
+      - ./.cache:/app/.cache
     environment:
       - DOMAIN=${DOMAIN:-localhost:3000}
       - CDP_DOMAIN=${CDP_DOMAIN:-localhost:9223}
-    volumes:
-      - ./.cache:/app/.cache
+      - LOG_STORAGE_ENABLED=true
+      - LOG_STORAGE_PATH=/data/logs/browser-logs.duckdb
     networks:
       - steel-network
 
@@ -27,3 +31,9 @@ networks:
   steel-network:
     name: steel-network
     driver: bridge
+
+volumes:
+  logs:
+    driver: local
+  exports:
+    driver: local

@@ -69,6 +69,12 @@ const envSchema = z.object({
     .default("false"),
   PROXY_INTERNAL_BYPASS: z.string().optional(),
   CHROME_USER_DATA_DIR: z.string().optional(),
+  LOG_STORAGE_ENABLED: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
+  LOG_STORAGE_PATH: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
