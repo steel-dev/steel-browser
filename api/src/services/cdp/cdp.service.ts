@@ -838,8 +838,7 @@ export class CDPService extends EventEmitter {
 
         let extensionPaths: string[] = [];
         try {
-          // const defaultExtensions = ["recorder"];
-          const defaultExtensions = [];
+          const defaultExtensions = ["recorder"];
           const customExtensions = this.launchConfig.extensions
             ? [...this.launchConfig.extensions]
             : [];
@@ -894,9 +893,7 @@ export class CDPService extends EventEmitter {
           "--disable-dev-shm-usage",
           "--disable-gpu",
           "--no-sandbox",
-          // "--disable-setuid-sandbox", unsupported
-          // "--disable-features=ExtensionsToolbarMenu,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
-          "--disable-features=ExtensionsToolbarMenu,PermissionPromptSurvey",
+          "--disable-features=PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--disable-sync",
@@ -908,6 +905,14 @@ export class CDPService extends EventEmitter {
           "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
+          "--disable-renderer-backgrounding",
+          "--disable-client-side-phishing-detection",
+          "--disable-default-apps",
+          "--disable-component-update",
+          "--no-zygote",
+          "--disable-infobars",
+          "--disable-breakpad",
+          "--disable-background-networking",
         ];
 
         const headfulArgs = [
@@ -957,7 +962,7 @@ export class CDPService extends EventEmitter {
           timeout: 0,
           env: {
             TZ: timezone,
-            ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }), // Xvfb provided by entrypoint
+            ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }),
           },
           userDataDir,
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
@@ -1014,16 +1019,6 @@ export class CDPService extends EventEmitter {
             timestamp: new Date(),
           });
         });
-
-        // Monitor browser process exit for diagnostics
-        const browserProcess = this.browserInstance.process();
-        if (browserProcess) {
-          browserProcess.on("exit", (exitCode, signal) => {
-            this.logger.error(
-              `[CDPService] Chrome process exited: exitCode=${exitCode} signal=${signal} pid=${browserProcess.pid}`,
-            );
-          });
-        }
 
         try {
           this.primaryPage = (await this.browserInstance.pages())[0];
