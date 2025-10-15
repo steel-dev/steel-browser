@@ -968,10 +968,6 @@ export class CDPService extends EventEmitter {
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
         };
 
-        this.logger.info(
-          `[CDPService] Fly Metadata: Machine: ${process.env.FLY_MACHINE_ID}, App: ${process.env.FLY_APP_NAME}`,
-        );
-
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
 
