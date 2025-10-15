@@ -153,6 +153,7 @@ export class CDPService extends EventEmitter {
           plugins_disabled: ["Chrome PDF Viewer"],
         },
       },
+      deviceConfig: { device: "desktop" },
     };
 
     this.pluginManager = new PluginManager(this, logger);
