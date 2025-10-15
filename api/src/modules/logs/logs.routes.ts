@@ -1,5 +1,5 @@
 import { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { LogQuerySchema, ExportLogsSchema } from "./logs.schema.js";
+import { LogQuerySchema, ExportLogsSchema, LogQueryInput } from "./logs.schema.js";
 import { randomUUID } from "crypto";
 import { $ref } from "../../plugins/schemas.js";
 import { LogQuery } from "../../services/cdp/instrumentation/storage/index.js";
@@ -25,18 +25,24 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
         description: "Query browser logs from local storage",
       },
     },
-    async (request: FastifyRequest<{ Querystring: LogQuery }>) => {
+    async (request: FastifyRequest<{ Querystring: LogQueryInput }>) => {
       const query = request.query;
 
-      const result = await storage.query({
-        startTime: query.startTime ? new Date(query.startTime) : undefined,
-        endTime: query.endTime ? new Date(query.endTime) : undefined,
-        eventTypes: query.eventTypes,
-        pageId: query.pageId,
-        targetType: query.targetType,
-        limit: query.limit,
-        offset: query.offset,
-      });
+      let result;
+      try {
+        result = await storage.query({
+          startTime: query.startTime ? new Date(query.startTime) : undefined,
+          endTime: query.endTime ? new Date(query.endTime) : undefined,
+          eventTypes: query.eventTypes ? query.eventTypes.split(",") : undefined,
+          pageId: query.pageId,
+          targetType: query.targetType,
+          limit: query.limit,
+          offset: query.offset,
+        });
+      } catch (error) {
+        fastify.log.error({ error }, "Error querying logs");
+        throw error;
+      }
 
       return result;
     },

@@ -3,7 +3,7 @@ import { z } from "zod";
 export const LogQuerySchema = z.object({
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
-  eventTypes: z.array(z.string()).optional(),
+  eventTypes: z.string().optional(),
   pageId: z.string().optional(),
   targetType: z.string().optional(),
   limit: z.number().int().min(1).max(1000).optional().default(100),
