@@ -158,6 +158,10 @@ export class CDPService extends EventEmitter {
     this.pluginManager = new PluginManager(this, logger);
   }
 
+  public getLogger(name: string) {
+    return this.logger.child({ component: name });
+  }
+
   public setProxyWebSocketHandler(
     handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
   ): void {
@@ -813,6 +817,7 @@ export class CDPService extends EventEmitter {
 
             this.fingerprintData = fingerprintGen.getFingerprint();
           } catch (error) {
+            this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
             throw new FingerprintError(
               error instanceof Error ? error.message : String(error),
               FingerprintStage.GENERATION,
@@ -874,6 +879,8 @@ export class CDPService extends EventEmitter {
           }
         }
 
+        const isHeadless = !!this.launchConfig?.options?.headless;
+
         const extensionArgs = extensionPaths.length
           ? [
               `--load-extension=${extensionPaths.join(",")}`,
@@ -887,9 +894,11 @@ export class CDPService extends EventEmitter {
           "--disable-gpu",
           "--no-sandbox",
           "--disable-setuid-sandbox",
-          "--disable-features=IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
+          "--disable-features=PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
+          "--disable-sync",
+          "--disable-translate",
           "--no-first-run",
           "--disable-search-engine-choice-screen",
           "--disable-blink-features=AutomationControlled",
@@ -897,7 +906,27 @@ export class CDPService extends EventEmitter {
           "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
+          "--disable-renderer-backgrounding",
+          "--disable-client-side-phishing-detection",
+          "--disable-default-apps",
+          "--disable-component-update",
+          "--no-zygote",
+          "--disable-infobars",
+          "--disable-breakpad",
+          "--disable-background-networking",
         ];
+
+        const headfulArgs = [
+          "--ozone-platform=x11",
+          "--disable-renderer-backgrounding",
+          "--disable-backgrounding-occluded-windows",
+          "--use-gl=swiftshader",
+          "--in-process-gpu",
+          "--enable-crashpad",
+          "--crash-dumps-dir=/tmp/chrome-dumps",
+        ];
+
+        const headlessArgs = ["--headless=new", "--hide-crash-restore-bubble"];
 
         const dynamicArgs = [
           this.launchConfig.dimensions ? "" : "--start-maximized",
@@ -914,15 +943,16 @@ export class CDPService extends EventEmitter {
             : "",
         ];
 
-        const launchArgs = [
+        const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
+
+        const launchArgs = uniq([
           ...staticDefaultArgs,
+          ...(isHeadless ? headlessArgs : headfulArgs),
           ...dynamicArgs,
           ...extensionArgs,
           ...(options.args || []),
-          ...env.CHROME_ARGS,
-        ]
-          .filter(Boolean)
-          .filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
+          ...(env.CHROME_ARGS || []),
+        ]).filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
 
         const finalLaunchOptions = {
           ...options,
@@ -933,7 +963,7 @@ export class CDPService extends EventEmitter {
           timeout: 0,
           env: {
             TZ: timezone,
-            ...(!this.launchConfig.options.headless && { DISPLAY: env.DISPLAY }),
+            ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }),
           },
           userDataDir,
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr

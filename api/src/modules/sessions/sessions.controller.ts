@@ -30,6 +30,7 @@ export const handleLaunchBrowserSession = async (
       skipFingerprintInjection,
       userPreferences,
       deviceConfig,
+      headless,
     } = request.body;
 
     return await server.sessionService.startSession({
@@ -54,6 +55,7 @@ export const handleLaunchBrowserSession = async (
       skipFingerprintInjection,
       userPreferences,
       deviceConfig,
+      headless,
     });
   } catch (e: unknown) {
     server.log.error({ err: e }, "Failed lauching browser session");

@@ -27,5 +27,6 @@ dist
 extensions/*
 !extensions/recorder
 files/*
+static/*
 # Ignore future changes to this file
 src/services/cdp-lifecycle.service.ts
