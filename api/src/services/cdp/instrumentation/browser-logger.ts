@@ -3,7 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { BrowserEventUnion } from "./types.js";
 import { LogStorage } from "./storage/index.js";
 import { EventEmitter } from "events";
-import { EmitEvent } from "../../../types/enums.js";
+import { BrowserEventType, EmitEvent } from "../../../types/enums.js";
 
 export type Context = Record<string, any>;
 
@@ -63,7 +63,7 @@ export function createBrowserLogger(options: CreateBrowserLoggerOptions): Browse
       });
     }
 
-    eventEmitter.emit(EmitEvent.Log, event, context);
+    if (event.type !== BrowserEventType.Recording) eventEmitter.emit(EmitEvent.Log, event, context);
   };
 
   const flush = async () => {
