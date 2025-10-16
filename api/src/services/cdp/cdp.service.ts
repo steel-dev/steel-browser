@@ -810,10 +810,19 @@ export class CDPService extends EventEmitter {
               };
             }
 
+            console.log(
+              "[RELEASE_DEBUG] Fingerprint options:",
+              JSON.stringify(fingerprintOptions, null, 2),
+            );
+
             const fingerprintGen = new FingerprintGenerator(fingerprintOptions);
 
             this.fingerprintData = fingerprintGen.getFingerprint();
           } catch (error) {
+            console.error(
+              "[RELEASE_DEBUG] Error generating fingerprint:",
+              JSON.stringify({ error }),
+            );
             throw new FingerprintError(
               error instanceof Error ? error.message : String(error),
               FingerprintStage.GENERATION,
