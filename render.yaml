@@ -1,7 +1,7 @@
 services:
   - type: web
-    runtime: docker
     name: steel-browser
+    env: docker
     dockerfilePath: ./Dockerfile
     healthCheckPath: /v1/health
     envVars:

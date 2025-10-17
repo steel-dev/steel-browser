@@ -36,14 +36,10 @@ RUN apt-get update && \
 
 # Copy root workspace files first
 COPY --link package.json package-lock.json ./
-
-# Remove or override the prepare script to avoid husky in Docker
-RUN npm pkg set scripts.prepare="echo skip husky"
-
 COPY --link api/ ./api/
 
 # Install dependencies for api
-RUN npm ci --include=dev --workspace=api
+RUN npm ci --include=dev --workspace=api --ignore-scripts
 
 # Install dependencies for recorder extension separately
 RUN cd api/extensions/recorder && npm ci --include=dev && cd -
@@ -61,7 +57,7 @@ RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
 
 FROM base AS production
 # Install dependencies
-RUN apt-get update && \
+RUN apt-get update && \ 
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
     wget \
     nginx \
