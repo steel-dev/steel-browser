@@ -26,7 +26,12 @@ import { Duplex } from "stream";
 import { env } from "../../env.js";
 import { loadFingerprintScript } from "../../scripts/index.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
-import { BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types/index.js";
+import {
+  BrowserEvent,
+  BrowserEventType,
+  BrowserLauncherOptions,
+  EmitEvent,
+} from "../../types/index.js";
 import {
   isAdRequest,
   isHeavyMediaRequest,
@@ -70,11 +75,6 @@ import {
 import { BasePlugin } from "./plugins/core/base-plugin.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { isSimilarConfig, validateLaunchConfig, validateTimezone } from "./utils/validation.js";
-import { TargetInstrumentationManager } from "./instrumentation/target-manager.js";
-import {
-  createBrowserLogger as createInstrumentationLogger,
-  BrowserLogger,
-} from "./instrumentation/browser-logger.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -96,8 +96,6 @@ export class CDPService extends EventEmitter {
   private trackedOrigins: Set<string> = new Set<string>();
   private chromeSessionService: ChromeContextService;
   private retryManager: RetryManager;
-  private targetInstrumentationManager: TargetInstrumentationManager;
-  private instrumentationLogger: BrowserLogger;
 
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
@@ -106,14 +104,9 @@ export class CDPService extends EventEmitter {
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
 
-  constructor(
-    config: { keepAlive?: boolean },
-    logger: FastifyBaseLogger,
-    storage?: any,
-    enableConsoleLogging?: boolean,
-  ) {
+  constructor(config: { keepAlive?: boolean }, logger: FastifyBaseLogger) {
     super();
-    this.logger = logger.child({ component: "CDPService" });
+    this.logger = logger;
     const { keepAlive = true } = config;
 
     this.keepAlive = keepAlive;
@@ -164,25 +157,6 @@ export class CDPService extends EventEmitter {
     };
 
     this.pluginManager = new PluginManager(this, logger);
-
-    this.instrumentationLogger = createInstrumentationLogger({
-      baseLogger: this.logger,
-      initialContext: {},
-      storage: storage || null,
-      enableConsoleLogging: enableConsoleLogging ?? true,
-    });
-    this.targetInstrumentationManager = new TargetInstrumentationManager(
-      this.instrumentationLogger,
-      this.logger,
-    );
-    this.instrumentationLogger?.on?.(EmitEvent.Log, (event, context) => {
-      this.emit(EmitEvent.Log, event);
-    });
-    this.logger.info("[CDPService] Target instrumentation enabled");
-  }
-
-  public getInstrumentationLogger(): BrowserLogger {
-    return this.instrumentationLogger;
   }
 
   public getLogger(name: string) {
@@ -258,6 +232,28 @@ export class CDPService extends EventEmitter {
     }`;
   }
 
+  public customEmit(event: EmitEvent, payload: any) {
+    try {
+      this.emit(event, payload);
+
+      if (env.LOG_CUSTOM_EMIT_EVENTS) {
+        this.logger.info({ event, payload }, "EmitEvent");
+      }
+
+      if (event === EmitEvent.Log) {
+        this.logEvent(payload);
+      } else if (event === EmitEvent.Recording) {
+        this.logEvent({
+          type: BrowserEventType.Recording,
+          text: JSON.stringify(payload),
+          timestamp: new Date(),
+        });
+      }
+    } catch (error) {
+      this.logger.error({ err: error }, `Error emitting event`);
+    }
+  }
+
   public async refreshPrimaryPage() {
     const newPage = await this.createPage();
     if (this.primaryPage) {
@@ -302,17 +298,11 @@ export class CDPService extends EventEmitter {
         this.logger.error(`[CDPService] Error tracking origin: ${err}`);
       }
 
-      this.emit(EmitEvent.PageId, { pageId });
+      this.customEmit(EmitEvent.PageId, { pageId });
     }
   }
 
   private async handleNewTarget(target: Target) {
-    try {
-      await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
-    } catch (error) {
-      this.logger.error({ err: error }, `[CDPService] Error attaching target instrumentation`);
-    }
-
     if (target.type() === TargetType.PAGE) {
       const page = await target.page().catch((e) => {
         this.logger.error(`Error handling new target in CDPService: ${e}`);
@@ -367,6 +357,8 @@ export class CDPService extends EventEmitter {
 
         await page.setRequestInterception(true);
 
+        await this.setupPageLogging(page, target.type());
+
         page.on("request", (request) => this.handlePageRequest(request, page));
 
         page.on("response", (response) => {
@@ -381,6 +373,10 @@ export class CDPService extends EventEmitter {
       }
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       this.logger.info(`[CDPService] Background page created: ${target.url()}`);
+      const page = await target.page();
+      await this.setupPageLogging(page, target.type());
+    } else {
+      // TODO: Handle SERVICE_WORKER, SHARED_WORKER, BROWSER, WEBVIEW and OTHER targets.
     }
   }
 
@@ -437,6 +433,151 @@ export class CDPService extends EventEmitter {
       this.shutdown();
     } else {
       await request.continue({ headers });
+    }
+  }
+
+  private async setupPageLogging(page: Page | null, targetType: TargetType) {
+    try {
+      if (!page) {
+        return;
+      }
+
+      this.logger.info(`[CDPService] Setting up logging for page: ${page.url()}`);
+
+      //@ts-ignore
+      const pageId = page.target()._targetId;
+
+      page.on("request", (request) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Request,
+          text: JSON.stringify({ pageId, method: request.method(), url: request.url() }),
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("response", (response) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Response,
+          text: JSON.stringify({ pageId, status: response.status(), url: response.url() }),
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("error", (err) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Error,
+          text: err
+            ? JSON.stringify({ pageId, message: err.message, name: err.name })
+            : "Unknown error on page",
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("pageerror", (err) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.PageError,
+          text: err
+            ? JSON.stringify({ pageId, message: err.message, name: err.name })
+            : "Unknown page error",
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("framenavigated", (frame) => {
+        if (!frame.parentFrame()) {
+          this.logger.info(`[CDPService] Navigated to ${frame.url()}`);
+          this.customEmit(EmitEvent.Log, {
+            type: BrowserEventType.Navigation,
+            text: JSON.stringify({ pageId, url: frame.url() }),
+            timestamp: new Date(),
+          });
+        }
+      });
+
+      page.on("console", (message) => {
+        if (targetType === TargetType.BACKGROUND_PAGE) {
+          this.logger.info(`[CDPService] Extension console: ${message.type()}: ${message.text()}`);
+        }
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.Console,
+          text: JSON.stringify({ pageId, type: message.type(), text: message.text() }),
+          timestamp: new Date(),
+        });
+      });
+
+      page.on("requestfailed", (request) => {
+        this.customEmit(EmitEvent.Log, {
+          type: BrowserEventType.RequestFailed,
+          text: JSON.stringify({
+            pageId,
+            errorText: request.failure()?.errorText,
+            url: request.url(),
+          }),
+          timestamp: new Date(),
+        });
+      });
+
+      const session = await page.createCDPSession();
+      await this.setupCDPLogging(session, targetType);
+    } catch (error) {
+      this.logger.error(`[CDPService] Error setting up page logging: ${error}`);
+    }
+  }
+
+  private async setupCDPLogging(session: CDPSession, targetType: TargetType) {
+    try {
+      if (!env.ENABLE_CDP_LOGGING) {
+        return;
+      }
+
+      this.logger.info(
+        `[CDP] Attaching CDP logging to session ${session.id()} of target type ${targetType}`,
+      );
+
+      await session.send("Runtime.enable");
+      await session.send("Log.enable");
+      await session.send("Network.enable");
+      await session.send("Console.enable");
+
+      session.on(
+        "Runtime.executionContextCreated",
+        (event: Protocol.Runtime.ExecutionContextCreatedEvent) => {
+          this.logger.info({ event }, `[CDP] Execution Context Created for ${targetType}`);
+        },
+      );
+
+      session.on(
+        "Runtime.executionContextDestroyed",
+        async (_event: Protocol.Runtime.ExecutionContextDestroyedEvent) => {
+          this.logger.info(`[CDP] Execution Context Destroyed for ${targetType}`);
+        },
+      );
+
+      session.on("Runtime.consoleAPICalled", (event: Protocol.Runtime.ConsoleAPICalledEvent) => {
+        this.logger.info({ event }, `[CDP] Console API called for ${targetType}`);
+      });
+
+      // Capture browser logs (security issues, CSP violations, fetch failures)
+      session.on("Log.entryAdded", (event: Protocol.Log.EntryAddedEvent) => {
+        this.logger.warn({ event }, `[CDP] Log entry added for ${targetType}`);
+      });
+
+      // Capture JavaScript exceptions
+      session.on("Runtime.exceptionThrown", (event: Protocol.Runtime.ExceptionThrownEvent) => {
+        this.logger.error({ event }, `[CDP] Runtime exception thrown for ${targetType}`);
+      });
+
+      // Capture failed network requests
+      session.on("Network.loadingFailed", (event: Protocol.Network.LoadingFailedEvent) => {
+        this.logger.error({ event }, `[CDP] Network request failed for ${targetType}`);
+      });
+
+      // Capture failed fetch requests (when a fetch() call fails)
+      session.on("Network.requestFailed", (event: unknown) => {
+        this.logger.error({ event }, `[CDP] Network request failed for ${targetType}`);
+      });
+    } catch (error: any) {
+      this.logger.error(`[CDP] Error setting up CDP logging for ${targetType}: ${error}`);
     }
   }
 
@@ -870,11 +1011,10 @@ export class CDPService extends EventEmitter {
 
         this.browserInstance.on("error", (err) => {
           this.logger.error(`[CDPService] Browser error: ${err}`);
-          const error = err as Error;
-          this.instrumentationLogger.record({
+          this.customEmit(EmitEvent.Log, {
             type: BrowserEventType.BrowserError,
-            error: { message: error?.message, stack: error?.stack },
-            timestamp: new Date().toISOString(),
+            text: `BROWSER ERROR: ${err}`,
+            timestamp: new Date(),
           });
         });
 
@@ -906,10 +1046,6 @@ export class CDPService extends EventEmitter {
 
         this.browserInstance.on("targetcreated", this.handleNewTarget.bind(this));
         this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
-        this.browserInstance.on("targetdestroyed", (target) => {
-          const targetId = (target as any)._targetId;
-          this.targetInstrumentationManager.detach(targetId);
-        });
         this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
 
         try {
@@ -933,20 +1069,6 @@ export class CDPService extends EventEmitter {
           this.logger.warn(
             `[CDPService] ${setupError.message} - browser may not function correctly`,
           );
-        }
-
-        try {
-          const existingTargets = await this.browserInstance.targets();
-          for (const target of existingTargets) {
-            if ((target as any)._targetId !== (this.primaryPage.target() as any)._targetId) {
-              await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
-            }
-          }
-          this.logger.info(
-            `[CDPService] Attached instrumentation to ${existingTargets.length} existing targets`,
-          );
-        } catch (error) {
-          this.logger.error({ err: error }, `[CDPService] Error attaching to existing targets`);
         }
 
         this.pluginManager.onBrowserReady(this.launchConfig);
@@ -1173,6 +1295,27 @@ export class CDPService extends EventEmitter {
     }
   }
 
+  private async logEvent(event: BrowserEvent) {
+    if (!this.launchConfig?.logSinkUrl) return;
+
+    try {
+      const response = await fetch(this.launchConfig.logSinkUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(event),
+      });
+      if (!response.ok) {
+        this.logger.error(
+          `Error logging event from CDPService: ${event.type} ${response.statusText} at URL: ${this.launchConfig.logSinkUrl}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Error logging event from CDPService: ${error} at URL: ${this.launchConfig.logSinkUrl}`,
+      );
+    }
+  }
+
   public async getAllPages() {
     return this.browserInstance?.pages() || [];
   }
@@ -1181,7 +1324,6 @@ export class CDPService extends EventEmitter {
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
     this.currentSessionConfig = sessionConfig;
     this.trackedOrigins.clear(); // Clear tracked origins when starting a new session
-
     return this.launch(sessionConfig);
   }
 
@@ -1196,9 +1338,6 @@ export class CDPService extends EventEmitter {
     this.currentSessionConfig = null;
     this.sessionContext = null;
     this.trackedOrigins.clear();
-
-    this.instrumentationLogger.resetContext();
-
     await this.launch(this.defaultLaunchConfig);
   }
 

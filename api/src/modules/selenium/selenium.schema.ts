@@ -17,7 +17,7 @@ const LaunchRequest = z.object({
   cookies: z.array(z.any()).optional(),
   userAgent: z.string().optional(),
   extensions: z.array(z.string()).optional(),
-  logSinkUrl: z.string().optional().describe("Deprecated"),
+  logSinkUrl: z.string().optional(),
   customHeaders: z.record(z.string()).optional(),
   timezone: z.string().optional(),
   dimensions: z

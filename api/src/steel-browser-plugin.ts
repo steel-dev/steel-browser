@@ -10,14 +10,7 @@ import fileStoragePlugin from "./plugins/file-storage.js";
 import requestLogger from "./plugins/request-logger.js";
 import openAPIPlugin from "./plugins/schemas.js";
 import seleniumPlugin from "./plugins/selenium.js";
-import {
-  actionsRoutes,
-  cdpRoutes,
-  filesRoutes,
-  logsRoutes,
-  seleniumRoutes,
-  sessionsRoutes,
-} from "./routes.js";
+import { actionsRoutes, cdpRoutes, filesRoutes, seleniumRoutes, sessionsRoutes } from "./routes.js";
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import type { CDPService } from "./services/cdp/cdp.service.js";
@@ -25,7 +18,6 @@ import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
 import { SessionService } from "./services/session.service.js";
-import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.interface.js";
 
 // We need to redeclare any decorators from within the plugin that we want to expose
 declare module "fastify" {
@@ -39,8 +31,6 @@ declare module "fastify" {
       hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
     ) => void;
   }
-
-  interface LogStorageInterface extends LogStorage {}
 }
 
 export interface SteelBrowserConfig {
@@ -48,12 +38,6 @@ export interface SteelBrowserConfig {
     maxSizePerSession?: number;
   };
   customWsHandlers?: WebSocketHandler[];
-  logging?: {
-    enableStorage?: boolean;
-    storagePath?: string;
-    enableConsoleLogging?: boolean;
-    enableLogsRoutes?: boolean;
-  };
 }
 
 const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
@@ -82,11 +66,6 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(cdpRoutes, { prefix: "/v1" });
   await fastify.register(seleniumRoutes);
   await fastify.register(filesRoutes, { prefix: "/v1" });
-
-  const enableLogsRoutes = opts.logging?.enableLogsRoutes ?? true;
-  if (enableLogsRoutes) {
-    await fastify.register(logsRoutes, { prefix: "/v1/logs" });
-  }
 };
 
 export default fp<SteelBrowserConfig>(steelBrowserPlugin, {

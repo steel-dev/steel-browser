@@ -60,7 +60,7 @@ const CreateSession = z.object({
       "Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations.",
     ),
   // Specific to hosted steel
-  logSinkUrl: z.string().optional().describe("Deprecated: Log sink URL to use for the session"),
+  logSinkUrl: z.string().optional().describe("Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
   persist: z.boolean().optional().describe("Flag to indicate if session should be persisted"),
   userDataDir: z.string().optional().describe("User data directory path to use for the session"),

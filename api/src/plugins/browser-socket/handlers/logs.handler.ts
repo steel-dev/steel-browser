@@ -21,7 +21,7 @@ function handleLogsWebSocket(context: WebSocketHandlerContext, ws: WebSocket) {
 
   ws.on("close", () => {
     fastify.log.info("Logs WebSocket connection closed");
-    fastify.cdpService.removeListener(EmitEvent.Log, messageHandler);
+    fastify.cdpService.removeListener("log", messageHandler);
   });
 }
 

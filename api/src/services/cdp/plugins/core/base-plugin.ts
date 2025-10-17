@@ -1,6 +1,6 @@
 import type { Browser, Page } from "puppeteer-core";
 import type { CDPService } from "../../cdp.service.js";
-import type { BrowserLauncherOptions } from "../../../../types/browser.js";
+import { BrowserLauncherOptions } from "../../../../types/browser.js";
 
 export interface PluginOptions {
   name: string;

@@ -18,7 +18,7 @@ import {
   SessionsScreenshotRequest,
   SessionsPDFRequest,
 } from "./sessions.schema.js";
-import { BrowserEventType, EmitEvent } from "../../types/enums.js";
+import { EmitEvent } from "../../types/enums.js";
 
 async function routes(server: FastifyInstance) {
   server.get(
@@ -172,11 +172,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
-      server.cdpService.getInstrumentationLogger().record({
-        type: BrowserEventType.Recording,
-        timestamp: new Date().toISOString(),
-        data: request.body,
-      });
+      server.cdpService.customEmit(EmitEvent.Recording, request.body);
       return reply.send({ status: "ok" });
     },
   );
