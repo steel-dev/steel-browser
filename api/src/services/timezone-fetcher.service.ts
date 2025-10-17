@@ -37,24 +37,25 @@ export class TimezoneFetcher {
     this.logger = logger;
   }
 
-  private startFetch(proxyUrl: string): Promise<TimezoneFetchResult> {
-    const existing = this.fetchPromises.get(proxyUrl);
+  private startFetch(proxyUrl?: string): Promise<TimezoneFetchResult> {
+    const cacheKey = proxyUrl || "direct";
+    const existing = this.fetchPromises.get(cacheKey);
     if (existing) {
       return existing;
     }
 
     const fetchPromise = this.fetchTimezoneInternal(proxyUrl);
 
-    this.fetchPromises.set(proxyUrl, fetchPromise);
+    this.fetchPromises.set(cacheKey, fetchPromise);
 
     fetchPromise.finally(() => {
-      this.fetchPromises.delete(proxyUrl);
+      this.fetchPromises.delete(cacheKey);
     });
 
     return fetchPromise;
   }
 
-  public async getTimezone(proxyUrl: string, fallback?: string): Promise<string> {
+  public async getTimezone(proxyUrl?: string, fallback?: string): Promise<string> {
     try {
       const result = await this.startFetch(proxyUrl);
       if (result.timezone) {
@@ -67,9 +68,12 @@ export class TimezoneFetcher {
     return fallback || Intl.DateTimeFormat().resolvedOptions().timeZone;
   }
 
-  private async fetchTimezoneInternal(proxyUrl: string): Promise<TimezoneFetchResult> {
-    const isSocks = proxyUrl.startsWith("socks");
-    const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
+  private async fetchTimezoneInternal(proxyUrl?: string): Promise<TimezoneFetchResult> {
+    const agent = proxyUrl
+      ? proxyUrl.startsWith("socks")
+        ? new SocksProxyAgent(proxyUrl)
+        : new HttpsProxyAgent(proxyUrl)
+      : undefined;
 
     const servicePromises = this.services.map(async (service) => {
       try {
@@ -107,7 +111,8 @@ export class TimezoneFetcher {
           ? error.message
           : String(error);
 
-      this.logger.warn(`[TimezoneFetcher] All services failed for ${proxyUrl}: ${errorMessage}`);
+      const context = proxyUrl ? `with proxy ${proxyUrl}` : "with direct connection";
+      this.logger.warn(`[TimezoneFetcher] All services failed ${context}: ${errorMessage}`);
 
       return {
         timezone: null,
