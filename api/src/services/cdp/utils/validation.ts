@@ -128,6 +128,80 @@ export function isSimilarConfig(
   const { session: _s1, ...currentExtra } = (current.extra ?? {}) as Record<string, unknown>;
   const { session: _s2, ...nextExtra } = (next.extra ?? {}) as Record<string, unknown>;
 
+  console.log("headless", currentHeadless, nextHeadless, currentHeadless === nextHeadless);
+  console.log("proxy", currentProxy, nextProxy, currentProxy === nextProxy);
+  console.log("userAgent", currentUserAgent, nextUserAgent, currentUserAgent === nextUserAgent);
+  console.log(
+    "userDataDir",
+    currentUserDataDir,
+    nextUserDataDir,
+    currentUserDataDir === nextUserDataDir,
+  );
+  console.log(
+    "skipFingerprint",
+    currentSkipFingerprint,
+    nextSkipFingerprint,
+    currentSkipFingerprint === nextSkipFingerprint,
+  );
+  console.log("width", currentWidth, nextWidth, currentWidth === nextWidth);
+  console.log("height", currentHeight, nextHeight, currentHeight === nextHeight);
+  console.log("blockAds", currentBlockAds, nextBlockAds, currentBlockAds === nextBlockAds);
+  console.log(
+    "timezone",
+    JSON.stringify(currentTimezone),
+    JSON.stringify(nextTimezone),
+    JSON.stringify(currentTimezone) === JSON.stringify(nextTimezone),
+  );
+
+  console.log(
+    "args",
+    JSON.stringify(currentArgs),
+    JSON.stringify(nextArgs),
+    JSON.stringify(currentArgs) === JSON.stringify(nextArgs),
+  );
+  console.log(
+    "ext",
+    JSON.stringify(currentExt),
+    JSON.stringify(nextExt),
+    JSON.stringify(currentExt) === JSON.stringify(nextExt),
+  );
+  console.log(
+    "extra",
+    JSON.stringify(currentExtra),
+    JSON.stringify(nextExtra),
+    JSON.stringify(currentExtra) === JSON.stringify(nextExtra),
+  );
+  console.log(
+    "userPreferences",
+    JSON.stringify(current.userPreferences),
+    JSON.stringify(next.userPreferences),
+    JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences),
+  );
+  console.log(
+    "deviceConfig",
+    JSON.stringify(current.deviceConfig),
+    JSON.stringify(next.deviceConfig),
+    JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig),
+  );
+
+  console.log(
+    "final",
+    currentHeadless === nextHeadless &&
+      currentProxy === nextProxy &&
+      currentUserAgent === nextUserAgent &&
+      currentUserDataDir === nextUserDataDir &&
+      currentSkipFingerprint === nextSkipFingerprint &&
+      currentWidth === nextWidth &&
+      currentHeight === nextHeight &&
+      currentBlockAds === nextBlockAds &&
+      JSON.stringify(currentTimezone) === JSON.stringify(nextTimezone) &&
+      JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
+      JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
+      JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
+      JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences) &&
+      JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig),
+  );
+
   return (
     currentHeadless === nextHeadless &&
     currentProxy === nextProxy &&
