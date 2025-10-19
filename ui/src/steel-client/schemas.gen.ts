@@ -22,6 +22,9 @@ export const ScrapeRequestSchema = {
     },
     proxyUrl: {
       type: "string",
+      nullable: true,
+      description:
+        "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
     },
     delay: {
       type: "number",
@@ -30,7 +33,6 @@ export const ScrapeRequestSchema = {
       type: "string",
     },
   },
-  required: ["url"],
   additionalProperties: false,
 } as const;
 
@@ -48,34 +50,58 @@ export const ScrapeResponseSchema = {
         title: {
           type: "string",
         },
-        ogImage: {
-          type: "string",
-        },
-        ogTitle: {
+        language: {
           type: "string",
         },
         urlSource: {
-          type: "string",
-        },
-        description: {
-          type: "string",
-        },
-        ogDescription: {
-          type: "string",
-        },
-        statusCode: {
-          type: "integer",
-        },
-        language: {
           type: "string",
         },
         timestamp: {
           type: "string",
           format: "date-time",
         },
-        published_timestamp: {
+        description: {
           type: "string",
-          format: "date-time",
+        },
+        keywords: {
+          type: "string",
+        },
+        author: {
+          type: "string",
+        },
+        ogTitle: {
+          type: "string",
+        },
+        ogDescription: {
+          type: "string",
+        },
+        ogImage: {
+          type: "string",
+        },
+        ogUrl: {
+          type: "string",
+        },
+        ogSiteName: {
+          type: "string",
+        },
+        articleAuthor: {
+          type: "string",
+        },
+        publishedTime: {
+          type: "string",
+        },
+        modifiedTime: {
+          type: "string",
+        },
+        canonical: {
+          type: "string",
+        },
+        favicon: {
+          type: "string",
+        },
+        jsonLd: {},
+        statusCode: {
+          type: "integer",
         },
       },
       required: ["statusCode"],
@@ -117,6 +143,9 @@ export const ScreenshotRequestSchema = {
     },
     proxyUrl: {
       type: "string",
+      nullable: true,
+      description:
+        "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
     },
     delay: {
       type: "number",
@@ -128,7 +157,6 @@ export const ScreenshotRequestSchema = {
       type: "string",
     },
   },
-  required: ["url"],
   additionalProperties: false,
 } as const;
 
@@ -145,6 +173,9 @@ export const PDFRequestSchema = {
     },
     proxyUrl: {
       type: "string",
+      nullable: true,
+      description:
+        "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
     },
     delay: {
       type: "number",
@@ -153,7 +184,6 @@ export const PDFRequestSchema = {
       type: "string",
     },
   },
-  required: ["url"],
   additionalProperties: false,
 } as const;
 
@@ -180,16 +210,267 @@ export const CreateSessionSchema = {
     },
     sessionContext: {
       type: "object",
-      additionalProperties: {},
-      description: "Session context to use for the session",
+      properties: {
+        cookies: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "The name of the cookie",
+              },
+              value: {
+                type: "string",
+                description: "The value of the cookie",
+              },
+              url: {
+                type: "string",
+                description: "The URL of the cookie",
+              },
+              domain: {
+                type: "string",
+                description: "The domain of the cookie",
+              },
+              path: {
+                type: "string",
+                description: "The path of the cookie",
+              },
+              secure: {
+                type: "boolean",
+                description: "Whether the cookie is secure",
+              },
+              httpOnly: {
+                type: "boolean",
+                description: "Whether the cookie is HTTP only",
+              },
+              sameSite: {
+                type: "string",
+                enum: ["Strict", "Lax", "None"],
+                description: "The same site attribute of the cookie",
+              },
+              size: {
+                type: "number",
+                description: "The size of the cookie",
+              },
+              expires: {
+                type: "number",
+                description: "The expiration date of the cookie",
+              },
+              partitionKey: {
+                type: "object",
+                properties: {
+                  topLevelSite: {
+                    type: "string",
+                    description:
+                      "The site of the top-level URL the browser was visiting at the start of the request to the endpoint that set the cookie.",
+                  },
+                  hasCrossSiteAncestor: {
+                    type: "boolean",
+                    description:
+                      "Indicates if the cookie has any ancestors that are cross-site to the topLevelSite.",
+                  },
+                },
+                required: ["topLevelSite", "hasCrossSiteAncestor"],
+                additionalProperties: false,
+                description: "The partition key of the cookie",
+              },
+              session: {
+                type: "boolean",
+                description: "Whether the cookie is a session cookie",
+              },
+              priority: {
+                type: "string",
+                enum: ["Low", "Medium", "High"],
+                description: "The priority of the cookie",
+              },
+              sameParty: {
+                type: "boolean",
+                description: "Whether the cookie is a same party cookie",
+              },
+              sourceScheme: {
+                type: "string",
+                enum: ["Unset", "NonSecure", "Secure"],
+                description: "The source scheme of the cookie",
+              },
+              sourcePort: {
+                type: "number",
+                description: "The source port of the cookie",
+              },
+            },
+            required: ["name", "value"],
+            additionalProperties: false,
+          },
+          description: "Cookies to initialize in the session",
+        },
+        localStorage: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            additionalProperties: {
+              type: "string",
+            },
+          },
+          description:
+            "Domain-specific localStorage items to initialize in the session",
+        },
+        sessionStorage: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            additionalProperties: {
+              type: "string",
+            },
+          },
+          description:
+            "Domain-specific sessionStorage items to initialize in the session",
+        },
+        indexedDB: {
+          type: "object",
+          additionalProperties: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: {
+                  type: "number",
+                },
+                name: {
+                  type: "string",
+                },
+                data: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: {
+                        type: "number",
+                      },
+                      name: {
+                        type: "string",
+                      },
+                      records: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            key: {},
+                            value: {},
+                            blobFiles: {
+                              type: "array",
+                              items: {
+                                type: "object",
+                                properties: {
+                                  blobNumber: {
+                                    type: "number",
+                                  },
+                                  mimeType: {
+                                    type: "string",
+                                  },
+                                  size: {
+                                    type: "number",
+                                  },
+                                  filename: {
+                                    type: "string",
+                                  },
+                                  lastModified: {
+                                    type: "string",
+                                    format: "date-time",
+                                  },
+                                  path: {
+                                    type: "string",
+                                  },
+                                },
+                                required: ["blobNumber", "mimeType", "size"],
+                                additionalProperties: false,
+                              },
+                            },
+                          },
+                          additionalProperties: false,
+                        },
+                      },
+                    },
+                    required: ["id", "name", "records"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["id", "name", "data"],
+              additionalProperties: false,
+            },
+          },
+          description:
+            "Domain-specific indexedDB items to initialize in the session",
+        },
+      },
+      additionalProperties: false,
+      description: "Session context data to be used in the created session",
     },
     isSelenium: {
       type: "boolean",
       description: "Indicates if Selenium is used in the session",
     },
+    blockAds: {
+      type: "boolean",
+      description: "Flag to indicate if ads should be blocked in the session",
+    },
+    optimizeBandwidth: {
+      anyOf: [
+        {
+          type: "boolean",
+        },
+        {
+          type: "object",
+          properties: {
+            blockImages: {
+              type: "boolean",
+            },
+            blockMedia: {
+              type: "boolean",
+            },
+            blockStylesheets: {
+              type: "boolean",
+            },
+            blockHosts: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+            blockUrlPatterns: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      ],
+      description:
+        "Enable bandwidth optimizations. Passing true enables all flags (except hosts/patterns). Object allows granular control.",
+    },
+    skipFingerprintInjection: {
+      type: "boolean",
+      description:
+        "Flag to indicate if fingerprint injection should be skipped for this session.",
+    },
+    deviceConfig: {
+      type: "object",
+      properties: {
+        device: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          default: "desktop",
+        },
+      },
+      additionalProperties: false,
+      description:
+        "Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations.",
+    },
     logSinkUrl: {
       type: "string",
-      description: "Log sink URL to use for the session",
+      description: "Deprecated: Log sink URL to use for the session",
     },
     extensions: {
       type: "array",
@@ -197,6 +478,14 @@ export const CreateSessionSchema = {
         type: "string",
       },
       description: "Extensions to use for the session",
+    },
+    persist: {
+      type: "boolean",
+      description: "Flag to indicate if session should be persisted",
+    },
+    userDataDir: {
+      type: "string",
+      description: "User data directory path to use for the session",
     },
     timezone: {
       type: "string",
@@ -216,8 +505,59 @@ export const CreateSessionSchema = {
       additionalProperties: false,
       description: "Dimensions to use for the session",
     },
+    userPreferences: {
+      type: "object",
+      additionalProperties: {},
+      description:
+        "Chrome user preferences to customize browser behavior (e.g., font size, popup blocking, notification settings)",
+    },
+    extra: {
+      type: "object",
+      additionalProperties: {},
+      description: "Extra metadata to help initialize the session",
+    },
+    credentials: {
+      type: "object",
+      properties: {
+        autoSubmit: {
+          anyOf: [
+            {
+              type: "boolean",
+            },
+            {
+              not: {},
+            },
+          ],
+        },
+        blurFields: {
+          anyOf: [
+            {
+              type: "boolean",
+            },
+            {
+              not: {},
+            },
+          ],
+        },
+        exactOrigin: {
+          anyOf: [
+            {
+              type: "boolean",
+            },
+            {
+              not: {},
+            },
+          ],
+        },
+      },
+      additionalProperties: false,
+      description: "Configuration for session credentials",
+    },
+    headless: {
+      type: "boolean",
+      description: "Headless mode for the session",
+    },
   },
-  required: ["sessionId"],
   additionalProperties: false,
 } as const;
 
@@ -237,7 +577,7 @@ export const SessionDetailsSchema = {
     },
     status: {
       type: "string",
-      enum: ["live", "released", "failed"],
+      enum: ["idle", "live", "released", "failed"],
       description: "Status of the session",
     },
     duration: {
@@ -247,6 +587,20 @@ export const SessionDetailsSchema = {
     eventCount: {
       type: "integer",
       description: "Number of events processed in the session",
+    },
+    dimensions: {
+      type: "object",
+      properties: {
+        width: {
+          type: "number",
+        },
+        height: {
+          type: "number",
+        },
+      },
+      required: ["width", "height"],
+      additionalProperties: false,
+      description: "Dimensions used for the session",
     },
     timeout: {
       type: "integer",
@@ -262,6 +616,11 @@ export const SessionDetailsSchema = {
     },
     debugUrl: {
       type: "string",
+      description:
+        "URL for a viewing the live browser instance for the session",
+    },
+    debuggerUrl: {
+      type: "string",
       description: "URL for debugging the session",
     },
     sessionViewerUrl: {
@@ -275,6 +634,16 @@ export const SessionDetailsSchema = {
     proxy: {
       type: "string",
       description: "Proxy server used for the session",
+    },
+    proxyTxBytes: {
+      type: "integer",
+      minimum: 0,
+      description: "Amount of data transmitted through the proxy",
+    },
+    proxyRxBytes: {
+      type: "integer",
+      minimum: 0,
+      description: "Amount of data received through the proxy",
     },
     solveCaptcha: {
       type: "boolean",
@@ -295,8 +664,720 @@ export const SessionDetailsSchema = {
     "creditsUsed",
     "websocketUrl",
     "debugUrl",
+    "debuggerUrl",
     "sessionViewerUrl",
+    "proxyTxBytes",
+    "proxyRxBytes",
   ],
+  additionalProperties: false,
+} as const;
+
+export const MultipleSessionsSchema = {
+  title: "MultipleSessions",
+  type: "object",
+  properties: {
+    sessions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            description: "Unique identifier for the session",
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            description: "Timestamp when the session started",
+          },
+          status: {
+            type: "string",
+            enum: ["idle", "live", "released", "failed"],
+            description: "Status of the session",
+          },
+          duration: {
+            type: "integer",
+            description: "Duration of the session in milliseconds",
+          },
+          eventCount: {
+            type: "integer",
+            description: "Number of events processed in the session",
+          },
+          dimensions: {
+            type: "object",
+            properties: {
+              width: {
+                type: "number",
+              },
+              height: {
+                type: "number",
+              },
+            },
+            required: ["width", "height"],
+            additionalProperties: false,
+            description: "Dimensions used for the session",
+          },
+          timeout: {
+            type: "integer",
+            description: "Session timeout duration in milliseconds",
+          },
+          creditsUsed: {
+            type: "integer",
+            description: "Amount of credits consumed by the session",
+          },
+          websocketUrl: {
+            type: "string",
+            description: "URL for the session's WebSocket connection",
+          },
+          debugUrl: {
+            type: "string",
+            description:
+              "URL for a viewing the live browser instance for the session",
+          },
+          debuggerUrl: {
+            type: "string",
+            description: "URL for debugging the session",
+          },
+          sessionViewerUrl: {
+            type: "string",
+            description: "URL to view session details",
+          },
+          userAgent: {
+            type: "string",
+            description: "User agent string used in the session",
+          },
+          proxy: {
+            type: "string",
+            description: "Proxy server used for the session",
+          },
+          proxyTxBytes: {
+            type: "integer",
+            minimum: 0,
+            description: "Amount of data transmitted through the proxy",
+          },
+          proxyRxBytes: {
+            type: "integer",
+            minimum: 0,
+            description: "Amount of data received through the proxy",
+          },
+          solveCaptcha: {
+            type: "boolean",
+            description: "Indicates if captcha solving is enabled",
+          },
+          isSelenium: {
+            type: "boolean",
+            description: "Indicates if Selenium is used in the session",
+          },
+        },
+        required: [
+          "id",
+          "createdAt",
+          "status",
+          "duration",
+          "eventCount",
+          "timeout",
+          "creditsUsed",
+          "websocketUrl",
+          "debugUrl",
+          "debuggerUrl",
+          "sessionViewerUrl",
+          "proxyTxBytes",
+          "proxyRxBytes",
+        ],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["sessions"],
+  additionalProperties: false,
+} as const;
+
+export const SessionContextSchemaSchema = {
+  title: "SessionContextSchema",
+  type: "object",
+  properties: {
+    cookies: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "The name of the cookie",
+          },
+          value: {
+            type: "string",
+            description: "The value of the cookie",
+          },
+          url: {
+            type: "string",
+            description: "The URL of the cookie",
+          },
+          domain: {
+            type: "string",
+            description: "The domain of the cookie",
+          },
+          path: {
+            type: "string",
+            description: "The path of the cookie",
+          },
+          secure: {
+            type: "boolean",
+            description: "Whether the cookie is secure",
+          },
+          httpOnly: {
+            type: "boolean",
+            description: "Whether the cookie is HTTP only",
+          },
+          sameSite: {
+            type: "string",
+            enum: ["Strict", "Lax", "None"],
+            description: "The same site attribute of the cookie",
+          },
+          size: {
+            type: "number",
+            description: "The size of the cookie",
+          },
+          expires: {
+            type: "number",
+            description: "The expiration date of the cookie",
+          },
+          partitionKey: {
+            type: "object",
+            properties: {
+              topLevelSite: {
+                type: "string",
+                description:
+                  "The site of the top-level URL the browser was visiting at the start of the request to the endpoint that set the cookie.",
+              },
+              hasCrossSiteAncestor: {
+                type: "boolean",
+                description:
+                  "Indicates if the cookie has any ancestors that are cross-site to the topLevelSite.",
+              },
+            },
+            required: ["topLevelSite", "hasCrossSiteAncestor"],
+            additionalProperties: false,
+            description: "The partition key of the cookie",
+          },
+          session: {
+            type: "boolean",
+            description: "Whether the cookie is a session cookie",
+          },
+          priority: {
+            type: "string",
+            enum: ["Low", "Medium", "High"],
+            description: "The priority of the cookie",
+          },
+          sameParty: {
+            type: "boolean",
+            description: "Whether the cookie is a same party cookie",
+          },
+          sourceScheme: {
+            type: "string",
+            enum: ["Unset", "NonSecure", "Secure"],
+            description: "The source scheme of the cookie",
+          },
+          sourcePort: {
+            type: "number",
+            description: "The source port of the cookie",
+          },
+        },
+        required: ["name", "value"],
+        additionalProperties: false,
+      },
+      description: "Cookies to initialize in the session",
+    },
+    localStorage: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        additionalProperties: {
+          type: "string",
+        },
+      },
+      description:
+        "Domain-specific localStorage items to initialize in the session",
+    },
+    sessionStorage: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        additionalProperties: {
+          type: "string",
+        },
+      },
+      description:
+        "Domain-specific sessionStorage items to initialize in the session",
+    },
+    indexedDB: {
+      type: "object",
+      additionalProperties: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: {
+              type: "number",
+            },
+            name: {
+              type: "string",
+            },
+            data: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "number",
+                  },
+                  name: {
+                    type: "string",
+                  },
+                  records: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        key: {},
+                        value: {},
+                        blobFiles: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              blobNumber: {
+                                type: "number",
+                              },
+                              mimeType: {
+                                type: "string",
+                              },
+                              size: {
+                                type: "number",
+                              },
+                              filename: {
+                                type: "string",
+                              },
+                              lastModified: {
+                                type: "string",
+                                format: "date-time",
+                              },
+                              path: {
+                                type: "string",
+                              },
+                            },
+                            required: ["blobNumber", "mimeType", "size"],
+                            additionalProperties: false,
+                          },
+                        },
+                      },
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ["id", "name", "records"],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ["id", "name", "data"],
+          additionalProperties: false,
+        },
+      },
+      description:
+        "Domain-specific indexedDB items to initialize in the session",
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+export const RecordedEventsSchema = {
+  title: "RecordedEvents",
+  type: "object",
+  properties: {
+    events: {
+      type: "array",
+      description: "Events to emit",
+    },
+  },
+  required: ["events"],
+  additionalProperties: false,
+} as const;
+
+export const ReleaseSessionSchema = {
+  title: "ReleaseSession",
+  type: "object",
+  properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+      description: "Unique identifier for the session",
+    },
+    createdAt: {
+      type: "string",
+      format: "date-time",
+      description: "Timestamp when the session started",
+    },
+    status: {
+      type: "string",
+      enum: ["idle", "live", "released", "failed"],
+      description: "Status of the session",
+    },
+    duration: {
+      type: "integer",
+      description: "Duration of the session in milliseconds",
+    },
+    eventCount: {
+      type: "integer",
+      description: "Number of events processed in the session",
+    },
+    dimensions: {
+      type: "object",
+      properties: {
+        width: {
+          type: "number",
+        },
+        height: {
+          type: "number",
+        },
+      },
+      required: ["width", "height"],
+      additionalProperties: false,
+      description: "Dimensions used for the session",
+    },
+    timeout: {
+      type: "integer",
+      description: "Session timeout duration in milliseconds",
+    },
+    creditsUsed: {
+      type: "integer",
+      description: "Amount of credits consumed by the session",
+    },
+    websocketUrl: {
+      type: "string",
+      description: "URL for the session's WebSocket connection",
+    },
+    debugUrl: {
+      type: "string",
+      description:
+        "URL for a viewing the live browser instance for the session",
+    },
+    debuggerUrl: {
+      type: "string",
+      description: "URL for debugging the session",
+    },
+    sessionViewerUrl: {
+      type: "string",
+      description: "URL to view session details",
+    },
+    userAgent: {
+      type: "string",
+      description: "User agent string used in the session",
+    },
+    proxy: {
+      type: "string",
+      description: "Proxy server used for the session",
+    },
+    proxyTxBytes: {
+      type: "integer",
+      minimum: 0,
+      description: "Amount of data transmitted through the proxy",
+    },
+    proxyRxBytes: {
+      type: "integer",
+      minimum: 0,
+      description: "Amount of data received through the proxy",
+    },
+    solveCaptcha: {
+      type: "boolean",
+      description: "Indicates if captcha solving is enabled",
+    },
+    isSelenium: {
+      type: "boolean",
+      description: "Indicates if Selenium is used in the session",
+    },
+    success: {
+      type: "boolean",
+      description: "Indicates if the session was successfully released",
+    },
+  },
+  required: [
+    "id",
+    "createdAt",
+    "status",
+    "duration",
+    "eventCount",
+    "timeout",
+    "creditsUsed",
+    "websocketUrl",
+    "debugUrl",
+    "debuggerUrl",
+    "sessionViewerUrl",
+    "proxyTxBytes",
+    "proxyRxBytes",
+    "success",
+  ],
+  additionalProperties: false,
+} as const;
+
+export const SessionStreamQuerySchema = {
+  title: "SessionStreamQuery",
+  type: "object",
+  properties: {
+    showControls: {
+      type: "boolean",
+      default: true,
+      description: "Show controls in the browser iframe",
+    },
+    theme: {
+      type: "string",
+      enum: ["dark", "light"],
+      default: "dark",
+      description: "Theme of the browser iframe",
+    },
+    interactive: {
+      type: "boolean",
+      default: true,
+      description: "Make the browser iframe interactive",
+    },
+    pageId: {
+      type: "string",
+      description: "Page ID to connect to",
+    },
+    pageIndex: {
+      type: "string",
+      description: "Page index (or tab index) to connect to",
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+export const SessionStreamResponseSchema = {
+  title: "SessionStreamResponse",
+  type: "string",
+  description: "HTML content for the session streamer view",
+} as const;
+
+export const SessionLiveDetailsResponseSchema = {
+  title: "SessionLiveDetailsResponse",
+  type: "object",
+  properties: {
+    sessionViewerUrl: {
+      type: "string",
+    },
+    sessionViewerFullscreenUrl: {
+      type: "string",
+    },
+    websocketUrl: {
+      type: "string",
+    },
+    pages: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+          },
+          url: {
+            type: "string",
+          },
+          title: {
+            type: "string",
+          },
+          favicon: {
+            type: "string",
+            nullable: true,
+          },
+        },
+        required: ["id", "url", "title", "favicon"],
+        additionalProperties: false,
+      },
+    },
+    browserState: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["idle", "live", "released", "failed"],
+        },
+        userAgent: {
+          type: "string",
+        },
+        browserVersion: {
+          type: "string",
+        },
+        initialDimensions: {
+          type: "object",
+          properties: {
+            width: {
+              type: "number",
+            },
+            height: {
+              type: "number",
+            },
+          },
+          required: ["width", "height"],
+          additionalProperties: false,
+        },
+        pageCount: {
+          type: "number",
+        },
+      },
+      required: [
+        "status",
+        "userAgent",
+        "browserVersion",
+        "initialDimensions",
+        "pageCount",
+      ],
+      additionalProperties: false,
+    },
+  },
+  required: [
+    "sessionViewerUrl",
+    "sessionViewerFullscreenUrl",
+    "websocketUrl",
+    "pages",
+    "browserState",
+  ],
+  additionalProperties: false,
+} as const;
+
+export const LogQuerySchemaSchema = {
+  title: "LogQuerySchema",
+  type: "object",
+  properties: {
+    startTime: {
+      type: "string",
+      format: "date-time",
+    },
+    endTime: {
+      type: "string",
+      format: "date-time",
+    },
+    eventTypes: {
+      type: "string",
+    },
+    pageId: {
+      type: "string",
+    },
+    targetType: {
+      type: "string",
+    },
+    limit: {
+      type: "integer",
+      minimum: 1,
+      maximum: 1000,
+      default: 100,
+    },
+    offset: {
+      type: "integer",
+      minimum: 0,
+      default: 0,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+export const LogStatsSchemaSchema = {
+  title: "LogStatsSchema",
+  type: "object",
+  properties: {
+    totalEvents: {
+      type: "number",
+    },
+    oldestEvent: {
+      type: "string",
+      format: "date-time",
+      nullable: true,
+    },
+    newestEvent: {
+      type: "string",
+      format: "date-time",
+      nullable: true,
+    },
+    sizeBytes: {
+      type: "number",
+    },
+  },
+  required: ["totalEvents", "oldestEvent", "newestEvent", "sizeBytes"],
+  additionalProperties: false,
+} as const;
+
+export const LogQueryResultSchemaSchema = {
+  title: "LogQueryResultSchema",
+  type: "object",
+  properties: {
+    events: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: {},
+      },
+    },
+    total: {
+      type: "number",
+    },
+    hasMore: {
+      type: "boolean",
+    },
+  },
+  required: ["events", "total", "hasMore"],
+  additionalProperties: false,
+} as const;
+
+export const ExportLogsSchemaSchema = {
+  title: "ExportLogsSchema",
+  type: "object",
+  properties: {
+    query: {
+      type: "object",
+      properties: {
+        startTime: {
+          type: "string",
+          format: "date-time",
+        },
+        endTime: {
+          type: "string",
+          format: "date-time",
+        },
+        eventTypes: {
+          type: "string",
+        },
+        pageId: {
+          type: "string",
+        },
+        targetType: {
+          type: "string",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 1000,
+          default: 100,
+        },
+        offset: {
+          type: "integer",
+          minimum: 0,
+          default: 0,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+export const GetDevtoolsUrlSchemaSchema = {
+  title: "GetDevtoolsUrlSchema",
+  type: "object",
+  properties: {
+    pageId: {
+      type: "string",
+    },
+  },
   additionalProperties: false,
 } as const;
 
@@ -368,6 +1449,7 @@ export const LaunchRequestSchema = {
     },
     logSinkUrl: {
       type: "string",
+      description: "Deprecated",
     },
     customHeaders: {
       type: "object",
@@ -406,5 +1488,75 @@ export const LaunchResponseSchema = {
     },
   },
   required: ["success"],
+  additionalProperties: false,
+} as const;
+
+export const FileUploadRequestSchema = {
+  title: "FileUploadRequest",
+  type: "object",
+  properties: {
+    file: {
+      description: "The file to upload (binary) or URL string to download from",
+    },
+    path: {
+      type: "string",
+      description: "Path to the file in the storage system",
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+export const FileDetailsSchema = {
+  title: "FileDetails",
+  type: "object",
+  properties: {
+    path: {
+      type: "string",
+      description: "Path to the file in the storage system",
+    },
+    size: {
+      type: "number",
+      description: "Size of the file in bytes",
+    },
+    lastModified: {
+      type: "string",
+      format: "date-time",
+      description: "Timestamp when the file was last updated",
+    },
+  },
+  required: ["path", "size", "lastModified"],
+  additionalProperties: false,
+} as const;
+
+export const MultipleFilesSchema = {
+  title: "MultipleFiles",
+  type: "object",
+  properties: {
+    data: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "Path to the file in the storage system",
+          },
+          size: {
+            type: "number",
+            description: "Size of the file in bytes",
+          },
+          lastModified: {
+            type: "string",
+            format: "date-time",
+            description: "Timestamp when the file was last updated",
+          },
+        },
+        required: ["path", "size", "lastModified"],
+        additionalProperties: false,
+      },
+      description: "Array of files for the current page",
+    },
+  },
+  required: ["data"],
   additionalProperties: false,
 } as const;

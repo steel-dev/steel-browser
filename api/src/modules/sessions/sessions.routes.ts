@@ -61,9 +61,9 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "get_sessions",
-        description: "Get all sessions (only returns current session)",
+        description: "Get all sessions",
         tags: ["Sessions"],
-        summary: "Get all sessions (only returns current session)",
+        summary: "Get all sessions",
         response: {
           200: $ref("MultipleSessions"),
         },

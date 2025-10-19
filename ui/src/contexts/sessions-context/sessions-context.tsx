@@ -1,5 +1,8 @@
 import { createContext, useState } from "react";
-import { SessionsContextType, SessionsProviderProps } from "./sessions-context.types";
+import {
+  SessionsContextType,
+  SessionsProviderProps,
+} from "./sessions-context.types";
 import {
   getSessions,
   getSessionDetails,
@@ -14,10 +17,15 @@ import { queryClient } from "@/lib/query-client";
 import { ErrorResponse } from "@remix-run/router";
 
 // eslint-disable-next-line react-refresh/only-export-components
-export const SessionsContext = createContext<SessionsContextType | undefined>(undefined);
+export const SessionsContext = createContext<SessionsContextType | undefined>(
+  undefined,
+);
 
-export function SessionsProvider({ children }: SessionsProviderProps): JSX.Element {
-  const [currentSession, setCurrentSession] = useState<GetSessionDetailsResponse | null>(null);
+export function SessionsProvider({
+  children,
+}: SessionsProviderProps): JSX.Element {
+  const [currentSession, setCurrentSession] =
+    useState<GetSessionDetailsResponse | null>(null);
 
   const useSession = (id: string) =>
     useQuery<SessionDetails, ErrorResponse>({
@@ -28,7 +36,7 @@ export function SessionsProvider({ children }: SessionsProviderProps): JSX.Eleme
           if (error || !data) {
             throw error;
           }
-          return data[0];
+          return data?.sessions[0];
         }
         const { error, data } = await getSessionDetails({
           path: {
@@ -48,7 +56,12 @@ export function SessionsProvider({ children }: SessionsProviderProps): JSX.Eleme
     });
 
   const useReleaseSessionMutation = () =>
-    useMutation<ReleaseBrowserSessionResponse, ReleaseBrowserSessionsError, string>({
+    useMutation<
+      ReleaseBrowserSessionResponse,
+      ReleaseBrowserSessionsError,
+      string
+    >({
+      //@ts-expect-error Mutation function is not defined
       mutationFn: async (id: string) => {
         const { error, data } = await releaseBrowserSession({
           path: {
@@ -73,5 +86,9 @@ export function SessionsProvider({ children }: SessionsProviderProps): JSX.Eleme
     useReleaseSessionMutation,
   };
 
-  return <SessionsContext.Provider value={contextValue}>{children}</SessionsContext.Provider>;
+  return (
+    <SessionsContext.Provider value={contextValue}>
+      {children}
+    </SessionsContext.Provider>
+  );
 }
