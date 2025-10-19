@@ -4,6 +4,7 @@ import {
   createClient,
   createConfig,
   type Options,
+  formDataBodySerializer,
 } from "@hey-api/client-fetch";
 import {
   type ScrapeData,
@@ -33,12 +34,64 @@ import {
   type ReleaseBrowserSessionResponse,
   type ReleaseBrowserSessionsError,
   type ReleaseBrowserSessionsResponse,
+  type GetSessionDebuggerStreamData,
+  type GetSessionDebuggerStreamError,
+  type GetSessionDebuggerStreamResponse,
+  type ReceiveEventsData,
+  type ReceiveEventsError,
+  type ReceiveEventsResponse,
+  type GetSessionLiveDetailsData,
+  type GetSessionLiveDetailsError,
+  type GetSessionLiveDetailsResponse,
+  type ScrapeSessionData,
+  type ScrapeSessionError,
+  type ScrapeSessionResponse,
+  type ScreenshotSessionData,
+  type ScreenshotSessionError,
+  type ScreenshotSessionResponse,
+  type PdfSessionData,
+  type PdfSessionError,
+  type PdfSessionResponse,
+  type GetDevtoolsUrlData,
   type GetDevtoolsUrlError,
   type GetDevtoolsUrlResponse,
+  type UploadFileData,
+  type UploadFileError,
+  type UploadFileResponse,
+  type ListFilesData,
+  type ListFilesError,
+  type ListFilesResponse,
+  type DeleteAllFilesData,
+  type DeleteAllFilesError,
+  type DeleteAllFilesResponse,
+  type DownloadFileData,
+  type DownloadFileError,
+  type DownloadFileResponse,
+  type DeleteFileData,
+  type DeleteFileError,
+  type DeleteFileResponse,
+  type DownloadArchiveData,
+  type DownloadArchiveError,
+  type DownloadArchiveResponse,
+  type GetV1LogsQueryData,
+  type GetV1LogsQueryError,
+  type GetV1LogsQueryResponse,
+  type GetV1LogsStatsError,
+  type GetV1LogsStatsResponse,
+  type GetV1LogsStreamError,
+  type GetV1LogsStreamResponse,
+  type PostV1LogsExportData,
+  type PostV1LogsExportError,
+  type PostV1LogsExportResponse,
+  type DeleteV1LogsError,
+  type DeleteV1LogsResponse,
   ScrapeResponseTransformer,
   LaunchBrowserSessionResponseTransformer,
-  GetSessionsResponseTransformer,
   GetSessionDetailsResponseTransformer,
+  ReleaseBrowserSessionResponseTransformer,
+  ReleaseBrowserSessionsResponseTransformer,
+  ScrapeSessionResponseTransformer,
+  UploadFileResponseTransformer,
 } from "./types.gen";
 
 export const client = createClient(createConfig());
@@ -48,7 +101,7 @@ export const client = createClient(createConfig());
  * Scrape a URL
  */
 export const scrape = <ThrowOnError extends boolean = false>(
-  options?: Options<ScrapeData, ThrowOnError>
+  options?: Options<ScrapeData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).post<
     ScrapeResponse2,
@@ -66,7 +119,7 @@ export const scrape = <ThrowOnError extends boolean = false>(
  * Take a screenshot
  */
 export const screenshot = <ThrowOnError extends boolean = false>(
-  options?: Options<ScreenshotData, ThrowOnError>
+  options?: Options<ScreenshotData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).post<
     ScreenshotResponse2,
@@ -83,7 +136,7 @@ export const screenshot = <ThrowOnError extends boolean = false>(
  * Get the PDF content of a page
  */
 export const pdf = <ThrowOnError extends boolean = false>(
-  options?: Options<PdfData, ThrowOnError>
+  options?: Options<PdfData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).post<PdfResponse, PdfError, ThrowOnError>({
     ...options,
@@ -96,7 +149,7 @@ export const pdf = <ThrowOnError extends boolean = false>(
  * Check if the server and browser are running
  */
 export const health = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>
+  options?: Options<unknown, ThrowOnError>,
 ) => {
   return (options?.client ?? client).get<
     HealthResponse,
@@ -113,7 +166,7 @@ export const health = <ThrowOnError extends boolean = false>(
  * Launch a browser session
  */
 export const launchBrowserSession = <ThrowOnError extends boolean = false>(
-  options?: Options<LaunchBrowserSessionData, ThrowOnError>
+  options?: Options<LaunchBrowserSessionData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).post<
     LaunchBrowserSessionResponse,
@@ -127,11 +180,11 @@ export const launchBrowserSession = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Get all sessions (only returns current session)
- * Get all sessions (only returns current session)
+ * Get all sessions
+ * Get all sessions
  */
 export const getSessions = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>
+  options?: Options<unknown, ThrowOnError>,
 ) => {
   return (options?.client ?? client).get<
     GetSessionsResponse,
@@ -140,7 +193,6 @@ export const getSessions = <ThrowOnError extends boolean = false>(
   >({
     ...options,
     url: "/v1/sessions",
-    responseTransformer: GetSessionsResponseTransformer,
   });
 };
 
@@ -149,7 +201,7 @@ export const getSessions = <ThrowOnError extends boolean = false>(
  * Get session details
  */
 export const getSessionDetails = <ThrowOnError extends boolean = false>(
-  options: Options<GetSessionDetailsData, ThrowOnError>
+  options: Options<GetSessionDetailsData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).get<
     GetSessionDetailsResponse,
@@ -167,7 +219,7 @@ export const getSessionDetails = <ThrowOnError extends boolean = false>(
  * Get a browser context
  */
 export const getBrowserContext = <ThrowOnError extends boolean = false>(
-  options: Options<GetBrowserContextData, ThrowOnError>
+  options: Options<GetBrowserContextData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).get<
     GetBrowserContextResponse,
@@ -184,7 +236,7 @@ export const getBrowserContext = <ThrowOnError extends boolean = false>(
  * Release a browser session
  */
 export const releaseBrowserSession = <ThrowOnError extends boolean = false>(
-  options: Options<ReleaseBrowserSessionData, ThrowOnError>
+  options: Options<ReleaseBrowserSessionData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).post<
     ReleaseBrowserSessionResponse,
@@ -193,6 +245,7 @@ export const releaseBrowserSession = <ThrowOnError extends boolean = false>(
   >({
     ...options,
     url: "/v1/sessions/{sessionId}/release",
+    responseTransformer: ReleaseBrowserSessionResponseTransformer,
   });
 };
 
@@ -201,7 +254,7 @@ export const releaseBrowserSession = <ThrowOnError extends boolean = false>(
  * Release browser sessions
  */
 export const releaseBrowserSessions = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>
+  options?: Options<unknown, ThrowOnError>,
 ) => {
   return (options?.client ?? client).post<
     ReleaseBrowserSessionsResponse,
@@ -210,6 +263,110 @@ export const releaseBrowserSessions = <ThrowOnError extends boolean = false>(
   >({
     ...options,
     url: "/v1/sessions/release",
+    responseTransformer: ReleaseBrowserSessionsResponseTransformer,
+  });
+};
+
+/**
+ * Get session debugger view
+ * Returns an HTML page with a live debugger view of the session
+ */
+export const getSessionDebuggerStream = <ThrowOnError extends boolean = false>(
+  options?: Options<GetSessionDebuggerStreamData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    GetSessionDebuggerStreamResponse,
+    GetSessionDebuggerStreamError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/debug",
+  });
+};
+
+/**
+ * Receive recorded events from the browser
+ * Receive recorded events from the browser
+ */
+export const receiveEvents = <ThrowOnError extends boolean = false>(
+  options?: Options<ReceiveEventsData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<
+    ReceiveEventsResponse,
+    ReceiveEventsError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/events",
+  });
+};
+
+/**
+ * Get session live details
+ * Returns the live state of the session, including pages, tabs, and browser state
+ */
+export const getSessionLiveDetails = <ThrowOnError extends boolean = false>(
+  options: Options<GetSessionLiveDetailsData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    GetSessionLiveDetailsResponse,
+    GetSessionLiveDetailsError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/{id}/live-details",
+  });
+};
+
+/**
+ * Scrape Current Session
+ * Scrape Current Session
+ */
+export const scrapeSession = <ThrowOnError extends boolean = false>(
+  options?: Options<ScrapeSessionData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<
+    ScrapeSessionResponse,
+    ScrapeSessionError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/scrape",
+    responseTransformer: ScrapeSessionResponseTransformer,
+  });
+};
+
+/**
+ * Take Screenshot of Current Session
+ * Take Screenshot of Current Session
+ */
+export const screenshotSession = <ThrowOnError extends boolean = false>(
+  options?: Options<ScreenshotSessionData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<
+    ScreenshotSessionResponse,
+    ScreenshotSessionError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/screenshot",
+  });
+};
+
+/**
+ * Generate PDF of Current Session
+ * Generate PDF of Current Session
+ */
+export const pdfSession = <ThrowOnError extends boolean = false>(
+  options?: Options<PdfSessionData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<
+    PdfSessionResponse,
+    PdfSessionError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/pdf",
   });
 };
 
@@ -218,7 +375,7 @@ export const releaseBrowserSessions = <ThrowOnError extends boolean = false>(
  * Get the URL for the DevTools inspector
  */
 export const getDevtoolsUrl = <ThrowOnError extends boolean = false>(
-  options?: Options<unknown, ThrowOnError>
+  options?: Options<GetDevtoolsUrlData, ThrowOnError>,
 ) => {
   return (options?.client ?? client).get<
     GetDevtoolsUrlResponse,
@@ -227,5 +384,193 @@ export const getDevtoolsUrl = <ThrowOnError extends boolean = false>(
   >({
     ...options,
     url: "/v1/devtools/inspector.html",
+  });
+};
+
+/**
+ * Upload a file
+ * Uploads a file to a session via `multipart/form-data` with a `file` field that accepts either binary data or a URL string to download from, and an optional `path` field for the file storage path.
+ */
+export const uploadFile = <ThrowOnError extends boolean = false>(
+  options: Options<UploadFileData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<
+    UploadFileResponse,
+    UploadFileError,
+    ThrowOnError
+  >({
+    ...options,
+    ...formDataBodySerializer,
+    headers: {
+      "Content-Type": null,
+      ...options?.headers,
+    },
+    url: "/v1/sessions/{sessionId}/files",
+    responseTransformer: UploadFileResponseTransformer,
+  });
+};
+
+/**
+ * List files
+ * List all files from the session in descending order.
+ */
+export const listFiles = <ThrowOnError extends boolean = false>(
+  options: Options<ListFilesData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    ListFilesResponse,
+    ListFilesError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/{sessionId}/files",
+  });
+};
+
+/**
+ * Delete all files
+ * Delete all files from a session
+ */
+export const deleteAllFiles = <ThrowOnError extends boolean = false>(
+  options: Options<DeleteAllFilesData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).delete<
+    DeleteAllFilesResponse,
+    DeleteAllFilesError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/{sessionId}/files",
+  });
+};
+
+/**
+ * Download a file
+ * Download a file from a session
+ */
+export const downloadFile = <ThrowOnError extends boolean = false>(
+  options: Options<DownloadFileData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    DownloadFileResponse,
+    DownloadFileError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/{sessionId}/files/{*}",
+  });
+};
+
+/**
+ * Delete a file
+ * Delete a file from a session
+ */
+export const deleteFile = <ThrowOnError extends boolean = false>(
+  options: Options<DeleteFileData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).delete<
+    DeleteFileResponse,
+    DeleteFileError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/{sessionId}/files/{*}",
+  });
+};
+
+/**
+ * Download archive
+ * Download all files from the session as a zip archive.
+ */
+export const downloadArchive = <ThrowOnError extends boolean = false>(
+  options: Options<DownloadArchiveData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    DownloadArchiveResponse,
+    DownloadArchiveError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/sessions/{sessionId}/files.zip",
+  });
+};
+
+/**
+ * Query browser logs from local storage
+ */
+export const getV1LogsQuery = <ThrowOnError extends boolean = false>(
+  options?: Options<GetV1LogsQueryData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    GetV1LogsQueryResponse,
+    GetV1LogsQueryError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/logs/query",
+  });
+};
+
+/**
+ * Get statistics about stored browser logs
+ */
+export const getV1LogsStats = <ThrowOnError extends boolean = false>(
+  options?: Options<unknown, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    GetV1LogsStatsResponse,
+    GetV1LogsStatsError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/logs/stats",
+  });
+};
+
+/**
+ * Stream browser logs in real-time using SSE
+ */
+export const getV1LogsStream = <ThrowOnError extends boolean = false>(
+  options?: Options<unknown, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    GetV1LogsStreamResponse,
+    GetV1LogsStreamError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/logs/stream",
+  });
+};
+
+/**
+ * Export browser logs to Parquet format
+ */
+export const postV1LogsExport = <ThrowOnError extends boolean = false>(
+  options?: Options<PostV1LogsExportData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<
+    PostV1LogsExportResponse,
+    PostV1LogsExportError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/logs/export",
+  });
+};
+
+/**
+ * Clear all browser logs from storage
+ */
+export const deleteV1Logs = <ThrowOnError extends boolean = false>(
+  options?: Options<unknown, ThrowOnError>,
+) => {
+  return (options?.client ?? client).delete<
+    DeleteV1LogsResponse,
+    DeleteV1LogsError,
+    ThrowOnError
+  >({
+    ...options,
+    url: "/v1/logs/",
   });
 };
