@@ -762,12 +762,12 @@ export class CDPService extends EventEmitter {
             ]
           : [];
 
+        const shouldDisableSandbox = typeof process.getuid === "function" && process.getuid() === 0;
+
         const staticDefaultArgs = [
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
           "--disable-features=PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
@@ -788,6 +788,7 @@ export class CDPService extends EventEmitter {
           "--disable-infobars",
           "--disable-breakpad",
           "--disable-background-networking",
+          ...(shouldDisableSandbox ? ["--no-sandbox", "--disable-setuid-sandbox"] : []),
         ];
 
         const headfulArgs = [
