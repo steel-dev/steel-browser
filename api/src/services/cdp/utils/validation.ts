@@ -125,8 +125,16 @@ export function isSimilarConfig(
   const currentHeight = current.dimensions?.height ?? 1080;
   const nextHeight = next.dimensions?.height ?? 1080;
 
-  const { session: _s1, ...currentExtra } = (current.extra ?? {}) as Record<string, unknown>;
-  const { session: _s2, ...nextExtra } = (next.extra ?? {}) as Record<string, unknown>;
+  const {
+    session: _s1,
+    streaming: _w1,
+    ...currentExtra
+  } = (current.extra ?? {}) as Record<string, unknown>;
+  const {
+    session: _s2,
+    streaming: _w2,
+    ...nextExtra
+  } = (next.extra ?? {}) as Record<string, unknown>;
 
   return (
     currentHeadless === nextHeadless &&
