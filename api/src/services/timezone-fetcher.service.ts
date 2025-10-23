@@ -82,6 +82,10 @@ export class TimezoneFetcher {
           httpsAgent: agent,
           timeout: this.FETCH_TIMEOUT,
         });
+        // log the response data
+        this.logger.info(
+          `[TimezoneFetcher] ${service.name} response: ${JSON.stringify(response.data)}`,
+        );
 
         const timezone = service.parseTimezone(response.data);
 
@@ -95,7 +99,7 @@ export class TimezoneFetcher {
         }
       } catch (error: unknown) {
         const errorMessage = error instanceof AxiosError ? error.message : String(error);
-        this.logger.debug(`[TimezoneFetcher] ${service.name} failed: ${errorMessage}`);
+        this.logger.warn(`[TimezoneFetcher] ${service.name} failed: ${errorMessage}`);
         throw new Error(`${service.name}: ${errorMessage}`);
       }
     });
