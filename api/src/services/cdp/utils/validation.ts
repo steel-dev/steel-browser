@@ -136,6 +136,51 @@ export function isSimilarConfig(
     ...nextExtra
   } = (next.extra ?? {}) as Record<string, unknown>;
 
+  console.log("currentUserAgent", currentUserAgent, "////", nextUserAgent);
+  console.log("currentUserDataDir", currentUserDataDir, "////", nextUserDataDir);
+  console.log("currentSkipFingerprint", currentSkipFingerprint, "////", nextSkipFingerprint);
+  console.log("currentWidth", currentWidth, "////", nextWidth);
+  console.log("currentHeight", currentHeight, "////", nextHeight);
+  console.log("currentBlockAds", currentBlockAds, "////", nextBlockAds);
+  console.log(
+    "currentTimezone",
+    JSON.stringify(currentTimezone),
+    "////",
+    JSON.stringify(nextTimezone),
+  );
+  console.log("currentArgs", JSON.stringify(currentArgs), "////", JSON.stringify(nextArgs));
+  console.log("currentExt", JSON.stringify(currentExt), "////", JSON.stringify(nextExt));
+  console.log("currentExtra", JSON.stringify(currentExtra), "////", JSON.stringify(nextExtra));
+  console.log(
+    "current.userPreferences",
+    JSON.stringify(current.userPreferences),
+    "////",
+    JSON.stringify(next.userPreferences),
+  );
+  console.log(
+    "current.deviceConfig",
+    JSON.stringify(current.deviceConfig),
+    "////",
+    JSON.stringify(next.deviceConfig),
+  );
+  console.log(
+    "### SIMILAR?",
+    currentHeadless === nextHeadless &&
+      currentProxy === nextProxy &&
+      currentUserAgent === nextUserAgent &&
+      currentUserDataDir === nextUserDataDir &&
+      currentSkipFingerprint === nextSkipFingerprint &&
+      currentWidth === nextWidth &&
+      currentHeight === nextHeight &&
+      currentBlockAds === nextBlockAds &&
+      JSON.stringify(currentTimezone) === JSON.stringify(nextTimezone) &&
+      JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
+      JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
+      JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
+      JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences) &&
+      JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig),
+  );
+
   return (
     currentHeadless === nextHeadless &&
     currentProxy === nextProxy &&
