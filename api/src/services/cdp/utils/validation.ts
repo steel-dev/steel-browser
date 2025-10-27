@@ -128,26 +128,28 @@ export function isSimilarConfig(
   const { session: _s1, ...currentExtra } = (current.extra ?? {}) as Record<string, unknown>;
   const { session: _s2, ...nextExtra } = (next.extra ?? {}) as Record<string, unknown>;
 
-  console.log("headless", currentHeadless, nextHeadless);
-  console.log("proxy", currentProxy, nextProxy);
-  console.log("userAgent", currentUserAgent, nextUserAgent);
-  console.log("userDataDir", currentUserDataDir, nextUserDataDir);
-  console.log("skipFingerprint", currentSkipFingerprint, nextSkipFingerprint);
-  console.log("width", currentWidth, nextWidth);
-  console.log("height", currentHeight, nextHeight);
-  console.log("blockAds", currentBlockAds, nextBlockAds);
-  console.log("timezone", JSON.stringify(currentTimezone), JSON.stringify(nextTimezone));
-  console.log("args", JSON.stringify(currentArgs), JSON.stringify(nextArgs));
-  console.log("ext", JSON.stringify(currentExt), JSON.stringify(nextExt));
-  console.log("extra", JSON.stringify(currentExtra), JSON.stringify(nextExtra));
+  console.log("headless", currentHeadless, "////", nextHeadless);
+  console.log("proxy", currentProxy, "////", nextProxy);
+  console.log("userAgent", currentUserAgent, "////", nextUserAgent);
+  console.log("userDataDir", currentUserDataDir, "////", nextUserDataDir);
+  console.log("skipFingerprint", currentSkipFingerprint, "////", nextSkipFingerprint);
+  console.log("width", currentWidth, "////", nextWidth);
+  console.log("height", currentHeight, "////", nextHeight);
+  console.log("blockAds", currentBlockAds, "////", nextBlockAds);
+  console.log("timezone", JSON.stringify(currentTimezone), "////", JSON.stringify(nextTimezone));
+  console.log("args", JSON.stringify(currentArgs), "////", JSON.stringify(nextArgs));
+  console.log("ext", JSON.stringify(currentExt), "////", JSON.stringify(nextExt));
+  console.log("extra", JSON.stringify(currentExtra), "////", JSON.stringify(nextExtra));
   console.log(
     "userPreferences",
     JSON.stringify(current.userPreferences),
+    "////",
     JSON.stringify(next.userPreferences),
   );
   console.log(
     "deviceConfig",
     JSON.stringify(current.deviceConfig),
+    "////",
     JSON.stringify(next.deviceConfig),
   );
   console.log(
