@@ -24,8 +24,8 @@ jobs:
           tag-prefix: "v"
           tag-suffix: "-beta"
           skip-commit: true
-          patch-wording: "patch,fix,fixes,docs"
-          minor-wording: "feat,feature,minor"
+          patch-wording: "patch,fix,fixes,docs,feat,feature,minor"
+          # minor-wording: "feat,feature,minor"
           major-wording: "breaking,breaking-change,major"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -110,4 +110,3 @@ jobs:
             ## Come Hang Out
             - Questions? Join us on [Discord](https://discord.gg/gPpvhNvc5R)
             - Found a bug? Open an issue on [GitHub](https://github.com/steel-dev/steel-browser/issues)
-
