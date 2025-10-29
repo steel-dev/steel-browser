@@ -987,7 +987,10 @@ export class CDPService extends EventEmitter {
           this.browserInstance = (await tracer.startActiveSpan(
             "CDPService.launchBrowser",
             async () => {
-              return await puppeteer.launch(finalLaunchOptions);
+              console.log("[LAUNCH DEBUG] puppeteer.launch");
+              const b = await puppeteer.launch(finalLaunchOptions);
+              console.log("[LAUNCH DEBUG] puppeteer.launch done");
+              return b;
             },
           )) as unknown as Browser;
         } catch (error) {
@@ -996,6 +999,8 @@ export class CDPService extends EventEmitter {
             BrowserProcessState.LAUNCH_FAILED,
           );
         }
+
+        console.log("[LAUNCH DEBUG] pluginManager.onBrowserLaunch");
 
         // Plugin notifications - catch individual plugin errors
         try {
@@ -1008,6 +1013,8 @@ export class CDPService extends EventEmitter {
           );
           this.logger.warn(`[CDPService] ${pluginError.message} - continuing with launch`);
         }
+
+        console.log("[LAUNCH DEBUG] pluginManager.onBrowserLaunch done");
 
         this.browserInstance.on("error", (err) => {
           this.logger.error(`[CDPService] Browser error: ${err}`);

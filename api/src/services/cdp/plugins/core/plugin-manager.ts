@@ -54,7 +54,9 @@ export class PluginManager {
   public async onBrowserLaunch(browser: Browser): Promise<void> {
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
+        console.log("[PLUGIN DEBUG] onBrowserLaunch", plugin.name);
         await plugin.onBrowserLaunch(browser);
+        console.log("[PLUGIN DEBUG] onBrowserLaunch done", plugin.name);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBrowserLaunch: ${error}`);
       }
