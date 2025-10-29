@@ -25,7 +25,7 @@ jobs:
           tag-suffix: "-beta"
           skip-commit: true
           patch-wording: "patch,fix,fixes,docs,feat,feature,minor"
-          # minor-wording: "feat,feature,minor"
+          minor-wording: ""
           major-wording: "breaking,breaking-change,major"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
