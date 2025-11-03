@@ -130,7 +130,7 @@ const RecordedEvents = z.object({
 });
 
 const SessionStreamQuery = z.object({
-  showControls: z
+  showControls: z.coerce
     .boolean()
     .optional()
     .default(true)
@@ -140,7 +140,11 @@ const SessionStreamQuery = z.object({
     .optional()
     .default("dark")
     .describe("Theme of the browser iframe"),
-  interactive: z.boolean().optional().default(true).describe("Make the browser iframe interactive"),
+  interactive: z.coerce
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("Make the browser iframe interactive"),
   pageId: z.string().optional().describe("Page ID to connect to"),
   pageIndex: z.string().optional().describe("Page index (or tab index) to connect to"),
 });
