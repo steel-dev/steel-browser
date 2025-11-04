@@ -569,10 +569,11 @@ export class CDPService extends EventEmitter {
 
           await executeCritical(
             async () => this.refreshPrimaryPage(),
-            () =>
+            (error) =>
               new BrowserProcessError(
                 "Failed to refresh primary page when reusing browser instance",
                 BrowserProcessState.PAGE_REFRESH,
+                error,
               ),
           );
 
@@ -588,6 +589,7 @@ export class CDPService extends EventEmitter {
                 const contextError = new SessionContextError(
                   error instanceof Error ? error.message : String(error),
                   SessionContextType.CONTEXT_INJECTION,
+                  error,
                 );
                 this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
                 return contextError;
@@ -629,6 +631,7 @@ export class CDPService extends EventEmitter {
             new CleanupError(
               error instanceof Error ? error.message : String(error),
               CleanupType.PRE_LAUNCH_FILE_CLEANUP,
+              error,
             ),
         );
 
@@ -647,6 +650,8 @@ export class CDPService extends EventEmitter {
               error instanceof Error ? error.message : String(error),
               PluginName.LAUNCH_MUTATOR,
               PluginOperation.PRE_LAUNCH_HOOK,
+              true,
+              error,
             ),
         );
 
@@ -687,6 +692,7 @@ export class CDPService extends EventEmitter {
               return new FingerprintError(
                 error instanceof Error ? error.message : String(error),
                 FingerprintStage.GENERATION,
+                error,
               );
             },
           );
@@ -733,6 +739,7 @@ export class CDPService extends EventEmitter {
               `Failed to resolve extension paths: ${error}`,
               ResourceType.EXTENSIONS,
               false,
+              error,
             ),
         );
 
@@ -866,6 +873,7 @@ export class CDPService extends EventEmitter {
             new BrowserProcessError(
               error instanceof Error ? error.message : String(error),
               BrowserProcessState.LAUNCH_FAILED,
+              error,
             ),
         );
 
@@ -878,6 +886,8 @@ export class CDPService extends EventEmitter {
               error instanceof Error ? error.message : String(error),
               PluginName.PLUGIN_MANAGER,
               PluginOperation.BROWSER_LAUNCH_NOTIFICATION,
+              true,
+              error,
             ),
         );
 
@@ -893,10 +903,11 @@ export class CDPService extends EventEmitter {
 
         this.primaryPage = await executeCritical(
           async () => (await this.browserInstance!.pages())[0],
-          () =>
+          (error) =>
             new BrowserProcessError(
               "Failed to get primary page from browser instance",
               BrowserProcessState.PAGE_ACCESS,
+              error,
             ),
         );
 
@@ -912,6 +923,7 @@ export class CDPService extends EventEmitter {
               const contextError = new SessionContextError(
                 error instanceof Error ? error.message : String(error),
                 SessionContextType.CONTEXT_INJECTION,
+                error,
               );
               this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
               return contextError;
@@ -948,10 +960,11 @@ export class CDPService extends EventEmitter {
 
         this.wsEndpoint = await executeCritical(
           async () => this.browserInstance!.wsEndpoint(),
-          () =>
+          (error) =>
             new NetworkError(
               "Failed to get WebSocket endpoint from browser",
               NetworkOperation.WEBSOCKET_SETUP,
+              error,
             ),
         );
 
@@ -966,6 +979,7 @@ export class CDPService extends EventEmitter {
             new BrowserProcessError(
               error instanceof Error ? error.message : String(error),
               BrowserProcessState.TARGET_SETUP,
+              error,
             ),
         );
 

@@ -12,7 +12,7 @@ import { BaseLaunchError } from "../errors/launch-errors.js";
  * @example
  * const result = await executeCritical(
  *   async () => doSomethingCritical(),
- *   (error) => new BrowserProcessError(String(error), BrowserProcessState.LAUNCH_FAILED)
+ *   (error) => new BrowserProcessError(String(error), BrowserProcessState.LAUNCH_FAILED, error)
  * );
  */
 export async function executeCritical<T>(
