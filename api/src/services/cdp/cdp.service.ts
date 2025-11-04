@@ -775,7 +775,6 @@ export class CDPService extends EventEmitter {
           "--disable-translate",
           "--no-first-run",
           "--disable-search-engine-choice-screen",
-          "--disable-blink-features=AutomationControlled",
           "--webrtc-ip-handling-policy=disable_non_proxied_udp",
           "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
@@ -784,11 +783,12 @@ export class CDPService extends EventEmitter {
           "--disable-client-side-phishing-detection",
           "--disable-default-apps",
           "--disable-component-update",
-          "--no-zygote",
           "--disable-infobars",
           "--disable-breakpad",
           "--disable-background-networking",
-          ...(shouldDisableSandbox ? ["--no-sandbox", "--disable-setuid-sandbox"] : []),
+          ...(shouldDisableSandbox
+            ? ["--no-sandbox", "--disable-setuid-sandbox", "--no-zygote"]
+            : []),
         ];
 
         const headfulArgs = [
@@ -801,13 +801,18 @@ export class CDPService extends EventEmitter {
           "--crash-dumps-dir=/tmp/chrome-dumps",
         ];
 
-        const headlessArgs = ["--headless=new", "--hide-crash-restore-bubble"];
+        const headlessArgs = [
+          "--headless=new",
+          "--hide-crash-restore-bubble",
+          "--disable-blink-features=AutomationControlled",
+          // can we just remove this outright?
+          `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
+        ];
 
         const dynamicArgs = [
           this.launchConfig.dimensions ? "" : "--start-maximized",
           `--remote-debugging-address=${env.HOST}`,
           "--remote-debugging-port=9222",
-          `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
             this.launchConfig.dimensions?.height ?? 1080
           }`,
