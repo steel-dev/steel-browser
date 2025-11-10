@@ -127,14 +127,6 @@ export class CDPService extends EventEmitter {
     this.trackedOrigins = new Set<string>();
     this.chromeSessionService = new ChromeContextService(logger);
     this.retryManager = new RetryManager(logger);
-    // Clean up any existing proxy server
-    if (this.wsProxyServer) {
-      try {
-        this.wsProxyServer.close();
-      } catch (e) {
-        // Ignore errors when closing
-      }
-    }
 
     this.wsProxyServer = httpProxy.createProxyServer();
 
@@ -596,7 +588,7 @@ export class CDPService extends EventEmitter {
               },
             );
           }
-          this.pluginManager.onBrowserReady(this.launchConfig);
+          await this.pluginManager.onBrowserReady(this.launchConfig);
 
           return this.browserInstance!;
         } else if (this.browserInstance) {
@@ -997,7 +989,7 @@ export class CDPService extends EventEmitter {
           this.logger.error({ err: error }, `[CDPService] Error attaching to existing targets`);
         }
 
-        this.pluginManager.onBrowserReady(this.launchConfig);
+        await this.pluginManager.onBrowserReady(this.launchConfig);
 
         return this.browserInstance;
       })();
