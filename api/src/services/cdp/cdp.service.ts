@@ -277,6 +277,10 @@ export class CDPService extends EventEmitter {
     return this.pluginManager.unregister(pluginName);
   }
 
+  public waitUntil(task: Promise<void>): void {
+    this.pluginManager.waitUntil(task);
+  }
+
   private async handleTargetChange(target: Target) {
     if (target.type() !== "page") return;
 
@@ -376,7 +380,7 @@ export class CDPService extends EventEmitter {
               `[CDPService] Blocked response from file protocol: ${response.url()}`,
             );
             page.close().catch(() => {});
-            this.shutdown();
+            void this.endSession();
           }
         });
       }
@@ -435,7 +439,8 @@ export class CDPService extends EventEmitter {
     if (request.url().startsWith("file://")) {
       this.logger.error(`[CDPService] Blocked request to file protocol: ${request.url()}`);
       page.close().catch(() => {});
-      this.shutdown();
+      void this.endSession();
+      return;
     } else {
       await request.continue({ headers });
     }
@@ -596,7 +601,7 @@ export class CDPService extends EventEmitter {
               },
             );
           }
-          this.pluginManager.onBrowserReady(this.launchConfig);
+          this.pluginManager.onBrowserReady(this.currentSessionConfig ?? this.launchConfig!);
 
           return this.browserInstance!;
         } else if (this.browserInstance) {
@@ -997,7 +1002,7 @@ export class CDPService extends EventEmitter {
           this.logger.error({ err: error }, `[CDPService] Error attaching to existing targets`);
         }
 
-        this.pluginManager.onBrowserReady(this.launchConfig);
+        this.pluginManager.onBrowserReady(this.currentSessionConfig ?? this.launchConfig!);
 
         return this.browserInstance;
       })();
@@ -1240,6 +1245,7 @@ export class CDPService extends EventEmitter {
     this.sessionContext = await this.getBrowserState();
 
     await this.shutdown();
+    await this.pluginManager.drainPending();
     await this.pluginManager.onSessionEnd(sessionConfig);
     this.currentSessionConfig = null;
     this.sessionContext = null;
@@ -1253,22 +1259,27 @@ export class CDPService extends EventEmitter {
   private async onDisconnect(): Promise<void> {
     this.logger.info("Browser disconnected. Handling cleanup.");
 
-    if (this.shuttingDown || this.browserInstance?.process()) {
+    if (this.shuttingDown) {
       return;
     }
 
-    if (this.currentSessionConfig) {
+    const sessionConfig = this.currentSessionConfig;
+    if (sessionConfig) {
+      await this.pluginManager.drainPending();
+      await this.pluginManager.onSessionEnd(sessionConfig);
       this.logger.info("Restarting browser with current session configuration.");
-      await this.launch(this.currentSessionConfig);
-    } else if (this.keepAlive) {
+      await this.launch(sessionConfig);
+      return;
+    }
+
+    if (this.keepAlive) {
       this.logger.info("Restarting browser with default configuration.");
       await this.launch(this.defaultLaunchConfig);
-    } else {
-      this.logger.info("Shutting down browser.");
-      const sessionConfig = this.currentSessionConfig!;
-      await this.shutdown();
-      await this.pluginManager.onSessionEnd(sessionConfig);
+      return;
     }
+
+    this.logger.info("Shutting down browser.");
+    await this.shutdown();
   }
 
   @traceable
