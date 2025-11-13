@@ -219,10 +219,19 @@ export const handleGetSessionLiveDetails = async (
       status: server.sessionService.activeSession.status,
       userAgent: server.sessionService.activeSession.userAgent,
       browserVersion,
-      initialDimensions: server.sessionService.activeSession.dimensions || {
-        width: 1920,
-        height: 1080,
-      },
+      initialDimensions: (() => {
+        const dims = server.sessionService.activeSession.dimensions || {
+          width: 1920,
+          height: 1080,
+        };
+        return {
+          width: (dims as any).width,
+          height: (dims as any).height,
+          ...((dims as any).scaleFactor !== undefined
+            ? { scaleFactor: (dims as any).scaleFactor }
+            : {}),
+        };
+      })(),
       pageCount: validPagesInfo.length,
     };
 

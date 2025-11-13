@@ -164,6 +164,7 @@ const SessionLiveDetailsResponse = z.object({
     initialDimensions: z.object({
       width: z.number(),
       height: z.number(),
+      scaleFactor: z.number().optional(),
     }),
     pageCount: z.number(),
   }),

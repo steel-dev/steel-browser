@@ -49,6 +49,7 @@ export async function handleCastSession(
     width: 1920,
     height: 1080,
   };
+  const scaleFactor = (session.dimensions as any)?.scaleFactor ?? 1;
 
   wss.handleUpgrade(request, socket, head, async (ws) => {
     let browser: Browser | null = null;
@@ -379,21 +380,21 @@ export async function handleCastSession(
         });
 
         // Setup device metrics and start screencast
-        await targetClient.send("Page.setDeviceMetricsOverride", {
+        await targetClient.send("Emulation.setDeviceMetricsOverride", {
           screenHeight: height,
           screenWidth: width,
           width,
           height,
           mobile: false,
           screenOrientation: { angle: 90, type: "landscapePrimary" },
-          deviceScaleFactor: 1,
+          deviceScaleFactor: scaleFactor,
         });
 
         await targetClient.send("Page.startScreencast", {
           format: "jpeg",
           quality: 75,
-          maxWidth: width,
-          maxHeight: height,
+          maxWidth: Math.round(width * scaleFactor),
+          maxHeight: Math.round(height * scaleFactor),
         });
 
         // Handle screencast frames

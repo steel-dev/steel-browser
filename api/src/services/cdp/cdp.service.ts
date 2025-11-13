@@ -358,6 +358,35 @@ export class CDPService extends EventEmitter {
           );
         }
 
+        // Apply deviceScaleFactor dynamically via CDP if provided in dimensions
+        try {
+          const sf = (this.launchConfig as any)?.dimensions?.scaleFactor;
+          if (typeof sf === "number" && Number.isFinite(sf) && sf > 0) {
+            const w = this.launchConfig?.dimensions?.width ?? 1920;
+            const h = this.launchConfig?.dimensions?.height ?? 1080;
+            const client = await page.createCDPSession();
+            try {
+              await client.send("Emulation.setDeviceMetricsOverride", {
+                screenHeight: h,
+                screenWidth: w,
+                width: w,
+                height: h,
+                mobile: this.launchConfig?.deviceConfig?.device === "mobile",
+                screenOrientation:
+                  h > w
+                    ? { angle: 0, type: "portraitPrimary" }
+                    : { angle: 90, type: "landscapePrimary" },
+                deviceScaleFactor: sf,
+              });
+              this.logger.info(`[CDPService] Applied deviceScaleFactor=${sf} via CDP`);
+            } finally {
+              await client.detach().catch(() => {});
+            }
+          }
+        } catch (e) {
+          this.logger.warn(`[CDPService] Failed to apply deviceScaleFactor via CDP: ${e}`);
+        }
+
         await page.setRequestInterception(true);
 
         page.on("request", (request) => this.handlePageRequest(request, page));
@@ -694,9 +723,22 @@ export class CDPService extends EventEmitter {
           );
         }
 
+        const derivedDimensions =
+          this.launchConfig.dimensions ??
+          (this.fingerprintData
+            ? {
+                width: this.fingerprintData.fingerprint.screen.width,
+                height: this.fingerprintData.fingerprint.screen.height,
+                scaleFactor:
+                  (this.launchConfig as any)?.dimensions?.scaleFactor ??
+                  this.fingerprintData.fingerprint.screen.devicePixelRatio ??
+                  1,
+              }
+            : undefined);
+
         this.currentSessionConfig = {
           ...this.launchConfig,
-          dimensions: this.launchConfig.dimensions || this.fingerprintData?.fingerprint.screen,
+          dimensions: derivedDimensions,
           userAgent:
             this.launchConfig.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent,
         };
@@ -1083,7 +1125,14 @@ export class CDPService extends EventEmitter {
   }
 
   public getDimensions() {
-    return this.currentSessionConfig?.dimensions || { width: 1920, height: 1080 };
+    const dims = this.currentSessionConfig?.dimensions as any;
+    if (dims) {
+      const width = dims.width;
+      const height = dims.height;
+      const scaleFactor = dims.scaleFactor ?? 1;
+      return { width, height, scaleFactor };
+    }
+    return { width: 1920, height: 1080, scaleFactor: 1 };
   }
 
   public getFingerprintData(): BrowserFingerprintWithHeaders | null {
@@ -1335,7 +1384,7 @@ export class CDPService extends EventEmitter {
       const session = await page.createCDPSession();
 
       try {
-        await session.send("Page.setDeviceMetricsOverride", {
+        await session.send("Emulation.setDeviceMetricsOverride", {
           screenHeight: screen.height,
           screenWidth: screen.width,
           width: screen.width,
@@ -1352,7 +1401,8 @@ export class CDPService extends EventEmitter {
             screen.height > screen.width
               ? { angle: 0, type: "portraitPrimary" }
               : { angle: 90, type: "landscapePrimary" },
-          deviceScaleFactor: screen.devicePixelRatio,
+          deviceScaleFactor:
+            (this.launchConfig as any)?.dimensions?.scaleFactor ?? screen.devicePixelRatio ?? 1,
         });
 
         const injectedHeaders = filterHeaders(headers);
