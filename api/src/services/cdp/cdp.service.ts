@@ -448,55 +448,55 @@ export class CDPService extends EventEmitter {
 
   @traceable
   public async shutdown(): Promise<void> {
-    if (this.browserInstance) {
-      this.shuttingDown = true;
-      this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
+    // if (this.browserInstance) {
+    this.shuttingDown = true;
+    this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
+
+    try {
+      if (this.browserInstance) {
+        await this.pluginManager.onBrowserClose(this.browserInstance);
+      }
+
+      await this.pluginManager.onShutdown();
+
+      this.removeAllHandlers();
+      await this.browserInstance?.close();
+      await this.browserInstance?.process()?.kill();
+      await this.shutdownHook();
+
+      this.logger.info("[CDPService] Cleaning up files during shutdown");
+      try {
+        await FileService.getInstance().cleanupFiles();
+        this.logger.info("[CDPService] Files cleaned successfully");
+      } catch (error) {
+        this.logger.error(`[CDPService] Error cleaning files during shutdown: ${error}`);
+      }
+
+      this.fingerprintData = null;
+      this.currentSessionConfig = null;
+      this.browserInstance = null;
+      this.wsEndpoint = null;
+      this.emit("close");
+      this.shuttingDown = false;
+    } catch (error) {
+      this.logger.error(`[CDPService] Error during shutdown: ${error}`);
+      // Ensure we complete the shutdown even if plugins throw errors
+      await this.browserInstance?.close();
+      await this.browserInstance?.process()?.kill();
+      await this.shutdownHook();
 
       try {
-        if (this.browserInstance) {
-          await this.pluginManager.onBrowserClose(this.browserInstance);
-        }
-
-        await this.pluginManager.onShutdown();
-
-        this.removeAllHandlers();
-        await this.browserInstance.close();
-        await this.browserInstance.process()?.kill();
-        await this.shutdownHook();
-
-        this.logger.info("[CDPService] Cleaning up files during shutdown");
-        try {
-          await FileService.getInstance().cleanupFiles();
-          this.logger.info("[CDPService] Files cleaned successfully");
-        } catch (error) {
-          this.logger.error(`[CDPService] Error cleaning files during shutdown: ${error}`);
-        }
-
-        this.fingerprintData = null;
-        this.currentSessionConfig = null;
-        this.browserInstance = null;
-        this.wsEndpoint = null;
-        this.emit("close");
-        this.shuttingDown = false;
-      } catch (error) {
-        this.logger.error(`[CDPService] Error during shutdown: ${error}`);
-        // Ensure we complete the shutdown even if plugins throw errors
-        await this.browserInstance?.close();
-        await this.browserInstance?.process()?.kill();
-        await this.shutdownHook();
-
-        try {
-          await FileService.getInstance().cleanupFiles();
-        } catch (cleanupError) {
-          this.logger.error(
-            `[CDPService] Error cleaning files during error recovery: ${cleanupError}`,
-          );
-        }
-
-        this.browserInstance = null;
-        this.shuttingDown = false;
+        await FileService.getInstance().cleanupFiles();
+      } catch (cleanupError) {
+        this.logger.error(
+          `[CDPService] Error cleaning files during error recovery: ${cleanupError}`,
+        );
       }
+
+      this.browserInstance = null;
+      this.shuttingDown = false;
     }
+    // }
   }
 
   public getBrowserProcess() {
@@ -1235,7 +1235,10 @@ export class CDPService extends EventEmitter {
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
-    this.sessionContext = await this.getBrowserState();
+
+    // this is used inside of the shutdown hook for profile
+    // todo: figure out a better way to extrat this
+    this.sessionContext = await this.getBrowserState().catch(() => null);
 
     await this.shutdown();
     await this.pluginManager.onSessionEnd(sessionConfig);
@@ -1251,22 +1254,11 @@ export class CDPService extends EventEmitter {
   private async onDisconnect(): Promise<void> {
     this.logger.info("Browser disconnected. Handling cleanup.");
 
-    if (this.shuttingDown || this.browserInstance?.process()) {
+    if (this.shuttingDown) {
       return;
     }
 
-    if (this.currentSessionConfig) {
-      this.logger.info("Restarting browser with current session configuration.");
-      await this.launch(this.currentSessionConfig);
-    } else if (this.keepAlive) {
-      this.logger.info("Restarting browser with default configuration.");
-      await this.launch(this.defaultLaunchConfig);
-    } else {
-      this.logger.info("Shutting down browser.");
-      const sessionConfig = this.currentSessionConfig!;
-      await this.shutdown();
-      await this.pluginManager.onSessionEnd(sessionConfig);
-    }
+    await this.endSession();
   }
 
   @traceable
