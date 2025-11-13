@@ -30,11 +30,9 @@
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "^1.0.62",
     "@types/lodash-es": "^4.17.12",
-    "cheerio": "^1.1.2",
     "fastify": "^5.2.1",
     "husky": "^9.1.7",
-    "lodash-es": "^4.17.21",
-    "pdf2html": "^4.4.0"
+    "lodash-es": "^4.17.21"
   },
   "overrides": {
     "tar-fs": ">=3.1.1"
