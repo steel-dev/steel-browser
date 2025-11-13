@@ -448,7 +448,6 @@ export class CDPService extends EventEmitter {
 
   @traceable
   public async shutdown(): Promise<void> {
-    // if (this.browserInstance) {
     this.shuttingDown = true;
     this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
 
@@ -496,7 +495,6 @@ export class CDPService extends EventEmitter {
       this.browserInstance = null;
       this.shuttingDown = false;
     }
-    // }
   }
 
   public getBrowserProcess() {
@@ -1236,8 +1234,6 @@ export class CDPService extends EventEmitter {
     this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
 
-    // this is used inside of the shutdown hook for profile
-    // todo: figure out a better way to extrat this
     this.sessionContext = await this.getBrowserState().catch(() => null);
 
     await this.shutdown();
