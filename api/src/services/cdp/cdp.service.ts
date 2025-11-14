@@ -1335,21 +1335,22 @@ export class CDPService extends EventEmitter {
       const session = await page.createCDPSession();
 
       try {
+        const dims = this.getDimensions();
         await session.send("Page.setDeviceMetricsOverride", {
-          screenHeight: screen.height,
-          screenWidth: screen.width,
-          width: screen.width,
-          height: screen.height,
+          screenHeight: dims.height,
+          screenWidth: dims.width,
+          width: dims.width,
+          height: dims.height,
           viewport: {
-            width: screen.availWidth,
-            height: screen.availHeight,
+            width: dims.width,
+            height: dims.height,
             scale: 1,
             x: 0,
             y: 0,
           },
           mobile: /phone|android|mobile/i.test(userAgent),
           screenOrientation:
-            screen.height > screen.width
+            dims.height > dims.width
               ? { angle: 0, type: "portraitPrimary" }
               : { angle: 90, type: "landscapePrimary" },
           deviceScaleFactor: screen.devicePixelRatio,
