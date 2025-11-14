@@ -22,7 +22,7 @@ server.ready(() => {
   }
   openApiJSON.servers.push({
     url: serverUrl,
-    description: "Local server from env variables"
+    description: "Local server from env variables",
   });
 
   writeFileSync("./openapi/schemas.json", JSON.stringify(openApiJSON, null, 2), "utf-8");

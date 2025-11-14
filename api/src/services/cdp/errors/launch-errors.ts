@@ -84,8 +84,9 @@ export abstract class BaseLaunchError extends Error {
     message: string,
     isRetryable: boolean = false,
     context?: Record<string, any>,
+    cause?: unknown,
   ) {
-    super(message);
+    super(message, { cause });
     this.name = this.constructor.name;
     this.type = type;
     this.isRetryable = isRetryable;
@@ -103,10 +104,16 @@ export abstract class BaseLaunchError extends Error {
  * This is typically retryable as it may be a temporary resource issue
  */
 export class LaunchTimeoutError extends BaseLaunchError {
-  constructor(timeoutMs: number = 30000) {
-    super(LaunchErrorType.TIMEOUT, `Browser launch timeout after ${timeoutMs}ms`, true, {
-      timeoutMs,
-    });
+  constructor(timeoutMs: number = 30000, cause?: unknown) {
+    super(
+      LaunchErrorType.TIMEOUT,
+      `Browser launch timeout after ${timeoutMs}ms`,
+      true,
+      {
+        timeoutMs,
+      },
+      cause,
+    );
   }
 }
 
@@ -115,11 +122,22 @@ export class LaunchTimeoutError extends BaseLaunchError {
  * These are typically not retryable without fixing the configuration
  */
 export class ConfigurationError extends BaseLaunchError {
-  constructor(message: string, configField?: ConfigurationField, configValue?: any) {
-    super(LaunchErrorType.CONFIGURATION, `Configuration error: ${message}`, false, {
-      configField,
-      configValue,
-    });
+  constructor(
+    message: string,
+    configField?: ConfigurationField,
+    configValue?: any,
+    cause?: unknown,
+  ) {
+    super(
+      LaunchErrorType.CONFIGURATION,
+      `Configuration error: ${message}`,
+      false,
+      {
+        configField,
+        configValue,
+      },
+      cause,
+    );
   }
 }
 
@@ -128,8 +146,19 @@ export class ConfigurationError extends BaseLaunchError {
  * Some may be retryable (temporary disk space), others not (missing Chrome binary)
  */
 export class ResourceError extends BaseLaunchError {
-  constructor(message: string, resourceType: ResourceType, isRetryable: boolean = false) {
-    super(LaunchErrorType.RESOURCE, `Resource error: ${message}`, isRetryable, { resourceType });
+  constructor(
+    message: string,
+    resourceType: ResourceType,
+    isRetryable: boolean = false,
+    cause?: unknown,
+  ) {
+    super(
+      LaunchErrorType.RESOURCE,
+      `Resource error: ${message}`,
+      isRetryable,
+      { resourceType },
+      cause,
+    );
   }
 }
 
@@ -139,10 +168,16 @@ export class ResourceError extends BaseLaunchError {
  */
 export class SystemError extends BaseLaunchError {
   constructor(message: string, operation: SystemOperation, originalError?: Error) {
-    super(LaunchErrorType.SYSTEM, `System error during ${operation}: ${message}`, true, {
-      operation,
-      originalError: originalError?.message,
-    });
+    super(
+      LaunchErrorType.SYSTEM,
+      `System error during ${operation}: ${message}`,
+      true,
+      {
+        operation,
+        originalError: originalError?.message,
+      },
+      originalError,
+    );
   }
 }
 
@@ -151,10 +186,16 @@ export class SystemError extends BaseLaunchError {
  * Usually retryable as network issues are often temporary
  */
 export class NetworkError extends BaseLaunchError {
-  constructor(message: string, networkOperation: NetworkOperation) {
-    super(LaunchErrorType.NETWORK, `Network error during ${networkOperation}: ${message}`, true, {
-      networkOperation,
-    });
+  constructor(message: string, networkOperation: NetworkOperation, cause?: unknown) {
+    super(
+      LaunchErrorType.NETWORK,
+      `Network error during ${networkOperation}: ${message}`,
+      true,
+      {
+        networkOperation,
+      },
+      cause,
+    );
   }
 }
 
@@ -163,10 +204,16 @@ export class NetworkError extends BaseLaunchError {
  * Usually retryable, can fall back to no fingerprint
  */
 export class FingerprintError extends BaseLaunchError {
-  constructor(message: string, stage: FingerprintStage) {
-    super(LaunchErrorType.FINGERPRINT, `Fingerprint error during ${stage}: ${message}`, true, {
-      stage,
-    });
+  constructor(message: string, stage: FingerprintStage, cause?: unknown) {
+    super(
+      LaunchErrorType.FINGERPRINT,
+      `Fingerprint error during ${stage}: ${message}`,
+      true,
+      {
+        stage,
+      },
+      cause,
+    );
   }
 }
 
@@ -180,6 +227,7 @@ export class PluginError extends BaseLaunchError {
     pluginName: PluginName,
     operation: PluginOperation,
     isRetryable: boolean = true,
+    cause?: unknown,
   ) {
     super(
       LaunchErrorType.PLUGIN,
@@ -189,6 +237,7 @@ export class PluginError extends BaseLaunchError {
         pluginName,
         operation,
       },
+      cause,
     );
   }
 }
@@ -198,10 +247,16 @@ export class PluginError extends BaseLaunchError {
  * Usually retryable and non-critical to browser launch
  */
 export class CleanupError extends BaseLaunchError {
-  constructor(message: string, cleanupType: CleanupType) {
-    super(LaunchErrorType.CLEANUP, `Cleanup error during ${cleanupType}: ${message}`, true, {
-      cleanupType,
-    });
+  constructor(message: string, cleanupType: CleanupType, cause?: unknown) {
+    super(
+      LaunchErrorType.CLEANUP,
+      `Cleanup error during ${cleanupType}: ${message}`,
+      true,
+      {
+        cleanupType,
+      },
+      cause,
+    );
   }
 }
 
@@ -210,7 +265,12 @@ export class CleanupError extends BaseLaunchError {
  * Usually retryable as it may be a temporary issue
  */
 export class BrowserProcessError extends BaseLaunchError {
-  constructor(message: string, processState: BrowserProcessState, exitCode?: number) {
+  constructor(
+    message: string,
+    processState: BrowserProcessState,
+    cause?: unknown,
+    exitCode?: number,
+  ) {
     super(
       LaunchErrorType.BROWSER_PROCESS,
       `Browser process error (${processState}): ${message}`,
@@ -219,6 +279,7 @@ export class BrowserProcessError extends BaseLaunchError {
         processState,
         exitCode,
       },
+      cause,
     );
   }
 }
@@ -228,7 +289,7 @@ export class BrowserProcessError extends BaseLaunchError {
  * Usually retryable, can fall back to launching without context
  */
 export class SessionContextError extends BaseLaunchError {
-  constructor(message: string, contextType: SessionContextType) {
+  constructor(message: string, contextType: SessionContextType, cause?: unknown) {
     super(
       LaunchErrorType.SESSION_CONTEXT,
       `Session context error with ${contextType}: ${message}`,
@@ -236,6 +297,7 @@ export class SessionContextError extends BaseLaunchError {
       {
         contextType,
       },
+      cause,
     );
   }
 }

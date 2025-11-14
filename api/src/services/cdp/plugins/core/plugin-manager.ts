@@ -62,14 +62,17 @@ export class PluginManager {
     await Promise.all(promises);
   }
 
-  public onBrowserReady(context: BrowserLauncherOptions): void {
-    for (const plugin of this.plugins.values()) {
+  public async onBrowserReady(context: BrowserLauncherOptions): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        plugin.onBrowserReady(context);
+        // handle both async and sync hooks
+        await Promise.resolve(plugin.onBrowserReady(context));
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onBrowserReady: ${error}`);
       }
-    }
+    });
+
+    await Promise.all(promises);
   }
 
   /**
