@@ -49,7 +49,6 @@ export async function handleCastSession(
     width: 1920,
     height: 1080,
   };
-  const scaleFactor = (session.dimensions as any)?.scaleFactor ?? 1;
 
   wss.handleUpgrade(request, socket, head, async (ws) => {
     let browser: Browser | null = null;

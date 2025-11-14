@@ -37,7 +37,6 @@ export interface BrowserLauncherOptions {
   dimensions?: {
     width: number;
     height: number;
-    deviceScaleFactor?: number;
   } | null;
   userDataDir?: string;
   userPreferences?: Record<string, any>;

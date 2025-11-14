@@ -204,7 +204,7 @@ export class SessionService {
       extensions: extensions || [],
       logSinkUrl,
       timezone: timezonePromise,
-      dimensions: finalDimensions,
+      dimensions,
       userDataDir,
       userPreferences: mergedUserPreferences,
       extra,
