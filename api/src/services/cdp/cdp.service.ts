@@ -1125,14 +1125,7 @@ export class CDPService extends EventEmitter {
   }
 
   public getDimensions() {
-    const dims = this.currentSessionConfig?.dimensions as any;
-    if (dims) {
-      const width = dims.width;
-      const height = dims.height;
-      const scaleFactor = dims.scaleFactor ?? 1;
-      return { width, height, scaleFactor };
-    }
-    return { width: 1920, height: 1080, scaleFactor: 1 };
+    return this.currentSessionConfig?.dimensions || { width: 1920, height: 1080 };
   }
 
   public getFingerprintData(): BrowserFingerprintWithHeaders | null {
@@ -1384,7 +1377,7 @@ export class CDPService extends EventEmitter {
       const session = await page.createCDPSession();
 
       try {
-        await session.send("Emulation.setDeviceMetricsOverride", {
+        await session.send("Page.setDeviceMetricsOverride", {
           screenHeight: screen.height,
           screenWidth: screen.width,
           width: screen.width,
@@ -1401,8 +1394,7 @@ export class CDPService extends EventEmitter {
             screen.height > screen.width
               ? { angle: 0, type: "portraitPrimary" }
               : { angle: 90, type: "landscapePrimary" },
-          deviceScaleFactor:
-            (this.launchConfig as any)?.dimensions?.scaleFactor ?? screen.devicePixelRatio ?? 1,
+          deviceScaleFactor: screen.devicePixelRatio,
         });
 
         const injectedHeaders = filterHeaders(headers);
