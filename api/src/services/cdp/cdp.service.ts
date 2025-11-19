@@ -327,7 +327,10 @@ export class CDPService extends EventEmitter {
         // Notify plugins about the new page
         await this.pluginManager.onPageCreated(page);
 
-        installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+        // Only install mouse helper in headless mode
+        if (this.launchConfig?.options?.headless) {
+          installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+        }
 
         if (this.currentSessionConfig?.timezone) {
           try {
