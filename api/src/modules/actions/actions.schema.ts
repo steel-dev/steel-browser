@@ -100,8 +100,8 @@ const SearchRequest = z.object({
 const SearchResponse = z.object({
   results: z.array(
     z.object({
-      title: z.string().nullable().optional(),
-      url: z.string().nullable().optional(),
+      title: z.string(),
+      url: z.string(),
       description: z.string().nullable().optional(),
     }),
   ),
