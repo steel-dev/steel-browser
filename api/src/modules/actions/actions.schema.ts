@@ -85,6 +85,28 @@ const PDFRequest = z.object({
   logUrl: z.string().optional(),
 });
 
+const SearchRequest = z.object({
+  query: z.string(),
+  proxyUrl: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
+    ),
+  logUrl: z.string().optional(),
+});
+
+const SearchResponse = z.object({
+  results: z.array(
+    z.object({
+      title: z.string().nullable().optional(),
+      url: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+    }),
+  ),
+});
+
 const PDFResponse = z.any();
 
 export type ScrapeRequestBody = z.infer<typeof ScrapeRequest>;
@@ -96,6 +118,9 @@ export type ScreenshotRequest = FastifyRequest<{ Body: ScreenshotRequestBody }>;
 export type PDFRequestBody = z.infer<typeof PDFRequest>;
 export type PDFRequest = FastifyRequest<{ Body: PDFRequestBody }>;
 
+export type SearchRequestBody = z.infer<typeof SearchRequest>;
+export type SearchRequest = FastifyRequest<{ Body: SearchRequestBody }>;
+
 export const actionsSchemas = {
   ScrapeRequest,
   ScrapeResponse,
@@ -103,6 +128,8 @@ export const actionsSchemas = {
   ScreenshotResponse,
   PDFRequest,
   PDFResponse,
+  SearchRequest,
+  SearchResponse,
 };
 
 export default actionsSchemas;

@@ -13,7 +13,7 @@ import {
   transformHtml,
 } from "../../utils/scrape/index.js";
 import { normalizeUrl } from "../../utils/url.js";
-import { PDFRequest, ScrapeRequest, ScreenshotRequest } from "./actions.schema.js";
+import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 import { DefuddleResponse } from "defuddle";
 
 export const handleScrape = async (
@@ -205,6 +205,121 @@ export const handleScrape = async (
     if (url) {
       await browserService.refreshPrimaryPage();
     }
+    return reply.code(500).send({ message: error });
+  } finally {
+    if (context) {
+      await context.close().catch(() => {});
+    }
+    if (proxy) {
+      await proxy.close(true).catch(() => {});
+    }
+  }
+};
+
+export const handleSearch = async (
+  sessionService: SessionService,
+  browserService: CDPService,
+  request: SearchRequest,
+  reply: FastifyReply,
+) => {
+  const startTime = Date.now();
+  let times: Record<string, number> = {};
+  const { query, proxyUrl, logUrl } = request.body;
+
+  let proxy: IProxyServer | null = null;
+  let context: BrowserContext | null = null;
+
+  try {
+    if (proxyUrl) {
+      proxy = await sessionService.proxyFactory(proxyUrl);
+      await proxy.listen();
+    }
+    times.proxyTime = Date.now() - startTime;
+
+    let page: Page;
+
+    if (!browserService.isRunning()) {
+      await browserService.launch();
+    }
+
+    if (proxy) {
+      // If a proxy is used, we proceed with browser navigation; implementing proxy-aware Node fetch
+      // would require an HTTP agent and is outside current scope.
+      context = await browserService.createBrowserContext(proxy.url);
+      page = await context.newPage();
+      times.proxyPageTime = Date.now() - startTime - times.proxyTime;
+    } else {
+      page = await browserService.getPrimaryPage();
+      times.pageTime = Date.now() - startTime - times.proxyTime;
+    }
+
+    await page.evaluate(() => {
+      (window as any).__name = (func: Function) => func;
+    });
+
+    // Go to Bing
+    await page.goto("https://search.brave.com", { waitUntil: "networkidle2" });
+
+    // Type search query and submit
+    await page.type("textarea[name='q']", query);
+    await page.keyboard.press("Enter");
+
+    // Wait for results to load
+    await page.waitForSelector("#results", { timeout: 90000 });
+
+    // Scrape results
+    const results = await page.evaluate(() => {
+      const items = document.querySelectorAll("div.snippet");
+
+      return Array.from(items)
+        .map((item) => {
+          if (
+            [
+              "llm-snippet",
+              "faq",
+              "pagination-snippet",
+              "search-elsewhere",
+              "infoblox-snippet",
+              "discussions",
+            ].includes(item.id)
+          ) {
+            return;
+          }
+          const urlEl = item.querySelector("div.result-content a");
+          const descEl = item.querySelector("div.generic-snippet");
+          const titleEl = item.querySelector("div.result-content a div.title");
+
+          return {
+            title: titleEl?.textContent?.trim() || null,
+            url: urlEl?.getAttribute("href") || null,
+            description: descEl?.textContent?.split("-")[1]?.trim() || null,
+          };
+        })
+        .filter(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            "title" in item &&
+            "url" in item &&
+            "description" in item &&
+            item.title !== null &&
+            item.url !== null,
+        );
+    });
+    times.totalInstanceTime = Date.now() - startTime;
+
+    if (logUrl) {
+      await updateLog(logUrl, { times });
+    }
+
+    return reply.send({ results });
+  } catch (e: unknown) {
+    const error = getErrors(e);
+
+    if (logUrl) {
+      await updateLog(logUrl, { times, response: { browserError: error } });
+    }
+
     return reply.code(500).send({ message: error });
   } finally {
     if (context) {
