@@ -63,9 +63,9 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "search",
-        description: "Search for text on a page",
+        description: "Use a search engine to search for URLs given a query",
         tags: ["Browser Actions"],
-        summary: "Search for text on a page",
+        summary: "Use a search engine to search for URLs given a query",
         body: $ref("SearchRequest"),
         response: {
           200: $ref("SearchResponse"),
