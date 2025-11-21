@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyReply } from "fastify";
-import { handlePDF, handleScrape, handleScreenshot } from "./actions.controller.js";
+import { handlePDF, handleScrape, handleScreenshot, handleSearch } from "./actions.controller.js";
 import { $ref } from "../../plugins/schemas.js";
-import { PDFRequest, ScrapeRequest, ScreenshotRequest } from "./actions.schema.js";
+import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 
 async function routes(server: FastifyInstance) {
   server.post(
@@ -56,6 +56,24 @@ async function routes(server: FastifyInstance) {
     },
     async (request: PDFRequest, reply: FastifyReply) =>
       handlePDF(server.sessionService, server.cdpService, request, reply),
+  );
+
+  server.post(
+    "/search",
+    {
+      schema: {
+        operationId: "search",
+        description: "Use a search engine to search for URLs given a query",
+        tags: ["Browser Actions"],
+        summary: "Use a search engine to search for URLs given a query",
+        body: $ref("SearchRequest"),
+        response: {
+          200: $ref("SearchResponse"),
+        },
+      },
+    },
+    async (request: SearchRequest, reply: FastifyReply) =>
+      handleSearch(server.sessionService, server.cdpService, request, reply),
   );
 }
 
