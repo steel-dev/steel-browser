@@ -743,8 +743,6 @@ export class CDPService extends EventEmitter {
           const validatedTimezone = await executeOptional(
             this.logger,
             async () => {
-              // TODO: Validating might take longer time, So I think it's better to do it
-              // when advanced stealth mode is on or similar. For now we will just check with |skipFingerprintInjection|
               if (this.launchConfig?.skipFingerprintInjection) {
                 this.logger.info(
                   `Skipping timezone validation as skipFingerprintInjection is enabled`,

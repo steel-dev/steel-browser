@@ -22,6 +22,11 @@ export class TimezoneFetcher {
 
   private readonly services: TimezoneService[] = [
     {
+      name: "steel-print.fec.workers.dev",
+      url: "https://steel-print.fec.workers.dev/",
+      parseTimezone: (data) => data?.timezone || null,
+    },
+    {
       name: "ip-api.com",
       url: "http://ip-api.com/json",
       parseTimezone: (data) => (data?.status === "success" ? data.timezone : null),
@@ -56,16 +61,36 @@ export class TimezoneFetcher {
   }
 
   public async getTimezone(proxyUrl?: string, fallback?: string): Promise<string> {
+    const startTime = Date.now();
     try {
       const result = await this.startFetch(proxyUrl);
       if (result.timezone) {
+        const duration = Date.now() - startTime;
+        this.logger.info(
+          {
+            timezone: result.timezone,
+            service: result.service,
+            duration_ms: duration,
+            has_proxy: !!proxyUrl,
+          },
+          `[TimezoneFetcher] Successfully fetched timezone`,
+        );
         return result.timezone;
       }
     } catch (error) {
-      this.logger.warn(`[TimezoneFetcher] Failed to fetch timezone: ${error}`);
+      const duration = Date.now() - startTime;
+      this.logger.warn(
+        {
+          duration_ms: duration,
+          has_proxy: !!proxyUrl,
+        },
+        `[TimezoneFetcher] Failed to fetch timezone: ${error}`,
+      );
     }
 
-    return fallback || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const fallbackTimezone = fallback || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    this.logger.info(`[TimezoneFetcher] Using fallback timezone: ${fallbackTimezone}`);
+    return fallbackTimezone;
   }
 
   private async fetchTimezoneInternal(proxyUrl?: string): Promise<TimezoneFetchResult> {
@@ -82,10 +107,6 @@ export class TimezoneFetcher {
           httpsAgent: agent,
           timeout: this.FETCH_TIMEOUT,
         });
-        // log the response data
-        this.logger.info(
-          `[TimezoneFetcher] ${service.name} response: ${JSON.stringify(response.data)}`,
-        );
 
         const timezone = service.parseTimezone(response.data);
 
@@ -115,7 +136,7 @@ export class TimezoneFetcher {
           ? error.message
           : String(error);
 
-      const context = proxyUrl ? `with proxy ${proxyUrl}` : "with direct connection";
+      const context = proxyUrl ? `with proxy` : "with direct connection";
       this.logger.warn(`[TimezoneFetcher] All services failed ${context}: ${errorMessage}`);
 
       return {

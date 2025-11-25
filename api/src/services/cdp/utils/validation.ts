@@ -65,15 +65,23 @@ export function validateLaunchConfig(config: BrowserLauncherOptions): void {
  * Validates and resolves the timezone configuration
  * @param logger - Fastify logger instance for warning messages
  * @param timezonePromise - Promise resolving to the timezone string
+ * @param timeoutMs - Maximum time to wait for timezone resolution (default: 10000ms)
  * @returns Resolved and validated timezone string
  * @throws ConfigurationError if the timezone is invalid or cannot be resolved
  */
 export async function validateTimezone(
   logger: FastifyBaseLogger,
   timezonePromise: Promise<string>,
+  timeoutMs: number = 10000,
 ): Promise<string> {
   try {
-    const timezone = await timezonePromise;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Timezone validation timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    const timezone = await Promise.race([timezonePromise, timeoutPromise]);
     try {
       Intl.DateTimeFormat(undefined, { timeZone: timezone });
       return timezone;
