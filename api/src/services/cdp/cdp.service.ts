@@ -106,6 +106,7 @@ export class CDPService extends EventEmitter {
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
+  private disconnectHandler?: () => Promise<void>;
 
   constructor(
     config: { keepAlive?: boolean },
@@ -186,6 +187,10 @@ export class CDPService extends EventEmitter {
     handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
   ): void {
     this.proxyWebSocketHandler = handler;
+  }
+
+  public setDisconnectHandler(handler: () => Promise<void>): void {
+    this.disconnectHandler = handler;
   }
 
   public getBrowserInstance(): Browser | null {
@@ -1257,7 +1262,11 @@ export class CDPService extends EventEmitter {
       return;
     }
 
-    await this.endSession();
+    if (this.disconnectHandler) {
+      await this.disconnectHandler();
+    } else {
+      await this.endSession();
+    }
   }
 
   @traceable
