@@ -9,7 +9,6 @@ const ScrapeRequest = z.object({
   pdf: z.boolean().optional(),
   proxyUrl: z
     .string()
-    .nullable()
     .optional()
     .describe(
       "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
@@ -60,7 +59,6 @@ const ScreenshotRequest = z.object({
   url: z.string().optional(),
   proxyUrl: z
     .string()
-    .nullable()
     .optional()
     .describe(
       "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
@@ -76,7 +74,6 @@ const PDFRequest = z.object({
   url: z.string().optional(),
   proxyUrl: z
     .string()
-    .nullable()
     .optional()
     .describe(
       "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
@@ -89,7 +86,6 @@ const SearchRequest = z.object({
   query: z.string(),
   proxyUrl: z
     .string()
-    .nullable()
     .optional()
     .describe(
       "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
@@ -111,15 +107,19 @@ const PDFResponse = z.any();
 
 export type ScrapeRequestBody = z.infer<typeof ScrapeRequest>;
 export type ScrapeRequest = FastifyRequest<{ Body: ScrapeRequestBody }>;
+export type ScrapeResponse = z.infer<typeof ScrapeResponse>;
 
 export type ScreenshotRequestBody = z.infer<typeof ScreenshotRequest>;
 export type ScreenshotRequest = FastifyRequest<{ Body: ScreenshotRequestBody }>;
+export type ScreenshotResponse = z.infer<typeof ScreenshotResponse>;
 
 export type PDFRequestBody = z.infer<typeof PDFRequest>;
 export type PDFRequest = FastifyRequest<{ Body: PDFRequestBody }>;
+export type PDFResponse = z.infer<typeof PDFResponse>;
 
 export type SearchRequestBody = z.infer<typeof SearchRequest>;
 export type SearchRequest = FastifyRequest<{ Body: SearchRequestBody }>;
+export type SearchResponse = z.infer<typeof SearchResponse>;
 
 export const actionsSchemas = {
   ScrapeRequest,

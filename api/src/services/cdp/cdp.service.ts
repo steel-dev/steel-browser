@@ -1323,18 +1323,33 @@ export class CDPService extends EventEmitter {
   ) {
     if (!fingerprintData) return;
 
+    // Helper to detect races where the target/page is already gone
+    const isTargetClosedError = (err: unknown): boolean => {
+      if (!err || typeof err !== "object") return false;
+      const anyErr = err as any;
+      const name = anyErr?.name ?? "";
+      const message = anyErr?.message ?? "";
+      return (
+        name === "TargetCloseError" ||
+        message?.includes?.("No target with given id") ||
+        message?.includes?.("Target closed")
+      );
+    };
+
     try {
       const { fingerprint, headers } = fingerprintData;
-      // TypeScript fix - access userAgent through navigator property
       const userAgent = fingerprint.navigator.userAgent;
       const userAgentMetadata = fingerprint.navigator.userAgentData;
       const { screen } = fingerprint;
 
       await page.setUserAgent(userAgent);
 
-      const session = await page.createCDPSession();
+      let session: CDPSession | null = null;
 
       try {
+        // createCDPSession can fail if target is gone
+        session = await page.createCDPSession();
+
         await session.send("Page.setDeviceMetricsOverride", {
           screenHeight: screen.height,
           screenWidth: screen.width,
@@ -1375,12 +1390,26 @@ export class CDPService extends EventEmitter {
             model: userAgentMetadata.model || "",
             mobile: userAgentMetadata.mobile as unknown as boolean,
             bitness: userAgentMetadata.bitness || "64",
-            wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
+            wow64: false,
           },
         });
+      } catch (err) {
+        if (isTargetClosedError(err)) {
+          this.logger.debug(
+            { err },
+            "[Fingerprint] Target/page closed while setting up CDP fingerprint; skipping",
+          );
+          // No point trying fallback; target is already gone.
+          return;
+        }
+        // Re-throw to trigger fallback only for non-target-closed errors
+        throw err;
       } finally {
-        // Always detach the session when done
-        await session.detach().catch(() => {});
+        if (session) {
+          await session.detach().catch(() => {
+            /* ignore */
+          });
+        }
       }
 
       await page.evaluateOnNewDocument(
@@ -1404,10 +1433,34 @@ export class CDPService extends EventEmitter {
         }),
       );
     } catch (error) {
+      if (isTargetClosedError(error)) {
+        this.logger.debug(
+          { error },
+          "[Fingerprint] Target/page closed while injecting fingerprint; ignoring",
+        );
+        return;
+      }
+
       this.logger.error({ error }, `[Fingerprint] Error injecting fingerprint safely`);
-      const fingerprintInjector = new FingerprintInjector();
-      // @ts-ignore - Ignore type mismatch between puppeteer versions
-      await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
+
+      // Fallback: external FingerprintInjector — also guard against closed targets
+      try {
+        const fingerprintInjector = new FingerprintInjector();
+        // @ts-ignore - Ignore type mismatch between puppeteer versions
+        await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
+      } catch (fallbackError) {
+        if (isTargetClosedError(fallbackError)) {
+          this.logger.debug(
+            { error: fallbackError },
+            "[Fingerprint] Target/page closed during fallback injector; ignoring",
+          );
+          return;
+        }
+        this.logger.error(
+          { error: fallbackError },
+          "[Fingerprint] Fallback FingerprintInjector failed",
+        );
+      }
     }
   }
 
