@@ -2,6 +2,7 @@ import { FastifyBaseLogger } from "fastify";
 import axios, { AxiosError } from "axios";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { SocksProxyAgent } from "socks-proxy-agent";
+import { env } from "../env.js";
 
 export interface TimezoneFetchResult {
   timezone: string | null;
@@ -19,27 +20,21 @@ export class TimezoneFetcher {
   private logger: FastifyBaseLogger;
   private fetchPromises: Map<string, Promise<TimezoneFetchResult>> = new Map();
   private readonly FETCH_TIMEOUT = 2000;
-
-  private readonly services: TimezoneService[] = [
-    {
-      name: "steel-print.fec.workers.dev",
-      url: "https://steel-print.fec.workers.dev/",
-      parseTimezone: (data) => data?.timezone || null,
-    },
-    {
-      name: "ip-api.com",
-      url: "http://ip-api.com/json",
-      parseTimezone: (data) => (data?.status === "success" ? data.timezone : null),
-    },
-    {
-      name: "ipinfo.io",
-      url: "https://ipinfo.io/json",
-      parseTimezone: (data) => data?.timezone || null,
-    },
-  ];
+  private readonly services: TimezoneService[];
 
   constructor(logger: FastifyBaseLogger) {
     this.logger = logger;
+
+    // Use timezone service URL from env, default to ipinfo.io
+    const serviceUrl = env.TIMEZONE_SERVICE_URL || "https://ipinfo.io/json";
+
+    this.services = [
+      {
+        name: new URL(serviceUrl).hostname,
+        url: serviceUrl,
+        parseTimezone: (data) => data?.timezone || null,
+      },
+    ];
   }
 
   private startFetch(proxyUrl?: string): Promise<TimezoneFetchResult> {
