@@ -1,6 +1,7 @@
 ARG NODE_VERSION=22.13.0
 
-FROM node:${NODE_VERSION}-slim AS base
+# Force amd64 platform for Google Chrome compatibility
+FROM --platform=linux/amd64 node:${NODE_VERSION}-slim AS base
 
 WORKDIR /app
 
@@ -8,8 +9,10 @@ ENV NODE_ENV="production" \
     PUPPETEER_CACHE_DIR=/app/.cache \
     DISPLAY=:10 \
     PATH="/usr/bin:/app/selenium/driver:${PATH}" \
-    CHROME_BIN=/usr/bin/chromium \
-    CHROME_PATH=/usr/bin/chromium
+    CHROME_BIN=/usr/bin/google-chrome \
+    CHROME_PATH=/usr/bin/google-chrome \
+    CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
 
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
 
@@ -81,19 +84,36 @@ RUN apt-get update && \
     procps \
     x11-xserver-utils
 
-# Install Chrome and ChromeDriver
+# Install Google Chrome Stable (amd64 only)
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     curl \
     unzip \
-    # Download and install Chromium
-    && apt-get install -y chromium chromium-driver \
+    gnupg \
+    # Add Google Chrome repository
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    # Install Google Chrome Stable
+    && apt-get install -y google-chrome-stable \
     # Clean up
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
+
+# Install ChromeDriver to match Chrome version
+RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d '.' -f 1) \
+    && echo "Chrome version: $CHROME_VERSION" \
+    && CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION}") \
+    && echo "ChromeDriver version: $CHROMEDRIVER_VERSION" \
+    && wget -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
+    && unzip /tmp/chromedriver-linux64.zip -d /tmp/ \
+    && mv /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver \
+    && rm -rf /tmp/chromedriver-linux64.zip /tmp/chromedriver-linux64 \
+    && chromedriver --version
 
 RUN mkdir -p /files
 

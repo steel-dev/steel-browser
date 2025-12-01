@@ -29,6 +29,11 @@ export const getChromeExecutablePath = () => {
     return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
   }
 
+  // Try Google Chrome first, then fall back to Chromium
+  if (fs.existsSync("/usr/bin/google-chrome")) {
+    return "/usr/bin/google-chrome";
+  }
+
   return "/usr/bin/chromium";
 };
 
