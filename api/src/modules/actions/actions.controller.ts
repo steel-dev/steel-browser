@@ -257,15 +257,13 @@ export const handleSearch = async (
       (window as any).__name = (func: Function) => func;
     });
 
-    // Go to Bing
-    await page.goto("https://search.brave.com", { waitUntil: "networkidle2" });
-
-    // Type search query and submit
-    await page.type("textarea[name='q']", query);
-    await page.keyboard.press("Enter");
+    // Go to Brave
+    await page.goto(`https://search.brave.com/search?q=${encodeURIComponent(query)}`, {
+      waitUntil: "networkidle2",
+    });
 
     // Wait for results to load
-    await page.waitForSelector("#results", { timeout: 90000 });
+    await page.waitForSelector("#results");
 
     // Scrape results
     const results = await page.evaluate(() => {
