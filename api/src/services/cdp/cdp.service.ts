@@ -774,7 +774,7 @@ export class CDPService extends EventEmitter {
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--disable-features=PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
+          "--disable-features=LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--disable-sync",
@@ -805,6 +805,8 @@ export class CDPService extends EventEmitter {
           "--in-process-gpu",
           "--enable-crashpad",
           "--crash-dumps-dir=/tmp/chrome-dumps",
+          "--noerrdialogs",
+          "--force-device-scale-factor=1",
         ];
 
         const headlessArgs = [
