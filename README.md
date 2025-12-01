@@ -14,7 +14,7 @@
 </p>
 
 <div align="center">
-  
+
 [![Commit Activity](https://img.shields.io/github/commit-activity/m/steel-dev/steel-browser?color=yellow)](https://github.com/steel-dev/steel-browser/commits/main)
 [![License](https://img.shields.io/github/license/steel-dev/steel-browser?color=yellow)](https://github.com/steel-dev/steel-browser/blob/main/LICENSE)
 [![Discord](https://img.shields.io/discord/1285696350117167226?label=discord)](https://discord.gg/steel-dev)
@@ -42,7 +42,7 @@
   <img src="images/demo.gif" alt="Steel Demo" width="600">
 </p>
 
-## ✨ Highlights 
+## ✨ Highlights
 
 [Steel.dev](https://steel.dev) is an open-source browser API that makes it easy to build AI apps and agents that interact with the web. Instead of building automation infrastructure from scratch, you can focus on your AI application while Steel handles the complexity.
 
@@ -76,7 +76,8 @@ If you're looking to deploy to a cloud provider, we've got you covered.
 | Deployment methods | Link |
 | -------------------- | ----- |
 | Pre-built Docker Image (combined API + UI) | [![Deploy with Github Container Registry](https://img.shields.io/badge/GHCR-478CFF?style=for-the-badge&labelColor=478CFF&logo=github&logoColor=white)](https://github.com/steel-dev/steel-browser/pkgs/container/steel-browser) |
-| 1-click deploy to Railway | [![Deploy on Railway](https://img.shields.io/badge/Railway-B039CB?style=for-the-badge&labelColor=B039CB&logo=railway&logoColor=white)](https://railway.com/deploy/steelbrowser) |
+| 1-click deploy to Railway | [![Deploy on Railway](https://img.shields.io/badge/Railway-B039CB?style=for-the-badge&labelColor=B039CB&logo=railway&logoColor=white)](https://railway.app/deploy/steelbrowser) |
+| 1-click deploy to Render | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy) |
 
 
 ## 💻 Running Locally
@@ -169,7 +170,7 @@ The full REST OpenAPI documentation can be found [on our site](https://docs.stee
 #### Using the SDKs
 If you prefer to use the our Python and Node SDKs, you can install the `steel-sdk` package for Node or Python.
 
-These SDKs are built on top of the REST API and provide a more convenient way to interact with the Steel browser API. They are fully typed, and are compatible with both Steel Cloud and self-hosted Steel instances (changeable using the `baseURL` option on Node and `base_url` on Python). 
+These SDKs are built on top of the REST API and provide a more convenient way to interact with the Steel browser API. They are fully typed, and are compatible with both Steel Cloud and self-hosted Steel instances (changeable using the `baseURL` option on Node and `base_url` on Python).
 
 For more details on installing and using the SDKs, please see the [Node SDK Reference](https://github.com/steel-dev/steel-node/blob/main/api.md) and the [Python SDK Reference](https://github.com/steel-dev/steel-python/blob/main/api.md).
 
