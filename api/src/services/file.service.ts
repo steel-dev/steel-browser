@@ -306,18 +306,24 @@ export class FileService {
     }
 
     try {
-      await fs.promises.rm(this.baseFilesPath, { recursive: true, force: true });
-      console.log(`[FileService cleanupFiles] Deleted entire directory: ${this.baseFilesPath}`);
+      const files = await fs.promises.readdir(this.baseFilesPath);
+      for (const file of files) {
+        await fs.promises.rm(path.join(this.baseFilesPath, file), {
+          recursive: true,
+          force: true,
+        });
+      }
+      console.log(
+        `[FileService cleanupFiles] Cleared contents of directory: ${this.baseFilesPath}`,
+      );
     } catch (err: any) {
       if (err.code !== "ENOENT") {
         console.error(
-          `[FileService cleanupFiles] Error deleting directory ${this.baseFilesPath}:`,
+          `[FileService cleanupFiles] Error cleaning directory ${this.baseFilesPath}:`,
           err,
         );
       }
     }
-
-    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
     console.log(`[FileService cleanupFiles] Files cleaned. Creating empty archive.`);
     this.debouncedCreateArchive();
   }

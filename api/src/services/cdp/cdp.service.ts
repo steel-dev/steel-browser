@@ -852,6 +852,7 @@ export class CDPService extends EventEmitter {
           ignoreDefaultArgs: ["--enable-automation"],
           timeout: 0,
           env: {
+            HOME: os.userInfo().homedir,
             TZ: timezone,
             ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }),
           },
