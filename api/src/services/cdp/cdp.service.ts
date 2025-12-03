@@ -811,7 +811,7 @@ export class CDPService extends EventEmitter {
           "--noerrdialogs",
           "--force-device-scale-factor=1",
           "--renderer-process-limit=2",
-          "--js-flags=--max-old-space-size=1024",
+          "--js-flags=--max-old-space-size=512",
           "--aggressive-cache-discard",
           "--disable-hang-monitor",
           "--enable-low-end-device-mode",
