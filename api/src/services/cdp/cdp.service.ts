@@ -811,6 +811,7 @@ export class CDPService extends EventEmitter {
           "--crash-dumps-dir=/tmp/chrome-dumps",
           "--noerrdialogs",
           "--force-device-scale-factor=1",
+          "--disable-hang-monitor",
         ];
 
         const headlessArgs = [
