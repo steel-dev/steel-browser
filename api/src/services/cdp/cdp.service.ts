@@ -795,6 +795,7 @@ export class CDPService extends EventEmitter {
           "--disable-infobars",
           "--disable-breakpad",
           "--disable-background-networking",
+          "--disable-session-crashed-bubble",
           ...(shouldDisableSandbox
             ? ["--no-sandbox", "--disable-setuid-sandbox", "--no-zygote"]
             : []),
