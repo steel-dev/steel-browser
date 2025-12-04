@@ -706,7 +706,7 @@ export class CDPService extends EventEmitter {
 
         const extensionPaths = await executeCritical(
           async () => {
-            const defaultExtensions = ["recorder"];
+            const defaultExtensions = isHeadless ? ["recorder"] : [];
             const customExtensions = this.launchConfig!.extensions
               ? [...this.launchConfig!.extensions]
               : [];
@@ -777,7 +777,7 @@ export class CDPService extends EventEmitter {
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--disable-features=LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
+          "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--disable-sync",
@@ -796,16 +796,15 @@ export class CDPService extends EventEmitter {
           "--disable-breakpad",
           "--disable-background-networking",
           "--disable-session-crashed-bubble",
-          // Performance optimizations for faster page loads and navigation
-          "--disable-ipc-flooding-protection", // Prevents throttling of CDP messages
-          "--disable-popup-blocking", // Reduces overhead during navigation
-          "--disable-prompt-on-repost", // Avoids blocking on form resubmission
-          "--disable-domain-reliability", // Reduces background network activity
-          "--disable-features=TranslateUI,BlinkGenPropertyTrees", // Reduce translation overhead
-          "--metrics-recording-only", // Disable metrics reporting but keep internal metrics
-          "--no-pings", // Disable hyperlink auditing pings
-          "--disable-hang-monitor", // Prevent false-positive hang detection during heavy loads
-          "--disable-backing-store-limit", // Better memory management for large pages
+          "--disable-ipc-flooding-protection",
+          "--disable-popup-blocking",
+          "--disable-prompt-on-repost",
+          "--disable-domain-reliability",
+          "--metrics-recording-only",
+          "--no-pings",
+          "--disable-hang-monitor",
+          "--disable-backing-store-limit",
+          "--password-store=basic",
           ...(shouldDisableSandbox
             ? ["--no-sandbox", "--disable-setuid-sandbox", "--no-zygote"]
             : []),
