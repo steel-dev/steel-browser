@@ -697,6 +697,8 @@ export class CDPService extends EventEmitter {
           );
         }
 
+        const isHeadless = !!this.launchConfig?.options?.headless;
+
         this.currentSessionConfig = {
           ...this.launchConfig,
           dimensions: this.launchConfig.dimensions || this.fingerprintData?.fingerprint.screen,
@@ -706,7 +708,7 @@ export class CDPService extends EventEmitter {
 
         const extensionPaths = await executeCritical(
           async () => {
-            const defaultExtensions = ["recorder"];
+            const defaultExtensions = isHeadless ? ["recorder"] : [];
             const customExtensions = this.launchConfig!.extensions
               ? [...this.launchConfig!.extensions]
               : [];
@@ -762,8 +764,6 @@ export class CDPService extends EventEmitter {
           timezone = validatedTimezone ?? this.defaultTimezone;
         }
 
-        const isHeadless = !!this.launchConfig?.options?.headless;
-
         const extensionArgs = extensionPaths.length
           ? [
               `--load-extension=${extensionPaths.join(",")}`,
@@ -777,7 +777,7 @@ export class CDPService extends EventEmitter {
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--disable-features=LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
+          "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--disable-sync",
@@ -788,7 +788,6 @@ export class CDPService extends EventEmitter {
           "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
-          "--disable-renderer-backgrounding",
           "--disable-client-side-phishing-detection",
           "--disable-default-apps",
           "--disable-component-update",
@@ -796,6 +795,14 @@ export class CDPService extends EventEmitter {
           "--disable-breakpad",
           "--disable-background-networking",
           "--disable-session-crashed-bubble",
+          "--disable-ipc-flooding-protection",
+          "--disable-popup-blocking",
+          "--disable-prompt-on-repost",
+          "--disable-domain-reliability",
+          "--metrics-recording-only",
+          "--no-pings",
+          "--disable-backing-store-limit",
+          "--password-store=basic",
           ...(shouldDisableSandbox
             ? ["--no-sandbox", "--disable-setuid-sandbox", "--no-zygote"]
             : []),
