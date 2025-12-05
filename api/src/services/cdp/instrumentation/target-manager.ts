@@ -56,7 +56,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          await attachWorkerEvents(target, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type);
         }
         break;
       }
@@ -69,7 +69,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          await attachWorkerEvents(target, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type);
         }
         break;
       }
@@ -82,7 +82,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          await attachWorkerEvents(target, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type);
         }
         break;
       }
