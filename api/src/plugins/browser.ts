@@ -3,6 +3,7 @@ import { CDPService } from "../services/cdp/cdp.service.js";
 import { Orchestrator } from "../runtime/index.js";
 import fp from "fastify-plugin";
 import { BrowserLauncherOptions } from "../types/index.js";
+import { BrowserRuntime } from "../types/browser-runtime.interface.js";
 import {
   DuckDBStorage,
   InMemoryStorage,
@@ -14,7 +15,7 @@ import { env } from "../env.js";
 
 declare module "fastify" {
   interface FastifyInstance {
-    cdpService: CDPService | Orchestrator;
+    cdpService: BrowserRuntime;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
     registerCDPShutdownHook: (
       hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
@@ -49,7 +50,7 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
 
   // Choose runtime based on env flag
   const useSessionMachine = env.USE_SESSION_MACHINE;
-  let cdpService: CDPService | Orchestrator;
+  let cdpService: BrowserRuntime;
 
   if (useSessionMachine) {
     fastify.log.info("Using SessionMachine runtime");
@@ -64,7 +65,8 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
     cdpService = new CDPService({}, fastify.log, storage, enableConsoleLogging);
   }
 
-  fastify.decorate("cdpService", cdpService as any);
+  // Both CDPService and Orchestrator implement BrowserRuntime interface
+  fastify.decorate("cdpService", cdpService);
   fastify.decorate(
     "registerCDPLaunchHook",
     (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => {

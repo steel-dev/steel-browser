@@ -10,7 +10,7 @@ import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions
 import { BrowserLauncherOptions, OptimizeBandwidthOptions } from "../types/index.js";
 import { IProxyServer, ProxyServer } from "../utils/proxy.js";
 import { getBaseUrl, getUrl } from "../utils/url.js";
-import { CDPService } from "./cdp/cdp.service.js";
+import { BrowserRuntime } from "../types/browser-runtime.interface.js";
 import { CookieData } from "./context/types.js";
 import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
@@ -49,7 +49,7 @@ export type ProxyFactory = (proxyUrl: string) => Promise<IProxyServer> | IProxyS
 
 export class SessionService {
   private logger: FastifyBaseLogger;
-  private cdpService: CDPService;
+  private cdpService: BrowserRuntime;
   private seleniumService: SeleniumService;
   private fileService: FileService;
   private timezoneFetcher: TimezoneFetcher;
@@ -59,7 +59,7 @@ export class SessionService {
   public activeSession: Session;
 
   constructor(config: {
-    cdpService: CDPService;
+    cdpService: BrowserRuntime;
     seleniumService: SeleniumService;
     fileService: FileService;
     logger: FastifyBaseLogger;

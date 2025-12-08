@@ -1,5 +1,5 @@
 import { FastifyBaseLogger } from "fastify";
-import { Browser, Page } from "puppeteer-core";
+import { Browser, Page, Protocol } from "puppeteer-core";
 import {
   SessionState,
   RuntimeEvent,
@@ -12,12 +12,14 @@ import {
 import { BrowserDriver } from "./browser-driver.js";
 import { TaskScheduler } from "./task-scheduler.js";
 import { BrowserLauncherOptions } from "../types/browser.js";
+import { groupSessionStorageByOrigin, handleFrameNavigated } from "../utils/context.js";
 
 export interface SessionMachineConfig {
   driver: BrowserDriver;
   scheduler: TaskScheduler;
   logger: FastifyBaseLogger;
   hooks?: TransitionHook[];
+  pluginAdapter?: any; // Reference to PluginAdapter for onSessionEnd
 }
 
 export class SessionMachine {
@@ -29,6 +31,7 @@ export class SessionMachine {
   private scheduler: TaskScheduler;
   private logger: FastifyBaseLogger;
   private hooks: TransitionHook[];
+  private pluginAdapter: any;
 
   constructor(config: SessionMachineConfig) {
     this.state = SessionState.Idle;
@@ -39,6 +42,7 @@ export class SessionMachine {
     this.scheduler = config.scheduler;
     this.logger = config.logger.child({ component: "SessionMachine" });
     this.hooks = config.hooks || [];
+    this.pluginAdapter = config.pluginAdapter || null;
 
     // Listen to driver events
     this.driver.on("event", (event: RuntimeEvent) => {
@@ -113,6 +117,8 @@ export class SessionMachine {
       this.ctx.browser = event.data.browser;
       this.ctx.primaryPage = event.data.primaryPage;
       await this.transitionTo(SessionState.Ready);
+      // Inject session context if provided (cookies + storage)
+      await this.injectSessionContext();
       await this.transitionTo(SessionState.Live);
     } else if (event.type === "disconnected" && this.state === SessionState.Live) {
       await this.transitionTo(SessionState.Draining);
@@ -176,9 +182,59 @@ export class SessionMachine {
     }
   }
 
+  private async injectSessionContext(): Promise<void> {
+    const sessionContext = this.ctx.config?.sessionContext;
+    if (!sessionContext || !this.ctx.primaryPage) {
+      return;
+    }
+
+    try {
+      this.logger.info("[SessionMachine] Injecting session context");
+
+      // Inject cookies via CDP
+      if (sessionContext.cookies && sessionContext.cookies.length > 0) {
+        const client = await this.ctx.primaryPage.createCDPSession();
+        try {
+          await client.send("Network.setCookies", {
+            cookies: sessionContext.cookies as Protocol.Network.CookieParam[],
+          });
+          this.logger.debug(`[SessionMachine] Injected ${sessionContext.cookies.length} cookies`);
+        } finally {
+          await client.detach();
+        }
+      }
+
+      // Set up storage injection via frameNavigated handler
+      const storageByOrigin = groupSessionStorageByOrigin(sessionContext);
+      if (storageByOrigin.size > 0) {
+        this.logger.debug(
+          `[SessionMachine] Setting up storage injection for ${storageByOrigin.size} origins`,
+        );
+
+        // Attach frame navigation listener to inject storage
+        this.ctx.primaryPage.on("framenavigated", (frame) => {
+          void handleFrameNavigated(frame, storageByOrigin, this.logger);
+        });
+      }
+
+      this.logger.info("[SessionMachine] Session context injection complete");
+    } catch (error) {
+      this.logger.error({ err: error }, "[SessionMachine] Failed to inject session context");
+    }
+  }
+
   private async drainAndClose(): Promise<void> {
     // Drain pending tasks
     await this.scheduler.drain(5000);
+
+    // Invoke onSessionEnd after drain
+    if (this.pluginAdapter && this.ctx.config) {
+      try {
+        await this.pluginAdapter.invokeOnSessionEnd(this.ctx.config);
+      } catch (error) {
+        this.logger.error({ err: error }, "[SessionMachine] Error in onSessionEnd hooks");
+      }
+    }
 
     // Close browser
     await this.driver.close();

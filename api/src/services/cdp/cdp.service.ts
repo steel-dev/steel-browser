@@ -76,8 +76,9 @@ import {
   BrowserLogger,
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
+import { BrowserRuntime } from "../../types/browser-runtime.interface.js";
 
-export class CDPService extends EventEmitter {
+export class CDPService extends EventEmitter implements BrowserRuntime {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
 
@@ -86,7 +87,7 @@ export class CDPService extends EventEmitter {
   private fingerprintData: BrowserFingerprintWithHeaders | null;
   private sessionContext: SessionData | null;
   private chromeExecPath: string;
-  private wsProxyServer: httpProxy;
+  private wsProxyServer!: httpProxy;
   private primaryPage: Page | null;
   private launchConfig?: BrowserLauncherOptions;
   private defaultLaunchConfig: BrowserLauncherOptions;
@@ -275,6 +276,14 @@ export class CDPService extends EventEmitter {
 
   public unregisterPlugin(pluginName: string) {
     return this.pluginManager.unregister(pluginName);
+  }
+
+  public getPlugin<T extends BasePlugin>(pluginName: string): T | undefined {
+    return this.pluginManager.getPlugin<T>(pluginName);
+  }
+
+  public waitUntil(task: Promise<void>): void {
+    this.pluginManager.waitUntil(task);
   }
 
   private async handleTargetChange(target: Target) {

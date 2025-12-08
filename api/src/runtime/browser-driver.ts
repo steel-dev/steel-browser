@@ -139,13 +139,28 @@ export class BrowserDriver extends EventEmitter {
       });
     });
 
-    this.browser.on("targetcreated", (target: Target) => {
+    this.browser.on("targetcreated", async (target: Target) => {
       this.logger.debug(`[BrowserDriver] Target created: ${target.type()} ${target.url()}`);
       this.emitEvent({
         type: "targetCreated",
         data: { target },
         timestamp: Date.now(),
       });
+
+      // Attach file protocol detection for pages
+      if (target.type() === "page") {
+        try {
+          const page = await target.page();
+          if (page) {
+            await this.attachFileProtocolDetection(page);
+          }
+        } catch (error) {
+          this.logger.error(
+            { err: error },
+            "[BrowserDriver] Failed to attach file protocol detection",
+          );
+        }
+      }
     });
 
     this.browser.on("targetchanged", (target: Target) => {
@@ -166,6 +181,35 @@ export class BrowserDriver extends EventEmitter {
         timestamp: Date.now(),
       });
     });
+  }
+
+  private async attachFileProtocolDetection(page: Page): Promise<void> {
+    try {
+      await page.setRequestInterception(true);
+
+      page.on("request", (request) => {
+        const url = request.url();
+        if (url.startsWith("file://")) {
+          this.logger.error(`[BrowserDriver] Blocked request to file protocol: ${url}`);
+          this.emitFileProtocolViolation(url);
+          page.close().catch(() => {});
+          request.abort().catch(() => {});
+        } else {
+          request.continue().catch(() => {});
+        }
+      });
+
+      page.on("response", (response) => {
+        const url = response.url();
+        if (url.startsWith("file://")) {
+          this.logger.error(`[BrowserDriver] Blocked response from file protocol: ${url}`);
+          this.emitFileProtocolViolation(url);
+          page.close().catch(() => {});
+        }
+      });
+    } catch (error) {
+      this.logger.error({ err: error }, "[BrowserDriver] Failed to set up file protocol detection");
+    }
   }
 
   public emitFileProtocolViolation(url: string): void {

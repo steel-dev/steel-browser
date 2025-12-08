@@ -2,15 +2,22 @@ import { FastifyBaseLogger } from "fastify";
 import { SessionState, RuntimeEvent, SessionContext, TransitionHook } from "./types.js";
 import { BasePlugin } from "../services/cdp/plugins/core/base-plugin.js";
 import { BrowserLauncherOptions } from "../types/browser.js";
+import { TaskScheduler } from "./task-scheduler.js";
 
 export class PluginAdapter implements TransitionHook {
   private plugins: Map<string, BasePlugin>;
   private logger: FastifyBaseLogger;
   private orchestrator: any; // Will be set by orchestrator
+  private scheduler: TaskScheduler | null;
 
-  constructor(logger: FastifyBaseLogger) {
+  constructor(logger: FastifyBaseLogger, scheduler?: TaskScheduler) {
     this.plugins = new Map();
     this.logger = logger.child({ component: "PluginAdapter" });
+    this.scheduler = scheduler || null;
+  }
+
+  public setScheduler(scheduler: TaskScheduler): void {
+    this.scheduler = scheduler;
   }
 
   public setOrchestrator(orchestrator: any): void {
@@ -62,7 +69,7 @@ export class PluginAdapter implements TransitionHook {
     }
 
     if (state === SessionState.Ready && ctx.config) {
-      // onBrowserReady (non-blocking)
+      // onBrowserReady (non-blocking via TaskScheduler)
       for (const plugin of this.plugins.values()) {
         this.logger.debug(`[PluginAdapter] Scheduling onBrowserReady for plugin: ${plugin.name}`);
         const task = Promise.resolve()
@@ -73,33 +80,53 @@ export class PluginAdapter implements TransitionHook {
               `Error in plugin ${plugin.name}.onBrowserReady: ${error}`,
             );
           });
-        // Note: This would need access to scheduler - we'll handle this in orchestrator
+
+        // Schedule via TaskScheduler if available
+        if (this.scheduler) {
+          this.scheduler.waitUntil(task);
+        } else {
+          // Fallback: just fire and forget
+          void task;
+        }
       }
     }
   }
 
-  async onExit(state: SessionState, ctx: SessionContext): Promise<void> {
-    if (state === SessionState.Live && ctx.config) {
-      // onSessionEnd
-      const pluginNames = Array.from(this.plugins.keys());
-      this.logger.debug(
-        `[PluginAdapter] Invoking onSessionEnd for ${
-          pluginNames.length
-        } plugins: ${pluginNames.join(", ")}`,
-      );
+  public async invokeOnSessionEnd(config: BrowserLauncherOptions): Promise<void> {
+    const pluginNames = Array.from(this.plugins.keys());
+    this.logger.debug(
+      `[PluginAdapter] Invoking onSessionEnd for ${pluginNames.length} plugins: ${pluginNames.join(
+        ", ",
+      )}`,
+    );
 
-      const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-        try {
-          await plugin.onSessionEnd(ctx.config!);
-        } catch (error) {
-          this.logger.error(
-            { err: error },
-            `Error in plugin ${plugin.name}.onSessionEnd: ${error}`,
-          );
-        }
-      });
-      await Promise.all(promises);
-    }
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await plugin.onSessionEnd(config);
+      } catch (error) {
+        this.logger.error({ err: error }, `Error in plugin ${plugin.name}.onSessionEnd: ${error}`);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  public async invokeOnBeforePageClose(page: any): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await plugin.onBeforePageClose(page);
+      } catch (error) {
+        this.logger.error(
+          { err: error },
+          `Error in plugin ${plugin.name}.onBeforePageClose: ${error}`,
+        );
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  async onExit(state: SessionState, ctx: SessionContext): Promise<void> {
+    // Note: onSessionEnd is now called explicitly after drain in SessionMachine.drainAndClose()
+    // to ensure proper ordering
 
     if (state === SessionState.Draining && ctx.browser) {
       // onBrowserClose

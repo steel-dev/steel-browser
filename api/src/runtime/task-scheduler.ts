@@ -37,15 +37,16 @@ export class TaskScheduler {
     }
   }
 
-  public waitUntil(promise: Promise<void>, label: string): void {
+  public waitUntil(promise: Promise<void>, label?: string): void {
     const taskId = `background-${this.taskCounter++}`;
+    const taskLabel = label || taskId;
     const task: Task = {
       id: taskId,
-      label,
+      label: taskLabel,
       promise: promise.catch((error) => {
         this.logger.error(
           { err: error },
-          `[TaskScheduler] Background task failed: ${label} (${taskId})`,
+          `[TaskScheduler] Background task failed: ${taskLabel} (${taskId})`,
         );
       }),
       type: "background",
