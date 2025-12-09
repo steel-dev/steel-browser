@@ -242,11 +242,22 @@ export class BrowserDriver extends EventEmitter {
   }
 
   public async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close();
-      await this.browser.process()?.kill();
-      this.browser = null;
-      this.primaryPage = null;
+    if (!this.browser) return;
+
+    const browser = this.browser;
+    this.browser = null;
+    this.primaryPage = null;
+
+    try {
+      await browser.close();
+    } catch (error) {
+      this.logger.warn({ err: error }, "[BrowserDriver] browser.close() failed");
+    }
+
+    try {
+      browser.process()?.kill();
+    } catch (error) {
+      this.logger.warn({ err: error }, "[BrowserDriver] process.kill() failed");
     }
   }
 
