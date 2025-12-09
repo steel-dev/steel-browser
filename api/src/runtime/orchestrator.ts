@@ -1,27 +1,37 @@
+import { Mutex } from "async-mutex";
 import { EventEmitter } from "events";
 import { FastifyBaseLogger } from "fastify";
-import { Browser, Page, Protocol } from "puppeteer-core";
-import { IncomingMessage } from "http";
-import { Duplex } from "stream";
-import httpProxy from "http-proxy";
-import { BrowserLauncherOptions } from "../types/browser.js";
-import { SessionData } from "../services/context/types.js";
-import { BasePlugin } from "../services/cdp/plugins/core/base-plugin.js";
-import {
-  createBrowserLogger as createInstrumentationLogger,
-  BrowserLogger,
-} from "../services/cdp/instrumentation/browser-logger.js";
-import { BrowserDriver } from "./browser-driver.js";
-import { TaskScheduler } from "./task-scheduler.js";
-import { createSession, CreateSessionConfig } from "./session.js";
-import { SessionHooks } from "./hooks.js";
-import { Session, IdleSession, LiveSession, isIdle, isLive, InvalidStateError } from "./types.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
+import { IncomingMessage } from "http";
+import httpProxy from "http-proxy";
+import { Browser, Page, Protocol } from "puppeteer-core";
+import { Duplex } from "stream";
 import { env } from "../env.js";
+import {
+  BrowserLogger,
+  createBrowserLogger as createInstrumentationLogger,
+} from "../services/cdp/instrumentation/browser-logger.js";
+import { BasePlugin } from "../services/cdp/plugins/core/base-plugin.js";
 import { ChromeContextService } from "../services/context/chrome-context.service.js";
-import { extractStorageForPage } from "../utils/context.js";
-import { EmitEvent } from "../types/index.js";
+import { SessionData } from "../services/context/types.js";
 import { BrowserRuntime } from "../types/browser-runtime.interface.js";
+import { BrowserLauncherOptions } from "../types/browser.js";
+import { EmitEvent } from "../types/index.js";
+import { extractStorageForPage } from "../utils/context.js";
+import { BrowserDriver } from "./browser-driver.js";
+import { SessionHooks } from "./hooks.js";
+import { createSession } from "./session.js";
+import { TaskScheduler } from "./task-scheduler.js";
+import {
+  ErrorSession,
+  InvalidStateError,
+  isClosed,
+  isError,
+  isIdle,
+  isLive,
+  LiveSession,
+  Session,
+} from "./types.js";
 
 export interface OrchestratorConfig {
   keepAlive?: boolean;
@@ -35,6 +45,7 @@ export interface OrchestratorConfig {
  * but uses the new Session runtime underneath.
  */
 export class Orchestrator extends EventEmitter implements BrowserRuntime {
+  private readonly sessionMutex = new Mutex();
   private logger: FastifyBaseLogger;
   private driver: BrowserDriver;
   private scheduler: TaskScheduler;
@@ -140,6 +151,13 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
         }
       },
 
+      onEnterError: async (session: ErrorSession) => {
+        this.logger.error(
+          { err: session.error, failedFrom: session.failedFrom },
+          "[Orchestrator] Session entered error state",
+        );
+      },
+
       onClosed: async () => {
         for (const plugin of this.plugins.values()) {
           try {
@@ -181,7 +199,7 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   }
 
   public waitUntil(task: Promise<void>): void {
-    this.scheduler.waitUntil(task, "external-task");
+    this.scheduler.waitUntil(() => task, "external-task");
   }
 
   // Hooks
@@ -196,6 +214,10 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   }
 
   public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
+    return this.sessionMutex.runExclusive(() => this.launchInternal(config));
+  }
+
+  private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
     const launchConfig = config || this.defaultLaunchConfig;
 
     if (!isIdle(this.session)) {
@@ -208,10 +230,11 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     }
 
     const launching = await this.session.start(launchConfig);
-    const result = await launching.launched;
+    const result = await launching.awaitLaunch();
 
-    if (result._state === "closed") {
-      throw result.error ?? new Error("Browser launch failed");
+    if (isError(result)) {
+      this.session = result;
+      throw result.error;
     }
 
     this.session = result;
@@ -221,38 +244,56 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   }
 
   public async shutdown(): Promise<void> {
-    if (isLive(this.session)) {
-      const draining = await this.session.end("shutdown");
-      const closed = await draining.drained;
-      this.session = closed;
-    }
+    return this.sessionMutex.runExclusive(async () => {
+      if (isLive(this.session)) {
+        const draining = await this.session.end("shutdown");
+        const result = await draining.awaitDrain();
 
-    // Run shutdown hooks
-    for (const hook of this.shutdownHooks) {
-      await Promise.resolve(hook(this.currentSessionConfig));
-    }
+        if (isError(result)) {
+          this.logger.error({ err: result.error }, "[Orchestrator] Error during shutdown drain");
+          this.session = result.terminate();
+        } else {
+          this.session = result;
+        }
+      } else if (isError(this.session)) {
+        this.session = this.session.terminate();
+      }
 
-    this.currentSessionConfig = null;
+      // Run shutdown hooks
+      for (const hook of this.shutdownHooks) {
+        await Promise.resolve(hook(this.currentSessionConfig));
+      }
+
+      this.currentSessionConfig = null;
+    });
   }
 
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
-    if (isLive(this.session)) {
-      await this.endSession();
-    }
-
-    if (!isIdle(this.session)) {
-      if (this.session._state === "closed") {
-        this.session = this.session.restart();
-      } else {
-        throw new InvalidStateError(this.session._state, "idle");
+    return this.sessionMutex.runExclusive(async () => {
+      if (isLive(this.session)) {
+        await this.endSessionInternal();
       }
-    }
 
-    this.currentSessionConfig = sessionConfig;
-    return this.launch(sessionConfig);
+      if (!isIdle(this.session)) {
+        if (isClosed(this.session)) {
+          this.session = this.session.restart();
+        } else if (isError(this.session)) {
+          this.session = this.session.recover();
+        } else {
+          throw new InvalidStateError(this.session._state, "idle");
+        }
+      }
+
+      this.currentSessionConfig = sessionConfig;
+      return this.launchInternal(sessionConfig);
+    });
   }
 
   public async endSession(): Promise<void> {
+    return this.sessionMutex.runExclusive(() => this.endSessionInternal());
+  }
+
+  private async endSessionInternal(): Promise<void> {
     if (!isLive(this.session)) {
       this.logger.warn(`[Orchestrator] Cannot end session from state: ${this.session._state}`);
       return;
@@ -272,18 +313,31 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     }
 
     const draining = await this.session.end("endSession");
-    const closed = await draining.drained;
+    const result = await draining.awaitDrain();
 
     // Reset instrumentation logger context
     this.resetInstrumentationContext();
 
+    if (isError(result)) {
+      this.logger.error({ err: result.error }, "[Orchestrator] Error during session end drain");
+      if (this.keepAlive) {
+        this.session = result.recover();
+        this.currentSessionConfig = null;
+        await this.launchInternal(this.defaultLaunchConfig);
+      } else {
+        this.session = result.terminate();
+        this.currentSessionConfig = null;
+      }
+      return;
+    }
+
     // Restart with default config if keepAlive
     if (this.keepAlive) {
-      this.session = closed.restart();
+      this.session = result.restart();
       this.currentSessionConfig = null;
-      await this.launch(this.defaultLaunchConfig);
+      await this.launchInternal(this.defaultLaunchConfig);
     } else {
-      this.session = closed;
+      this.session = result;
       this.currentSessionConfig = null;
     }
   }

@@ -42,9 +42,12 @@ export interface Task {
   id: string;
   label: string;
   promise: Promise<void>;
+  abortController: AbortController;
   type: "critical" | "background";
   startedAt: number;
 }
+
+export type FailedFromState = "launching" | "live" | "draining";
 
 export interface IdleSession {
   readonly _state: "idle";
@@ -54,7 +57,7 @@ export interface IdleSession {
 export interface LaunchingSession {
   readonly _state: "launching";
   readonly config: BrowserLauncherOptions;
-  readonly launched: Promise<LiveSession | ClosedSession>;
+  awaitLaunch(): Promise<LiveSession | ErrorSession>;
 }
 
 export interface LiveSession {
@@ -69,12 +72,19 @@ export interface DrainingSession {
   readonly _state: "draining";
   readonly browser: Browser;
   readonly reason: string;
-  readonly drained: Promise<ClosedSession>;
+  awaitDrain(): Promise<ClosedSession | ErrorSession>;
+}
+
+export interface ErrorSession {
+  readonly _state: "error";
+  readonly error: Error;
+  readonly failedFrom: FailedFromState;
+  recover(): IdleSession;
+  terminate(): ClosedSession;
 }
 
 export interface ClosedSession {
   readonly _state: "closed";
-  readonly error?: Error;
   restart(): IdleSession;
 }
 
@@ -83,6 +93,7 @@ export type Session =
   | LaunchingSession
   | LiveSession
   | DrainingSession
+  | ErrorSession
   | ClosedSession;
 
 export function isIdle(session: Session): session is IdleSession {
@@ -105,6 +116,10 @@ export function isClosed(session: Session): session is ClosedSession {
   return session._state === "closed";
 }
 
+export function isError(session: Session): session is ErrorSession {
+  return session._state === "error";
+}
+
 export function assertIdle(session: Session): asserts session is IdleSession {
   if (session._state !== "idle") {
     throw new InvalidStateError(session._state, "idle");
@@ -114,6 +129,12 @@ export function assertIdle(session: Session): asserts session is IdleSession {
 export function assertLive(session: Session): asserts session is LiveSession {
   if (session._state !== "live") {
     throw new InvalidStateError(session._state, "live");
+  }
+}
+
+export function assertError(session: Session): asserts session is ErrorSession {
+  if (session._state !== "error") {
+    throw new InvalidStateError(session._state, "error");
   }
 }
 

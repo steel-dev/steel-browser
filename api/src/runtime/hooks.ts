@@ -1,9 +1,10 @@
-import type { LiveSession, DrainingSession, ClosedSession } from "./types.js";
+import type { ClosedSession, DrainingSession, ErrorSession, LiveSession } from "./types.js";
 
 export interface SessionHooks {
   onEnterLive?(session: LiveSession): void | Promise<void>;
   onExitLive?(session: LiveSession): void | Promise<void>;
   onEnterDraining?(session: DrainingSession): void | Promise<void>;
+  onEnterError?(session: ErrorSession): void | Promise<void>;
   onLaunchFailed?(error: Error): void | Promise<void>;
   onClosed?(session: ClosedSession): void | Promise<void>;
 }

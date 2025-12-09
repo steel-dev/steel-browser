@@ -4,7 +4,15 @@ import { BrowserDriver } from "../browser-driver.js";
 import { TaskScheduler } from "../task-scheduler.js";
 import { FastifyBaseLogger } from "fastify";
 import { SessionHooks } from "../hooks.js";
-import { isIdle, isLaunching, isLive, isDraining, isClosed, InvalidStateError } from "../types.js";
+import {
+  isIdle,
+  isLaunching,
+  isLive,
+  isDraining,
+  isError,
+  isClosed,
+  InvalidStateError,
+} from "../types.js";
 
 describe("Type State Session", () => {
   let mockDriver: BrowserDriver;
@@ -63,6 +71,7 @@ describe("Type State Session", () => {
       expect(isLaunching(session)).toBe(false);
       expect(isLive(session)).toBe(false);
       expect(isDraining(session)).toBe(false);
+      expect(isError(session)).toBe(false);
       expect(isClosed(session)).toBe(false);
     });
   });
@@ -93,7 +102,7 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      const result = await launching.launched;
+      const result = await launching.awaitLaunch();
 
       expect(result._state).toBe("live");
       expect(isLive(result)).toBe(true);
@@ -104,7 +113,7 @@ describe("Type State Session", () => {
       }
     });
 
-    it("should return ClosedSession when launch fails", async () => {
+    it("should return ErrorSession when launch fails", async () => {
       const launchError = new Error("Launch failed");
       mockDriver.launch = vi.fn().mockRejectedValue(launchError);
 
@@ -115,14 +124,15 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      const result = await launching.launched;
+      const result = await launching.awaitLaunch();
 
-      expect(result._state).toBe("closed");
-      expect(isClosed(result)).toBe(true);
+      expect(result._state).toBe("error");
+      expect(isError(result)).toBe(true);
 
-      if (isClosed(result)) {
+      if (isError(result)) {
         expect(result.error).toBeDefined();
-        expect(result.error?.message).toContain("Browser launch failed");
+        expect(result.error.message).toContain("Browser launch failed");
+        expect(result.failedFrom).toBe("launching");
       }
     });
   });
@@ -136,7 +146,7 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      const live = await launching.launched;
+      const live = await launching.awaitLaunch();
 
       if (!isLive(live)) {
         throw new Error("Expected LiveSession");
@@ -159,20 +169,47 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      const live = await launching.launched;
+      const live = await launching.awaitLaunch();
 
       if (!isLive(live)) {
         throw new Error("Expected LiveSession");
       }
 
       const draining = await live.end("test-reason");
-      const closed = await draining.drained;
+      const result = await draining.awaitDrain();
 
-      expect(closed._state).toBe("closed");
-      expect(isClosed(closed)).toBe(true);
+      expect(result._state).toBe("closed");
+      expect(isClosed(result)).toBe(true);
       expect(mockScheduler.drain).toHaveBeenCalled();
       expect(mockDriver.close).toHaveBeenCalled();
       expect(mockScheduler.cancelAll).toHaveBeenCalledWith("test-reason");
+    });
+
+    it("should return ErrorSession when drain fails", async () => {
+      mockDriver.close = vi.fn().mockRejectedValue(new Error("Close failed"));
+
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const live = await launching.awaitLaunch();
+
+      if (!isLive(live)) {
+        throw new Error("Expected LiveSession");
+      }
+
+      const draining = await live.end("test-reason");
+      const result = await draining.awaitDrain();
+
+      expect(result._state).toBe("error");
+      expect(isError(result)).toBe(true);
+
+      if (isError(result)) {
+        expect(result.failedFrom).toBe("draining");
+      }
     });
   });
 
@@ -185,18 +222,69 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      const live = await launching.launched;
+      const live = await launching.awaitLaunch();
 
       if (!isLive(live)) {
         throw new Error("Expected LiveSession");
       }
 
       const draining = await live.end("test");
-      const closed = await draining.drained;
-      const newIdle = closed.restart();
+      const result = await draining.awaitDrain();
+
+      if (!isClosed(result)) {
+        throw new Error("Expected ClosedSession");
+      }
+
+      const newIdle = result.restart();
 
       expect(newIdle._state).toBe("idle");
       expect(isIdle(newIdle)).toBe(true);
+    });
+  });
+
+  describe("Error → Idle transition", () => {
+    it("should return IdleSession when recover() is called", async () => {
+      mockDriver.launch = vi.fn().mockRejectedValue(new Error("Launch failed"));
+
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const result = await launching.awaitLaunch();
+
+      if (!isError(result)) {
+        throw new Error("Expected ErrorSession");
+      }
+
+      const newIdle = result.recover();
+
+      expect(newIdle._state).toBe("idle");
+      expect(isIdle(newIdle)).toBe(true);
+    });
+
+    it("should return ClosedSession when terminate() is called", async () => {
+      mockDriver.launch = vi.fn().mockRejectedValue(new Error("Launch failed"));
+
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const result = await launching.awaitLaunch();
+
+      if (!isError(result)) {
+        throw new Error("Expected ErrorSession");
+      }
+
+      const closed = result.terminate();
+
+      expect(closed._state).toBe("closed");
+      expect(isClosed(closed)).toBe(true);
     });
   });
 
@@ -206,6 +294,7 @@ describe("Type State Session", () => {
         onEnterLive: vi.fn(),
         onExitLive: vi.fn(),
         onEnterDraining: vi.fn(),
+        onEnterError: vi.fn(),
         onClosed: vi.fn(),
         onLaunchFailed: vi.fn(),
       };
@@ -218,7 +307,7 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      await launching.launched;
+      await launching.awaitLaunch();
 
       expect(hooks.onEnterLive).toHaveBeenCalled();
     });
@@ -228,6 +317,7 @@ describe("Type State Session", () => {
         onEnterLive: vi.fn(),
         onExitLive: vi.fn(),
         onEnterDraining: vi.fn(),
+        onEnterError: vi.fn(),
         onClosed: vi.fn(),
         onLaunchFailed: vi.fn(),
       };
@@ -240,7 +330,7 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      const live = await launching.launched;
+      const live = await launching.awaitLaunch();
 
       if (!isLive(live)) {
         throw new Error("Expected LiveSession");
@@ -252,9 +342,10 @@ describe("Type State Session", () => {
       expect(hooks.onEnterDraining).toHaveBeenCalled();
     });
 
-    it("should call onLaunchFailed when launch fails", async () => {
+    it("should call onLaunchFailed and onEnterError when launch fails", async () => {
       const hooks: SessionHooks = {
         onEnterLive: vi.fn(),
+        onEnterError: vi.fn(),
         onLaunchFailed: vi.fn(),
         onClosed: vi.fn(),
       };
@@ -269,9 +360,10 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      await launching.launched;
+      await launching.awaitLaunch();
 
       expect(hooks.onLaunchFailed).toHaveBeenCalled();
+      expect(hooks.onEnterError).toHaveBeenCalled();
       expect(hooks.onEnterLive).not.toHaveBeenCalled();
     });
 
@@ -279,6 +371,7 @@ describe("Type State Session", () => {
       const hooks: SessionHooks = {
         onEnterLive: vi.fn(),
         onExitLive: vi.fn(),
+        onEnterError: vi.fn(),
         onClosed: vi.fn(),
       };
 
@@ -290,16 +383,48 @@ describe("Type State Session", () => {
       });
 
       const launching = await idle.start({ options: {} });
-      const live = await launching.launched;
+      const live = await launching.awaitLaunch();
 
       if (!isLive(live)) {
         throw new Error("Expected LiveSession");
       }
 
       const draining = await live.end("test");
-      await draining.drained;
+      await draining.awaitDrain();
 
       expect(hooks.onClosed).toHaveBeenCalled();
+    });
+
+    it("should call onEnterError when drain fails", async () => {
+      const hooks: SessionHooks = {
+        onEnterLive: vi.fn(),
+        onExitLive: vi.fn(),
+        onEnterDraining: vi.fn(),
+        onEnterError: vi.fn(),
+        onClosed: vi.fn(),
+      };
+
+      mockDriver.close = vi.fn().mockRejectedValue(new Error("Close failed"));
+
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+        hooks,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const live = await launching.awaitLaunch();
+
+      if (!isLive(live)) {
+        throw new Error("Expected LiveSession");
+      }
+
+      const draining = await live.end("test");
+      await draining.awaitDrain();
+
+      expect(hooks.onEnterError).toHaveBeenCalled();
+      expect(hooks.onClosed).not.toHaveBeenCalled();
     });
   });
 
@@ -332,7 +457,7 @@ describe("Type State Session", () => {
       const launching = await idle.start({ options: {} });
       expect(launching._state).toBe("launching");
 
-      const live = await launching.launched;
+      const live = await launching.awaitLaunch();
       expect(live._state).toBe("live");
 
       if (!isLive(live)) throw new Error("Expected LiveSession");
@@ -340,11 +465,36 @@ describe("Type State Session", () => {
       const draining = await live.end("full-cycle-test");
       expect(draining._state).toBe("draining");
 
-      const closed = await draining.drained;
-      expect(closed._state).toBe("closed");
+      const result = await draining.awaitDrain();
+      expect(result._state).toBe("closed");
 
-      const newIdle = closed.restart();
+      if (!isClosed(result)) throw new Error("Expected ClosedSession");
+
+      const newIdle = result.restart();
       expect(newIdle._state).toBe("idle");
+    });
+
+    it("should handle error recovery: Idle → Launching → Error → Idle", async () => {
+      mockDriver.launch = vi.fn().mockRejectedValue(new Error("Launch failed"));
+
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      expect(idle._state).toBe("idle");
+
+      const launching = await idle.start({ options: {} });
+      expect(launching._state).toBe("launching");
+
+      const errorSession = await launching.awaitLaunch();
+      expect(errorSession._state).toBe("error");
+
+      if (!isError(errorSession)) throw new Error("Expected ErrorSession");
+
+      const recoveredIdle = errorSession.recover();
+      expect(recoveredIdle._state).toBe("idle");
     });
   });
 });
