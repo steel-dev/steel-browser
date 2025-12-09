@@ -12,18 +12,14 @@ import {
   BrowserLogger,
 } from "../services/cdp/instrumentation/browser-logger.js";
 import { BrowserDriver } from "./browser-driver.js";
-import { SessionMachine } from "./session-machine.js";
 import { TaskScheduler } from "./task-scheduler.js";
-import { PluginAdapter } from "./plugin-adapter.js";
-import { SessionState } from "./types.js";
+import { createSession, CreateSessionConfig } from "./session.js";
+import { SessionHooks } from "./hooks.js";
+import { Session, IdleSession, LiveSession, isIdle, isLive, InvalidStateError } from "./types.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { env } from "../env.js";
 import { ChromeContextService } from "../services/context/chrome-context.service.js";
-import {
-  extractStorageForPage,
-  handleFrameNavigated,
-  groupSessionStorageByOrigin,
-} from "../utils/context.js";
+import { extractStorageForPage } from "../utils/context.js";
 import { EmitEvent } from "../types/index.js";
 import { BrowserRuntime } from "../types/browser-runtime.interface.js";
 
@@ -36,14 +32,13 @@ export interface OrchestratorConfig {
 
 /**
  * Orchestrator is a facade that provides the same public API as CDPService
- * but uses the new SessionMachine runtime underneath.
+ * but uses the new Session runtime underneath.
  */
 export class Orchestrator extends EventEmitter implements BrowserRuntime {
   private logger: FastifyBaseLogger;
   private driver: BrowserDriver;
-  private machine: SessionMachine;
   private scheduler: TaskScheduler;
-  private pluginAdapter: PluginAdapter;
+  private session: Session;
   private instrumentationLogger: BrowserLogger | null;
   private keepAlive: boolean;
   private launchHooks: ((config: BrowserLauncherOptions) => Promise<void> | void)[];
@@ -55,6 +50,8 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null;
   private chromeContextService: ChromeContextService;
+  private plugins: Map<string, BasePlugin>;
+  private sessionHooks: SessionHooks;
 
   constructor(config: OrchestratorConfig) {
     super();
@@ -65,6 +62,7 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     this.shutdownHooks = [];
     this.currentSessionConfig = null;
     this.proxyWebSocketHandler = null;
+    this.plugins = new Map();
 
     // Initialize WebSocket proxy server
     this.wsProxyServer = httpProxy.createProxyServer();
@@ -100,36 +98,86 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     // Create runtime components
     this.scheduler = new TaskScheduler(this.logger);
     this.driver = new BrowserDriver({ logger: this.logger });
-    this.pluginAdapter = new PluginAdapter(this.logger, this.scheduler);
 
-    // Set orchestrator reference in plugin adapter
-    this.pluginAdapter.setOrchestrator(this);
+    this.sessionHooks = this.createSessionHooks();
 
-    this.machine = new SessionMachine({
+    this.session = createSession({
       driver: this.driver,
       scheduler: this.scheduler,
       logger: this.logger,
-      hooks: [this.pluginAdapter],
-      pluginAdapter: this.pluginAdapter,
+      hooks: this.sessionHooks,
     });
 
-    // For now, set to null - will be implemented later
-    this.instrumentationLogger = null;
-
-    this.logger.info("[Orchestrator] Initialized with SessionMachine runtime");
+    this.logger.info("[Orchestrator] Initialized with Type State runtime");
   }
 
-  // Plugin management
+  private createSessionHooks(): SessionHooks {
+    return {
+      onEnterLive: async (session: LiveSession) => {
+        for (const plugin of this.plugins.values()) {
+          try {
+            await plugin.onBrowserLaunch(session.browser);
+            plugin.onBrowserReady(session.config);
+          } catch (error) {
+            this.logger.error(
+              { err: error },
+              `[Orchestrator] Plugin ${plugin.name} onBrowserLaunch/Ready error`,
+            );
+          }
+        }
+      },
+
+      onExitLive: async (session: LiveSession) => {
+        for (const plugin of this.plugins.values()) {
+          try {
+            await plugin.onBrowserClose(session.browser);
+          } catch (error) {
+            this.logger.error(
+              { err: error },
+              `[Orchestrator] Plugin ${plugin.name} onBrowserClose error`,
+            );
+          }
+        }
+      },
+
+      onClosed: async () => {
+        for (const plugin of this.plugins.values()) {
+          try {
+            await plugin.onShutdown();
+          } catch (error) {
+            this.logger.error(
+              { err: error },
+              `[Orchestrator] Plugin ${plugin.name} onShutdown error`,
+            );
+          }
+        }
+      },
+
+      onLaunchFailed: async (error: Error) => {
+        this.logger.error({ err: error }, "[Orchestrator] Browser launch failed");
+      },
+    };
+  }
+
   public registerPlugin(plugin: BasePlugin): void {
-    this.pluginAdapter.register(plugin);
+    if (this.plugins.has(plugin.name)) {
+      this.logger.warn(`Plugin ${plugin.name} already registered, overwriting`);
+    }
+    plugin.setService(this as any);
+    this.plugins.set(plugin.name, plugin);
+    this.logger.info(`[Orchestrator] Registered plugin: ${plugin.name}`);
   }
 
   public unregisterPlugin(pluginName: string): boolean {
-    return this.pluginAdapter.unregister(pluginName);
+    const result = this.plugins.delete(pluginName);
+    if (result) {
+      this.logger.info(`[Orchestrator] Unregistered plugin: ${pluginName}`);
+    }
+    return result;
   }
 
   public getPlugin<T extends BasePlugin>(pluginName: string): T | undefined {
-    return this.pluginAdapter.getPlugin<T>(pluginName);
+    return this.plugins.get(pluginName) as T | undefined;
   }
 
   public waitUntil(task: Promise<void>): void {
@@ -147,28 +195,37 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     this.shutdownHooks.push(fn);
   }
 
-  // Browser lifecycle
   public async launch(config?: BrowserLauncherOptions): Promise<Browser> {
     const launchConfig = config || this.defaultLaunchConfig;
+
+    if (!isIdle(this.session)) {
+      throw new InvalidStateError(this.session._state, "idle");
+    }
 
     // Run launch hooks
     for (const hook of this.launchHooks) {
       await Promise.resolve(hook(launchConfig));
     }
 
-    await this.machine.start(launchConfig);
-    this.currentSessionConfig = launchConfig;
+    const launching = await this.session.start(launchConfig);
+    const result = await launching.launched;
 
-    const browser = this.driver.getBrowser();
-    if (!browser) {
-      throw new Error("Browser failed to launch");
+    if (result._state === "closed") {
+      throw result.error ?? new Error("Browser launch failed");
     }
 
-    return browser;
+    this.session = result;
+    this.currentSessionConfig = launchConfig;
+
+    return result.browser;
   }
 
   public async shutdown(): Promise<void> {
-    await this.machine.shutdown();
+    if (isLive(this.session)) {
+      const draining = await this.session.end("shutdown");
+      const closed = await draining.drained;
+      this.session = closed;
+    }
 
     // Run shutdown hooks
     for (const hook of this.shutdownHooks) {
@@ -179,25 +236,60 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   }
 
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
+    if (isLive(this.session)) {
+      await this.endSession();
+    }
+
+    if (!isIdle(this.session)) {
+      if (this.session._state === "closed") {
+        this.session = this.session.restart();
+      } else {
+        throw new InvalidStateError(this.session._state, "idle");
+      }
+    }
+
     this.currentSessionConfig = sessionConfig;
     return this.launch(sessionConfig);
   }
 
   public async endSession(): Promise<void> {
-    const sessionConfig = this.currentSessionConfig;
-    await this.machine.end("endSession");
-    this.currentSessionConfig = null;
+    if (!isLive(this.session)) {
+      this.logger.warn(`[Orchestrator] Cannot end session from state: ${this.session._state}`);
+      return;
+    }
+
+    for (const plugin of this.plugins.values()) {
+      try {
+        if (this.currentSessionConfig) {
+          await plugin.onSessionEnd(this.currentSessionConfig);
+        }
+      } catch (error) {
+        this.logger.error(
+          { err: error },
+          `[Orchestrator] Plugin ${plugin.name} onSessionEnd error`,
+        );
+      }
+    }
+
+    const draining = await this.session.end("endSession");
+    const closed = await draining.drained;
 
     // Reset instrumentation logger context
     this.resetInstrumentationContext();
 
     // Restart with default config if keepAlive
     if (this.keepAlive) {
+      this.session = closed.restart();
+      this.currentSessionConfig = null;
       await this.launch(this.defaultLaunchConfig);
+    } else {
+      this.session = closed;
+      this.currentSessionConfig = null;
     }
   }
 
   // Getters
+
   public getBrowserInstance(): Browser | null {
     return this.driver.getBrowser();
   }
@@ -223,7 +315,7 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   }
 
   public isRunning(): boolean {
-    return this.machine.getState() === SessionState.Live;
+    return isLive(this.session);
   }
 
   public getUserAgent(): string | undefined {
@@ -236,6 +328,10 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
 
   public getFingerprintData(): BrowserFingerprintWithHeaders | null {
     return this.currentSessionConfig?.fingerprint || null;
+  }
+
+  public getSessionState(): string {
+    return this.session._state;
   }
 
   // WebSocket proxying
@@ -286,20 +382,12 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
       browser.process()!.setMaxListeners(60);
     }
 
-    this.wsProxyServer.ws(
-      req,
-      socket,
-      head,
-      {
-        target: wsEndpoint,
-      },
-      (error) => {
-        if (error) {
-          this.logger.error(`WebSocket proxy error: ${error}`);
-          cleanupListeners();
-        }
-      },
-    );
+    this.wsProxyServer.ws(req, socket, head, { target: wsEndpoint }, (error) => {
+      if (error) {
+        this.logger.error(`WebSocket proxy error: ${error}`);
+        cleanupListeners();
+      }
+    });
 
     socket.on("error", (error) => {
       this.logger.error(`Socket error: ${error}`);
@@ -344,19 +432,19 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
           const url = page.url();
           return url && url.startsWith("http");
         } catch (e) {
+          this.logger.error(`[Orchestrator] Error getting page URL: ${e}`);
           return false;
         }
       });
 
       this.logger.info(
-        `[Orchestrator] Processing ${validPages.length} valid pages out of ${pages.length} total for storage extraction`,
+        `[Orchestrator] Processing ${validPages.length} valid pages for storage extraction`,
       );
 
       const results = await Promise.all(
         validPages.map((page) => extractStorageForPage(page, this.logger)),
       );
 
-      // Merge all results
       for (const item of results) {
         if (item.localStorage) {
           result.localStorage = { ...result.localStorage, ...item.localStorage };
@@ -468,7 +556,16 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
 
     if (oldPrimaryPage) {
       // Notify plugins before page close
-      await this.pluginAdapter.invokeOnBeforePageClose(oldPrimaryPage);
+      for (const plugin of this.plugins.values()) {
+        try {
+          await plugin.onBeforePageClose(oldPrimaryPage);
+        } catch (error) {
+          this.logger.error(
+            { err: error },
+            `[Orchestrator] Plugin ${plugin.name} onBeforePageClose error`,
+          );
+        }
+      }
       await oldPrimaryPage.close();
     }
 
