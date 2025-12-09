@@ -220,8 +220,19 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
     const launchConfig = config || this.defaultLaunchConfig;
 
+    if (isLive(this.session)) {
+      this.logger.info("[Orchestrator] Browser already running, reusing existing instance");
+      return this.session.browser;
+    }
+
     if (!isIdle(this.session)) {
-      throw new InvalidStateError(this.session._state, "idle");
+      if (isClosed(this.session)) {
+        this.session = this.session.restart();
+      } else if (isError(this.session)) {
+        this.session = await this.session.recover();
+      } else {
+        throw new InvalidStateError(this.session._state, "idle");
+      }
     }
 
     // Run launch hooks
