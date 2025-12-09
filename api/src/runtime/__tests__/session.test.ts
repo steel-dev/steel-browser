@@ -47,6 +47,7 @@ describe("Type State Session", () => {
         primaryPage: mockPage,
       }),
       close: vi.fn().mockResolvedValue(undefined),
+      forceClose: vi.fn().mockResolvedValue(undefined),
       getBrowser: vi.fn().mockReturnValue(mockBrowser),
       getPrimaryPage: vi.fn().mockReturnValue(mockPage),
     } as any;
@@ -259,10 +260,11 @@ describe("Type State Session", () => {
         throw new Error("Expected ErrorSession");
       }
 
-      const newIdle = result.recover();
+      const newIdle = await result.recover();
 
       expect(newIdle._state).toBe("idle");
       expect(isIdle(newIdle)).toBe(true);
+      expect(mockScheduler.cancelAll).toHaveBeenCalledWith("error-recovery");
     });
 
     it("should return ClosedSession when terminate() is called", async () => {
@@ -281,10 +283,47 @@ describe("Type State Session", () => {
         throw new Error("Expected ErrorSession");
       }
 
-      const closed = result.terminate();
+      const closed = await result.terminate();
 
       expect(closed._state).toBe("closed");
       expect(isClosed(closed)).toBe(true);
+      expect(mockDriver.forceClose).toHaveBeenCalled();
+      expect(mockScheduler.cancelAll).toHaveBeenCalledWith("error-terminate");
+    });
+
+    it("should call forceClose when recovering from live or draining failure", async () => {
+      mockDriver.close = vi.fn().mockRejectedValue(new Error("Close failed"));
+
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const live = await launching.awaitLaunch();
+
+      if (!isLive(live)) {
+        throw new Error("Expected LiveSession");
+      }
+
+      const draining = await live.end("test");
+      const errorResult = await draining.awaitDrain();
+
+      if (!isError(errorResult)) {
+        throw new Error("Expected ErrorSession");
+      }
+
+      expect(errorResult.failedFrom).toBe("draining");
+
+      // Reset mock to track the forceClose call during recover
+      mockDriver.forceClose = vi.fn().mockResolvedValue(undefined);
+
+      const newIdle = await errorResult.recover();
+
+      expect(newIdle._state).toBe("idle");
+      // forceClose should be called because failedFrom is 'draining'
+      expect(mockDriver.forceClose).toHaveBeenCalled();
     });
   });
 
@@ -493,7 +532,7 @@ describe("Type State Session", () => {
 
       if (!isError(errorSession)) throw new Error("Expected ErrorSession");
 
-      const recoveredIdle = errorSession.recover();
+      const recoveredIdle = await errorSession.recover();
       expect(recoveredIdle._state).toBe("idle");
     });
   });

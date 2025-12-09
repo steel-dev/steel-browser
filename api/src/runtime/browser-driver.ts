@@ -116,10 +116,19 @@ export class BrowserDriver extends EventEmitter {
 
     try {
       this.browser = await puppeteer.launch(launchOptions);
-      const pages = await this.browser.pages();
-      this.primaryPage = pages[0];
 
-      this.attachBrowserListeners();
+      try {
+        const pages = await this.browser.pages();
+        this.primaryPage = pages[0];
+        this.attachBrowserListeners();
+      } catch (postLaunchError) {
+        this.logger.error(
+          { err: postLaunchError },
+          "[BrowserDriver] Post-launch setup failed, cleaning up browser",
+        );
+        await this.forceClose();
+        throw postLaunchError;
+      }
 
       return { browser: this.browser, primaryPage: this.primaryPage };
     } catch (error) {
@@ -239,5 +248,34 @@ export class BrowserDriver extends EventEmitter {
       this.browser = null;
       this.primaryPage = null;
     }
+  }
+
+  public async forceClose(): Promise<void> {
+    if (!this.browser) {
+      return;
+    }
+
+    this.logger.info("[BrowserDriver] Force closing browser");
+
+    try {
+      await this.browser.close();
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        "[BrowserDriver] Error during browser.close() in forceClose",
+      );
+    }
+
+    try {
+      const process = this.browser.process();
+      if (process) {
+        process.kill("SIGKILL");
+      }
+    } catch (error) {
+      this.logger.warn({ err: error }, "[BrowserDriver] Error killing process in forceClose");
+    }
+
+    this.browser = null;
+    this.primaryPage = null;
   }
 }

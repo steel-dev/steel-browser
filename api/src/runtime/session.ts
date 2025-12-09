@@ -168,13 +168,27 @@ class ErrorSessionImpl implements ErrorSession {
     readonly failedFrom: FailedFromState,
   ) {}
 
-  recover(): IdleSession {
-    this.ctx.logger.info("[Session] Error → Idle (recover)");
+  async recover(): Promise<IdleSession> {
+    this.ctx.logger.info(`[Session] Error → Idle (recover, failedFrom: ${this.failedFrom})`);
+
+    if (this.failedFrom === "live" || this.failedFrom === "draining") {
+      this.ctx.logger.info("[Session] Cleaning up browser resources before recovery");
+      await this.ctx.driver.forceClose();
+    }
+
+    this.ctx.scheduler.cancelAll("error-recovery");
+
     return new IdleSessionImpl(this.ctx);
   }
 
-  terminate(): ClosedSession {
-    this.ctx.logger.info("[Session] Error → Closed (terminate)");
+  async terminate(): Promise<ClosedSession> {
+    this.ctx.logger.info(`[Session] Error → Closed (terminate, failedFrom: ${this.failedFrom})`);
+
+    this.ctx.logger.info("[Session] Force closing browser on terminate");
+    await this.ctx.driver.forceClose();
+
+    this.ctx.scheduler.cancelAll("error-terminate");
+
     return new ClosedSessionImpl(this.ctx);
   }
 }

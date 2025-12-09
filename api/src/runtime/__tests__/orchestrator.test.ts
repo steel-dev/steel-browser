@@ -156,6 +156,7 @@ describe("Orchestrator", () => {
       });
 
       (orchestrator as any).driver.close = vi.fn();
+      (orchestrator as any).driver.forceClose = vi.fn();
 
       expect(orchestrator.getSessionState()).toBe("idle");
 
@@ -217,6 +218,7 @@ describe("Orchestrator", () => {
       });
 
       (orchestrator as any).driver.close = vi.fn();
+      (orchestrator as any).driver.forceClose = vi.fn();
 
       await orchestrator.launch({ options: {} });
       await orchestrator.shutdown();

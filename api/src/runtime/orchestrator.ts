@@ -251,12 +251,12 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
 
         if (isError(result)) {
           this.logger.error({ err: result.error }, "[Orchestrator] Error during shutdown drain");
-          this.session = result.terminate();
+          this.session = await result.terminate();
         } else {
           this.session = result;
         }
       } else if (isError(this.session)) {
-        this.session = this.session.terminate();
+        this.session = await this.session.terminate();
       }
 
       // Run shutdown hooks
@@ -278,7 +278,7 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
         if (isClosed(this.session)) {
           this.session = this.session.restart();
         } else if (isError(this.session)) {
-          this.session = this.session.recover();
+          this.session = await this.session.recover();
         } else {
           throw new InvalidStateError(this.session._state, "idle");
         }
@@ -321,11 +321,11 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     if (isError(result)) {
       this.logger.error({ err: result.error }, "[Orchestrator] Error during session end drain");
       if (this.keepAlive) {
-        this.session = result.recover();
+        this.session = await result.recover();
         this.currentSessionConfig = null;
         await this.launchInternal(this.defaultLaunchConfig);
       } else {
-        this.session = result.terminate();
+        this.session = await result.terminate();
         this.currentSessionConfig = null;
       }
       return;

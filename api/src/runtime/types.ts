@@ -79,8 +79,8 @@ export interface ErrorSession {
   readonly _state: "error";
   readonly error: Error;
   readonly failedFrom: FailedFromState;
-  recover(): IdleSession;
-  terminate(): ClosedSession;
+  recover(): Promise<IdleSession>;
+  terminate(): Promise<ClosedSession>;
 }
 
 export interface ClosedSession {
