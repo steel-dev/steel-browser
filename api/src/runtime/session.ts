@@ -105,6 +105,19 @@ class LiveSessionImpl implements LiveSession {
 
     return drainingSession;
   }
+
+  async crash(error: Error): Promise<ErrorSession> {
+    this.ctx.logger.error({ err: error }, "[Session] Live → Error (crash)");
+
+    await invokeHook(this.ctx.hooks, "onCrash", this, error);
+    await invokeHook(this.ctx.hooks, "onExitLive", this);
+
+    const errorSession = new ErrorSessionImpl(this.ctx, error, "crashed");
+
+    await invokeHook(this.ctx.hooks, "onEnterError", errorSession);
+
+    return errorSession;
+  }
 }
 
 class DrainingSessionImpl implements DrainingSession {
@@ -171,7 +184,11 @@ class ErrorSessionImpl implements ErrorSession {
   async recover(): Promise<IdleSession> {
     this.ctx.logger.info(`[Session] Error → Idle (recover, failedFrom: ${this.failedFrom})`);
 
-    if (this.failedFrom === "live" || this.failedFrom === "draining") {
+    if (
+      this.failedFrom === "live" ||
+      this.failedFrom === "draining" ||
+      this.failedFrom === "crashed"
+    ) {
       this.ctx.logger.info("[Session] Cleaning up browser resources before recovery");
       await this.ctx.driver.forceClose();
     }

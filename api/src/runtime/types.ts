@@ -47,7 +47,7 @@ export interface Task {
   startedAt: number;
 }
 
-export type FailedFromState = "launching" | "live" | "draining";
+export type FailedFromState = "launching" | "live" | "draining" | "crashed";
 
 export interface IdleSession {
   readonly _state: "idle";
@@ -66,6 +66,7 @@ export interface LiveSession {
   readonly primaryPage: Page;
   readonly config: BrowserLauncherOptions;
   end(reason: string): Promise<DrainingSession>;
+  crash(error: Error): Promise<ErrorSession>;
 }
 
 export interface DrainingSession {

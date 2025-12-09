@@ -30,6 +30,7 @@ import {
   isIdle,
   isLive,
   LiveSession,
+  RuntimeEvent,
   Session,
 } from "./types.js";
 
@@ -110,6 +111,12 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     this.scheduler = new TaskScheduler(this.logger);
     this.driver = new BrowserDriver({ logger: this.logger });
 
+    this.driver.on("event", (event: RuntimeEvent) => {
+      if (event.type === "disconnected") {
+        this.handleBrowserDisconnect();
+      }
+    });
+
     this.sessionHooks = this.createSessionHooks();
 
     this.session = createSession({
@@ -174,6 +181,10 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
       onLaunchFailed: async (error: Error) => {
         this.logger.error({ err: error }, "[Orchestrator] Browser launch failed");
       },
+
+      onCrash: async (session: LiveSession, error: Error) => {
+        this.logger.error({ err: error }, "[Orchestrator] Browser crashed");
+      },
     };
   }
 
@@ -221,18 +232,12 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     const launchConfig = config || this.defaultLaunchConfig;
 
     if (isLive(this.session)) {
-      this.logger.info("[Orchestrator] Browser already running, reusing existing instance");
+      this.logger.debug("[Orchestrator] Already in live state, returning existing browser");
       return this.session.browser;
     }
 
     if (!isIdle(this.session)) {
-      if (isClosed(this.session)) {
-        this.session = this.session.restart();
-      } else if (isError(this.session)) {
-        this.session = await this.session.recover();
-      } else {
-        throw new InvalidStateError(this.session._state, "idle");
-      }
+      throw new InvalidStateError(this.session._state, "idle");
     }
 
     // Run launch hooks
@@ -351,6 +356,36 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
       this.session = result;
       this.currentSessionConfig = null;
     }
+  }
+
+  private async handleBrowserDisconnect(): Promise<void> {
+    await this.sessionMutex.runExclusive(async () => {
+      if (!isLive(this.session)) {
+        this.logger.debug(
+          `[Orchestrator] Ignoring disconnect event, session state is: ${this.session._state}`,
+        );
+        return;
+      }
+
+      const liveSession = this.session;
+      const crashError = new Error("Browser disconnected unexpectedly");
+
+      this.logger.warn("[Orchestrator] Browser disconnected unexpectedly, transitioning to error");
+
+      this.session = await liveSession.crash(crashError);
+
+      this.resetInstrumentationContext();
+
+      if (this.keepAlive) {
+        this.logger.info("[Orchestrator] keepAlive enabled, attempting auto-recovery");
+        this.session = await (this.session as ErrorSession).recover();
+        this.currentSessionConfig = null;
+        await this.launchInternal(this.defaultLaunchConfig);
+        this.logger.info("[Orchestrator] Auto-recovery complete, browser relaunched");
+      } else {
+        this.currentSessionConfig = null;
+      }
+    });
   }
 
   // Getters

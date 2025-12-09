@@ -7,6 +7,7 @@ export interface SessionHooks {
   onEnterError?(session: ErrorSession): void | Promise<void>;
   onLaunchFailed?(error: Error): void | Promise<void>;
   onClosed?(session: ClosedSession): void | Promise<void>;
+  onCrash?(session: LiveSession, error: Error): void | Promise<void>;
 }
 
 export async function invokeHook<K extends keyof SessionHooks>(

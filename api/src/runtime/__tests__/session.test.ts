@@ -536,4 +536,125 @@ describe("Type State Session", () => {
       expect(recoveredIdle._state).toBe("idle");
     });
   });
+
+  describe("Browser crash handling", () => {
+    it("should transition Live → Error when crash() is called", async () => {
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const live = await launching.awaitLaunch();
+
+      if (!isLive(live)) {
+        throw new Error("Expected LiveSession");
+      }
+
+      const crashError = new Error("Browser crashed unexpectedly");
+      const errorSession = await live.crash(crashError);
+
+      expect(errorSession._state).toBe("error");
+      expect(isError(errorSession)).toBe(true);
+      expect(errorSession.error).toBe(crashError);
+      expect(errorSession.failedFrom).toBe("crashed");
+    });
+
+    it("should call onCrash hook before onExitLive when crash() is called", async () => {
+      const callOrder: string[] = [];
+
+      const hooks: SessionHooks = {
+        onCrash: vi.fn().mockImplementation(() => {
+          callOrder.push("onCrash");
+        }),
+        onExitLive: vi.fn().mockImplementation(() => {
+          callOrder.push("onExitLive");
+        }),
+        onEnterError: vi.fn().mockImplementation(() => {
+          callOrder.push("onEnterError");
+        }),
+      };
+
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+        hooks,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const live = await launching.awaitLaunch();
+
+      if (!isLive(live)) {
+        throw new Error("Expected LiveSession");
+      }
+
+      const crashError = new Error("Browser crashed");
+      await live.crash(crashError);
+
+      expect(hooks.onCrash).toHaveBeenCalledWith(live, crashError);
+      expect(hooks.onExitLive).toHaveBeenCalledWith(live);
+      expect(hooks.onEnterError).toHaveBeenCalled();
+
+      // Verify call order: onCrash → onExitLive → onEnterError
+      expect(callOrder).toEqual(["onCrash", "onExitLive", "onEnterError"]);
+    });
+
+    it("should call forceClose when recovering from crashed state", async () => {
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      const launching = await idle.start({ options: {} });
+      const live = await launching.awaitLaunch();
+
+      if (!isLive(live)) {
+        throw new Error("Expected LiveSession");
+      }
+
+      const crashError = new Error("Browser crashed");
+      const errorSession = await live.crash(crashError);
+
+      expect(errorSession.failedFrom).toBe("crashed");
+
+      // Reset mock to track forceClose call
+      mockDriver.forceClose = vi.fn().mockResolvedValue(undefined);
+
+      const recoveredIdle = await errorSession.recover();
+
+      expect(recoveredIdle._state).toBe("idle");
+      expect(mockDriver.forceClose).toHaveBeenCalled();
+      expect(mockScheduler.cancelAll).toHaveBeenCalledWith("error-recovery");
+    });
+
+    it("should handle crash recovery cycle: Idle → Live → Error (crash) → Idle", async () => {
+      const idle = createSession({
+        driver: mockDriver,
+        scheduler: mockScheduler,
+        logger: mockLogger,
+      });
+
+      expect(idle._state).toBe("idle");
+
+      const launching = await idle.start({ options: {} });
+      const live = await launching.awaitLaunch();
+
+      expect(live._state).toBe("live");
+
+      if (!isLive(live)) throw new Error("Expected LiveSession");
+
+      const crashError = new Error("Unexpected disconnect");
+      const errorSession = await live.crash(crashError);
+
+      expect(errorSession._state).toBe("error");
+      expect(errorSession.failedFrom).toBe("crashed");
+
+      const recoveredIdle = await errorSession.recover();
+
+      expect(recoveredIdle._state).toBe("idle");
+    });
+  });
 });
