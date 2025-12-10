@@ -233,6 +233,12 @@ export class BrowserDriver extends EventEmitter {
     this.emit("event", event);
   }
 
+  private detachBrowserListeners(): void {
+    if (!this.browser) return;
+    this.browser.removeAllListeners();
+    this.logger.debug("[BrowserDriver] Browser listeners detached");
+  }
+
   public getBrowser(): Browser | null {
     return this.browser;
   }
@@ -245,6 +251,7 @@ export class BrowserDriver extends EventEmitter {
     if (!this.browser) return;
 
     const browser = this.browser;
+    this.detachBrowserListeners();
     this.browser = null;
     this.primaryPage = null;
 
@@ -268,8 +275,13 @@ export class BrowserDriver extends EventEmitter {
 
     this.logger.info("[BrowserDriver] Force closing browser");
 
+    const browser = this.browser;
+    this.detachBrowserListeners();
+    this.browser = null;
+    this.primaryPage = null;
+
     try {
-      await this.browser.close();
+      await browser.close();
     } catch (error) {
       this.logger.warn(
         { err: error },
@@ -278,15 +290,12 @@ export class BrowserDriver extends EventEmitter {
     }
 
     try {
-      const process = this.browser.process();
+      const process = browser.process();
       if (process) {
         process.kill("SIGKILL");
       }
     } catch (error) {
       this.logger.warn({ err: error }, "[BrowserDriver] Error killing process in forceClose");
     }
-
-    this.browser = null;
-    this.primaryPage = null;
   }
 }
