@@ -36,7 +36,7 @@ describe("Orchestrator", () => {
   });
 
   describe("Concurrency Protection", () => {
-    it("should serialize concurrent launch calls", async () => {
+    it("should serialize concurrent launch calls and return existing browser (idempotent)", async () => {
       const orchestrator = new Orchestrator({
         logger: mockLogger,
         keepAlive: false,
@@ -57,14 +57,15 @@ describe("Orchestrator", () => {
       const launch1 = orchestrator.launch({ options: {} });
 
       // Second launch while first is in progress should wait for first,
-      // then fail because session is no longer idle
+      // then return existing browser (idempotent behavior)
       const launch2 = orchestrator.launch({ options: {} });
 
       const result1 = await launch1;
       expect(result1).toBe(mockBrowser);
 
-      // Second launch should fail because session is now live
-      await expect(launch2).rejects.toThrow(InvalidStateError);
+      // Second launch should return existing browser (idempotent)
+      const result2 = await launch2;
+      expect(result2).toBe(mockBrowser);
 
       // Only one launch should have been attempted
       expect(launchOrder).toEqual([1]);
@@ -167,19 +168,26 @@ describe("Orchestrator", () => {
       expect(orchestrator.getSessionState()).toBe("closed");
     });
 
-    it("should throw InvalidStateError when launching from non-idle state", async () => {
+    it("should return existing browser when launching from live state (idempotent)", async () => {
       const orchestrator = new Orchestrator({
         logger: mockLogger,
         keepAlive: false,
       });
 
+      let launchCount = 0;
       (orchestrator as any).driver.launch = vi.fn(async () => {
+        launchCount++;
         return { browser: mockBrowser, primaryPage: mockPage };
       });
 
-      await orchestrator.launch({ options: {} });
+      const result1 = await orchestrator.launch({ options: {} });
+      expect(result1).toBe(mockBrowser);
+      expect(launchCount).toBe(1);
 
-      await expect(orchestrator.launch({ options: {} })).rejects.toThrow(InvalidStateError);
+      // Second launch should return existing browser without calling driver.launch again
+      const result2 = await orchestrator.launch({ options: {} });
+      expect(result2).toBe(mockBrowser);
+      expect(launchCount).toBe(1); // Still 1, not 2
     });
   });
 
