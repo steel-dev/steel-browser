@@ -246,14 +246,15 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     }
 
     const launching = await this.session.start(launchConfig);
+    this.session = launching;
+
     const result = await launching.awaitLaunch();
+    this.session = result;
 
     if (isError(result)) {
-      this.session = result;
       throw result.error;
     }
 
-    this.session = result;
     this.currentSessionConfig = launchConfig;
 
     return result.browser;
@@ -263,13 +264,14 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     return this.sessionMutex.runExclusive(async () => {
       if (isLive(this.session)) {
         const draining = await this.session.end("shutdown");
+        this.session = draining;
+
         const result = await draining.awaitDrain();
+        this.session = result;
 
         if (isError(result)) {
           this.logger.error({ err: result.error }, "[Orchestrator] Error during shutdown drain");
           this.session = await result.terminate();
-        } else {
-          this.session = result;
         }
       } else if (isError(this.session)) {
         this.session = await this.session.terminate();
@@ -329,7 +331,10 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     }
 
     const draining = await this.session.end("endSession");
+    this.session = draining;
+
     const result = await draining.awaitDrain();
+    this.session = result;
 
     // Reset instrumentation logger context
     this.resetInstrumentationContext();
@@ -353,7 +358,6 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
       this.currentSessionConfig = null;
       await this.launchInternal(this.defaultLaunchConfig);
     } else {
-      this.session = result;
       this.currentSessionConfig = null;
     }
   }
