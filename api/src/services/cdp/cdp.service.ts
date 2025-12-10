@@ -816,7 +816,12 @@ export class CDPService extends EventEmitter {
 
         const finalLaunchOptions = {
           ...options,
-          defaultViewport: null,
+          // Set explicit viewport to match window size - prevents CDP clients from overriding
+          // with their own defaults (e.g., browser-use defaults to 800x600 in headless detection)
+          defaultViewport: {
+            width: this.launchConfig.dimensions?.width ?? 1920,
+            height: this.launchConfig.dimensions?.height ?? 1080,
+          },
           args: launchArgs,
           executablePath: this.chromeExecPath,
           ignoreDefaultArgs: ["--enable-automation"],

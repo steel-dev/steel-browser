@@ -175,6 +175,7 @@ export async function handleCastSession(
     try {
       browser = await puppeteer.connect({
         browserWSEndpoint: `ws://${env.HOST}:${env.PORT}`,
+        defaultViewport: null, // Don't override existing browser viewport - prevents 800x600 flicker
       });
 
       if (!browser) {
