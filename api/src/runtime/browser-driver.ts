@@ -12,16 +12,37 @@ export interface BrowserDriverConfig {
   logger: FastifyBaseLogger;
 }
 
+type TargetListener = (target: Target) => void;
+type TargetAsyncListener = (target: Target) => Promise<void>;
+type DisconnectedListener = () => void;
+
+type AnyListener = DisconnectedListener | TargetListener | TargetAsyncListener;
+
+type BrowserEventOff = (event: string, listener: (...args: any[]) => any) => void;
+
+interface BrowserListenerHost {
+  off?: BrowserEventOff;
+  removeListener?: BrowserEventOff;
+}
+
 export class BrowserDriver extends EventEmitter {
   private logger: FastifyBaseLogger;
   private browser: Browser | null;
   private primaryPage: Page | null;
+  private onDisconnectedListener: (() => void) | null;
+  private onTargetCreatedListener: TargetAsyncListener | null;
+  private onTargetChangedListener: TargetListener | null;
+  private onTargetDestroyedListener: TargetListener | null;
 
   constructor(config: BrowserDriverConfig) {
     super();
     this.logger = config.logger.child({ component: "BrowserDriver" });
     this.browser = null;
     this.primaryPage = null;
+    this.onDisconnectedListener = null;
+    this.onTargetCreatedListener = null;
+    this.onTargetChangedListener = null;
+    this.onTargetDestroyedListener = null;
   }
 
   public async launch(
@@ -140,55 +161,63 @@ export class BrowserDriver extends EventEmitter {
   private attachBrowserListeners(): void {
     if (!this.browser) return;
 
-    this.browser.on("disconnected", () => {
-      this.logger.info("[BrowserDriver] Browser disconnected");
-      this.emitEvent({
-        type: "disconnected",
-        timestamp: Date.now(),
-      });
+    this.onDisconnectedListener = this.handleDisconnected.bind(this);
+    this.onTargetCreatedListener = this.handleTargetCreated.bind(this);
+    this.onTargetChangedListener = this.handleTargetChanged.bind(this);
+    this.onTargetDestroyedListener = this.handleTargetDestroyed.bind(this);
+
+    this.browser.on("disconnected", this.onDisconnectedListener);
+    this.browser.on("targetcreated", this.onTargetCreatedListener);
+    this.browser.on("targetchanged", this.onTargetChangedListener);
+    this.browser.on("targetdestroyed", this.onTargetDestroyedListener);
+  }
+
+  private handleDisconnected(): void {
+    this.logger.info("[BrowserDriver] Browser disconnected");
+    this.emitEvent({
+      type: "disconnected",
+      timestamp: Date.now(),
+    });
+  }
+
+  private async handleTargetCreated(target: Target): Promise<void> {
+    this.logger.debug(`[BrowserDriver] Target created: ${target.type()} ${target.url()}`);
+    this.emitEvent({
+      type: "targetCreated",
+      data: { target },
+      timestamp: Date.now(),
     });
 
-    this.browser.on("targetcreated", async (target: Target) => {
-      this.logger.debug(`[BrowserDriver] Target created: ${target.type()} ${target.url()}`);
-      this.emitEvent({
-        type: "targetCreated",
-        data: { target },
-        timestamp: Date.now(),
-      });
+    if (target.type() !== "page") {
+      return;
+    }
 
-      // Attach file protocol detection for pages
-      if (target.type() === "page") {
-        try {
-          const page = await target.page();
-          if (page) {
-            await this.attachFileProtocolDetection(page);
-          }
-        } catch (error) {
-          this.logger.error(
-            { err: error },
-            "[BrowserDriver] Failed to attach file protocol detection",
-          );
-        }
+    try {
+      const page = await target.page();
+      if (page) {
+        await this.attachFileProtocolDetection(page);
       }
-    });
+    } catch (error) {
+      this.logger.error({ err: error }, "[BrowserDriver] Failed to attach file protocol detection");
+    }
+  }
 
-    this.browser.on("targetchanged", (target: Target) => {
-      this.logger.debug(`[BrowserDriver] Target changed: ${target.type()} ${target.url()}`);
-      this.emitEvent({
-        type: "targetChanged",
-        data: { target },
-        timestamp: Date.now(),
-      });
+  private handleTargetChanged(target: Target): void {
+    this.logger.debug(`[BrowserDriver] Target changed: ${target.type()} ${target.url()}`);
+    this.emitEvent({
+      type: "targetChanged",
+      data: { target },
+      timestamp: Date.now(),
     });
+  }
 
-    this.browser.on("targetdestroyed", (target: Target) => {
-      const targetId = (target as any)._targetId;
-      this.logger.debug(`[BrowserDriver] Target destroyed: ${targetId}`);
-      this.emitEvent({
-        type: "targetDestroyed",
-        data: { targetId },
-        timestamp: Date.now(),
-      });
+  private handleTargetDestroyed(target: Target): void {
+    const targetId = (target as any)._targetId;
+    this.logger.debug(`[BrowserDriver] Target destroyed: ${targetId}`);
+    this.emitEvent({
+      type: "targetDestroyed",
+      data: { targetId },
+      timestamp: Date.now(),
     });
   }
 
@@ -235,7 +264,29 @@ export class BrowserDriver extends EventEmitter {
 
   private detachBrowserListeners(): void {
     if (!this.browser) return;
-    this.browser.removeAllListeners();
+
+    const host = this.browser as unknown as BrowserListenerHost;
+
+    const detach = (event: string, listener: AnyListener | null) => {
+      if (!listener) return;
+      if (typeof host.off === "function") {
+        host.off(event, listener);
+        return;
+      }
+      if (typeof host.removeListener === "function") {
+        host.removeListener(event, listener);
+      }
+    };
+
+    detach("disconnected", this.onDisconnectedListener);
+    detach("targetcreated", this.onTargetCreatedListener);
+    detach("targetchanged", this.onTargetChangedListener);
+    detach("targetdestroyed", this.onTargetDestroyedListener);
+
+    this.onDisconnectedListener = null;
+    this.onTargetCreatedListener = null;
+    this.onTargetChangedListener = null;
+    this.onTargetDestroyedListener = null;
     this.logger.debug("[BrowserDriver] Browser listeners detached");
   }
 
