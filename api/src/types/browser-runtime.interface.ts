@@ -1,4 +1,4 @@
-import { Browser, Page } from "puppeteer-core";
+import { Browser, BrowserContext, Page } from "puppeteer-core";
 import { BrowserLauncherOptions } from "./browser.js";
 import { SessionData } from "../services/context/types.js";
 import { BasePlugin } from "../services/cdp/plugins/core/base-plugin.js";
@@ -23,7 +23,7 @@ export interface BrowserRuntime {
   getBrowserInstance(): Browser | null;
   getPrimaryPage(): Promise<Page>;
   createPage(): Promise<Page>;
-  createBrowserContext(proxyUrl?: string): Promise<any>;
+  createBrowserContext(proxyUrl?: string): Promise<BrowserContext>;
   getAllPages(): Page[] | Promise<Page[]>;
   refreshPrimaryPage(): Promise<void>;
 

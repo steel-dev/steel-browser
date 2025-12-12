@@ -328,7 +328,7 @@ export const handleSearch = async (
       // If a proxy is used, we proceed with browser navigation; implementing proxy-aware Node fetch
       // would require an HTTP agent and is outside current scope.
       context = await browserService.createBrowserContext(proxy.url);
-      page = await context!.newPage();
+      page = await context.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
     } else {
       page = await browserService.getPrimaryPage();
