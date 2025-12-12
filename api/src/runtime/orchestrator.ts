@@ -4,7 +4,9 @@ import { FastifyBaseLogger } from "fastify";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { IncomingMessage } from "http";
 import httpProxy from "http-proxy";
-import { Browser, Page, Protocol } from "puppeteer-core";
+import os from "os";
+import path from "path";
+import { Browser, BrowserContext, Page, Protocol } from "puppeteer-core";
 import { Duplex } from "stream";
 import { env } from "../env.js";
 import {
@@ -14,6 +16,7 @@ import {
 import { BasePlugin } from "../services/cdp/plugins/core/base-plugin.js";
 import { ChromeContextService } from "../services/context/chrome-context.service.js";
 import { SessionData } from "../services/context/types.js";
+import { TimezoneFetcher } from "../services/timezone-fetcher.service.js";
 import { BrowserRuntime } from "../types/browser-runtime.interface.js";
 import { BrowserLauncherOptions } from "../types/browser.js";
 import { EmitEvent } from "../types/index.js";
@@ -33,6 +36,7 @@ import {
   RuntimeEvent,
   Session,
 } from "./types.js";
+import { isSimilarConfig } from "../services/cdp/utils/validation.js";
 
 export interface OrchestratorConfig {
   keepAlive?: boolean;
@@ -64,6 +68,7 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   private chromeContextService: ChromeContextService;
   private plugins: Map<string, BasePlugin>;
   private sessionHooks: SessionHooks;
+  private defaultTimezone: string;
 
   constructor(config: OrchestratorConfig) {
     super();
@@ -75,6 +80,7 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     this.currentSessionConfig = null;
     this.proxyWebSocketHandler = null;
     this.plugins = new Map();
+    this.defaultTimezone = env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     // Initialize WebSocket proxy server
     this.wsProxyServer = httpProxy.createProxyServer();
@@ -95,15 +101,27 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
       this.emit(EmitEvent.Log, event);
     });
 
+    // Initialize timezone fetcher for cold start
+    const timezoneFetcher = new TimezoneFetcher(this.logger);
+    const coldStartTimezone = timezoneFetcher.getTimezone(undefined, this.defaultTimezone);
+
     // Initialize default config
     this.defaultLaunchConfig = {
       options: {
-        headless: false,
+        headless: env.CHROME_HEADLESS,
         args: [],
         ignoreDefaultArgs: ["--enable-automation"],
       },
       blockAds: true,
       extensions: [],
+      userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
+      timezone: coldStartTimezone,
+      userPreferences: {
+        plugins: {
+          always_open_pdf_externally: true,
+          plugins_disabled: ["Chrome PDF Viewer"],
+        },
+      },
       deviceConfig: { device: "desktop" },
     };
 
@@ -244,6 +262,21 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     const launchConfig = config || this.defaultLaunchConfig;
 
     if (isLive(this.session)) {
+      // If config is provided and differs from current, restart session
+      if (config && this.currentSessionConfig) {
+        const shouldReuse = await isSimilarConfig(this.currentSessionConfig, launchConfig);
+        if (shouldReuse) {
+          this.logger.info(
+            "[Orchestrator] Reusing existing browser instance with similar configuration",
+          );
+          return this.session.browser;
+        }
+        // Config differs, need to restart
+        this.logger.info(
+          "[Orchestrator] Configuration changed, restarting session with new config",
+        );
+        return this.startNewSession(launchConfig);
+      }
       this.logger.debug("[Orchestrator] Already in live state, returning existing browser");
       return this.session.browser;
     }
@@ -713,16 +746,15 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     return browser.newPage();
   }
 
-  public async createBrowserContext(proxyUrl?: string): Promise<any> {
+  public async createBrowserContext(proxyUrl?: string): Promise<BrowserContext> {
     const browser = this.driver.getBrowser();
     if (!browser) {
       throw new Error("Browser not initialized");
     }
-    const contextOptions: any = {};
     if (proxyUrl) {
-      contextOptions.proxy = { server: proxyUrl };
+      return browser.createBrowserContext({ proxyServer: proxyUrl });
     }
-    return browser.createBrowserContext(contextOptions);
+    return browser.createBrowserContext();
   }
 
   public getBrowserProcess(): any {
