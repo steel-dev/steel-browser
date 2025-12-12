@@ -39,7 +39,8 @@
     "copy:fingerprint": "cp src/scripts/fingerprint.js build/scripts/fingerprint.js",
     "prepare:recorder": "cd extensions/recorder && npm install && npm run build",
     "dev": "npm run prepare:recorder && tsx watch src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest",
+    "test:run": "vitest run",
     "pretty": "prettier --write \"src/**/*.ts\"",
     "generate:openapi": "tsx ./openapi/generate.ts"
   },
