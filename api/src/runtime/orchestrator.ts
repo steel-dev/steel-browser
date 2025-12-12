@@ -113,7 +113,9 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
 
     this.driver.on("event", (event: RuntimeEvent) => {
       if (event.type === "disconnected") {
-        this.handleBrowserDisconnect();
+        void this.handleBrowserDisconnect().catch((err) => {
+          this.logger.error({ err }, "[Orchestrator] Disconnect handler failed");
+        });
       }
     });
 
@@ -135,13 +137,23 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
         for (const plugin of this.plugins.values()) {
           try {
             await plugin.onBrowserLaunch(session.browser);
-            plugin.onBrowserReady(session.config);
           } catch (error) {
             this.logger.error(
               { err: error },
-              `[Orchestrator] Plugin ${plugin.name} onBrowserLaunch/Ready error`,
+              `[Orchestrator] Plugin ${plugin.name} onBrowserLaunch error`,
             );
           }
+
+          this.scheduler.waitUntil(async (signal) => {
+            try {
+              await Promise.resolve(plugin.onBrowserReady(session.config));
+            } catch (error) {
+              this.logger.error(
+                { err: error },
+                `[Orchestrator] Plugin ${plugin.name} onBrowserReady error`,
+              );
+            }
+          }, `plugin-${plugin.name}-onBrowserReady`);
         }
       },
 
@@ -376,6 +388,19 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
 
       this.logger.warn("[Orchestrator] Browser disconnected unexpectedly, transitioning to error");
 
+      for (const plugin of this.plugins.values()) {
+        try {
+          if (this.currentSessionConfig) {
+            await plugin.onSessionEnd(this.currentSessionConfig);
+          }
+        } catch (error) {
+          this.logger.error(
+            { err: error },
+            `[Orchestrator] Plugin ${plugin.name} onSessionEnd error during disconnect`,
+          );
+        }
+      }
+
       this.session = await liveSession.crash(crashError);
 
       this.resetInstrumentationContext();
@@ -387,6 +412,8 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
         await this.launchInternal(this.defaultLaunchConfig);
         this.logger.info("[Orchestrator] Auto-recovery complete, browser relaunched");
       } else {
+        this.logger.info("[Orchestrator] keepAlive disabled, terminating session");
+        this.session = await (this.session as ErrorSession).terminate();
         this.currentSessionConfig = null;
       }
     });
