@@ -1312,6 +1312,54 @@ describe("Orchestrator", () => {
       );
     });
 
+    it("should call plugin.onSessionEnd on disconnect with keepAlive=true", async () => {
+      const orchestrator = new Orchestrator({
+        logger: mockLogger,
+        keepAlive: true,
+      });
+
+      const mockPlugin = {
+        name: "test-plugin",
+        setService: vi.fn(),
+        onBrowserLaunch: vi.fn(),
+        onBrowserReady: vi.fn(),
+        onBrowserClose: vi.fn(),
+        onSessionEnd: vi.fn().mockResolvedValue(undefined),
+        onShutdown: vi.fn(),
+        onBeforePageClose: vi.fn(),
+      } as unknown as BasePlugin;
+
+      orchestrator.registerPlugin(mockPlugin);
+
+      let launchCount = 0;
+      (orchestrator as any).driver.launch = vi.fn(async () => {
+        launchCount++;
+        return { browser: mockBrowser, primaryPage: mockPage };
+      });
+
+      (orchestrator as any).driver.close = vi.fn();
+      (orchestrator as any).driver.forceClose = vi.fn();
+
+      const sessionConfig = { options: {} };
+      await orchestrator.launch(sessionConfig);
+      expect(launchCount).toBe(1);
+
+      // Get the disconnect handler from driver
+      const eventHandler = (orchestrator as any).driver.listeners("event")[0];
+
+      // Simulate disconnect event
+      await eventHandler({ type: "disconnected", timestamp: Date.now() });
+
+      // Wait for async recovery to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Should have called onSessionEnd with the session config
+      expect(mockPlugin.onSessionEnd).toHaveBeenCalledWith(sessionConfig);
+
+      // Should have relaunched due to auto-recovery
+      expect(launchCount).toBe(2);
+    });
+
     it("should NOT auto-recover on browser disconnect when keepAlive is false", async () => {
       const orchestrator = new Orchestrator({
         logger: mockLogger,
