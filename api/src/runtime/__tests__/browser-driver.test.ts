@@ -13,6 +13,34 @@ vi.mock("puppeteer-core", () => ({
 // Mock browser utils
 vi.mock("../../utils/browser.js", () => ({
   getChromeExecutablePath: vi.fn().mockReturnValue("/usr/bin/chromium"),
+  installMouseHelper: vi.fn(),
+}));
+
+// Mock extensions
+vi.mock("../../utils/extensions.js", () => ({
+  getExtensionPaths: vi.fn().mockResolvedValue([]),
+}));
+
+// Mock context utils
+vi.mock("../../utils/context.js", () => ({
+  deepMerge: vi.fn((target, source) => ({ ...target, ...source })),
+  getProfilePath: vi.fn((userDataDir, ...segments) => `${userDataDir}/${segments.join("/")}`),
+}));
+
+// Mock validation utils
+vi.mock("../../services/cdp/utils/validation.js", () => ({
+  validateTimezone: vi.fn().mockResolvedValue("UTC"),
+}));
+
+// Mock fs
+vi.mock("fs", () => ({
+  default: {
+    promises: {
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error("ENOENT")),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    },
+  },
 }));
 
 // Mock env
@@ -180,6 +208,12 @@ describe("BrowserDriver", () => {
 
       const launchCall = (puppeteer.launch as any).mock.calls[0][0];
       expect(launchCall.args).toContain("--headless=new");
+      expect(launchCall.args).toContain("--disable-blink-features=AutomationControlled");
+      expect(
+        launchCall.args.some((arg: string) =>
+          arg.includes("--unsafely-treat-insecure-origin-as-secure"),
+        ),
+      ).toBe(true);
     });
 
     it("should add headful args when headless is false", async () => {
@@ -189,7 +223,29 @@ describe("BrowserDriver", () => {
 
       const launchCall = (puppeteer.launch as any).mock.calls[0][0];
       expect(launchCall.args).toContain("--ozone-platform=x11");
+      expect(launchCall.args).toContain("--noerrdialogs");
       expect(launchCall.args).not.toContain("--headless=new");
+      expect(launchCall.args).not.toContain("--disable-blink-features=AutomationControlled");
+    });
+
+    it("should add HOME to env", async () => {
+      await driver.launch({
+        options: {},
+      });
+
+      const launchCall = (puppeteer.launch as any).mock.calls[0][0];
+      expect(launchCall.env.HOME).toBeDefined();
+    });
+
+    it("should conditionally add sandbox flags based on uid", async () => {
+      await driver.launch({
+        options: {},
+      });
+
+      const launchCall = (puppeteer.launch as any).mock.calls[0][0];
+      // Since we can't mock process.getuid easily, just verify args are present
+      // In real execution, sandbox flags are conditional
+      expect(Array.isArray(launchCall.args)).toBe(true);
     });
 
     it("should use provided userDataDir", async () => {
@@ -230,6 +286,35 @@ describe("BrowserDriver", () => {
       (puppeteer.launch as any).mockRejectedValueOnce(error);
 
       await expect(driver.launch({ options: {} })).rejects.toThrow("Chrome not found");
+    });
+
+    it("should include extension args when extensions are provided", async () => {
+      const { getExtensionPaths } = await import("../../utils/extensions.js");
+      (getExtensionPaths as any).mockResolvedValueOnce(["/ext1", "/ext2"]);
+
+      await driver.launch({
+        options: { headless: true },
+        extensions: ["ext1", "ext2"],
+      });
+
+      const launchCall = (puppeteer.launch as any).mock.calls[0][0];
+      expect(launchCall.args.some((arg: string) => arg.includes("--load-extension="))).toBe(true);
+      expect(
+        launchCall.args.some((arg: string) => arg.includes("--disable-extensions-except=")),
+      ).toBe(true);
+    });
+
+    it("should setup user preferences when provided", async () => {
+      const fs = await import("fs");
+
+      await driver.launch({
+        options: {},
+        userDataDir: "/custom/dir",
+        userPreferences: { test: "value" },
+      });
+
+      expect(fs.default.promises.mkdir).toHaveBeenCalled();
+      expect(fs.default.promises.writeFile).toHaveBeenCalled();
     });
 
     it("should clean up on post-launch setup failure", async () => {

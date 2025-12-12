@@ -32,7 +32,21 @@ vi.mock("../../env.js", () => ({
     CDP_DOMAIN: null,
     USE_SSL: false,
     DEFAULT_TIMEZONE: "UTC",
+    CHROME_HEADLESS: true,
+    CHROME_USER_DATA_DIR: undefined,
   },
+}));
+
+// Mock validation utils
+vi.mock("../../services/cdp/utils/validation.js", () => ({
+  isSimilarConfig: vi.fn().mockResolvedValue(true),
+}));
+
+// Mock timezone fetcher
+vi.mock("../../services/timezone-fetcher.service.js", () => ({
+  TimezoneFetcher: vi.fn().mockImplementation(() => ({
+    getTimezone: vi.fn().mockReturnValue(Promise.resolve("UTC")),
+  })),
 }));
 
 describe("Orchestrator", () => {
@@ -337,6 +351,66 @@ describe("Orchestrator", () => {
 
       // Now launching from closed should throw
       await expect(orchestrator.launch({ options: {} })).rejects.toThrow(InvalidStateError);
+    });
+
+    it("should reuse browser when config is similar", async () => {
+      const { isSimilarConfig } = await import("../../services/cdp/utils/validation.js");
+      vi.mocked(isSimilarConfig).mockResolvedValue(true);
+
+      const orchestrator = new Orchestrator({
+        logger: mockLogger,
+        keepAlive: false,
+      });
+
+      let launchCount = 0;
+      (orchestrator as any).driver.launch = vi.fn(async () => {
+        launchCount++;
+        return { browser: mockBrowser, primaryPage: mockPage };
+      });
+
+      const config1 = { options: { headless: true } };
+      const config2 = { options: { headless: true } };
+
+      await orchestrator.launch(config1);
+      expect(launchCount).toBe(1);
+
+      // Launch with similar config should reuse
+      await orchestrator.launch(config2);
+      expect(launchCount).toBe(1); // Still 1
+    });
+
+    it("should restart session when config differs", async () => {
+      const { isSimilarConfig } = await import("../../services/cdp/utils/validation.js");
+      vi.mocked(isSimilarConfig).mockResolvedValue(false);
+
+      const orchestrator = new Orchestrator({
+        logger: mockLogger,
+        keepAlive: false,
+      });
+
+      let launchCount = 0;
+      (orchestrator as any).driver.launch = vi.fn(async () => {
+        launchCount++;
+        return { browser: mockBrowser, primaryPage: mockPage };
+      });
+      (orchestrator as any).driver.close = vi.fn();
+
+      // Mock startNewSession to avoid full restart complexity
+      const originalStartNewSession = orchestrator.startNewSession.bind(orchestrator);
+      orchestrator.startNewSession = vi.fn().mockImplementation(async (config) => {
+        launchCount++;
+        return mockBrowser;
+      });
+
+      const config1 = { options: { headless: true } };
+      const config2 = { options: { headless: false } };
+
+      await orchestrator.launch(config1);
+      expect(launchCount).toBe(1);
+
+      // Launch with different config should call startNewSession
+      await orchestrator.launch(config2);
+      expect(orchestrator.startNewSession).toHaveBeenCalledWith(config2);
     });
   });
 
@@ -789,7 +863,7 @@ describe("Orchestrator", () => {
       await expect(orchestrator.createPage()).rejects.toThrow("Browser not initialized");
     });
 
-    it("should create browser context", async () => {
+    it("should create browser context with proxyServer option", async () => {
       const orchestrator = new Orchestrator({
         logger: mockLogger,
         keepAlive: false,
@@ -805,8 +879,26 @@ describe("Orchestrator", () => {
 
       await orchestrator.createBrowserContext("http://proxy:8080");
       expect(mockBrowser.createBrowserContext).toHaveBeenCalledWith({
-        proxy: { server: "http://proxy:8080" },
+        proxyServer: "http://proxy:8080",
       });
+    });
+
+    it("should create browser context without proxy when not provided", async () => {
+      const orchestrator = new Orchestrator({
+        logger: mockLogger,
+        keepAlive: false,
+      });
+
+      (orchestrator as any).driver.launch = vi.fn(async () => {
+        return { browser: mockBrowser, primaryPage: mockPage };
+      });
+
+      (orchestrator as any).driver.getBrowser = vi.fn().mockReturnValue(mockBrowser);
+
+      await orchestrator.launch({ options: {} });
+
+      await orchestrator.createBrowserContext();
+      expect(mockBrowser.createBrowserContext).toHaveBeenCalledWith();
     });
 
     it("should get all pages", async () => {

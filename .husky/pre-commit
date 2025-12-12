@@ -16,6 +16,6 @@ npm run build
 git add -u
 
 # Run tests
-npm run test:run -w api
+npm run test -w api
 
 echo "✅ Pre-commit checks passed!" 
