@@ -1,15 +1,15 @@
-import type { Target, Protocol, TargetType } from "puppeteer-core";
+import type { Target, Protocol, TargetType, CDPSession } from "puppeteer-core";
 import { BrowserEventType } from "../../../types/index.js";
 import { BrowserLogger } from "./browser-logger.js";
 import { extractTargetId, formatLocation, serializeRemoteObject } from "./utils.js";
 
-export async function attachWorkerEvents(
+export function attachWorkerEvents(
   target: Target,
+  session: CDPSession,
   logger: BrowserLogger,
   targetType: TargetType,
-): Promise<void> {
+): void {
   const targetId = extractTargetId(target);
-  const session = await target.createCDPSession();
 
   session.on("Runtime.consoleAPICalled", (event: Protocol.Runtime.ConsoleAPICalledEvent) => {
     const text = event.args.map(serializeRemoteObject).join(" ");

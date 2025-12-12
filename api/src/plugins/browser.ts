@@ -37,13 +37,19 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
 
     storage = new DuckDBStorage({
       dbPath: storagePath,
+      maxThreads: 1,
+      memoryLimit: "128MB",
+      parquetCompression: "none",
+      enableWriteBuffer: true,
+      writeBufferSize: 200,
+      writeBufferFlushInterval: 2000,
     });
 
     await storage.initialize();
     fastify.log.info(`Log storage initialized at ${storagePath}`);
   } else {
     // Use in-memory storage for development
-    storage = new InMemoryStorage(10000);
+    storage = new InMemoryStorage(1000);
     await storage.initialize();
     fastify.log.info("Using in-memory log storage");
   }

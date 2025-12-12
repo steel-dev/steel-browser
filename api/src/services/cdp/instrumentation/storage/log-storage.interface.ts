@@ -40,6 +40,11 @@ export interface LogStorage {
   query(query: LogQuery): Promise<LogQueryResult>;
 
   /**
+   * Check if Parquet export is supported by this storage backend
+   */
+  supportsParquetExport(): boolean;
+
+  /**
    * Export logs to Parquet format
    */
   exportToParquet(filePath: string, query?: LogQuery): Promise<string>;

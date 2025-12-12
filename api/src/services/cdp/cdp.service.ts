@@ -77,6 +77,7 @@ import {
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { BrowserRuntime } from "../../types/browser-runtime.interface.js";
+import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
 export class CDPService extends EventEmitter implements BrowserRuntime {
   private logger: FastifyBaseLogger;
@@ -107,6 +108,7 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
+  private disconnectHandler: () => Promise<void> = () => this.endSession();
 
   constructor(
     config: { keepAlive?: boolean },
@@ -128,14 +130,6 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
     this.trackedOrigins = new Set<string>();
     this.chromeSessionService = new ChromeContextService(logger);
     this.retryManager = new RetryManager(logger);
-    // Clean up any existing proxy server
-    if (this.wsProxyServer) {
-      try {
-        this.wsProxyServer.close();
-      } catch (e) {
-        // Ignore errors when closing
-      }
-    }
 
     this.wsProxyServer = httpProxy.createProxyServer();
 
@@ -146,6 +140,11 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
     this.primaryPage = null;
     this.currentSessionConfig = null;
     this.shuttingDown = false;
+
+    // Initialize timezone fetcher for cold start
+    const timezoneFetcher = new TimezoneFetcher(logger);
+    const coldStartTimezone = timezoneFetcher.getTimezone(undefined, this.defaultTimezone);
+
     this.defaultLaunchConfig = {
       options: {
         headless: env.CHROME_HEADLESS,
@@ -155,7 +154,7 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
       blockAds: true,
       extensions: [],
       userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
-      timezone: Promise.resolve(this.defaultTimezone),
+      timezone: coldStartTimezone,
       userPreferences: {
         plugins: {
           always_open_pdf_externally: true,
@@ -195,6 +194,10 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
     handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
   ): void {
     this.proxyWebSocketHandler = handler;
+  }
+
+  public setDisconnectHandler(handler: () => Promise<void>): void {
+    this.disconnectHandler = handler;
   }
 
   public getBrowserInstance(): Browser | null {
@@ -344,15 +347,9 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
         // Notify plugins about the new page
         await this.pluginManager.onPageCreated(page);
 
-        installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
-
-        if (this.currentSessionConfig?.timezone) {
-          try {
-            const resolvedTimezone = await this.currentSessionConfig.timezone;
-            await page.emulateTimezone(resolvedTimezone);
-          } catch (error) {
-            this.logger.warn(`Failed to resolve timezone for page emulation: ${error}`);
-          }
+        // Only install mouse helper in headless mode
+        if (this.launchConfig?.options?.headless) {
+          installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
         }
 
         if (this.launchConfig?.customHeaders) {
@@ -465,54 +462,52 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
 
   @traceable
   public async shutdown(): Promise<void> {
-    if (this.browserInstance) {
-      this.shuttingDown = true;
-      this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
+    this.shuttingDown = true;
+    this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
+
+    try {
+      if (this.browserInstance) {
+        await this.pluginManager.onBrowserClose(this.browserInstance);
+      }
+
+      await this.pluginManager.onShutdown();
+
+      this.removeAllHandlers();
+      await this.browserInstance?.close();
+      await this.browserInstance?.process()?.kill();
+      await this.shutdownHook();
+
+      this.logger.info("[CDPService] Cleaning up files during shutdown");
+      try {
+        await FileService.getInstance().cleanupFiles();
+        this.logger.info("[CDPService] Files cleaned successfully");
+      } catch (error) {
+        this.logger.error(`[CDPService] Error cleaning files during shutdown: ${error}`);
+      }
+
+      this.fingerprintData = null;
+      this.currentSessionConfig = null;
+      this.browserInstance = null;
+      this.wsEndpoint = null;
+      this.emit("close");
+      this.shuttingDown = false;
+    } catch (error) {
+      this.logger.error(`[CDPService] Error during shutdown: ${error}`);
+      // Ensure we complete the shutdown even if plugins throw errors
+      await this.browserInstance?.close();
+      await this.browserInstance?.process()?.kill();
+      await this.shutdownHook();
 
       try {
-        if (this.browserInstance) {
-          await this.pluginManager.onBrowserClose(this.browserInstance);
-        }
-
-        await this.pluginManager.onShutdown();
-
-        this.removeAllHandlers();
-        await this.browserInstance.close();
-        await this.browserInstance.process()?.kill();
-        await this.shutdownHook();
-
-        this.logger.info("[CDPService] Cleaning up files during shutdown");
-        try {
-          await FileService.getInstance().cleanupFiles();
-          this.logger.info("[CDPService] Files cleaned successfully");
-        } catch (error) {
-          this.logger.error(`[CDPService] Error cleaning files during shutdown: ${error}`);
-        }
-
-        this.fingerprintData = null;
-        this.currentSessionConfig = null;
-        this.browserInstance = null;
-        this.wsEndpoint = null;
-        this.emit("close");
-        this.shuttingDown = false;
-      } catch (error) {
-        this.logger.error(`[CDPService] Error during shutdown: ${error}`);
-        // Ensure we complete the shutdown even if plugins throw errors
-        await this.browserInstance?.close();
-        await this.browserInstance?.process()?.kill();
-        await this.shutdownHook();
-
-        try {
-          await FileService.getInstance().cleanupFiles();
-        } catch (cleanupError) {
-          this.logger.error(
-            `[CDPService] Error cleaning files during error recovery: ${cleanupError}`,
-          );
-        }
-
-        this.browserInstance = null;
-        this.shuttingDown = false;
+        await FileService.getInstance().cleanupFiles();
+      } catch (cleanupError) {
+        this.logger.error(
+          `[CDPService] Error cleaning files during error recovery: ${cleanupError}`,
+        );
       }
+
+      this.browserInstance = null;
+      this.shuttingDown = false;
     }
   }
 
@@ -568,7 +563,7 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
       const launchProcess = (async () => {
         const shouldReuseInstance =
           this.browserInstance &&
-          isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig);
+          (await isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig));
 
         if (shouldReuseInstance) {
           this.logger.info(
@@ -605,7 +600,7 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
               },
             );
           }
-          this.pluginManager.onBrowserReady(this.launchConfig);
+          await this.pluginManager.onBrowserReady(this.launchConfig);
 
           return this.browserInstance!;
         } else if (this.browserInstance) {
@@ -711,6 +706,8 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
           );
         }
 
+        const isHeadless = !!this.launchConfig?.options?.headless;
+
         this.currentSessionConfig = {
           ...this.launchConfig,
           dimensions: this.launchConfig.dimensions || this.fingerprintData?.fingerprint.screen,
@@ -720,7 +717,7 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
 
         const extensionPaths = await executeCritical(
           async () => {
-            const defaultExtensions = ["recorder"];
+            const defaultExtensions = isHeadless ? ["recorder"] : [];
             const customExtensions = this.launchConfig!.extensions
               ? [...this.launchConfig!.extensions]
               : [];
@@ -757,8 +754,14 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
           const validatedTimezone = await executeOptional(
             this.logger,
             async () => {
-              const tz = await validateTimezone(config.timezone!, this.defaultTimezone);
-              this.logger.debug(`Resolved and validated timezone: ${tz}`);
+              if (this.launchConfig?.skipFingerprintInjection) {
+                this.logger.info(
+                  `Skipping timezone validation as skipFingerprintInjection is enabled`,
+                );
+                return this.defaultTimezone;
+              }
+              const tz = await validateTimezone(this.logger, config.timezone!);
+              this.logger.info(`Resolved and validated timezone: ${tz}`);
               return tz;
             },
             (error) => {
@@ -770,8 +773,6 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
           timezone = validatedTimezone ?? this.defaultTimezone;
         }
 
-        const isHeadless = !!this.launchConfig?.options?.headless;
-
         const extensionArgs = extensionPaths.length
           ? [
               `--load-extension=${extensionPaths.join(",")}`,
@@ -779,32 +780,41 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
             ]
           : [];
 
+        const shouldDisableSandbox = typeof process.getuid === "function" && process.getuid() === 0;
+
         const staticDefaultArgs = [
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-features=PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd",
+          "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--disable-sync",
           "--disable-translate",
           "--no-first-run",
           "--disable-search-engine-choice-screen",
-          "--disable-blink-features=AutomationControlled",
           "--webrtc-ip-handling-policy=disable_non_proxied_udp",
           "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
-          "--disable-renderer-backgrounding",
           "--disable-client-side-phishing-detection",
           "--disable-default-apps",
           "--disable-component-update",
-          "--no-zygote",
           "--disable-infobars",
           "--disable-breakpad",
           "--disable-background-networking",
+          "--disable-session-crashed-bubble",
+          "--disable-ipc-flooding-protection",
+          "--disable-popup-blocking",
+          "--disable-prompt-on-repost",
+          "--disable-domain-reliability",
+          "--metrics-recording-only",
+          "--no-pings",
+          "--disable-backing-store-limit",
+          "--password-store=basic",
+          ...(shouldDisableSandbox
+            ? ["--no-sandbox", "--disable-setuid-sandbox", "--no-zygote"]
+            : []),
         ];
 
         const headfulArgs = [
@@ -815,19 +825,26 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
           "--in-process-gpu",
           "--enable-crashpad",
           "--crash-dumps-dir=/tmp/chrome-dumps",
+          "--noerrdialogs",
+          "--force-device-scale-factor=1",
+          "--disable-hang-monitor",
         ];
 
-        const headlessArgs = ["--headless=new", "--hide-crash-restore-bubble"];
+        const headlessArgs = [
+          "--headless=new",
+          "--hide-crash-restore-bubble",
+          "--disable-blink-features=AutomationControlled",
+          // can we just remove this outright?
+          `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
+        ];
 
         const dynamicArgs = [
           this.launchConfig.dimensions ? "" : "--start-maximized",
           `--remote-debugging-address=${env.HOST}`,
           "--remote-debugging-port=9222",
-          `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
             this.launchConfig.dimensions?.height ?? 1080
           }`,
-          `--timezone=${timezone}`,
           userAgent ? `--user-agent=${userAgent}` : "",
           this.launchConfig.options.proxyUrl
             ? `--proxy-server=${this.launchConfig.options.proxyUrl}`
@@ -853,6 +870,7 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
           ignoreDefaultArgs: ["--enable-automation"],
           timeout: 0,
           env: {
+            HOME: os.userInfo().homedir,
             TZ: timezone,
             ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }),
           },
@@ -1006,7 +1024,7 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
           this.logger.error({ err: error }, `[CDPService] Error attaching to existing targets`);
         }
 
-        this.pluginManager.onBrowserReady(this.launchConfig);
+        await this.pluginManager.onBrowserReady(this.launchConfig);
 
         return this.browserInstance;
       })();
@@ -1246,7 +1264,8 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
   public async endSession(): Promise<void> {
     this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
-    this.sessionContext = await this.getBrowserState();
+
+    this.sessionContext = await this.getBrowserState().catch(() => null);
 
     await this.shutdown();
     await this.pluginManager.onSessionEnd(sessionConfig);
@@ -1262,22 +1281,11 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
   private async onDisconnect(): Promise<void> {
     this.logger.info("Browser disconnected. Handling cleanup.");
 
-    if (this.shuttingDown || this.browserInstance?.process()) {
+    if (this.shuttingDown) {
       return;
     }
 
-    if (this.currentSessionConfig) {
-      this.logger.info("Restarting browser with current session configuration.");
-      await this.launch(this.currentSessionConfig);
-    } else if (this.keepAlive) {
-      this.logger.info("Restarting browser with default configuration.");
-      await this.launch(this.defaultLaunchConfig);
-    } else {
-      this.logger.info("Shutting down browser.");
-      const sessionConfig = this.currentSessionConfig!;
-      await this.shutdown();
-      await this.pluginManager.onSessionEnd(sessionConfig);
-    }
+    await this.disconnectHandler();
   }
 
   @traceable

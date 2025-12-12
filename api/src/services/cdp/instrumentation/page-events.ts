@@ -96,7 +96,7 @@ export async function attachPageEvents(
       timestamp: new Date().toISOString(),
       pageId,
       targetType,
-      error: { message: err.message, stack: err.stack },
+      error: { message: err?.message, stack: err?.stack },
     });
   });
 
@@ -106,7 +106,7 @@ export async function attachPageEvents(
       timestamp: new Date().toISOString(),
       pageId,
       targetType,
-      error: { message: err.message, stack: err.stack },
+      error: { message: err?.message, stack: err?.stack },
     });
   });
 }

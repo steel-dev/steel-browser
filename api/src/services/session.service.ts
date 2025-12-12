@@ -131,13 +131,9 @@ export class SessionService {
     let timezonePromise: Promise<string>;
     if (options.timezone) {
       timezonePromise = Promise.resolve(options.timezone);
-    } else if (proxyUrl) {
+    } else {
       timezonePromise = this.timezoneFetcher.getTimezone(
         proxyUrl,
-        env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
-      );
-    } else {
-      timezonePromise = Promise.resolve(
         env.DEFAULT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
       );
     }

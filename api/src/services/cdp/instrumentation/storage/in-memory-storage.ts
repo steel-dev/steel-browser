@@ -86,6 +86,10 @@ export class InMemoryStorage implements LogStorage {
     };
   }
 
+  supportsParquetExport(): boolean {
+    return false;
+  }
+
   async exportToParquet(filePath: string, query?: LogQuery): Promise<string> {
     throw new Error("Parquet export not supported in InMemoryStorage. Use DuckDBStorage instead.");
   }

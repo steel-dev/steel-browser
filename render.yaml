@@ -7,6 +7,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DOMAIN
+        value: "<change me to your render domain>"
+      - key: USE_SSL
+        value: "true"
     disk:
       name: cache
       mountPath: /app/.cache
