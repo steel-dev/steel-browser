@@ -1518,6 +1518,61 @@ describe("Orchestrator", () => {
     });
   });
 
+  describe("Plugin Lifecycle - onBrowserReady", () => {
+    it("should handle async onBrowserReady failures without unhandledRejection", async () => {
+      const orchestrator = new Orchestrator({
+        logger: mockLogger,
+        keepAlive: false,
+      });
+
+      const mockPlugin = {
+        name: "failing-ready-plugin",
+        setService: vi.fn(),
+        onBrowserLaunch: vi.fn().mockResolvedValue(undefined),
+        onBrowserReady: vi.fn(() => {
+          return Promise.reject(new Error("onBrowserReady failed"));
+        }),
+        onBrowserClose: vi.fn(),
+        onSessionEnd: vi.fn(),
+        onShutdown: vi.fn(),
+        onBeforePageClose: vi.fn(),
+      } as unknown as BasePlugin;
+
+      orchestrator.registerPlugin(mockPlugin);
+
+      (orchestrator as any).driver.launch = vi.fn(async () => {
+        return { browser: mockBrowser, primaryPage: mockPage };
+      });
+
+      (orchestrator as any).driver.close = vi.fn();
+
+      let unhandledRejectionCaught = false;
+      const unhandledRejectionHandler = () => {
+        unhandledRejectionCaught = true;
+      };
+
+      process.once("unhandledRejection", unhandledRejectionHandler);
+
+      try {
+        await orchestrator.launch({ options: {} });
+
+        // Allow microtasks to process to catch any unhandled rejections
+        await new Promise((resolve) => setImmediate(resolve));
+
+        // Should NOT have emitted unhandledRejection
+        expect(unhandledRejectionCaught).toBe(false);
+
+        // Should have logged the error
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          expect.objectContaining({ err: expect.any(Error) }),
+          expect.stringContaining("onBrowserReady"),
+        );
+      } finally {
+        process.removeListener("unhandledRejection", unhandledRejectionHandler);
+      }
+    });
+  });
+
   describe("Plugin Lifecycle - onBrowserClose", () => {
     it("should call onBrowserClose when exiting live state", async () => {
       const orchestrator = new Orchestrator({
