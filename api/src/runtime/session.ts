@@ -206,7 +206,11 @@ class ErrorSessionImpl implements ErrorSession {
 
     this.ctx.scheduler.cancelAll("error-terminate");
 
-    return new ClosedSessionImpl(this.ctx);
+    const closedSession = new ClosedSessionImpl(this.ctx);
+
+    await invokeHook(this.ctx.hooks, "onClosed", closedSession);
+
+    return closedSession;
   }
 }
 
