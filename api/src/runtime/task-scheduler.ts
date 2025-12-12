@@ -37,18 +37,28 @@ export class TaskScheduler {
     }
   }
 
-  public waitUntil(promise: Promise<void>, label?: string): void {
+  public waitUntil(fn: (signal: AbortSignal) => Promise<void>, label?: string): void {
     const taskId = `background-${this.taskCounter++}`;
     const taskLabel = label || taskId;
+    const abortController = new AbortController();
+
+    const promise = fn(abortController.signal).catch((error) => {
+      // TODO: should we throw?
+      if (error?.name === "AbortError") {
+        this.logger.debug(`[TaskScheduler] Background task aborted: ${taskLabel} (${taskId})`);
+        return;
+      }
+      this.logger.error(
+        { err: error },
+        `[TaskScheduler] Background task failed: ${taskLabel} (${taskId})`,
+      );
+    });
+
     const task: Task = {
       id: taskId,
       label: taskLabel,
-      promise: promise.catch((error) => {
-        this.logger.error(
-          { err: error },
-          `[TaskScheduler] Background task failed: ${taskLabel} (${taskId})`,
-        );
-      }),
+      promise,
+      abortController,
       type: "background",
       startedAt: Date.now(),
     };
@@ -56,10 +66,10 @@ export class TaskScheduler {
     this.tasks.set(taskId, task);
     task.promise.finally(() => {
       this.tasks.delete(taskId);
-      this.logger.debug(`[TaskScheduler] Background task completed: ${label} (${taskId})`);
+      this.logger.debug(`[TaskScheduler] Background task completed: ${taskLabel} (${taskId})`);
     });
 
-    this.logger.debug(`[TaskScheduler] Scheduled background task: ${label} (${taskId})`);
+    this.logger.debug(`[TaskScheduler] Scheduled background task: ${taskLabel} (${taskId})`);
   }
 
   public async drain(timeoutMs: number = 5000): Promise<void> {
@@ -93,6 +103,11 @@ export class TaskScheduler {
     if (count === 0) return;
 
     this.logger.info(`[TaskScheduler] Cancelling ${count} pending tasks (reason: ${reason})`);
+
+    for (const task of this.tasks.values()) {
+      task.abortController.abort(reason);
+    }
+
     this.tasks.clear();
   }
 

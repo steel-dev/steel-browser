@@ -116,10 +116,19 @@ export class BrowserDriver extends EventEmitter {
 
     try {
       this.browser = await puppeteer.launch(launchOptions);
-      const pages = await this.browser.pages();
-      this.primaryPage = pages[0];
 
-      this.attachBrowserListeners();
+      try {
+        const pages = await this.browser.pages();
+        this.primaryPage = pages[0];
+        this.attachBrowserListeners();
+      } catch (postLaunchError) {
+        this.logger.error(
+          { err: postLaunchError },
+          "[BrowserDriver] Post-launch setup failed, cleaning up browser",
+        );
+        await this.forceClose();
+        throw postLaunchError;
+      }
 
       return { browser: this.browser, primaryPage: this.primaryPage };
     } catch (error) {
@@ -224,6 +233,12 @@ export class BrowserDriver extends EventEmitter {
     this.emit("event", event);
   }
 
+  private detachBrowserListeners(): void {
+    if (!this.browser) return;
+    this.browser.removeAllListeners();
+    this.logger.debug("[BrowserDriver] Browser listeners detached");
+  }
+
   public getBrowser(): Browser | null {
     return this.browser;
   }
@@ -233,11 +248,54 @@ export class BrowserDriver extends EventEmitter {
   }
 
   public async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close();
-      await this.browser.process()?.kill();
-      this.browser = null;
-      this.primaryPage = null;
+    if (!this.browser) return;
+
+    const browser = this.browser;
+    this.detachBrowserListeners();
+    this.browser = null;
+    this.primaryPage = null;
+
+    try {
+      await browser.close();
+    } catch (error) {
+      this.logger.warn({ err: error }, "[BrowserDriver] browser.close() failed");
+    }
+
+    try {
+      browser.process()?.kill();
+    } catch (error) {
+      this.logger.warn({ err: error }, "[BrowserDriver] process.kill() failed");
+    }
+  }
+
+  public async forceClose(): Promise<void> {
+    if (!this.browser) {
+      return;
+    }
+
+    this.logger.info("[BrowserDriver] Force closing browser");
+
+    const browser = this.browser;
+    this.detachBrowserListeners();
+    this.browser = null;
+    this.primaryPage = null;
+
+    try {
+      await browser.close();
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        "[BrowserDriver] Error during browser.close() in forceClose",
+      );
+    }
+
+    try {
+      const process = browser.process();
+      if (process) {
+        process.kill("SIGKILL");
+      }
+    } catch (error) {
+      this.logger.warn({ err: error }, "[BrowserDriver] Error killing process in forceClose");
     }
   }
 }
