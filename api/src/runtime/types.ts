@@ -1,127 +1,160 @@
 import { Browser, Page, Target } from "puppeteer-core";
 import { BrowserLauncherOptions } from "../types/browser.js";
 
-export enum SessionState {
-  Idle = "Idle",
-  Launching = "Launching",
-  Ready = "Ready",
-  Live = "Live",
-  Draining = "Draining",
-  Closed = "Closed",
-}
-
-export interface MachineEvent {
+export interface BrowserEvent {
   type: string;
-  data?: any;
-  timestamp?: number;
+  data?: unknown;
+  timestamp: number;
 }
 
-export interface LaunchSucceededEvent extends MachineEvent {
-  type: "launchSucceeded";
-  data: {
-    browser: Browser;
-    primaryPage: Page;
-  };
-}
-
-export interface DisconnectedEvent extends MachineEvent {
+export interface DisconnectedEvent extends BrowserEvent {
   type: "disconnected";
-  data?: {
-    reason?: string;
-  };
 }
 
-export interface TargetCreatedEvent extends MachineEvent {
+export interface TargetCreatedEvent extends BrowserEvent {
   type: "targetCreated";
-  data: {
-    target: Target;
-  };
+  data: { target: Target };
 }
 
-export interface TargetChangedEvent extends MachineEvent {
+export interface TargetChangedEvent extends BrowserEvent {
   type: "targetChanged";
-  data: {
-    target: Target;
-  };
+  data: { target: Target };
 }
 
-export interface TargetDestroyedEvent extends MachineEvent {
+export interface TargetDestroyedEvent extends BrowserEvent {
   type: "targetDestroyed";
-  data: {
-    targetId: string;
-  };
+  data: { targetId: string };
 }
 
-export interface FileProtocolViolationEvent extends MachineEvent {
+export interface FileProtocolViolationEvent extends BrowserEvent {
   type: "fileProtocolViolation";
-  data: {
-    url: string;
-  };
-}
-
-export interface LaunchFailedEvent extends MachineEvent {
-  type: "launchFailed";
-  data: {
-    error: Error;
-  };
+  data: { url: string };
 }
 
 export type RuntimeEvent =
-  | LaunchSucceededEvent
   | DisconnectedEvent
   | TargetCreatedEvent
   | TargetChangedEvent
   | TargetDestroyedEvent
-  | FileProtocolViolationEvent
-  | LaunchFailedEvent;
-
-export interface MachineCommand {
-  type: string;
-  data?: any;
-}
-
-export interface StartCommand extends MachineCommand {
-  type: "start";
-  data: {
-    config: BrowserLauncherOptions;
-  };
-}
-
-export interface EndCommand extends MachineCommand {
-  type: "end";
-  data: {
-    reason: string;
-  };
-}
-
-export type RuntimeCommand = StartCommand | EndCommand;
-
-export interface StateTransition {
-  from: SessionState;
-  to: SessionState;
-  event?: string;
-  command?: string;
-}
-
-export interface SessionContext {
-  config?: BrowserLauncherOptions;
-  browser?: Browser;
-  primaryPage?: Page;
-  wsEndpoint?: string;
-  error?: Error;
-  [key: string]: any;
-}
+  | FileProtocolViolationEvent;
 
 export interface Task {
   id: string;
   label: string;
   promise: Promise<void>;
+  abortController: AbortController;
   type: "critical" | "background";
   startedAt: number;
 }
 
-export interface TransitionHook {
-  onEnter?(state: SessionState, ctx: SessionContext): Promise<void> | void;
-  onExit?(state: SessionState, ctx: SessionContext): Promise<void> | void;
-  onEvent?(event: RuntimeEvent, ctx: SessionContext): Promise<void> | void;
+export type FailedFromState = "launching" | "live" | "draining" | "crashed";
+
+export interface IdleSession {
+  readonly _state: "idle";
+  start(config: BrowserLauncherOptions): Promise<LaunchingSession>;
+}
+
+export interface LaunchingSession {
+  readonly _state: "launching";
+  readonly config: BrowserLauncherOptions;
+  awaitLaunch(): Promise<LiveSession | ErrorSession>;
+}
+
+export interface LiveSession {
+  readonly _state: "live";
+  readonly browser: Browser;
+  readonly primaryPage: Page;
+  readonly config: BrowserLauncherOptions;
+  end(reason: string): Promise<DrainingSession>;
+  crash(error: Error): Promise<ErrorSession>;
+}
+
+export interface DrainingSession {
+  readonly _state: "draining";
+  readonly browser: Browser;
+  readonly reason: string;
+  awaitDrain(): Promise<ClosedSession | ErrorSession>;
+}
+
+export interface ErrorSession {
+  readonly _state: "error";
+  readonly error: Error;
+  readonly failedFrom: FailedFromState;
+  recover(): Promise<IdleSession>;
+  terminate(): Promise<ClosedSession>;
+}
+
+export interface ClosedSession {
+  readonly _state: "closed";
+  restart(): IdleSession;
+}
+
+export type Session =
+  | IdleSession
+  | LaunchingSession
+  | LiveSession
+  | DrainingSession
+  | ErrorSession
+  | ClosedSession;
+
+export function isIdle(session: Session): session is IdleSession {
+  return session._state === "idle";
+}
+
+export function isLaunching(session: Session): session is LaunchingSession {
+  return session._state === "launching";
+}
+
+export function isLive(session: Session): session is LiveSession {
+  return session._state === "live";
+}
+
+export function isDraining(session: Session): session is DrainingSession {
+  return session._state === "draining";
+}
+
+export function isClosed(session: Session): session is ClosedSession {
+  return session._state === "closed";
+}
+
+export function isError(session: Session): session is ErrorSession {
+  return session._state === "error";
+}
+
+export function assertIdle(session: Session): asserts session is IdleSession {
+  if (session._state !== "idle") {
+    throw new InvalidStateError(session._state, "idle");
+  }
+}
+
+export function assertLive(session: Session): asserts session is LiveSession {
+  if (session._state !== "live") {
+    throw new InvalidStateError(session._state, "live");
+  }
+}
+
+export function assertError(session: Session): asserts session is ErrorSession {
+  if (session._state !== "error") {
+    throw new InvalidStateError(session._state, "error");
+  }
+}
+
+export class InvalidStateError extends Error {
+  constructor(
+    public readonly currentState: string,
+    public readonly expectedState: string,
+  ) {
+    super(`Invalid state: expected '${expectedState}', got '${currentState}'`);
+    this.name = "InvalidStateError";
+  }
+}
+
+export class LaunchError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: Error,
+  ) {
+    super(message);
+    this.name = "LaunchError";
+  }
 }
