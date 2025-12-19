@@ -81,6 +81,11 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("false"),
+  USE_XSTATE_RUNTIME: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
 });
 
 export const env = envSchema.parse(process.env);
