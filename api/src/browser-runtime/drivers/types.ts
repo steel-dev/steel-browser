@@ -4,6 +4,7 @@ import { BrowserPlugin } from "../plugins/base-plugin.js";
 export interface RuntimeConfig {
   sessionId: string;
   port: number;
+  dataPlanePort?: number;
   headless?: boolean;
   proxyUrl?: string;
   timezone?: string | Promise<string>;
@@ -15,6 +16,8 @@ export interface RuntimeConfig {
   blockAds?: boolean;
   credentials?: unknown;
   skipFingerprintInjection?: boolean;
+  deviceConfig?: { device: "desktop" | "mobile" };
+  dimensions?: { width: number; height: number } | null;
   internalBypass?: string;
   host?: string;
   chromeExecutablePath?: string;

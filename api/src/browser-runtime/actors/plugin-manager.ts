@@ -39,17 +39,19 @@ export function startPluginManager(
 
   browser.instance.on("targetcreated", targetCreatedHandler);
 
-  return () => {
+  return async () => {
     console.log("[PluginManager] Shutting down");
     browser.instance.off("targetcreated", targetCreatedHandler);
 
-    // Run onSessionEnd for all plugins
-    plugins.forEach(async (plugin) => {
-      try {
-        await Promise.resolve(plugin.onSessionEnd?.(config));
-      } catch (err) {
-        console.error(`[PluginManager] ${plugin.name} onSessionEnd failed:`, err);
-      }
-    });
+    // Run onSessionEnd for all plugins and await them properly
+    await Promise.all(
+      plugins.map(async (plugin) => {
+        try {
+          await Promise.resolve(plugin.onSessionEnd?.(config));
+        } catch (err) {
+          console.error(`[PluginManager] ${plugin.name} onSessionEnd failed:`, err);
+        }
+      }),
+    );
   };
 }

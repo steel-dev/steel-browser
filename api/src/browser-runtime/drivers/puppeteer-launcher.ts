@@ -125,7 +125,7 @@ export class PuppeteerLauncher implements BrowserLauncher {
       args: launchArgs,
       executablePath: chromeExecPath,
       ignoreDefaultArgs: ["--enable-automation"],
-      timeout: 0,
+      timeout: 30000, // 30s timeout
       env: {
         HOME: os.userInfo().homedir,
         TZ: timezone,
@@ -135,22 +135,49 @@ export class PuppeteerLauncher implements BrowserLauncher {
       dumpio: config.debugChromeProcess,
     };
 
-    const instance = await puppeteer.launch(launchOptions);
-    const pages = await instance.pages();
-    const primaryPage = pages[0];
+    let instance: Browser | null = null;
+    try {
+      instance = await puppeteer.launch(launchOptions);
 
-    if (isHeadless) {
-      await installMouseHelper(primaryPage, config.deviceConfig?.device || "desktop");
+      const pages = await instance.pages();
+      if (pages.length === 0) {
+        throw new Error("Browser launched with no pages");
+      }
+      const primaryPage = pages[0];
+
+      if (isHeadless) {
+        await installMouseHelper(primaryPage, config.deviceConfig?.device || "desktop");
+      }
+
+      // Block file protocol
+      await this.setupFileProtocolBlocking(primaryPage, config.sessionId);
+
+      return {
+        id: config.sessionId,
+        instance,
+        primaryPage,
+        pid: instance.process()?.pid || 0,
+        wsEndpoint: instance.wsEndpoint(),
+        launchedAt: Date.now(),
+      };
+    } catch (err) {
+      if (instance) {
+        await instance.close().catch(() => {});
+      }
+      throw err;
     }
+  }
 
-    return {
-      id: config.sessionId,
-      instance,
-      primaryPage,
-      pid: instance.process()?.pid || 0,
-      wsEndpoint: instance.wsEndpoint(),
-      launchedAt: Date.now(),
-    };
+  private async setupFileProtocolBlocking(page: Page, sessionId: string): Promise<void> {
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      if (request.url().startsWith("file://")) {
+        console.warn(`[PuppeteerLauncher] Blocked file:// access in session ${sessionId}`);
+        request.abort("accessdenied");
+      } else {
+        request.continue();
+      }
+    });
   }
 
   async close(browser: BrowserRef): Promise<void> {

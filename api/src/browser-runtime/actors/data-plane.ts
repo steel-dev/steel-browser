@@ -14,6 +14,8 @@ export function startDataPlane(
 ): () => void {
   const { browser, config, launcher } = input;
 
+  const listenPort = typeof config.dataPlanePort === "number" ? config.dataPlanePort : config.port;
+
   const server = http.createServer((req, res) => {
     if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -35,8 +37,21 @@ export function startDataPlane(
     });
   });
 
-  server.listen(config.port, "0.0.0.0", () => {
-    console.log(`[DataPlane] Listening on port ${config.port}`);
+  server.on("error", (err: any) => {
+    console.error("[DataPlane] Server error:", err);
+    if (err.code === "EADDRINUSE") {
+      sendBack({
+        type: "FATAL_ERROR",
+        error: new Error(`Port ${listenPort} is already in use`),
+      });
+    }
+  });
+
+  server.listen(listenPort, "0.0.0.0", () => {
+    const address = server.address();
+    const actualPort =
+      address && typeof address === "object" && "port" in address ? (address.port as number) : listenPort;
+    console.log(`[DataPlane] Listening on port ${actualPort}`);
   });
 
   const disconnectHandler = () => {
@@ -63,7 +78,21 @@ function handleCdpProxy(
 ) {
   const cdpWs = new WebSocket(browser.wsEndpoint);
 
+  const cleanup = () => {
+    if (cdpWs.readyState === WebSocket.OPEN || cdpWs.readyState === WebSocket.CONNECTING) {
+      cdpWs.close();
+    }
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+  };
+
   cdpWs.on("open", () => {
+    if (ws.readyState !== WebSocket.OPEN) {
+      cleanup();
+      return;
+    }
+
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
@@ -89,14 +118,14 @@ function handleCdpProxy(
 
   cdpWs.on("error", (err) => {
     console.error("[DataPlane] CDP WS error:", err);
-    ws.close();
+    cleanup();
   });
 
   ws.on("error", (err) => {
     console.error("[DataPlane] Client WS error:", err);
-    cdpWs.close();
+    cleanup();
   });
 
-  cdpWs.on("close", () => ws.close());
-  ws.on("close", () => cdpWs.close());
+  cdpWs.on("close", () => cleanup());
+  ws.on("close", () => cleanup());
 }

@@ -108,6 +108,9 @@ export const browserMachine = setup({
     },
     booting: {
       initial: "resolvingConfig",
+      on: {
+        STOP: "cleanup",
+      },
       states: {
         resolvingConfig: {
           invoke: {
