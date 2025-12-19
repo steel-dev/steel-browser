@@ -27,7 +27,10 @@ export class BrowserRuntime extends EventEmitter {
         this.emit("ready", snapshot.context.browser);
       }
       if (snapshot.matches("failed")) {
-        this.emit("error", snapshot.context.error);
+        const err = snapshot.context.error;
+        if (this.listenerCount("error") > 0) {
+          this.emit("error", err);
+        }
       }
     });
 
