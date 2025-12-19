@@ -1,6 +1,8 @@
 import { FastifyPluginAsync } from "fastify";
 import { CDPService } from "../services/cdp/cdp.service.js";
 import { Orchestrator } from "../runtime/index.js";
+import { BrowserRuntime as XStateRuntime } from "../browser-runtime/index.js";
+import { XStateAdapter } from "../browser-runtime/adapter.js";
 import fp from "fastify-plugin";
 import { BrowserLauncherOptions } from "../types/index.js";
 import { BrowserRuntime } from "../types/browser-runtime.interface.js";
@@ -55,10 +57,15 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
   }
 
   // Choose runtime based on env flag
+  const useXStateRuntime = env.USE_XSTATE_RUNTIME;
   const useSessionMachine = env.USE_SESSION_MACHINE;
   let cdpService: BrowserRuntime;
 
-  if (useSessionMachine) {
+  if (useXStateRuntime) {
+    fastify.log.info("Using isolated XState runtime");
+    const xstateRuntime = new XStateRuntime();
+    cdpService = new XStateAdapter(xstateRuntime, fastify.log);
+  } else if (useSessionMachine) {
     fastify.log.info("Using SessionMachine runtime");
     cdpService = new Orchestrator({
       keepAlive: true,

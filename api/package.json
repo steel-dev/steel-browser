@@ -104,6 +104,7 @@
     "puppeteer-core": "23.6.0",
     "socks-proxy-agent": "^8.0.5",
     "uuid": "^11.0.5",
+    "xstate": "^5.25.0",
     "zod": "^3.24.2",
     "zod-to-json-schema": "^3.24.1"
   },
