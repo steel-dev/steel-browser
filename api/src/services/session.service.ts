@@ -58,6 +58,12 @@ export class SessionService {
   public pastSessions: Session[] = [];
   public activeSession: Session;
 
+  private createSessionAlreadyActiveError(): Error & { statusCode: number } {
+    const error = new Error("SESSION_ALREADY_ACTIVE") as Error & { statusCode: number };
+    error.statusCode = 409;
+    return error;
+  }
+
   constructor(config: {
     cdpService: BrowserRuntime;
     seleniumService: SeleniumService;
@@ -126,6 +132,19 @@ export class SessionService {
       deviceConfig,
       headless,
     } = options;
+
+    if (this.activeSession.status === "live") {
+      if (sessionId && sessionId !== this.activeSession.id) {
+        this.logger.warn(
+          `[SessionService] Session already active (${this.activeSession.id}); ignoring request for (${sessionId})`,
+        );
+      } else {
+        this.logger.warn(
+          `[SessionService] Session already active (${this.activeSession.id}); returning existing session`,
+        );
+      }
+      throw this.createSessionAlreadyActiveError();
+    }
 
     // start fetching timezone as early as possible
     let timezonePromise: Promise<string>;

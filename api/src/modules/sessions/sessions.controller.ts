@@ -60,7 +60,11 @@ export const handleLaunchBrowserSession = async (
   } catch (e: unknown) {
     server.log.error({ err: e }, "Failed lauching browser session");
     const error = getErrors(e);
-    return reply.code(500).send({ success: false, message: error });
+    const statusCode =
+      typeof (e as { statusCode?: unknown } | null)?.statusCode === "number"
+        ? ((e as { statusCode: number }).statusCode as number)
+        : 500;
+    return reply.code(statusCode).send({ success: false, message: error });
   }
 };
 
