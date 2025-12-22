@@ -1,7 +1,9 @@
 import { FastifyPluginAsync } from "fastify";
 import { CDPService } from "../services/cdp/cdp.service.js";
+import { Orchestrator } from "../runtime/index.js";
 import fp from "fastify-plugin";
 import { BrowserLauncherOptions } from "../types/index.js";
+import { BrowserRuntime } from "../types/browser-runtime.interface.js";
 import {
   DuckDBStorage,
   InMemoryStorage,
@@ -13,7 +15,7 @@ import { env } from "../env.js";
 
 declare module "fastify" {
   interface FastifyInstance {
-    cdpService: CDPService;
+    cdpService: BrowserRuntime;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
     registerCDPShutdownHook: (
       hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
@@ -52,8 +54,24 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
     fastify.log.info("Using in-memory log storage");
   }
 
-  const cdpService = new CDPService({}, fastify.log, storage, enableConsoleLogging);
+  // Choose runtime based on env flag
+  const useSessionMachine = env.USE_SESSION_MACHINE;
+  let cdpService: BrowserRuntime;
 
+  if (useSessionMachine) {
+    fastify.log.info("Using SessionMachine runtime");
+    cdpService = new Orchestrator({
+      keepAlive: true,
+      logger: fastify.log,
+      storage,
+      enableConsoleLogging,
+    });
+  } else {
+    fastify.log.info("Using legacy CDPService runtime");
+    cdpService = new CDPService({}, fastify.log, storage, enableConsoleLogging);
+  }
+
+  // Both CDPService and Orchestrator implement BrowserRuntime interface
   fastify.decorate("cdpService", cdpService);
   fastify.decorate(
     "registerCDPLaunchHook",

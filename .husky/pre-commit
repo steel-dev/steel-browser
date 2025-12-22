@@ -15,4 +15,7 @@ npm run build
 # Add formatted files back to staging
 git add -u
 
+# Run tests
+npm run test -w api
+
 echo "✅ Pre-commit checks passed!" 

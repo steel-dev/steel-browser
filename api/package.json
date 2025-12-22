@@ -39,7 +39,8 @@
     "copy:fingerprint": "cp src/scripts/fingerprint.js build/scripts/fingerprint.js",
     "prepare:recorder": "cd extensions/recorder && npm install && npm run build",
     "dev": "npm run prepare:recorder && tsx watch src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "pretty": "prettier --write \"src/**/*.ts\"",
     "generate:openapi": "tsx ./openapi/generate.ts"
   },
@@ -75,6 +76,7 @@
     "@joplin/turndown": "^4.0.80",
     "@scalar/fastify-api-reference": "^1.25.116",
     "archiver": "^7.0.1",
+    "async-mutex": "^0.5.0",
     "axios": "^1.12.0",
     "cheerio": "^1.1.2",
     "chokidar": "^4.0.3",
