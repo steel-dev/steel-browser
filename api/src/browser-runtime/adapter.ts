@@ -24,7 +24,8 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   private config?: BrowserLauncherOptions;
   private wsProxyServer: httpProxy;
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
-  private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] = [];
+  private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
+    [];
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;

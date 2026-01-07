@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BrowserRuntime } from "../facade/browser-runtime.js";
-import { SimulatedLauncher } from "../drivers/simulated-launcher.ts";
+import { SimulatedLauncher } from "../drivers/simulated-launcher.js";
 
 describe("Load testing with SimulatedLauncher", () => {
   it("should handle 10 concurrent browser sessions", async () => {

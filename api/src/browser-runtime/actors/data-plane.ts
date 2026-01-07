@@ -50,7 +50,9 @@ export function startDataPlane(
   server.listen(listenPort, "0.0.0.0", () => {
     const address = server.address();
     const actualPort =
-      address && typeof address === "object" && "port" in address ? (address.port as number) : listenPort;
+      address && typeof address === "object" && "port" in address
+        ? (address.port as number)
+        : listenPort;
     console.log(`[DataPlane] Listening on port ${actualPort}`);
   });
 
