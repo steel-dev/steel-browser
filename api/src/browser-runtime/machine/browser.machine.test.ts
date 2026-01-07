@@ -1,13 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createActor, waitFor } from "xstate";
 import { browserMachine } from "./browser.machine.js";
-import puppeteer from "puppeteer-core";
-
-vi.mock("puppeteer-core", () => ({
-  default: {
-    launch: vi.fn(),
-  },
-}));
+import type { BrowserLauncher } from "../types.js";
+import { createMockBrowserInstance } from "../__tests__/helpers.js";
 
 vi.mock("../actors/timezone.js", () => ({
   fetchTimezone: vi.fn().mockResolvedValue("UTC"),
@@ -19,28 +14,33 @@ describe("browserMachine", () => {
   });
 
   it("should transition from idle to ready through booting", async () => {
-    const mockBrowser = {
-      wsEndpoint: vi.fn().mockReturnValue("ws://localhost:9222"),
-      process: vi.fn().mockReturnValue({ pid: 12345 }),
-      close: vi.fn().mockResolvedValue(undefined),
-      on: vi.fn(),
-      off: vi.fn(),
-      pages: vi.fn().mockResolvedValue([
-        {
-          evaluateOnNewDocument: vi.fn().mockResolvedValue(undefined),
-        },
-      ]),
-    };
-    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+    const instance = createMockBrowserInstance();
 
-    const actor = createActor(browserMachine);
+    const launcher: BrowserLauncher = {
+      launch: vi.fn(async (config) => ({
+        id: config.sessionId,
+        instance: instance as any,
+        primaryPage: (await instance.pages())[0] as any,
+        pid: 12345,
+        wsEndpoint: instance.wsEndpoint(),
+        launchedAt: Date.now(),
+      })),
+      close: vi.fn(async () => {}),
+      forceClose: vi.fn(async () => {}),
+      getProcess: vi.fn(() => null),
+      onDisconnected: vi.fn(() => () => {}),
+      onTargetCreated: vi.fn(() => () => {}),
+      onTargetDestroyed: vi.fn(() => () => {}),
+    };
+
+    const actor = createActor(browserMachine, { input: { launcher } });
     actor.start();
 
     expect(actor.getSnapshot().matches("idle")).toBe(true);
 
     actor.send({
       type: "START",
-      config: { sessionId: "test-session", port: 9222 },
+      config: { sessionId: "test-session", port: 3000, dataPlanePort: 0 },
     });
 
     await waitFor(actor, (s) => s.matches("ready"), { timeout: 5000 });
@@ -56,26 +56,31 @@ describe("browserMachine", () => {
   });
 
   it("should handle browser crash", async () => {
-    const mockBrowser = {
-      wsEndpoint: vi.fn().mockReturnValue("ws://localhost:9222"),
-      process: vi.fn().mockReturnValue({ pid: 12345 }),
-      close: vi.fn().mockResolvedValue(undefined),
-      on: vi.fn(),
-      off: vi.fn(),
-      pages: vi.fn().mockResolvedValue([
-        {
-          evaluateOnNewDocument: vi.fn().mockResolvedValue(undefined),
-        },
-      ]),
-    };
-    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+    const instance = createMockBrowserInstance();
 
-    const actor = createActor(browserMachine);
+    const launcher: BrowserLauncher = {
+      launch: vi.fn(async (config) => ({
+        id: config.sessionId,
+        instance: instance as any,
+        primaryPage: (await instance.pages())[0] as any,
+        pid: 12345,
+        wsEndpoint: instance.wsEndpoint(),
+        launchedAt: Date.now(),
+      })),
+      close: vi.fn(async () => {}),
+      forceClose: vi.fn(async () => {}),
+      getProcess: vi.fn(() => null),
+      onDisconnected: vi.fn(() => () => {}),
+      onTargetCreated: vi.fn(() => () => {}),
+      onTargetDestroyed: vi.fn(() => () => {}),
+    };
+
+    const actor = createActor(browserMachine, { input: { launcher } });
     actor.start();
 
     actor.send({
       type: "START",
-      config: { sessionId: "test-session", port: 9222 },
+      config: { sessionId: "test-session", port: 3000, dataPlanePort: 0 },
     });
 
     await waitFor(actor, (s) => s.matches("ready"), { timeout: 5000 });

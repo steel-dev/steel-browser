@@ -16,7 +16,7 @@ export async function launchProxy(config: ResolvedConfig): Promise<ProxyRef | nu
   return {
     url: proxy.url,
     close: async () => {
-      await proxy.close();
+      await proxy.close(true);
     },
   };
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BrowserRuntime } from "./browser-runtime.js";
 import puppeteer from "puppeteer-core";
+import { createMockBrowserInstance } from "../__tests__/helpers.js";
 
 vi.mock("puppeteer-core", () => ({
   default: {
@@ -18,18 +19,7 @@ describe("BrowserRuntime Facade", () => {
   });
 
   it("should start and stop the browser", async () => {
-    const mockBrowser = {
-      wsEndpoint: vi.fn().mockReturnValue("ws://localhost:9222"),
-      process: vi.fn().mockReturnValue({ pid: 12345 }),
-      close: vi.fn().mockResolvedValue(undefined),
-      on: vi.fn(),
-      off: vi.fn(),
-      pages: vi.fn().mockResolvedValue([
-        {
-          evaluateOnNewDocument: vi.fn().mockResolvedValue(undefined),
-        },
-      ]),
-    };
+    const mockBrowser = createMockBrowserInstance();
     (puppeteer.launch as any).mockResolvedValue(mockBrowser);
 
     const runtime = new BrowserRuntime();
@@ -38,7 +28,8 @@ describe("BrowserRuntime Facade", () => {
 
     const browserRef = await runtime.start({
       sessionId: "facade-test",
-      port: 9222,
+      port: 3000,
+      dataPlanePort: 0,
     });
 
     expect(browserRef).toBeDefined();

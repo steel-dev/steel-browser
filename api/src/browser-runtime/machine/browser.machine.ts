@@ -65,13 +65,13 @@ export const browserMachine = setup({
         (event as { type: "START"; plugins?: BrowserPlugin[] }).plugins || context.plugins,
     }),
     assignResolvedConfig: assign({
-      resolvedConfig: ({ event }) => (event as { output: ResolvedConfig }).output,
+      resolvedConfig: ({ event }) => (event as unknown as { output: ResolvedConfig }).output,
     }),
     assignProxy: assign({
-      proxy: ({ event }) => (event as { output: ProxyRef | null }).output,
+      proxy: ({ event }) => (event as unknown as { output: ProxyRef | null }).output,
     }),
     assignBrowser: assign({
-      browser: ({ event }) => (event as { output: BrowserRef }).output,
+      browser: ({ event }) => (event as unknown as { output: BrowserRef }).output,
     }),
     assignError: assign({
       error: ({ event }) => (event as { error: Error }).error,

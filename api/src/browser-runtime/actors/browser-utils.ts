@@ -108,7 +108,7 @@ export async function installMouseHelper(page: Page, device: string) {
               box.style.top = event.pageY + "px";
               // @ts-ignore
               for (let i = 0; i < 5; i++)
-                box.classList.toggle("button-" + i, event.buttons & (1 << i));
+                box.classList.toggle("button-" + i, (event.buttons & (1 << i)) !== 0);
             },
             true,
           );
@@ -117,7 +117,7 @@ export async function installMouseHelper(page: Page, device: string) {
             (event) => {
               // @ts-ignore
               for (let i = 0; i < 5; i++)
-                box.classList.toggle("button-" + i, event.buttons & (1 << i));
+                box.classList.toggle("button-" + i, (event.buttons & (1 << i)) !== 0);
               box.classList.add("button-" + event.which);
             },
             true,
@@ -127,7 +127,7 @@ export async function installMouseHelper(page: Page, device: string) {
             (event) => {
               // @ts-ignore
               for (let i = 0; i < 5; i++)
-                box.classList.toggle("button-" + i, event.buttons & (1 << i));
+                box.classList.toggle("button-" + i, (event.buttons & (1 << i)) !== 0);
               box.classList.remove("button-" + event.which);
             },
             true,
