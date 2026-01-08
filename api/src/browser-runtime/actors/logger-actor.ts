@@ -2,6 +2,8 @@ import { BrowserRef, ResolvedConfig, SupervisorEvent } from "../types.js";
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
 import { TargetInstrumentationManager } from "../../services/cdp/instrumentation/target-manager.js";
+import { injectFingerprint } from "../services/fingerprint.service.js";
+import { Target } from "puppeteer-core";
 
 export interface LoggerInput {
   browser: BrowserRef;
@@ -25,10 +27,25 @@ export function startLogger(
 
   const targetManager = new TargetInstrumentationManager(instrumentationLogger, appLogger);
 
-  const targetCreatedHandler = (target: any) => {
-    targetManager.attach(target, target.type()).catch((err) => {
+  const targetCreatedHandler = (target: Target) => {
+    targetManager.attach(target, target.type() as any).catch((err) => {
       appLogger.error({ err }, "[LoggerActor] Failed to attach to target");
     });
+
+    if (target.type() === "page" && config.fingerprint) {
+      target
+        .page()
+        .then((page) => {
+          if (page) {
+            injectFingerprint(page, config.fingerprint!, appLogger).catch((err) => {
+              appLogger.error({ err }, "[LoggerActor] Failed to inject fingerprint into new page");
+            });
+          }
+        })
+        .catch((err) => {
+          appLogger.error({ err }, "[LoggerActor] Failed to get page from target");
+        });
+    }
   };
 
   browser.instance.on("targetcreated", targetCreatedHandler);

@@ -167,7 +167,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   getFingerprintData(): BrowserFingerprintWithHeaders | null {
-    return null;
+    return this.runtime.getFingerprint();
   }
 
   async getBrowserState(): Promise<SessionData> {
