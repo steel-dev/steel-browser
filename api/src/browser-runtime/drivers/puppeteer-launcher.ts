@@ -7,12 +7,18 @@ import { getChromeExecutablePath, installMouseHelper } from "../actors/browser-u
 import { validateTimezone } from "../actors/validation.js";
 import { getExtensionPaths } from "../actors/extensions.js";
 import { deepMerge } from "../utils.js";
+import { injectFingerprint } from "../services/fingerprint.service.js";
+import { pino } from "pino";
+
+const dummyLogger = pino({ level: "silent" });
 
 export class PuppeteerLauncher implements BrowserLauncher {
   async launch(config: ResolvedConfig, proxy: ProxyRef | null): Promise<BrowserRef> {
     const chromeExecPath = getChromeExecutablePath(config.chromeExecutablePath);
     const isHeadless = config.headless;
     const dimensions = config.dimensions || { width: 1920, height: 1080 };
+
+    // ... (rest of the setup logic remains same)
 
     // Resolve and validate timezone
     let timezone = "UTC";
@@ -147,6 +153,11 @@ export class PuppeteerLauncher implements BrowserLauncher {
 
       if (isHeadless) {
         await installMouseHelper(primaryPage, config.deviceConfig?.device || "desktop");
+      }
+
+      // Inject fingerprint if available
+      if (config.fingerprint) {
+        await injectFingerprint(primaryPage, config.fingerprint, dummyLogger);
       }
 
       // Block file protocol

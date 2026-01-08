@@ -4,9 +4,22 @@ export function createMockPage() {
   return {
     evaluateOnNewDocument: vi.fn().mockResolvedValue(undefined),
     setRequestInterception: vi.fn().mockResolvedValue(undefined),
+    emulateMediaFeatures: vi.fn().mockResolvedValue(undefined),
+    setUserAgent: vi.fn().mockResolvedValue(undefined),
+    setExtraHTTPHeaders: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
     off: vi.fn(),
     url: vi.fn().mockReturnValue("about:blank"),
+    target: vi.fn().mockReturnValue({
+      _targetId: "test-target-id",
+      createCDPSession: vi.fn().mockResolvedValue({
+        send: vi.fn().mockResolvedValue(undefined),
+        detach: vi.fn().mockResolvedValue(undefined),
+      }),
+    }),
+    browser: vi.fn().mockReturnValue({
+      version: vi.fn().mockResolvedValue("Chrome/120.0.0.0"),
+    }),
   };
 }
 

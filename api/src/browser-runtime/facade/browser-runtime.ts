@@ -4,6 +4,7 @@ import { browserMachine } from "../machine/browser.machine.js";
 import { RuntimeConfig, BrowserRef, SupervisorEvent, BrowserLauncher } from "../types.js";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { PuppeteerLauncher } from "../drivers/puppeteer-launcher.js";
+import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
@@ -77,6 +78,10 @@ export class BrowserRuntime extends EventEmitter {
 
   getBrowser(): BrowserRef | null {
     return this.actor.getSnapshot().context.browser;
+  }
+
+  getFingerprint(): BrowserFingerprintWithHeaders | null {
+    return this.actor.getSnapshot().context.fingerprint;
   }
 
   getState(): string {

@@ -83,6 +83,8 @@ export const browserMachine = setup({
     }),
     assignResolvedConfig: assign({
       resolvedConfig: ({ event }) => (event as unknown as { output: ResolvedConfig }).output,
+      fingerprint: ({ event }) =>
+        (event as unknown as { output: ResolvedConfig }).output.fingerprint,
     }),
     assignProxy: assign({
       proxy: ({ event }) => (event as unknown as { output: ProxyRef | null }).output,
@@ -98,6 +100,7 @@ export const browserMachine = setup({
       resolvedConfig: null,
       proxy: null,
       browser: null,
+      fingerprint: null,
       error: null,
       // We keep launcher and plugins
     }),
@@ -111,6 +114,7 @@ export const browserMachine = setup({
     resolvedConfig: null,
     proxy: null,
     browser: null,
+    fingerprint: null,
     error: null,
     plugins: input.plugins || [],
     instrumentationLogger: input.instrumentationLogger,
