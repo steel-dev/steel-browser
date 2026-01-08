@@ -209,6 +209,7 @@ export class SessionService {
     const normalizedOptimize = normalizeOptimizeBandwidth(optimizeBandwidth);
 
     const browserLauncherOptions: BrowserLauncherOptions = {
+      sessionId: this.activeSession.id,
       options: {
         headless: headless ?? env.CHROME_HEADLESS,
         proxyUrl: this.activeSession.proxyServer?.url,
