@@ -17,6 +17,7 @@ export type OptimizeBandwidthOptions = {
 };
 
 export interface BrowserLauncherOptions {
+  sessionId?: string;
   options: BrowserServerOptions;
   req?: Request;
   stealth?: boolean;

@@ -74,7 +74,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     const appPort = Number(env.PORT);
     this.sessionContext = options.sessionContext || null;
     return {
-      sessionId: "default",
+      sessionId: options.sessionId || "default",
       port: Number.isFinite(appPort) ? appPort : 3000,
       dataPlanePort: 0,
       headless: options.options.headless,
