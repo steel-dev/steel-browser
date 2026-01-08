@@ -1,25 +1,33 @@
 import { EventEmitter } from "events";
 import { createActor, waitFor, Actor, Snapshot } from "xstate";
 import { browserMachine } from "../machine/browser.machine.js";
-import {
-  RuntimeConfig,
-  BrowserRef,
-  MachineContext,
-  SupervisorEvent,
-  BrowserLauncher,
-} from "../types.js";
+import { RuntimeConfig, BrowserRef, SupervisorEvent, BrowserLauncher } from "../types.js";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { PuppeteerLauncher } from "../drivers/puppeteer-launcher.js";
+
+import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
+import { FastifyBaseLogger } from "fastify";
+import { pino } from "pino";
 
 export class BrowserRuntime extends EventEmitter {
   private actor: Actor<typeof browserMachine>;
   private plugins: BrowserPlugin[] = [];
 
-  constructor(options?: { launcher?: BrowserLauncher }) {
+  constructor(options?: {
+    launcher?: BrowserLauncher;
+    instrumentationLogger?: BrowserLogger;
+    appLogger?: FastifyBaseLogger;
+  }) {
     super();
     const launcher = options?.launcher ?? new PuppeteerLauncher();
+    const appLogger = options?.appLogger ?? pino();
+
     this.actor = createActor(browserMachine, {
-      input: { launcher },
+      input: {
+        launcher,
+        instrumentationLogger: options?.instrumentationLogger,
+        appLogger,
+      },
     });
 
     this.actor.subscribe((snapshot) => {

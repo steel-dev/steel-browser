@@ -1,6 +1,6 @@
 import { setup, assign, fromPromise, fromCallback } from "xstate";
 import {
-  MachineContext,
+  IMachineContext,
   SupervisorEvent,
   RuntimeConfig,
   ResolvedConfig,
@@ -14,10 +14,19 @@ import { launchProxy } from "../actors/proxy-launcher.js";
 import { startDataPlane, DataPlaneInput } from "../actors/data-plane.js";
 import { startLogger, LoggerInput } from "../actors/logger-actor.js";
 import { startPluginManager, PluginManagerInput } from "../actors/plugin-manager.js";
+import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
+import { FastifyBaseLogger } from "fastify";
 
 export interface MachineInput {
   launcher: BrowserLauncher;
   plugins?: BrowserPlugin[];
+  instrumentationLogger?: BrowserLogger;
+  appLogger?: FastifyBaseLogger;
+}
+
+export interface MachineContext extends IMachineContext {
+  instrumentationLogger?: BrowserLogger;
+  appLogger?: FastifyBaseLogger;
 }
 
 export const browserMachine = setup({
@@ -48,13 +57,21 @@ export const browserMachine = setup({
     ),
     cleanupActor: fromPromise<
       void,
-      { launcher: BrowserLauncher; browser: BrowserRef | null; proxy: ProxyRef | null }
+      {
+        launcher: BrowserLauncher;
+        browser: BrowserRef | null;
+        proxy: ProxyRef | null;
+        instrumentationLogger?: BrowserLogger;
+      }
     >(async ({ input }) => {
       if (input.browser) {
         await input.launcher.close(input.browser);
       }
       if (input.proxy) {
         await input.proxy.close();
+      }
+      if (input.instrumentationLogger?.flush) {
+        await input.instrumentationLogger.flush();
       }
     }),
   },
@@ -96,6 +113,8 @@ export const browserMachine = setup({
     browser: null,
     error: null,
     plugins: input.plugins || [],
+    instrumentationLogger: input.instrumentationLogger,
+    appLogger: input.appLogger,
   }),
   states: {
     idle: {
@@ -177,6 +196,8 @@ export const browserMachine = setup({
           input: ({ context }) => ({
             browser: context.browser!,
             config: context.resolvedConfig!,
+            instrumentationLogger: context.instrumentationLogger,
+            appLogger: context.appLogger,
           }),
         },
         {
@@ -209,6 +230,7 @@ export const browserMachine = setup({
           launcher: context.launcher,
           browser: context.browser,
           proxy: context.proxy,
+          instrumentationLogger: context.instrumentationLogger,
         }),
         onDone: {
           target: "idle",
@@ -227,6 +249,7 @@ export const browserMachine = setup({
           launcher: context.launcher,
           browser: context.browser,
           proxy: context.proxy,
+          instrumentationLogger: context.instrumentationLogger,
         }),
         onDone: "idle",
         onError: "idle",

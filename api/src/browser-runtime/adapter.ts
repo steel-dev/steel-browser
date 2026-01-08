@@ -10,6 +10,14 @@ import { SessionData } from "../services/context/types.js";
 import { BasePlugin } from "../services/cdp/plugins/core/base-plugin.js";
 import { BrowserLogger } from "../services/cdp/instrumentation/browser-logger.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
+import { ChromeContextService } from "../services/context/chrome-context.service.js";
+import { extractStorageForPage } from "../utils/context.js";
+import {
+  createBrowserLogger,
+  BrowserLogger as IBrowserLogger,
+} from "../services/cdp/instrumentation/browser-logger.js";
+import { LogStorage } from "../services/cdp/instrumentation/storage/index.js";
+import { EmitEvent } from "../types/enums.js";
 import { BrowserRuntime as XStateRuntime } from "./index.js";
 import { RuntimeConfig } from "./types.js";
 import { env } from "../env.js";
@@ -21,7 +29,10 @@ import { env } from "../env.js";
 export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   private runtime: XStateRuntime;
   private logger: FastifyBaseLogger;
+  private instrumentationLogger: IBrowserLogger;
   private config?: BrowserLauncherOptions;
+  private sessionContext: SessionData | null = null;
+  private chromeContextService: ChromeContextService;
   private wsProxyServer: httpProxy;
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
@@ -30,10 +41,21 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
 
-  constructor(runtime: XStateRuntime, logger: FastifyBaseLogger) {
+  constructor(
+    runtime: XStateRuntime,
+    logger: FastifyBaseLogger,
+    instrumentationLogger: IBrowserLogger,
+  ) {
     super();
     this.runtime = runtime;
     this.logger = logger.child({ component: "XStateAdapter" });
+    this.instrumentationLogger = instrumentationLogger;
+
+    this.instrumentationLogger.on?.(EmitEvent.Log, (event) => {
+      this.emit(EmitEvent.Log, event);
+    });
+
+    this.chromeContextService = new ChromeContextService(this.logger);
     this.wsProxyServer = httpProxy.createProxyServer();
     this.wsProxyServer.on("error", (err) => {
       this.logger.error({ err }, "Proxy server error");
@@ -50,6 +72,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
 
   private mapConfig(options: BrowserLauncherOptions): RuntimeConfig {
     const appPort = Number(env.PORT);
+    this.sessionContext = options.sessionContext || null;
     return {
       sessionId: "default",
       port: Number.isFinite(appPort) ? appPort : 3000,
@@ -148,11 +171,52 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   async getBrowserState(): Promise<SessionData> {
-    return {};
+    const browser = this.getBrowserInstance();
+    if (!browser) {
+      throw new Error("Browser not initialized");
+    }
+
+    const userDataDir = this.config?.userDataDir;
+    if (!userDataDir) {
+      this.logger.warn("No userDataDir specified, returning empty session data");
+      return {};
+    }
+
+    try {
+      this.logger.info(`[XStateAdapter] Dumping session data from userDataDir: ${userDataDir}`);
+
+      const [cookieData, sessionData, storageData] = await Promise.all([
+        this.getCookies(),
+        this.chromeContextService.getSessionData(userDataDir),
+        this.getExistingPageSessionData(),
+      ]);
+
+      const result = {
+        cookies: cookieData,
+        localStorage: {
+          ...(sessionData.localStorage || {}),
+          ...(storageData.localStorage || {}),
+        },
+        sessionStorage: {
+          ...(sessionData.sessionStorage || {}),
+          ...(storageData.sessionStorage || {}),
+        },
+        indexedDB: {
+          ...(sessionData.indexedDB || {}),
+          ...(storageData.indexedDB || {}),
+        },
+      };
+
+      this.logger.info("[XStateAdapter] Session data dumped successfully");
+      return result;
+    } catch (error) {
+      this.logger.error({ err: error }, "Error dumping session data");
+      return {};
+    }
   }
 
   getSessionContext(): SessionData | null {
-    return null;
+    return this.sessionContext;
   }
 
   registerPlugin(plugin: BasePlugin): void {
@@ -275,8 +339,72 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     return (page.target() as any)._targetId;
   }
 
-  getInstrumentationLogger(): BrowserLogger | null {
-    return null;
+  private async getCookies(): Promise<Protocol.Network.Cookie[]> {
+    const primaryPage = await this.getPrimaryPage();
+    const client = await primaryPage.createCDPSession();
+    const { cookies } = await client.send("Network.getAllCookies");
+    await client.detach();
+    return cookies;
+  }
+
+  private async getExistingPageSessionData(): Promise<SessionData> {
+    const browser = this.getBrowserInstance();
+    if (!browser) return {};
+
+    const result: SessionData = {
+      localStorage: {},
+      sessionStorage: {},
+      indexedDB: {},
+    };
+
+    try {
+      const pages = await browser.pages();
+      const validPages = pages.filter((page) => {
+        try {
+          const url = page.url();
+          return url && url.startsWith("http");
+        } catch (e) {
+          return false;
+        }
+      });
+
+      const results = await Promise.all(
+        validPages.map((page) => extractStorageForPage(page, this.logger)),
+      );
+
+      // Merge results
+      for (const item of results) {
+        for (const domain in item.localStorage) {
+          result.localStorage![domain] = {
+            ...(result.localStorage![domain] || {}),
+            ...item.localStorage![domain],
+          };
+        }
+
+        for (const domain in item.sessionStorage) {
+          result.sessionStorage![domain] = {
+            ...(result.sessionStorage![domain] || {}),
+            ...item.sessionStorage![domain],
+          };
+        }
+
+        for (const domain in item.indexedDB) {
+          result.indexedDB![domain] = [
+            ...(result.indexedDB![domain] || []),
+            ...item.indexedDB![domain],
+          ];
+        }
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error({ err: error }, "Error extracting page session data");
+      return result;
+    }
+  }
+
+  getInstrumentationLogger(): IBrowserLogger | null {
+    return this.instrumentationLogger;
   }
 
   getLogger(name: string): FastifyBaseLogger {

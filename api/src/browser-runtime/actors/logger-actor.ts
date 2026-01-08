@@ -1,29 +1,42 @@
-import { EventEmitter } from "events";
 import { BrowserRef, ResolvedConfig, SupervisorEvent } from "../types.js";
+import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
+import { FastifyBaseLogger } from "fastify";
+import { TargetInstrumentationManager } from "../../services/cdp/instrumentation/target-manager.js";
 
 export interface LoggerInput {
   browser: BrowserRef;
   config: ResolvedConfig;
+  instrumentationLogger?: BrowserLogger;
+  appLogger?: FastifyBaseLogger;
 }
 
 export function startLogger(
   input: LoggerInput,
   sendBack: (event: SupervisorEvent) => void,
 ): () => void {
-  const { browser, config } = input;
+  const { browser, config, instrumentationLogger, appLogger } = input;
+
+  if (!instrumentationLogger || !appLogger) {
+    console.log(`[LoggerActor] Missing logger for session: ${config.sessionId}`);
+    return () => {};
+  }
+
   console.log(`[LoggerActor] Starting for session: ${config.sessionId}`);
 
-  // STUB: In a real implementation, we would:
-  // 1. Initialize LogStorage (DuckDB or InMemory)
-  // 2. Subscribe to browser/page events
-  // 3. Record events to storage
+  const targetManager = new TargetInstrumentationManager(instrumentationLogger, appLogger);
 
-  // For now, let's just log target events as a proof of concept
   const targetCreatedHandler = (target: any) => {
-    console.log(`[LoggerActor] Target created: ${target.type()} ${target.url()}`);
+    targetManager.attach(target, target.type()).catch((err) => {
+      appLogger.error({ err }, "[LoggerActor] Failed to attach to target");
+    });
   };
 
   browser.instance.on("targetcreated", targetCreatedHandler);
+
+  // Attach to existing targets
+  browser.instance.targets().forEach((target) => {
+    targetCreatedHandler(target);
+  });
 
   return () => {
     console.log("[LoggerActor] Shutting down");

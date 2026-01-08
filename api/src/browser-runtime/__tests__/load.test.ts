@@ -1,15 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { BrowserRuntime } from "../facade/browser-runtime.js";
 import { SimulatedLauncher } from "../drivers/simulated-launcher.js";
+import { pino } from "pino";
 
 describe("Load testing with SimulatedLauncher", () => {
+  const mockLogger = pino({ level: "silent" });
+  const mockInstrumentationLogger = { record: vi.fn(), on: vi.fn() };
+
   it("should handle 10 concurrent browser sessions", async () => {
     const launcher = new SimulatedLauncher({
       avgLaunchTimeMs: 100,
       crashProbability: 0.1,
     });
 
-    const runtimes = Array.from({ length: 10 }, () => new BrowserRuntime({ launcher }));
+    const runtimes = Array.from(
+      { length: 10 },
+      () =>
+        new BrowserRuntime({
+          launcher,
+          appLogger: mockLogger,
+          instrumentationLogger: mockInstrumentationLogger as any,
+        }),
+    );
 
     console.log("Starting 10 concurrent sessions...");
     const startPromises = runtimes.map((r, i) =>
@@ -39,7 +51,11 @@ describe("Load testing with SimulatedLauncher", () => {
 
   it("should scale to 20 sequential sessions quickly", async () => {
     const launcher = new SimulatedLauncher({ avgLaunchTimeMs: 10 });
-    const runtime = new BrowserRuntime({ launcher });
+    const runtime = new BrowserRuntime({
+      launcher,
+      appLogger: mockLogger,
+      instrumentationLogger: mockInstrumentationLogger as any,
+    });
 
     console.log("Starting 20 sequential sessions...");
     for (let i = 0; i < 20; i++) {

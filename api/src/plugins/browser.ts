@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { CDPService } from "../services/cdp/cdp.service.js";
+import { createBrowserLogger } from "../services/cdp/instrumentation/browser-logger.js";
 import { Orchestrator } from "../runtime/index.js";
 import { BrowserRuntime as XStateRuntime } from "../browser-runtime/index.js";
 import { XStateAdapter } from "../browser-runtime/adapter.js";
@@ -63,8 +64,20 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
 
   if (useXStateRuntime) {
     fastify.log.info("Using isolated XState runtime");
-    const xstateRuntime = new XStateRuntime();
-    cdpService = new XStateAdapter(xstateRuntime, fastify.log);
+
+    const instrumentationLogger = createBrowserLogger({
+      baseLogger: fastify.log,
+      initialContext: {},
+      storage: storage || undefined,
+      enableConsoleLogging: enableConsoleLogging ?? true,
+    });
+
+    const xstateRuntime = new XStateRuntime({
+      instrumentationLogger,
+      appLogger: fastify.log,
+    });
+
+    cdpService = new XStateAdapter(xstateRuntime, fastify.log, instrumentationLogger);
   } else if (useSessionMachine) {
     fastify.log.info("Using SessionMachine runtime");
     cdpService = new Orchestrator({
