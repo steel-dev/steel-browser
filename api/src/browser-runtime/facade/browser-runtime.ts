@@ -50,6 +50,19 @@ export class BrowserRuntime extends EventEmitter {
     this.plugins.push(plugin);
   }
 
+  unregisterPlugin(pluginName: string): boolean {
+    const index = this.plugins.findIndex((p) => p.name === pluginName);
+    if (index !== -1) {
+      this.plugins.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  getPlugin(pluginName: string): BrowserPlugin | undefined {
+    return this.plugins.find((p) => p.name === pluginName);
+  }
+
   async start(config: RuntimeConfig): Promise<BrowserRef> {
     const currentSnapshot = this.actor.getSnapshot();
     if (!currentSnapshot.matches("idle")) {

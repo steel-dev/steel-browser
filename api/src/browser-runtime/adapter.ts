@@ -34,6 +34,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   private sessionContext: SessionData | null = null;
   private chromeContextService: ChromeContextService;
   private wsProxyServer: httpProxy;
+  private pluginRegistry: Map<string, BasePlugin> = new Map();
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
     [];
@@ -220,7 +221,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   registerPlugin(plugin: BasePlugin): void {
-    // Adapter for legacy BasePlugin
+    this.pluginRegistry.set(plugin.name, plugin);
     this.runtime.registerPlugin({
       name: plugin.name,
       onBrowserReady: (config) => plugin.onBrowserReady(this.config!),
@@ -230,11 +231,15 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   unregisterPlugin(pluginName: string): boolean {
-    return false;
+    const result = this.pluginRegistry.delete(pluginName);
+    if (result) {
+      this.runtime.unregisterPlugin(pluginName);
+    }
+    return result;
   }
 
   getPlugin<T extends BasePlugin>(pluginName: string): T | undefined {
-    return undefined;
+    return this.pluginRegistry.get(pluginName) as T | undefined;
   }
 
   waitUntil(task: Promise<void>): void {
