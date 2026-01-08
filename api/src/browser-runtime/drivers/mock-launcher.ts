@@ -38,6 +38,7 @@ export class MockLauncher implements BrowserLauncher {
         // Handled via our manual callbacks for simulation
       },
       off: (event: string, cb: any) => {},
+      targets: () => [],
     } as unknown as Browser;
 
     const mockPage = {

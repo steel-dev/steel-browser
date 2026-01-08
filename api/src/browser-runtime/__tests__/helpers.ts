@@ -19,6 +19,7 @@ export function createMockBrowserInstance() {
     on: vi.fn(),
     off: vi.fn(),
     pages: vi.fn().mockResolvedValue([page]),
+    targets: vi.fn().mockReturnValue([]),
     version: vi.fn().mockResolvedValue("Chrome/120.0.0.0"),
     userAgent: vi.fn().mockResolvedValue("Mozilla/5.0..."),
   };

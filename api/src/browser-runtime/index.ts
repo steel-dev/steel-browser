@@ -6,6 +6,6 @@ export type {
   ResolvedConfig,
   BrowserRef,
   ProxyRef,
-  MachineContext,
+  IMachineContext as MachineContext,
   SupervisorEvent,
 } from "./types.js";

@@ -67,7 +67,7 @@ export interface BrowserLauncher {
   onTargetDestroyed(browser: BrowserRef, callback: (targetId: string) => void): () => void;
 }
 
-export interface MachineContext {
+export interface IMachineContext {
   launcher: BrowserLauncher;
   rawConfig: RuntimeConfig | null;
   resolvedConfig: ResolvedConfig | null;

@@ -40,6 +40,7 @@ export class SimulatedLauncher implements BrowserLauncher {
       close: async () => {},
       on: () => {},
       off: () => {},
+      targets: () => [],
     } as unknown as Browser;
 
     const mockPage = {

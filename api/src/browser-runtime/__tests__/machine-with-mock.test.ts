@@ -1,14 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BrowserRuntime } from "../facade/browser-runtime.js";
 import { MockLauncher } from "../drivers/mock-launcher.js";
+import { pino } from "pino";
 
 describe("BrowserRuntime with MockLauncher", () => {
   let launcher: MockLauncher;
   let runtime: BrowserRuntime;
+  const mockLogger = pino({ level: "silent" });
+  const mockInstrumentationLogger = { record: vi.fn(), on: vi.fn() };
 
   beforeEach(() => {
     launcher = new MockLauncher();
-    runtime = new BrowserRuntime({ launcher });
+    runtime = new BrowserRuntime({
+      launcher,
+      appLogger: mockLogger,
+      instrumentationLogger: mockInstrumentationLogger as any,
+    });
   });
 
   it("should start and stop normally", async () => {
