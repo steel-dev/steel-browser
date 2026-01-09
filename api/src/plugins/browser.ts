@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import { CDPService } from "../services/cdp/cdp.service.js";
 import { createBrowserLogger } from "../services/cdp/instrumentation/browser-logger.js";
 import { Orchestrator } from "../runtime/index.js";
-import { BrowserRuntime as XStateRuntime } from "../browser-runtime/facade/browser-runtime.js";
+import { BrowserRuntime as BrowserRuntimeImpl } from "../browser-runtime/facade/browser-runtime.js";
 import { RollingFileStorage } from "../browser-runtime/storage/rolling-file-storage.js";
 import { StateTransitionLogger } from "../browser-runtime/logging/state-transition-logger.js";
 import fp from "fastify-plugin";
@@ -60,7 +60,7 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
 
   // Choose runtime based on env flag
   const useXStateRuntime = env.USE_XSTATE_RUNTIME;
-  const useSessionMachine = env.USE_SESSION_MACHINE;
+  const useSessionMachine = env.USE_SESSION_MACHINE; // TODO: Deprecate
   let cdpService: BrowserRuntime;
 
   if (useXStateRuntime) {
@@ -109,7 +109,7 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
       deviceConfig: { device: "desktop" },
     };
 
-    cdpService = new XStateRuntime({
+    cdpService = new BrowserRuntimeImpl({
       instrumentationLogger,
       appLogger: fastify.log,
       stateTransitionLogger,

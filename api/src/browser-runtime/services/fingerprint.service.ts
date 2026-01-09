@@ -7,10 +7,8 @@ import {
 } from "fingerprint-generator";
 import { FingerprintInjector } from "fingerprint-injector";
 import { FastifyBaseLogger } from "fastify";
-import { env } from "../../env.js";
 import { loadFingerprintScript } from "../../scripts/index.js";
 import { filterHeaders } from "../../utils/browser.js";
-import { RuntimeConfig } from "../drivers/types.js";
 
 export interface FingerprintServiceOptions {
   dimensions?: { width: number; height: number } | null;

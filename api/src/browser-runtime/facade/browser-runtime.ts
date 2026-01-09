@@ -6,13 +6,7 @@ import { Duplex } from "stream";
 import httpProxy from "http-proxy";
 import { Mutex } from "async-mutex";
 import { browserMachine } from "../machine/browser.machine.js";
-import {
-  RuntimeConfig,
-  BrowserRef,
-  SupervisorEvent,
-  BrowserLauncher,
-  SessionData,
-} from "../types.js";
+import { RuntimeConfig, BrowserRef, BrowserLauncher, SessionData } from "../types.js";
 import { BrowserRuntime as IBrowserRuntime } from "../../types/browser-runtime.interface.js";
 import { BrowserLauncherOptions } from "../../types/browser.js";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
