@@ -102,6 +102,7 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("false"),
+  BROWSER_TRACING_LEVEL: z.enum(["minimal", "detailed"]).optional().default("minimal"),
 });
 
 export const env = envSchema.parse(process.env);
