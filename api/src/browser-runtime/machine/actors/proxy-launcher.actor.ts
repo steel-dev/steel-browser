@@ -1,5 +1,5 @@
-import { ProxyRef, ResolvedConfig } from "../types.js";
-import { ProxyServer } from "./proxy.js";
+import { ProxyRef, ResolvedConfig } from "../../types.js";
+import { ProxyServer } from "../../services/proxy.service.js";
 
 export async function launchProxy(config: ResolvedConfig): Promise<ProxyRef | null> {
   if (!config.proxyUrl) {

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { startLogger } from "../logger-actor.js";
-import { TargetInstrumentationManager } from "../../../services/cdp/instrumentation/target-manager.js";
+import { startLogger } from "../logger.actor.js";
+import { TargetInstrumentationManager } from "../../../../services/cdp/instrumentation/target-manager.js";
 
-vi.mock("../../../services/cdp/instrumentation/target-manager.js");
+vi.mock("../../../../services/cdp/instrumentation/target-manager.js");
 
 describe("LoggerActor", () => {
   let mockBrowser: any;

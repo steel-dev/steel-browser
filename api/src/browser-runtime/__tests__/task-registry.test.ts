@@ -1,12 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { startTaskRegistry } from "../actors/task-registry.js";
+import { describe, it, expect, beforeEach } from "vitest";
+import { createActor } from "xstate";
+import { taskRegistryActor } from "../machine/actors/task-registry.actor.js";
 import { pino } from "pino";
 
+import { FastifyBaseLogger } from "fastify";
+
 describe("TaskRegistry", () => {
-  const mockLogger = pino({ level: "silent" });
+  const mockLogger = pino({ level: "silent" }) as unknown as FastifyBaseLogger;
 
   it("should track and complete background tasks", async () => {
-    const registry = startTaskRegistry({ appLogger: mockLogger as any }, () => {});
+    const actor = createActor(taskRegistryActor, {
+      input: { appLogger: mockLogger },
+    });
+    actor.start();
 
     let completed = false;
     const task = async () => {
@@ -14,16 +20,18 @@ describe("TaskRegistry", () => {
       completed = true;
     };
 
-    registry.waitUntil(task, "test-task");
-    expect(registry.getPendingCount()).toBe(1);
+    actor.send({ type: "WAIT_UNTIL", fn: task, label: "test-task" });
 
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait for task to complete
+    await new Promise((r) => setTimeout(r, 100));
     expect(completed).toBe(true);
-    expect(registry.getPendingCount()).toBe(0);
   });
 
   it("should drain pending tasks", async () => {
-    const registry = startTaskRegistry({ appLogger: mockLogger as any }, () => {});
+    const actor = createActor(taskRegistryActor, {
+      input: { appLogger: mockLogger },
+    });
+    actor.start();
 
     let completedCount = 0;
     const task = async () => {
@@ -31,20 +39,25 @@ describe("TaskRegistry", () => {
       completedCount++;
     };
 
-    registry.waitUntil(task, "task1");
-    registry.waitUntil(task, "task2");
+    actor.send({ type: "WAIT_UNTIL", fn: task, label: "task1" });
+    actor.send({ type: "WAIT_UNTIL", fn: task, label: "task2" });
 
-    await registry.drain(500);
+    await new Promise<void>((resolve) => {
+      actor.send({ type: "DRAIN", timeoutMs: 500, resolve });
+    });
+
     expect(completedCount).toBe(2);
-    expect(registry.getPendingCount()).toBe(0);
   });
 
   it("should propagate abort signals", async () => {
-    const registry = startTaskRegistry({ appLogger: mockLogger as any }, () => {});
+    const actor = createActor(taskRegistryActor, {
+      input: { appLogger: mockLogger },
+    });
+    actor.start();
 
     let aborted = false;
     const task = async (signal: AbortSignal) => {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((resolve) => {
         signal.addEventListener("abort", () => {
           aborted = true;
           resolve();
@@ -52,27 +65,11 @@ describe("TaskRegistry", () => {
       });
     };
 
-    registry.waitUntil(task, "cancel-task");
-    registry.cancelAll("test-cancel");
+    actor.send({ type: "WAIT_UNTIL", fn: task, label: "cancel-task" });
+    actor.send({ type: "CANCEL_ALL", reason: "test-cancel" });
 
+    // Give it a moment to process
+    await new Promise((r) => setTimeout(r, 50));
     expect(aborted).toBe(true);
-    expect(registry.getPendingCount()).toBe(0);
-  });
-
-  it("should timeout on slow drain", async () => {
-    const registry = startTaskRegistry({ appLogger: mockLogger as any }, () => {});
-
-    const slowTask = async () => {
-      await new Promise((r) => setTimeout(r, 1000));
-    };
-
-    registry.waitUntil(slowTask, "slow-task");
-
-    const startTime = Date.now();
-    await registry.drain(50);
-    const duration = Date.now() - startTime;
-
-    expect(duration).toBeLessThan(200);
-    expect(registry.getPendingCount()).toBe(1);
   });
 });

@@ -2,8 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import { CDPService } from "../services/cdp/cdp.service.js";
 import { createBrowserLogger } from "../services/cdp/instrumentation/browser-logger.js";
 import { Orchestrator } from "../runtime/index.js";
-import { BrowserRuntime as XStateRuntime } from "../browser-runtime/index.js";
-import { XStateAdapter } from "../browser-runtime/adapter.js";
+import { BrowserRuntime as XStateRuntime } from "../browser-runtime/facade/browser-runtime.js";
 import { RollingFileStorage } from "../browser-runtime/storage/rolling-file-storage.js";
 import { StateTransitionLogger } from "../browser-runtime/logging/state-transition-logger.js";
 import fp from "fastify-plugin";
@@ -92,12 +91,6 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
       fastify.log.info(`State transition logging enabled in ${env.STATE_TRANSITION_LOG_DIR}`);
     }
 
-    const xstateRuntime = new XStateRuntime({
-      instrumentationLogger,
-      appLogger: fastify.log,
-      stateTransitionLogger,
-    });
-
     const defaultLaunchConfig: BrowserLauncherOptions = {
       options: {
         headless: env.CHROME_HEADLESS,
@@ -116,7 +109,10 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
       deviceConfig: { device: "desktop" },
     };
 
-    cdpService = new XStateAdapter(xstateRuntime, fastify.log, instrumentationLogger, {
+    cdpService = new XStateRuntime({
+      instrumentationLogger,
+      appLogger: fastify.log,
+      stateTransitionLogger,
       keepAlive: true,
       defaultLaunchConfig,
     });

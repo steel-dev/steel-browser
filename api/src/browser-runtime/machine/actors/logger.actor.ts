@@ -1,10 +1,10 @@
-import { BrowserRef, ResolvedConfig, SupervisorEvent } from "../types.js";
-import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
+import { BrowserRef, ResolvedConfig, SupervisorEvent } from "../../types.js";
+import { BrowserLogger } from "../../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
-import { TargetInstrumentationManager } from "../../services/cdp/instrumentation/target-manager.js";
-import { injectFingerprint } from "../services/fingerprint.service.js";
+import { TargetInstrumentationManager } from "../../../services/cdp/instrumentation/target-manager.js";
+import { injectFingerprint } from "../../services/fingerprint.service.js";
 import { Target } from "puppeteer-core";
-import { groupSessionStorageByOrigin, handleFrameNavigated } from "../../utils/context.js";
+import { groupSessionStorageByOrigin, handleFrameNavigated } from "../../../utils/context.js";
 
 export interface LoggerInput {
   browser: BrowserRef;

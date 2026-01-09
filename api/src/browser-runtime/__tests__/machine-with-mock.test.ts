@@ -3,11 +3,19 @@ import { BrowserRuntime } from "../facade/browser-runtime.js";
 import { MockLauncher } from "../drivers/mock-launcher.js";
 import { pino } from "pino";
 
+import { BasePlugin } from "../../services/cdp/plugins/core/base-plugin.js";
+
+class MockTestPlugin extends BasePlugin {
+  constructor(name: string) {
+    super({ name });
+  }
+}
+
 describe("BrowserRuntime with MockLauncher", () => {
   let launcher: MockLauncher;
   let runtime: BrowserRuntime;
   const mockLogger = pino({ level: "silent" });
-  const mockInstrumentationLogger = { record: vi.fn(), on: vi.fn() };
+  const mockInstrumentationLogger = { record: vi.fn(), on: vi.fn(), resetContext: vi.fn() };
 
   beforeEach(() => {
     launcher = new MockLauncher();
@@ -15,6 +23,7 @@ describe("BrowserRuntime with MockLauncher", () => {
       launcher,
       appLogger: mockLogger,
       instrumentationLogger: mockInstrumentationLogger as any,
+      keepAlive: false,
     });
   });
 
@@ -34,7 +43,7 @@ describe("BrowserRuntime with MockLauncher", () => {
 
   it("should handle launch failure", async () => {
     launcher = new MockLauncher({ shouldFail: true });
-    runtime = new BrowserRuntime({ launcher });
+    runtime = new BrowserRuntime({ launcher, keepAlive: false });
 
     const config = { sessionId: "fail-session", port: 9222 };
     await expect(runtime.start(config)).rejects.toThrow("Mock launch failure");
@@ -65,7 +74,7 @@ describe("BrowserRuntime with MockLauncher", () => {
 
   it("should handle slow launch", async () => {
     launcher = new MockLauncher({ launchDelay: 500 });
-    runtime = new BrowserRuntime({ launcher });
+    runtime = new BrowserRuntime({ launcher, keepAlive: false });
 
     const config = { sessionId: "slow-session", port: 9222 };
     const startTime = Date.now();
@@ -90,10 +99,8 @@ describe("BrowserRuntime with MockLauncher", () => {
   });
 
   it("should notify plugins during endSession", async () => {
-    const mockPlugin = {
-      name: "test-plugin",
-      onSessionEnd: vi.fn().mockResolvedValue(undefined),
-    };
+    const mockPlugin = new MockTestPlugin("test-plugin");
+    const onSessionEndSpy = vi.spyOn(mockPlugin, "onSessionEnd").mockResolvedValue(undefined);
     runtime.registerPlugin(mockPlugin);
 
     const config = { sessionId: "plugin-session", port: 9222 };
@@ -101,14 +108,14 @@ describe("BrowserRuntime with MockLauncher", () => {
 
     await runtime.endSession();
 
-    expect(mockPlugin.onSessionEnd).toHaveBeenCalled();
+    expect(onSessionEndSpy).toHaveBeenCalled();
   });
 
   it("should bypass draining on stop", async () => {
-    const mockPlugin = {
-      name: "slow-plugin",
-      onSessionEnd: vi.fn().mockImplementation(() => new Promise((r) => setTimeout(r, 1000))),
-    };
+    const mockPlugin = new MockTestPlugin("slow-plugin");
+    const onSessionEndSpy = vi
+      .spyOn(mockPlugin, "onSessionEnd")
+      .mockImplementation(() => new Promise((r) => setTimeout(r, 1000)));
     runtime.registerPlugin(mockPlugin);
 
     await runtime.start({ sessionId: "stop-session", port: 9222 });
@@ -119,6 +126,6 @@ describe("BrowserRuntime with MockLauncher", () => {
 
     // stop() should be fast as it bypasses draining
     expect(duration).toBeLessThan(500);
-    expect(mockPlugin.onSessionEnd).not.toHaveBeenCalled();
+    expect(onSessionEndSpy).not.toHaveBeenCalled();
   });
 });

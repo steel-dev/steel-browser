@@ -1,20 +1,26 @@
-import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
-import { BrowserPlugin } from "../plugins/base-plugin.js";
-import { BrowserRef, ResolvedConfig } from "../drivers/types.js";
-import { TaskRegistryRef } from "./task-registry.js";
+import { BrowserLogger } from "../../../services/cdp/instrumentation/browser-logger.js";
+import { BrowserPlugin } from "../../plugins/base-plugin.js";
+import { BrowserRef, ResolvedConfig } from "../../drivers/types.js";
+import { TaskRegistryRef } from "./task-registry.actor.js";
 
 export interface DrainInput {
   instrumentationLogger?: BrowserLogger;
   plugins: BrowserPlugin[];
   config: ResolvedConfig;
   browser: BrowserRef | null;
-  taskRegistry: TaskRegistryRef | null;
+  taskRegistryRef?: any;
 }
 
 export async function drain(input: DrainInput): Promise<void> {
   // 1. Drain pending background tasks
-  if (input.taskRegistry) {
-    await input.taskRegistry.drain(5000);
+  if (input.taskRegistryRef) {
+    await new Promise<void>((resolve) => {
+      input.taskRegistryRef.send({
+        type: "DRAIN",
+        timeoutMs: 5000,
+        resolve,
+      });
+    });
   }
 
   // 2. Notify plugins of browser close
@@ -51,7 +57,10 @@ export async function drain(input: DrainInput): Promise<void> {
   await Promise.allSettled([...pluginPromises, flushPromise]);
 
   // 4. Cancel any remaining tasks
-  if (input.taskRegistry) {
-    input.taskRegistry.cancelAll("session-end");
+  if (input.taskRegistryRef) {
+    input.taskRegistryRef.send({
+      type: "CANCEL_ALL",
+      reason: "session-end",
+    });
   }
 }
