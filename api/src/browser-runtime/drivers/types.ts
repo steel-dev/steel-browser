@@ -47,12 +47,12 @@ export interface ProxyRef {
 }
 
 export interface BrowserRef {
-  id: string; // Unique identifier (for mocks)
-  instance: Browser; // Puppeteer Browser (or mock)
-  primaryPage: Page; // Primary page reference
-  pid: number; // Process ID
-  wsEndpoint: string; // WebSocket endpoint
-  launchedAt: number; // Timestamp for metrics
+  id: string;
+  instance: Browser;
+  primaryPage: Page;
+  pid: number;
+  wsEndpoint: string;
+  launchedAt: number;
 }
 
 export interface BrowserProcess {
@@ -61,15 +61,12 @@ export interface BrowserProcess {
 }
 
 export interface BrowserLauncher {
-  // Lifecycle
   launch(config: ResolvedConfig, proxy: ProxyRef | null): Promise<BrowserRef>;
   close(browser: BrowserRef): Promise<void>;
   forceClose(browser: BrowserRef): Promise<void>;
 
-  // Process visibility
   getProcess(browser: BrowserRef): BrowserProcess | null;
 
-  // Events (for crash detection, etc.)
   onDisconnected(browser: BrowserRef, callback: () => void): () => void;
   onTargetCreated(browser: BrowserRef, callback: (target: Target) => void): () => void;
   onTargetDestroyed(browser: BrowserRef, callback: (targetId: string) => void): () => void;

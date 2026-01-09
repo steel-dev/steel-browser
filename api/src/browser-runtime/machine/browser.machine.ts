@@ -16,7 +16,7 @@ import { startLogger, LoggerInput } from "./actors/logger.actor.js";
 import { startPluginManager, PluginManagerInput } from "./actors/plugin-manager.actor.js";
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
-import { traceBootPhase, traceOperation } from "../tracing/index.js";
+import { traceBootPhase } from "../tracing/index.js";
 import { drain, DrainInput } from "./actors/drain.actor.js";
 import {
   closeBrowser,
@@ -24,8 +24,7 @@ import {
   flushLogs,
   notifyPluginsShutdown,
 } from "./actors/cleanup-phases.actor.js";
-import { taskRegistryActor, TaskRegistryInput } from "./actors/task-registry.actor.js";
-import { EventEmitter } from "events";
+import { taskRegistryActor } from "./actors/task-registry.actor.js";
 
 export interface MachineInput {
   launcher: BrowserLauncher;
