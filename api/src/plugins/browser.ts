@@ -1,7 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { CDPService } from "../services/cdp/cdp.service.js";
 import { createBrowserLogger } from "../services/cdp/instrumentation/browser-logger.js";
-import { Orchestrator } from "../runtime/index.js";
 import { BrowserRuntime as BrowserRuntimeImpl } from "../browser-runtime/facade/browser-runtime.js";
 import { RollingFileStorage } from "../browser-runtime/storage/rolling-file-storage.js";
 import { StateTransitionLogger } from "../browser-runtime/logging/state-transition-logger.js";
@@ -115,14 +114,6 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
       stateTransitionLogger,
       keepAlive: true,
       defaultLaunchConfig,
-    });
-  } else if (useSessionMachine) {
-    fastify.log.info("Using SessionMachine runtime");
-    cdpService = new Orchestrator({
-      keepAlive: true,
-      logger: fastify.log,
-      storage,
-      enableConsoleLogging,
     });
   } else {
     fastify.log.info("Using legacy CDPService runtime");
