@@ -117,6 +117,28 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
     });
 
     this.actor.start();
+
+    // Setup default disconnect handler for auto-recovery if keepAlive is enabled
+    if (this.keepAlive) {
+      this.setDisconnectHandler(async () => {
+        if (this.intentionalShutdown) {
+          return;
+        }
+        await this.sessionMutex.runExclusive(async () => {
+          if (this.intentionalShutdown) {
+            return;
+          }
+          // Wait for machine to reach idle if it's currently cleaning up
+          const currentSnapshot = this.actor.getSnapshot();
+          if (!currentSnapshot.matches("idle")) {
+            await waitFor(this.actor, (s) => s.matches("idle"), { timeout: 10000 }).catch(() => {});
+          }
+
+          await this.launchInternal(this.config || this.defaultLaunchConfig);
+          this.logger.info("[BrowserRuntime] Auto-recovery complete, browser relaunched");
+        });
+      });
+    }
   }
 
   private mapConfig(options: BrowserLauncherOptions): RuntimeConfig {
@@ -176,7 +198,11 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
       span.setAttribute("keepAlive", this.keepAlive);
 
       for (const hook of this.launchMutators) {
-        await Promise.resolve(hook(effectiveConfig));
+        try {
+          await Promise.resolve(hook(effectiveConfig));
+        } catch (err) {
+          this.logger.error({ err }, "[BrowserRuntime] Error in launch hook");
+        }
       }
 
       if (this.stateTransitionLogger) {
@@ -186,16 +212,23 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
 
       const browserRef = await this.start(runtimeConfig);
 
-      browserRef.instance.once("disconnected", () => {
+      const launcher = (this.actor.getSnapshot().context as any).launcher;
+      let removeDisconnectListener = () => {};
+      removeDisconnectListener = launcher.onDisconnected(browserRef, () => {
         if (this.intentionalShutdown) {
+          removeDisconnectListener();
           return;
         }
 
         if (this.disconnectHandler) {
-          this.disconnectHandler().catch((err) => {
+          this.disconnectHandler().catch((err: any) => {
             this.logger.error({ err }, "[BrowserRuntime] Error in disconnect handler");
           });
         }
+      });
+
+      this.registerShutdownHook(async () => {
+        removeDisconnectListener();
       });
 
       this.intentionalShutdown = false;
@@ -209,8 +242,14 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
 
   private async shutdownInternal(): Promise<void> {
     this.intentionalShutdown = true;
-    for (const hook of this.shutdownMutators) {
-      await Promise.resolve(hook(this.config || null));
+    const mutators = [...this.shutdownMutators];
+    this.shutdownMutators = []; // Clear hooks to avoid double-running or accumulation
+    for (const hook of mutators) {
+      try {
+        await Promise.resolve(hook(this.config || null));
+      } catch (err) {
+        this.logger.error({ err }, "[BrowserRuntime] Error in shutdown hook");
+      }
     }
     await this.stop();
 

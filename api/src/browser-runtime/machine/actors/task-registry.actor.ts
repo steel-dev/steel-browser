@@ -111,6 +111,15 @@ export const taskRegistryActor = fromCallback<SupervisorEvent, TaskRegistryInput
         });
       } else if (event.type === "CANCEL_ALL") {
         cancelAll(event.reason);
+      } else if (event.type === "GET_STATUS") {
+        event.resolve?.({
+          count: tasks.size,
+          tasks: Array.from(tasks.values()).map((t) => ({
+            id: t.id,
+            label: t.label,
+            startedAt: t.startedAt,
+          })),
+        });
       }
     });
 

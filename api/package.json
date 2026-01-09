@@ -33,7 +33,7 @@
   },
   "scripts": {
     "start": "node ./build/index.js",
-    "build": "tsc && npm run copy:templates && npm run copy:fingerprint",
+    "build": "tsc -p tsconfig.build.json && npm run copy:templates && npm run copy:fingerprint",
     "lint": "eslint . --ext ts --report-unused-disable-directives --max-warnings 10",
     "copy:templates": "mkdir -p build/templates && cp -r src/templates/* build/templates/",
     "copy:fingerprint": "cp src/scripts/fingerprint.js build/scripts/fingerprint.js",
@@ -43,7 +43,8 @@
     "test:watch": "vitest --project unit --project jsdom",
     "test:integration": "vitest run --project integration",
     "pretty": "prettier --write \"src/**/*.ts\"",
-    "generate:openapi": "tsx ./openapi/generate.ts"
+    "generate:openapi": "tsx ./openapi/generate.ts",
+    "typecheck": "tsc --noEmit"
   },
   "author": "Nasr Mohamed",
   "devDependencies": {

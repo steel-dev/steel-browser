@@ -20,6 +20,7 @@ describe("Load testing with SimulatedLauncher", () => {
           launcher,
           appLogger: mockLogger,
           instrumentationLogger: mockInstrumentationLogger as any,
+          keepAlive: false,
         }),
     );
 
@@ -55,6 +56,7 @@ describe("Load testing with SimulatedLauncher", () => {
       launcher,
       appLogger: mockLogger,
       instrumentationLogger: mockInstrumentationLogger as any,
+      keepAlive: false,
     });
 
     console.log("Starting 20 sequential sessions...");

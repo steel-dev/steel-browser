@@ -30,9 +30,17 @@ export class MockLauncher implements BrowserLauncher {
 
     const browserId = config.sessionId || `mock-browser-${Date.now()}`;
 
+    const mockProcess = {
+      pid: 99999,
+      once: (event: string, cb: any) => {},
+      off: (event: string, cb: any) => {},
+      on: (event: string, cb: any) => {},
+      setMaxListeners: (n: number) => {},
+    };
+
     const mockBrowser = {
       wsEndpoint: () => `ws://mock-launcher/${browserId}`,
-      process: () => ({ pid: 99999 }),
+      process: () => mockProcess,
       close: async () => {},
       on: (event: string, cb: any) => {
         // Handled via our manual callbacks for simulation
