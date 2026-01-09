@@ -37,13 +37,32 @@ export class MockLauncher implements BrowserLauncher {
       on: (event: string, cb: any) => {
         // Handled via our manual callbacks for simulation
       },
+      once: (event: string, cb: any) => {
+        // Handled via our manual callbacks for simulation
+      },
       off: (event: string, cb: any) => {},
       targets: () => [],
+      newPage: async () => mockPage,
+      pages: async () => [mockPage],
+      isConnected: () => true,
     } as unknown as Browser;
 
     const mockPage = {
-      url: () => "about:blank",
+      url: () => "http://example.com",
       close: async () => {},
+      createCDPSession: async () => ({
+        send: async (method: string) => {
+          if (method === "Network.getAllCookies") {
+            return { cookies: [] };
+          }
+          return {};
+        },
+        detach: async () => {},
+      }),
+      target: () => ({
+        _targetId: "mock-target-id",
+        type: () => "page",
+      }),
     } as unknown as Page;
 
     const browserRef: BrowserRef = {

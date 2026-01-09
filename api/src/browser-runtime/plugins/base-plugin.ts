@@ -7,6 +7,7 @@ export interface BrowserPlugin {
   onBrowserReady?(config: RuntimeConfig): Promise<void> | void;
   onPageCreated?(page: Page): Promise<void> | void;
   onBrowserClose?(browser: Browser): Promise<void> | void;
+  onBeforePageClose?(page: Page): Promise<void> | void;
   onShutdown?(): Promise<void> | void;
   onSessionEnd?(config: RuntimeConfig): Promise<void> | void;
 }

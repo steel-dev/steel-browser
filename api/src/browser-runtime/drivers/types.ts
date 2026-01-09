@@ -2,6 +2,7 @@ import { Browser, Page, Target } from "puppeteer-core";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { SessionData } from "../../services/context/types.js";
+import { TaskRegistryRef } from "../actors/task-registry.js";
 
 export { SessionData };
 
@@ -84,6 +85,7 @@ export interface IMachineContext {
   error: Error | null;
   plugins: BrowserPlugin[];
   sessionState: SessionData | null;
+  taskRegistry: TaskRegistryRef | null;
 }
 
 export type SupervisorEvent =

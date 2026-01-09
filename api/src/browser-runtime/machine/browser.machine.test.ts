@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createActor, waitFor } from "xstate";
+import { EventEmitter } from "events";
 import { browserMachine } from "./browser.machine.js";
 import type { BrowserLauncher } from "../types.js";
 import { createMockBrowserInstance } from "../__tests__/helpers.js";
@@ -9,8 +10,18 @@ vi.mock("../actors/timezone.js", () => ({
 }));
 
 describe("browserMachine", () => {
+  let taskRegistry: any;
+  let eventEmitter: EventEmitter;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    taskRegistry = {
+      waitUntil: vi.fn(),
+      drain: vi.fn().mockResolvedValue(undefined),
+      cancelAll: vi.fn(),
+      getPendingCount: vi.fn().mockReturnValue(0),
+    };
+    eventEmitter = new EventEmitter();
   });
 
   it("should transition from idle to ready through booting", async () => {
@@ -33,7 +44,13 @@ describe("browserMachine", () => {
       onTargetDestroyed: vi.fn(() => () => {}),
     };
 
-    const actor = createActor(browserMachine, { input: { launcher } });
+    const actor = createActor(browserMachine, {
+      input: {
+        launcher,
+        taskRegistry,
+        eventEmitter,
+      },
+    });
     actor.start();
 
     expect(actor.getSnapshot().matches("idle" as any)).toBe(true);
@@ -75,7 +92,13 @@ describe("browserMachine", () => {
       onTargetDestroyed: vi.fn(() => () => {}),
     };
 
-    const actor = createActor(browserMachine, { input: { launcher } });
+    const actor = createActor(browserMachine, {
+      input: {
+        launcher,
+        taskRegistry,
+        eventEmitter,
+      },
+    });
     actor.start();
 
     actor.send({

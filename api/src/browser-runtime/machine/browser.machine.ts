@@ -18,18 +18,29 @@ import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger
 import { FastifyBaseLogger } from "fastify";
 import { traceBootPhase, traceOperation } from "../tracing/index.js";
 import { drain, DrainInput } from "../actors/drain-actor.js";
-import { closeBrowser, closeProxy, flushLogs } from "../actors/cleanup-phases.js";
+import {
+  closeBrowser,
+  closeProxy,
+  flushLogs,
+  notifyPluginsShutdown,
+} from "../actors/cleanup-phases.js";
+import { startTaskRegistry, TaskRegistryInput, TaskRegistryRef } from "../actors/task-registry.js";
+import { startEventEmitter, EventEmitterInput } from "../actors/event-emitter-actor.js";
+import { EventEmitter } from "events";
 
 export interface MachineInput {
   launcher: BrowserLauncher;
   plugins?: BrowserPlugin[];
   instrumentationLogger?: BrowserLogger;
   appLogger?: FastifyBaseLogger;
+  taskRegistry: TaskRegistryRef;
+  eventEmitter: EventEmitter;
 }
 
 export interface MachineContext extends IMachineContext {
   instrumentationLogger?: BrowserLogger;
   appLogger?: FastifyBaseLogger;
+  eventEmitter: EventEmitter;
 }
 
 export const browserMachine = setup({
@@ -68,6 +79,12 @@ export const browserMachine = setup({
     flushLogsActor: fromPromise<void, { instrumentationLogger?: BrowserLogger }>(({ input }) =>
       flushLogs(input),
     ),
+    notifyShutdownActor: fromPromise<void, { plugins: BrowserPlugin[] }>(({ input }) =>
+      notifyPluginsShutdown(input),
+    ),
+    eventEmitter: fromCallback<SupervisorEvent, EventEmitterInput>(({ sendBack, input }) => {
+      return startEventEmitter(input, sendBack);
+    }),
   },
   actions: {
     assignRawConfig: assign({
@@ -115,6 +132,8 @@ export const browserMachine = setup({
     error: null,
     plugins: input.plugins || [],
     sessionState: null,
+    taskRegistry: input.taskRegistry,
+    eventEmitter: input.eventEmitter,
     instrumentationLogger: input.instrumentationLogger,
     appLogger: input.appLogger,
   }),
@@ -214,6 +233,15 @@ export const browserMachine = setup({
                 plugins: context.plugins,
               }),
             },
+            {
+              id: "eventEmitter",
+              src: "eventEmitter",
+              input: ({ context }) => ({
+                browser: context.browser!,
+                launcher: context.launcher,
+                emitter: context.eventEmitter,
+              }),
+            },
           ],
           on: {
             END_SESSION: {
@@ -229,6 +257,8 @@ export const browserMachine = setup({
               instrumentationLogger: context.instrumentationLogger,
               plugins: context.plugins,
               config: context.resolvedConfig!,
+              browser: context.browser,
+              taskRegistry: context.taskRegistry,
             }),
             onDone: "#browserSupervisor.cleanup",
             onError: "#browserSupervisor.cleanup",
@@ -258,11 +288,24 @@ export const browserMachine = setup({
               launcher: context.launcher,
               browser: context.browser,
             }),
+            onDone: "notifyingShutdown",
+            onError: "notifyingShutdown",
+          },
+          after: {
+            10000: "notifyingShutdown",
+          },
+        },
+        notifyingShutdown: {
+          invoke: {
+            src: "notifyShutdownActor",
+            input: ({ context }) => ({
+              plugins: context.plugins,
+            }),
             onDone: "closingProxy",
             onError: "closingProxy",
           },
           after: {
-            10000: "closingProxy",
+            5000: "closingProxy",
           },
         },
         closingProxy: {

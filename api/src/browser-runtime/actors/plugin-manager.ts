@@ -13,6 +13,15 @@ export function startPluginManager(
 ): () => void {
   const { browser, config, plugins } = input;
 
+  // Sync/Async: onBrowserLaunch
+  plugins.forEach(async (plugin) => {
+    try {
+      await Promise.resolve(plugin.onBrowserLaunch?.(browser.instance));
+    } catch (err) {
+      console.error(`[PluginManager] ${plugin.name} onBrowserLaunch failed:`, err);
+    }
+  });
+
   // Sync/Async: onBrowserReady
   plugins.forEach(async (plugin) => {
     try {
