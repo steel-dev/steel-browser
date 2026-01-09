@@ -2,6 +2,8 @@ import { FastifyBaseLogger } from "fastify";
 import { LogStorage } from "../../services/cdp/instrumentation/storage/log-storage.interface.js";
 import { BrowserEventType } from "../../types/enums.js";
 import { StateTransitionEvent } from "../../services/cdp/instrumentation/types.js";
+import { Span } from "@opentelemetry/api";
+import { isDetailedTracingEnabled } from "../tracing/index.js";
 
 export interface StateTransitionLoggerOptions {
   baseLogger?: FastifyBaseLogger;
@@ -16,6 +18,7 @@ export class StateTransitionLogger {
   private enableConsoleLogging: boolean;
   private sessionId: string;
   private lastTransitionTime: number;
+  private rootSpan: Span | null = null;
 
   constructor(options: StateTransitionLoggerOptions) {
     this.baseLogger = options.baseLogger;
@@ -27,6 +30,10 @@ export class StateTransitionLogger {
 
   setSessionId(sessionId: string): void {
     this.sessionId = sessionId;
+  }
+
+  setRootSpan(span: Span | null): void {
+    this.rootSpan = span;
   }
 
   recordTransition(transition: {
@@ -68,6 +75,15 @@ export class StateTransitionLogger {
         if (this.baseLogger) {
           this.baseLogger.error({ err }, "Failed to write state transition to storage");
         }
+      });
+    }
+
+    if (this.rootSpan && isDetailedTracingEnabled()) {
+      this.rootSpan.addEvent("state.transition", {
+        from: transition.fromState || "null",
+        to: transition.toState,
+        event: transition.event,
+        duration,
       });
     }
   }

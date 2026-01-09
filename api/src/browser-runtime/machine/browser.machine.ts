@@ -16,6 +16,7 @@ import { startLogger, LoggerInput } from "../actors/logger-actor.js";
 import { startPluginManager, PluginManagerInput } from "../actors/plugin-manager.js";
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
+import { traceBootPhase, traceOperation } from "../tracing/index.js";
 
 export interface MachineInput {
   launcher: BrowserLauncher;
@@ -37,10 +38,10 @@ export const browserMachine = setup({
   },
   actors: {
     configResolver: fromPromise<ResolvedConfig, { rawConfig: RuntimeConfig }>(({ input }) =>
-      resolveConfig(input.rawConfig),
+      traceBootPhase("config.resolve", () => resolveConfig(input.rawConfig)),
     ),
     proxyLauncher: fromPromise<ProxyRef | null, { config: ResolvedConfig }>(({ input }) =>
-      launchProxy(input.config),
+      traceBootPhase("proxy.launch", () => launchProxy(input.config)),
     ),
     browserLauncher: fromPromise<
       BrowserRef,
@@ -64,15 +65,17 @@ export const browserMachine = setup({
         instrumentationLogger?: BrowserLogger;
       }
     >(async ({ input }) => {
-      if (input.browser) {
-        await input.launcher.close(input.browser);
-      }
-      if (input.proxy) {
-        await input.proxy.close();
-      }
-      if (input.instrumentationLogger?.flush) {
-        await input.instrumentationLogger.flush();
-      }
+      await traceOperation("browser.cleanup", "detailed", async (span) => {
+        if (input.browser) {
+          await input.launcher.close(input.browser);
+        }
+        if (input.proxy) {
+          await input.proxy.close();
+        }
+        if (input.instrumentationLogger?.flush) {
+          await input.instrumentationLogger.flush();
+        }
+      });
     }),
   },
   actions: {

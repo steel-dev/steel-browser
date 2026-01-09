@@ -20,7 +20,9 @@ import { LogStorage } from "../services/cdp/instrumentation/storage/index.js";
 import { EmitEvent } from "../types/enums.js";
 import { BrowserRuntime as XStateRuntime } from "./index.js";
 import { RuntimeConfig } from "./types.js";
+import { traceSession } from "./tracing/index.js";
 import { env } from "../env.js";
+import { Span } from "@opentelemetry/api";
 
 /**
  * XStateAdapter bridges the new XState-based isolated runtime
@@ -45,6 +47,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   private intentionalShutdown = false;
   private keepAlive: boolean;
   private defaultLaunchConfig: BrowserLauncherOptions;
+  private sessionSpan: Span | null = null;
 
   constructor(
     runtime: XStateRuntime,
@@ -114,27 +117,37 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     this.config = effectiveConfig;
     const runtimeConfig = this.mapConfig(effectiveConfig);
 
-    for (const hook of this.launchMutators) {
-      await Promise.resolve(hook(effectiveConfig));
-    }
+    return traceSession(runtimeConfig.sessionId, async (span) => {
+      this.sessionSpan = span;
+      span.setAttribute("browser.headless", !!runtimeConfig.headless);
+      span.setAttribute("keepAlive", this.keepAlive);
 
-    this.runtime.getStateTransitionLogger()?.setSessionId(runtimeConfig.sessionId);
-    const browserRef = await this.runtime.start(runtimeConfig);
-
-    browserRef.instance.once("disconnected", () => {
-      if (this.intentionalShutdown) {
-        return;
+      for (const hook of this.launchMutators) {
+        await Promise.resolve(hook(effectiveConfig));
       }
 
-      if (this.disconnectHandler) {
-        this.disconnectHandler().catch((err) => {
-          this.logger.error({ err }, "[XStateAdapter] Error in disconnect handler");
-        });
+      const stLogger = this.runtime.getStateTransitionLogger();
+      if (stLogger) {
+        stLogger.setSessionId(runtimeConfig.sessionId);
+        stLogger.setRootSpan(span);
       }
+      const browserRef = await this.runtime.start(runtimeConfig);
+
+      browserRef.instance.once("disconnected", () => {
+        if (this.intentionalShutdown) {
+          return;
+        }
+
+        if (this.disconnectHandler) {
+          this.disconnectHandler().catch((err) => {
+            this.logger.error({ err }, "[XStateAdapter] Error in disconnect handler");
+          });
+        }
+      });
+
+      this.intentionalShutdown = false;
+      return browserRef.instance;
     });
-
-    this.intentionalShutdown = false;
-    return browserRef.instance;
   }
 
   async shutdown(): Promise<void> {
@@ -143,6 +156,11 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
       await Promise.resolve(hook(this.config || null));
     }
     await this.runtime.stop();
+
+    if (this.sessionSpan) {
+      this.sessionSpan.end();
+      this.sessionSpan = null;
+    }
   }
 
   async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
@@ -154,6 +172,11 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     this.sessionContext = await this.getBrowserState().catch(() => null);
     await this.shutdown();
     this.instrumentationLogger.resetContext?.();
+
+    if (this.sessionSpan) {
+      this.sessionSpan.end();
+      this.sessionSpan = null;
+    }
 
     if (this.keepAlive) {
       await this.launch(this.defaultLaunchConfig);
