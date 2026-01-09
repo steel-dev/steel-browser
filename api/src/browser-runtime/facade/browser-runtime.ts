@@ -6,6 +6,7 @@ import { RuntimeConfig, BrowserRef, SupervisorEvent, BrowserLauncher } from "../
 import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { PuppeteerLauncher } from "../drivers/puppeteer-launcher.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
+import { StateTransitionLogger } from "../logging/state-transition-logger.js";
 
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
@@ -15,16 +16,19 @@ export class BrowserRuntime extends EventEmitter {
   private actor: Actor<typeof browserMachine>;
   private plugins: BrowserPlugin[] = [];
   private logger: FastifyBaseLogger;
+  private stateTransitionLogger?: StateTransitionLogger;
 
   constructor(options?: {
     launcher?: BrowserLauncher;
     instrumentationLogger?: BrowserLogger;
     appLogger?: FastifyBaseLogger;
+    stateTransitionLogger?: StateTransitionLogger;
   }) {
     super();
     const launcher = options?.launcher ?? new PuppeteerLauncher();
     const appLogger = options?.appLogger ?? pino();
     this.logger = appLogger;
+    this.stateTransitionLogger = options?.stateTransitionLogger;
 
     this.actor = createActor(browserMachine, {
       input: {
@@ -40,10 +44,19 @@ export class BrowserRuntime extends EventEmitter {
         typeof snapshot.value === "string" ? snapshot.value : JSON.stringify(snapshot.value);
 
       if (previousState !== currentState) {
-        this.logger.info(
-          { from: previousState, to: currentState, event: snapshot._nodes?.[0]?.key },
-          "[StateMachine] State transition",
-        );
+        if (this.stateTransitionLogger) {
+          this.stateTransitionLogger.recordTransition({
+            fromState: previousState,
+            toState: currentState,
+            event: snapshot._nodes?.[0]?.key || "unknown",
+            context: { browser: !!snapshot.context.browser },
+          });
+        } else {
+          this.logger.info(
+            { from: previousState, to: currentState, event: snapshot._nodes?.[0]?.key },
+            "[StateMachine] State transition",
+          );
+        }
         previousState = currentState;
       }
 
@@ -59,6 +72,10 @@ export class BrowserRuntime extends EventEmitter {
     });
 
     this.actor.start();
+  }
+
+  getStateTransitionLogger(): StateTransitionLogger | undefined {
+    return this.stateTransitionLogger;
   }
 
   registerPlugin(plugin: BrowserPlugin): void {

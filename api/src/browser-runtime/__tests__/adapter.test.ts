@@ -23,6 +23,7 @@ describe("XStateAdapter", () => {
       getBrowser: vi.fn(),
       isRunning: vi.fn(),
       registerPlugin: vi.fn(),
+      getStateTransitionLogger: vi.fn(),
     };
     logger = pino({ level: "silent" });
     const mockInstrumentationLogger = {

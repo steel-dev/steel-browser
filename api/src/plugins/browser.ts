@@ -4,6 +4,8 @@ import { createBrowserLogger } from "../services/cdp/instrumentation/browser-log
 import { Orchestrator } from "../runtime/index.js";
 import { BrowserRuntime as XStateRuntime } from "../browser-runtime/index.js";
 import { XStateAdapter } from "../browser-runtime/adapter.js";
+import { RollingFileStorage } from "../browser-runtime/storage/rolling-file-storage.js";
+import { StateTransitionLogger } from "../browser-runtime/logging/state-transition-logger.js";
 import fp from "fastify-plugin";
 import { BrowserLauncherOptions } from "../types/index.js";
 import { BrowserRuntime } from "../types/browser-runtime.interface.js";
@@ -72,9 +74,28 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
       enableConsoleLogging: enableConsoleLogging ?? true,
     });
 
+    let stateTransitionLogger: StateTransitionLogger | undefined;
+    if (env.STATE_TRANSITION_LOG_ENABLED) {
+      const rollingStorage = new RollingFileStorage({
+        directory: env.STATE_TRANSITION_LOG_DIR,
+        filenamePrefix: "transitions",
+        maxFileSizeBytes: env.STATE_TRANSITION_LOG_MAX_SIZE_MB * 1024 * 1024,
+        maxFiles: env.STATE_TRANSITION_LOG_MAX_FILES,
+      });
+      await rollingStorage.initialize();
+
+      stateTransitionLogger = new StateTransitionLogger({
+        baseLogger: fastify.log,
+        storage: rollingStorage,
+        enableConsoleLogging: true,
+      });
+      fastify.log.info(`State transition logging enabled in ${env.STATE_TRANSITION_LOG_DIR}`);
+    }
+
     const xstateRuntime = new XStateRuntime({
       instrumentationLogger,
       appLogger: fastify.log,
+      stateTransitionLogger,
     });
 
     const defaultLaunchConfig: BrowserLauncherOptions = {

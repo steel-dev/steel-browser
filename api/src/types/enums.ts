@@ -22,6 +22,7 @@ export enum BrowserEventType {
   CDPCommandResult = "CDPCommandResult",
   CDPEvent = "CDPEvent",
   ResponseBody = "ResponseBody",
+  StateTransition = "StateTransition",
 }
 
 export enum EmitEvent {

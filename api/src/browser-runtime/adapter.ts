@@ -118,6 +118,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
       await Promise.resolve(hook(effectiveConfig));
     }
 
+    this.runtime.getStateTransitionLogger()?.setSessionId(runtimeConfig.sessionId);
     const browserRef = await this.runtime.start(runtimeConfig);
 
     browserRef.instance.once("disconnected", () => {
