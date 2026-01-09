@@ -3,6 +3,8 @@ import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { SessionData } from "../../services/context/types.js";
 
+export { SessionData };
+
 export interface RuntimeConfig {
   sessionId: string;
   port: number;
@@ -81,11 +83,13 @@ export interface IMachineContext {
   fingerprint: BrowserFingerprintWithHeaders | null;
   error: Error | null;
   plugins: BrowserPlugin[];
+  sessionState: SessionData | null;
 }
 
 export type SupervisorEvent =
   | { type: "START"; config: RuntimeConfig; plugins?: BrowserPlugin[] }
   | { type: "STOP" }
+  | { type: "END_SESSION" }
   | { type: "BROWSER_CRASHED"; error: Error }
   | { type: "USER_DISCONNECTED" }
   | { type: "FATAL_ERROR"; error: Error };

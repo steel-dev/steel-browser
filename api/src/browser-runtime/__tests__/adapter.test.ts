@@ -20,6 +20,7 @@ describe("XStateAdapter", () => {
       on: vi.fn(),
       start: vi.fn(),
       stop: vi.fn(),
+      endSession: vi.fn(),
       getBrowser: vi.fn(),
       isRunning: vi.fn(),
       registerPlugin: vi.fn(),
@@ -110,5 +111,24 @@ describe("XStateAdapter", () => {
       "example.com": { key: "val" },
     });
     expect(ChromeContextService.prototype.getSessionData).toHaveBeenCalledWith(userDataDir);
+  });
+
+  it("should call runtime.endSession during endSession", async () => {
+    runtime.getBrowser.mockReturnValue(null);
+    (runtime.start as any).mockResolvedValue({
+      instance: {
+        once: vi.fn(),
+        on: vi.fn(),
+        off: vi.fn(),
+        process: vi.fn().mockReturnValue({ pid: 12345 }),
+        wsEndpoint: vi.fn().mockReturnValue("ws://localhost:9222"),
+        isConnected: vi.fn().mockReturnValue(true),
+      },
+    });
+
+    await adapter.launch({ options: { headless: true } } as any);
+    await adapter.endSession();
+
+    expect(runtime.endSession).toHaveBeenCalled();
   });
 });

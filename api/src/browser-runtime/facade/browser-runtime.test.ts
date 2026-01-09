@@ -41,7 +41,7 @@ describe("BrowserRuntime Facade", () => {
 
     expect(browserRef).toBeDefined();
     expect(runtime.isRunning()).toBe(true);
-    expect(runtime.getState()).toBe("ready");
+    expect(runtime.getState()).toContain("ready");
 
     await runtime.stop();
     expect(runtime.isRunning()).toBe(false);
