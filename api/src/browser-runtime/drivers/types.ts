@@ -93,6 +93,7 @@ export type SupervisorEvent =
   | { type: "USER_DISCONNECTED" }
   | { type: "FATAL_ERROR"; error: Error }
   | { type: "WAIT_UNTIL"; fn: (signal: AbortSignal) => Promise<void>; label?: string }
-  | { type: "DRAIN"; timeoutMs: number; resolve?: () => void }
+  | { type: "DRAIN"; timeoutMs: number; resolve?: (value?: any) => void }
   | { type: "CANCEL_ALL"; reason: string }
-  | { type: "BROWSER_EVENT"; event: string; data: any };
+  | { type: "BROWSER_EVENT"; event: string; data: any }
+  | { type: "GET_STATUS"; resolve?: (status: any) => void };

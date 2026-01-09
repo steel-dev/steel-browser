@@ -186,6 +186,22 @@ export class PuppeteerLauncher implements BrowserLauncher {
           instance!.emit("fileProtocolViolation", { url });
         });
 
+        // Setup blocking for any new pages created
+        instance.on("targetcreated", async (target) => {
+          if (target.type() === "page") {
+            try {
+              const page = await target.page();
+              if (page) {
+                await this.setupFileProtocolBlocking(page, config.sessionId, (url) => {
+                  instance!.emit("fileProtocolViolation", { url });
+                });
+              }
+            } catch (error) {
+              console.warn(`[PuppeteerLauncher] Failed to attach blocking to new page: ${error}`);
+            }
+          }
+        });
+
         if (config.sessionContext?.cookies?.length) {
           const client = await primaryPage.createCDPSession();
           try {
@@ -220,18 +236,33 @@ export class PuppeteerLauncher implements BrowserLauncher {
     sessionId: string,
     onViolation?: (url: string) => void,
   ): Promise<void> {
-    await page.setRequestInterception(true);
-    page.on("request", (request) => {
-      if (request.url().startsWith("file://")) {
-        console.warn(`[PuppeteerLauncher] Blocked file:// access in session ${sessionId}`);
-        if (onViolation) {
-          onViolation(request.url());
+    try {
+      await page.setRequestInterception(true);
+      page.on("request", (request) => {
+        if (request.url().startsWith("file://")) {
+          console.warn(`[PuppeteerLauncher] Blocked file:// access in session ${sessionId}`);
+          if (onViolation) {
+            onViolation(request.url());
+          }
+          request.abort("accessdenied");
+        } else {
+          request.continue();
         }
-        request.abort("accessdenied");
-      } else {
-        request.continue();
-      }
-    });
+      });
+
+      page.on("response", (response) => {
+        if (response.url().startsWith("file://")) {
+          console.warn(`[PuppeteerLauncher] Blocked file:// response in session ${sessionId}`);
+          if (onViolation) {
+            onViolation(response.url());
+          }
+          // We can't abort a response once it's started, but we can close the page
+          page.close().catch(() => {});
+        }
+      });
+    } catch (error) {
+      console.warn(`[PuppeteerLauncher] Failed to set up file protocol detection: ${error}`);
+    }
   }
 
   async close(browser: BrowserRef): Promise<void> {
