@@ -1,5 +1,6 @@
 import { BrowserLauncher, BrowserRef, ProxyRef } from "../drivers/types.js";
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
+import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { traceOperation } from "../tracing/index.js";
 
 export async function closeBrowser(input: {
@@ -26,5 +27,20 @@ export async function flushLogs(input: { instrumentationLogger?: BrowserLogger }
     if (input.instrumentationLogger?.flush) {
       await input.instrumentationLogger.flush();
     }
+  });
+}
+
+export async function notifyPluginsShutdown(input: { plugins: BrowserPlugin[] }): Promise<void> {
+  await traceOperation("browser.cleanup.notifyPluginsShutdown", "detailed", async (span) => {
+    const promises = input.plugins.map(async (plugin) => {
+      try {
+        if (plugin.onShutdown) {
+          await plugin.onShutdown();
+        }
+      } catch (err) {
+        console.warn(`[Cleanup] Error in plugin onShutdown (${plugin.name}):`, err);
+      }
+    });
+    await Promise.allSettled(promises);
   });
 }

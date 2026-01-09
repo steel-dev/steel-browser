@@ -13,6 +13,7 @@ import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { PuppeteerLauncher } from "../drivers/puppeteer-launcher.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { StateTransitionLogger } from "../logging/state-transition-logger.js";
+import { startTaskRegistry, TaskRegistryRef } from "../actors/task-registry.js";
 
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
@@ -23,6 +24,8 @@ export class BrowserRuntime extends EventEmitter {
   private plugins: BrowserPlugin[] = [];
   private logger: FastifyBaseLogger;
   private stateTransitionLogger?: StateTransitionLogger;
+  private taskRegistry: TaskRegistryRef;
+  private browserEvents = new EventEmitter();
 
   constructor(options?: {
     launcher?: BrowserLauncher;
@@ -36,13 +39,23 @@ export class BrowserRuntime extends EventEmitter {
     this.logger = appLogger;
     this.stateTransitionLogger = options?.stateTransitionLogger;
 
+    this.taskRegistry = startTaskRegistry({ appLogger }, () => {});
+
     this.actor = createActor(browserMachine, {
       input: {
         launcher,
         instrumentationLogger: options?.instrumentationLogger,
         appLogger,
+        taskRegistry: this.taskRegistry,
+        eventEmitter: this.browserEvents,
       },
     });
+
+    this.browserEvents.on("targetCreated", (event) => this.emit("targetCreated", event));
+    this.browserEvents.on("targetDestroyed", (event) => this.emit("targetDestroyed", event));
+    this.browserEvents.on("fileProtocolViolation", (event) =>
+      this.emit("fileProtocolViolation", event),
+    );
 
     let previousState: string | null = null;
     this.actor.subscribe((snapshot) => {
@@ -162,5 +175,9 @@ export class BrowserRuntime extends EventEmitter {
   getState(): string {
     const value = this.actor.getSnapshot().value;
     return typeof value === "string" ? value : JSON.stringify(value);
+  }
+
+  waitUntil(task: Promise<void>): void {
+    this.taskRegistry.waitUntil(async () => task, "facade-task");
   }
 }

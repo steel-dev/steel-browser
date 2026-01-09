@@ -4,6 +4,7 @@ import { FastifyBaseLogger } from "fastify";
 import { IncomingMessage } from "http";
 import { Duplex } from "stream";
 import httpProxy from "http-proxy";
+import { Mutex } from "async-mutex";
 import { BrowserRuntime as IBrowserRuntime } from "../types/browser-runtime.interface.js";
 import { BrowserLauncherOptions } from "../types/browser.js";
 import { SessionData } from "../services/context/types.js";
@@ -12,6 +13,7 @@ import { BrowserLogger } from "../services/cdp/instrumentation/browser-logger.js
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { ChromeContextService } from "../services/context/chrome-context.service.js";
 import { extractStorageForPage } from "../utils/context.js";
+import { isSimilarConfig } from "../services/cdp/utils/validation.js";
 import {
   createBrowserLogger,
   BrowserLogger as IBrowserLogger,
@@ -36,6 +38,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   private sessionContext: SessionData | null = null;
   private chromeContextService: ChromeContextService;
   private wsProxyServer: httpProxy;
+  private readonly sessionMutex = new Mutex();
   private pluginRegistry: Map<string, BasePlugin> = new Map();
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
@@ -108,12 +111,27 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   async launch(config?: BrowserLauncherOptions): Promise<Browser> {
+    return this.sessionMutex.runExclusive(() => this.launchInternal(config));
+  }
+
+  private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
     const existingBrowser = this.runtime.getBrowser();
+    const effectiveConfig = config ?? this.defaultLaunchConfig;
+
     if (existingBrowser) {
-      return existingBrowser.instance;
+      if (this.config) {
+        const shouldReuse = await isSimilarConfig(this.config, effectiveConfig);
+        if (shouldReuse) {
+          this.logger.info("Reusing existing browser with similar configuration");
+          return existingBrowser.instance;
+        }
+        this.logger.info("Configuration changed, restarting session with new config");
+        await this.shutdownInternal();
+      } else {
+        return existingBrowser.instance;
+      }
     }
 
-    const effectiveConfig = config ?? this.defaultLaunchConfig;
     this.config = effectiveConfig;
     const runtimeConfig = this.mapConfig(effectiveConfig);
 
@@ -151,6 +169,10 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   async shutdown(): Promise<void> {
+    return this.sessionMutex.runExclusive(() => this.shutdownInternal());
+  }
+
+  private async shutdownInternal(): Promise<void> {
     this.intentionalShutdown = true;
     for (const hook of this.shutdownMutators) {
       await Promise.resolve(hook(this.config || null));
@@ -164,11 +186,19 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
-    await this.shutdown();
-    return this.launch(sessionConfig);
+    return this.sessionMutex.runExclusive(() => this.startNewSessionInternal(sessionConfig));
+  }
+
+  private async startNewSessionInternal(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
+    await this.shutdownInternal();
+    return this.launchInternal(sessionConfig);
   }
 
   async endSession(): Promise<void> {
+    return this.sessionMutex.runExclusive(() => this.endSessionInternal());
+  }
+
+  private async endSessionInternal(): Promise<void> {
     this.sessionContext = await this.getBrowserState().catch(() => null);
 
     await this.runtime.endSession();
@@ -180,7 +210,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     }
 
     if (this.keepAlive) {
-      await this.launch(this.defaultLaunchConfig);
+      await this.launchInternal(this.defaultLaunchConfig);
     }
   }
 
@@ -299,8 +329,12 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     this.pluginRegistry.set(plugin.name, plugin);
     this.runtime.registerPlugin({
       name: plugin.name,
+      onBrowserLaunch: (browser) => plugin.onBrowserLaunch?.(browser),
       onBrowserReady: (config) => plugin.onBrowserReady(this.config!),
       onPageCreated: (page) => plugin.onPageCreated(page),
+      onBrowserClose: (browser) => plugin.onBrowserClose?.(browser),
+      onBeforePageClose: (page) => plugin.onBeforePageClose?.(page),
+      onShutdown: () => plugin.onShutdown?.(),
       onSessionEnd: (config) => plugin.onSessionEnd(this.config!),
     });
   }

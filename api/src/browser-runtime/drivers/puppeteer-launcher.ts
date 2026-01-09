@@ -171,7 +171,20 @@ export class PuppeteerLauncher implements BrowserLauncher {
           await injectFingerprint(primaryPage, config.fingerprint, dummyLogger);
         }
 
-        await this.setupFileProtocolBlocking(primaryPage, config.sessionId);
+        const pid = instance.process()?.pid || 0;
+
+        const browserRef: BrowserRef = {
+          id: config.sessionId,
+          instance,
+          primaryPage,
+          pid,
+          wsEndpoint: instance.wsEndpoint(),
+          launchedAt: Date.now(),
+        };
+
+        await this.setupFileProtocolBlocking(primaryPage, config.sessionId, (url) => {
+          instance!.emit("fileProtocolViolation", { url });
+        });
 
         if (config.sessionContext?.cookies?.length) {
           const client = await primaryPage.createCDPSession();
@@ -187,17 +200,9 @@ export class PuppeteerLauncher implements BrowserLauncher {
           }
         }
 
-        const pid = instance.process()?.pid || 0;
         span.setAttribute("browser.pid", pid);
 
-        return {
-          id: config.sessionId,
-          instance,
-          primaryPage,
-          pid,
-          wsEndpoint: instance.wsEndpoint(),
-          launchedAt: Date.now(),
-        };
+        return browserRef;
       } catch (err) {
         if (instance) {
           await instance.close().catch(() => {});
@@ -210,11 +215,18 @@ export class PuppeteerLauncher implements BrowserLauncher {
     });
   }
 
-  private async setupFileProtocolBlocking(page: Page, sessionId: string): Promise<void> {
+  private async setupFileProtocolBlocking(
+    page: Page,
+    sessionId: string,
+    onViolation?: (url: string) => void,
+  ): Promise<void> {
     await page.setRequestInterception(true);
     page.on("request", (request) => {
       if (request.url().startsWith("file://")) {
         console.warn(`[PuppeteerLauncher] Blocked file:// access in session ${sessionId}`);
+        if (onViolation) {
+          onViolation(request.url());
+        }
         request.abort("accessdenied");
       } else {
         request.continue();
