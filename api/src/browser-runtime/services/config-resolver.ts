@@ -2,7 +2,7 @@ import { mkdir } from "fs/promises";
 import os from "os";
 import path from "path";
 import { ResolvedConfig, RuntimeConfig } from "../types.js";
-import { fetchTimezone } from "./timezone.js";
+import { fetchTimezone } from "../utils/timezone.js";
 import { deepMerge } from "../utils.js";
 import { env } from "../../env.js";
 import { generateFingerprint } from "../services/fingerprint.service.js";

@@ -3,9 +3,9 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 import { BrowserLauncher, BrowserProcess, BrowserRef, ProxyRef, ResolvedConfig } from "./types.js";
-import { getChromeExecutablePath, installMouseHelper } from "../actors/browser-utils.js";
-import { validateTimezone } from "../actors/validation.js";
-import { getExtensionPaths } from "../actors/extensions.js";
+import { getChromeExecutablePath, installMouseHelper } from "../utils/browser-utils.js";
+import { validateTimezone } from "../utils/validation.js";
+import { getExtensionPaths } from "../utils/extensions.js";
 import { deepMerge } from "../utils.js";
 import { injectFingerprint } from "../services/fingerprint.service.js";
 import { traceOperation } from "../tracing/index.js";
@@ -192,7 +192,7 @@ export class PuppeteerLauncher implements BrowserLauncher {
             await client.send("Network.setCookies", {
               cookies: config.sessionContext.cookies.map((cookie) => ({
                 ...cookie,
-                partitionKey: cookie.partitionKey as any,
+                partitionKey: cookie.partitionKey,
               })),
             });
           } finally {

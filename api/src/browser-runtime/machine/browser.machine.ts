@@ -1,4 +1,4 @@
-import { setup, assign, fromPromise, fromCallback } from "xstate";
+import { setup, assign, fromPromise, fromCallback, emit } from "xstate";
 import {
   IMachineContext,
   SupervisorEvent,
@@ -9,23 +9,22 @@ import {
   BrowserLauncher,
 } from "../types.js";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
-import { resolveConfig } from "../actors/config-resolver.js";
-import { launchProxy } from "../actors/proxy-launcher.js";
-import { startDataPlane, DataPlaneInput } from "../actors/data-plane.js";
-import { startLogger, LoggerInput } from "../actors/logger-actor.js";
-import { startPluginManager, PluginManagerInput } from "../actors/plugin-manager.js";
+import { resolveConfig } from "../services/config-resolver.js";
+import { launchProxy } from "./actors/proxy-launcher.actor.js";
+import { startDataPlane, DataPlaneInput } from "./actors/data-plane.actor.js";
+import { startLogger, LoggerInput } from "./actors/logger.actor.js";
+import { startPluginManager, PluginManagerInput } from "./actors/plugin-manager.actor.js";
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
 import { traceBootPhase, traceOperation } from "../tracing/index.js";
-import { drain, DrainInput } from "../actors/drain-actor.js";
+import { drain, DrainInput } from "./actors/drain.actor.js";
 import {
   closeBrowser,
   closeProxy,
   flushLogs,
   notifyPluginsShutdown,
-} from "../actors/cleanup-phases.js";
-import { startTaskRegistry, TaskRegistryInput, TaskRegistryRef } from "../actors/task-registry.js";
-import { startEventEmitter, EventEmitterInput } from "../actors/event-emitter-actor.js";
+} from "./actors/cleanup-phases.actor.js";
+import { taskRegistryActor, TaskRegistryInput } from "./actors/task-registry.actor.js";
 import { EventEmitter } from "events";
 
 export interface MachineInput {
@@ -33,14 +32,12 @@ export interface MachineInput {
   plugins?: BrowserPlugin[];
   instrumentationLogger?: BrowserLogger;
   appLogger?: FastifyBaseLogger;
-  taskRegistry: TaskRegistryRef;
-  eventEmitter: EventEmitter;
 }
 
 export interface MachineContext extends IMachineContext {
   instrumentationLogger?: BrowserLogger;
   appLogger?: FastifyBaseLogger;
-  eventEmitter: EventEmitter;
+  taskRegistryRef?: any;
 }
 
 export const browserMachine = setup({
@@ -48,6 +45,9 @@ export const browserMachine = setup({
     context: {} as MachineContext,
     events: {} as SupervisorEvent,
     input: {} as MachineInput,
+    children: {} as {
+      taskRegistry: "taskRegistry";
+    },
   },
   actors: {
     configResolver: fromPromise<ResolvedConfig, { rawConfig: RuntimeConfig }>(({ input }) =>
@@ -82,11 +82,36 @@ export const browserMachine = setup({
     notifyShutdownActor: fromPromise<void, { plugins: BrowserPlugin[] }>(({ input }) =>
       notifyPluginsShutdown(input),
     ),
-    eventEmitter: fromCallback<SupervisorEvent, EventEmitterInput>(({ sendBack, input }) => {
-      return startEventEmitter(input, sendBack);
-    }),
+    browserEventActor: fromCallback<any, { browser: BrowserRef; launcher: BrowserLauncher }>(
+      ({ sendBack, input }) => {
+        const { browser, launcher } = input;
+        const removeCreated = launcher.onTargetCreated(browser, (target: any) => {
+          sendBack({ type: "BROWSER_EVENT", event: "targetCreated", data: { target } });
+        });
+        const removeDestroyed = launcher.onTargetDestroyed(browser, (targetId: string) => {
+          sendBack({ type: "BROWSER_EVENT", event: "targetDestroyed", data: { targetId } });
+        });
+        browser.instance.on("fileProtocolViolation", (data: any) => {
+          sendBack({ type: "BROWSER_EVENT", event: "fileProtocolViolation", data });
+        });
+
+        return () => {
+          removeCreated();
+          removeDestroyed();
+          browser.instance.off("fileProtocolViolation", () => {});
+        };
+      },
+    ),
+    taskRegistry: taskRegistryActor,
   },
   actions: {
+    assignTaskRegistry: assign({
+      taskRegistryRef: ({ spawn, context }) =>
+        spawn("taskRegistry", {
+          id: "taskRegistry",
+          input: { appLogger: context.appLogger },
+        }),
+    }),
     assignRawConfig: assign({
       rawConfig: ({ event }) => (event as { type: "START"; config: RuntimeConfig }).config,
       plugins: ({ event, context }) =>
@@ -118,6 +143,18 @@ export const browserMachine = setup({
       error: null,
       // We keep launcher and plugins
     }),
+    forwardToTaskRegistry: ({ context, event }) => {
+      if (context.taskRegistryRef) {
+        context.taskRegistryRef.send(event);
+      }
+    },
+    emitBrowserEvent: emit(({ event }) => {
+      const e = event as { type: "BROWSER_EVENT"; event: string; data: any };
+      return {
+        type: e.event,
+        ...e.data,
+      };
+    }),
   },
 }).createMachine({
   id: "browserSupervisor",
@@ -132,11 +169,32 @@ export const browserMachine = setup({
     error: null,
     plugins: input.plugins || [],
     sessionState: null,
-    taskRegistry: input.taskRegistry,
-    eventEmitter: input.eventEmitter,
+    taskRegistry: null,
     instrumentationLogger: input.instrumentationLogger,
     appLogger: input.appLogger,
+    taskRegistryRef: null,
   }),
+  entry: "assignTaskRegistry",
+  on: {
+    WAIT_UNTIL: {
+      actions: ({ context, event }) => {
+        context.taskRegistryRef?.send(event);
+      },
+    },
+    DRAIN: {
+      actions: ({ context, event }) => {
+        context.taskRegistryRef?.send(event);
+      },
+    },
+    CANCEL_ALL: {
+      actions: ({ context, event }) => {
+        context.taskRegistryRef?.send(event);
+      },
+    },
+    BROWSER_EVENT: {
+      actions: "emitBrowserEvent",
+    },
+  },
   states: {
     idle: {
       on: {
@@ -234,12 +292,11 @@ export const browserMachine = setup({
               }),
             },
             {
-              id: "eventEmitter",
-              src: "eventEmitter",
+              id: "browserEventActor",
+              src: "browserEventActor",
               input: ({ context }) => ({
                 browser: context.browser!,
                 launcher: context.launcher,
-                emitter: context.eventEmitter,
               }),
             },
           ],
@@ -258,7 +315,7 @@ export const browserMachine = setup({
               plugins: context.plugins,
               config: context.resolvedConfig!,
               browser: context.browser,
-              taskRegistry: context.taskRegistry,
+              taskRegistryRef: context.taskRegistryRef,
             }),
             onDone: "#browserSupervisor.cleanup",
             onError: "#browserSupervisor.cleanup",

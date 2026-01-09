@@ -1,7 +1,7 @@
-import { BrowserLauncher, BrowserRef, ProxyRef } from "../drivers/types.js";
-import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
-import { BrowserPlugin } from "../plugins/base-plugin.js";
-import { traceOperation } from "../tracing/index.js";
+import { BrowserLauncher, BrowserRef, ProxyRef } from "../../drivers/types.js";
+import { BrowserLogger } from "../../../services/cdp/instrumentation/browser-logger.js";
+import { BrowserPlugin } from "../../plugins/base-plugin.js";
+import { traceOperation } from "../../tracing/index.js";
 
 export async function closeBrowser(input: {
   launcher: BrowserLauncher;

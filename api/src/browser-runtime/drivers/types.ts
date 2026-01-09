@@ -2,7 +2,7 @@ import { Browser, Page, Target } from "puppeteer-core";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { SessionData } from "../../services/context/types.js";
-import { TaskRegistryRef } from "../actors/task-registry.js";
+import { TaskRegistryRef } from "../machine/actors/task-registry.actor.js";
 
 export { SessionData };
 
@@ -94,4 +94,8 @@ export type SupervisorEvent =
   | { type: "END_SESSION" }
   | { type: "BROWSER_CRASHED"; error: Error }
   | { type: "USER_DISCONNECTED" }
-  | { type: "FATAL_ERROR"; error: Error };
+  | { type: "FATAL_ERROR"; error: Error }
+  | { type: "WAIT_UNTIL"; fn: (signal: AbortSignal) => Promise<void>; label?: string }
+  | { type: "DRAIN"; timeoutMs: number; resolve?: () => void }
+  | { type: "CANCEL_ALL"; reason: string }
+  | { type: "BROWSER_EVENT"; event: string; data: any };

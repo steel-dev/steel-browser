@@ -1,27 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createActor, waitFor } from "xstate";
-import { EventEmitter } from "events";
 import { browserMachine } from "./browser.machine.js";
 import type { BrowserLauncher } from "../types.js";
 import { createMockBrowserInstance } from "../__tests__/helpers.js";
 
-vi.mock("../actors/timezone.js", () => ({
+vi.mock("../utils/timezone.js", () => ({
   fetchTimezone: vi.fn().mockResolvedValue("UTC"),
 }));
 
 describe("browserMachine", () => {
-  let taskRegistry: any;
-  let eventEmitter: EventEmitter;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    taskRegistry = {
-      waitUntil: vi.fn(),
-      drain: vi.fn().mockResolvedValue(undefined),
-      cancelAll: vi.fn(),
-      getPendingCount: vi.fn().mockReturnValue(0),
-    };
-    eventEmitter = new EventEmitter();
   });
 
   it("should transition from idle to ready through booting", async () => {
@@ -47,29 +36,27 @@ describe("browserMachine", () => {
     const actor = createActor(browserMachine, {
       input: {
         launcher,
-        taskRegistry,
-        eventEmitter,
       },
     });
     actor.start();
 
-    expect(actor.getSnapshot().matches("idle" as any)).toBe(true);
+    expect(actor.getSnapshot().matches("idle")).toBe(true);
 
     actor.send({
       type: "START",
       config: { sessionId: "test-session", port: 3000, dataPlanePort: 0 },
     });
 
-    await waitFor(actor, (s) => s.matches("ready" as any), { timeout: 5000 });
+    await waitFor(actor, (s) => s.matches("ready"), { timeout: 5000 });
 
-    expect(actor.getSnapshot().matches("ready" as any)).toBe(true);
+    expect(actor.getSnapshot().matches("ready")).toBe(true);
     const ctx = actor.getSnapshot().context;
     expect(ctx.resolvedConfig).toBeDefined();
     expect(ctx.browser).toBeDefined();
 
     actor.send({ type: "STOP" });
-    await waitFor(actor, (s) => s.matches("idle" as any), { timeout: 5000 });
-    expect(actor.getSnapshot().matches("idle" as any)).toBe(true);
+    await waitFor(actor, (s) => s.matches("idle"), { timeout: 5000 });
+    expect(actor.getSnapshot().matches("idle")).toBe(true);
   });
 
   it("should handle browser crash", async () => {
@@ -95,8 +82,6 @@ describe("browserMachine", () => {
     const actor = createActor(browserMachine, {
       input: {
         launcher,
-        taskRegistry,
-        eventEmitter,
       },
     });
     actor.start();
@@ -106,14 +91,14 @@ describe("browserMachine", () => {
       config: { sessionId: "test-session", port: 3000, dataPlanePort: 0 },
     });
 
-    await waitFor(actor, (s) => s.matches("ready" as any), { timeout: 5000 });
+    await waitFor(actor, (s) => s.matches("ready"), { timeout: 5000 });
 
     actor.send({
       type: "BROWSER_CRASHED",
       error: new Error("Crash"),
     });
 
-    await waitFor(actor, (s) => s.matches("idle" as any), { timeout: 5000 });
-    expect(actor.getSnapshot().matches("idle" as any)).toBe(true);
+    await waitFor(actor, (s) => s.matches("idle"), { timeout: 5000 });
+    expect(actor.getSnapshot().matches("idle")).toBe(true);
   });
 });

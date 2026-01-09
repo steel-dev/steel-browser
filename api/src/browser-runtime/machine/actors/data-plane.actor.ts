@@ -1,6 +1,6 @@
 import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import { BrowserRef, ResolvedConfig, SupervisorEvent, BrowserLauncher } from "../types.js";
+import { BrowserRef, ResolvedConfig, SupervisorEvent, BrowserLauncher } from "../../types.js";
 
 export interface DataPlaneInput {
   browser: BrowserRef;
