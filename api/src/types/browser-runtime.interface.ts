@@ -65,6 +65,9 @@ export interface BrowserRuntime {
   // State
   isRunning(): boolean;
 
+  // Disconnect handling
+  setDisconnectHandler(handler: () => Promise<void>): void;
+
   // Event emitter methods (for socket handlers)
   on(event: string | symbol, listener: (...args: any[]) => void): this;
   removeListener(event: string | symbol, listener: (...args: any[]) => void): this;

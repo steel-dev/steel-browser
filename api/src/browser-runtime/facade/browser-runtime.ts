@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { createActor, waitFor, Actor, Snapshot } from "xstate";
+import { Page } from "puppeteer-core";
 import { browserMachine } from "../machine/browser.machine.js";
 import { RuntimeConfig, BrowserRef, SupervisorEvent, BrowserLauncher } from "../types.js";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
@@ -13,6 +14,7 @@ import { pino } from "pino";
 export class BrowserRuntime extends EventEmitter {
   private actor: Actor<typeof browserMachine>;
   private plugins: BrowserPlugin[] = [];
+  private logger: FastifyBaseLogger;
 
   constructor(options?: {
     launcher?: BrowserLauncher;
@@ -22,6 +24,7 @@ export class BrowserRuntime extends EventEmitter {
     super();
     const launcher = options?.launcher ?? new PuppeteerLauncher();
     const appLogger = options?.appLogger ?? pino();
+    this.logger = appLogger;
 
     this.actor = createActor(browserMachine, {
       input: {
@@ -31,7 +34,19 @@ export class BrowserRuntime extends EventEmitter {
       },
     });
 
+    let previousState: string | null = null;
     this.actor.subscribe((snapshot) => {
+      const currentState =
+        typeof snapshot.value === "string" ? snapshot.value : JSON.stringify(snapshot.value);
+
+      if (previousState !== currentState) {
+        this.logger.info(
+          { from: previousState, to: currentState, event: snapshot._nodes?.[0]?.key },
+          "[StateMachine] State transition",
+        );
+        previousState = currentState;
+      }
+
       if (snapshot.matches("ready")) {
         this.emit("ready", snapshot.context.browser);
       }
@@ -95,6 +110,13 @@ export class BrowserRuntime extends EventEmitter {
 
   getFingerprint(): BrowserFingerprintWithHeaders | null {
     return this.actor.getSnapshot().context.fingerprint;
+  }
+
+  updatePrimaryPage(page: Page): void {
+    const context = this.actor.getSnapshot().context;
+    if (context.browser) {
+      context.browser.primaryPage = page;
+    }
   }
 
   getState(): string {

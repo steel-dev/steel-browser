@@ -41,16 +41,23 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
+  private disconnectHandler: (() => Promise<void>) | null = null;
+  private intentionalShutdown = false;
+  private keepAlive: boolean;
+  private defaultLaunchConfig: BrowserLauncherOptions;
 
   constructor(
     runtime: XStateRuntime,
     logger: FastifyBaseLogger,
     instrumentationLogger: IBrowserLogger,
+    options?: { keepAlive?: boolean; defaultLaunchConfig?: BrowserLauncherOptions },
   ) {
     super();
     this.runtime = runtime;
     this.logger = logger.child({ component: "XStateAdapter" });
     this.instrumentationLogger = instrumentationLogger;
+    this.keepAlive = options?.keepAlive ?? true;
+    this.defaultLaunchConfig = options?.defaultLaunchConfig ?? { options: {} };
 
     this.instrumentationLogger.on?.(EmitEvent.Log, (event) => {
       this.emit(EmitEvent.Log, event);
@@ -83,6 +90,7 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
       timezone: options.timezone,
       userAgent: options.userAgent,
       userDataDir: options.userDataDir,
+      sessionContext: options.sessionContext || null,
       extensions: options.extensions,
       userPreferences: options.userPreferences,
       fingerprint: options.fingerprint,
@@ -92,22 +100,44 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
       deviceConfig: options.deviceConfig,
       dimensions: options.dimensions ?? null,
       host: env.HOST,
+      display: env.DISPLAY,
     };
   }
 
   async launch(config?: BrowserLauncherOptions): Promise<Browser> {
-    this.config = config;
-    const runtimeConfig = this.mapConfig(config || { options: {} });
+    const existingBrowser = this.runtime.getBrowser();
+    if (existingBrowser) {
+      return existingBrowser.instance;
+    }
+
+    const effectiveConfig = config ?? this.defaultLaunchConfig;
+    this.config = effectiveConfig;
+    const runtimeConfig = this.mapConfig(effectiveConfig);
 
     for (const hook of this.launchMutators) {
-      await Promise.resolve(hook(config || { options: {} }));
+      await Promise.resolve(hook(effectiveConfig));
     }
 
     const browserRef = await this.runtime.start(runtimeConfig);
+
+    browserRef.instance.once("disconnected", () => {
+      if (this.intentionalShutdown) {
+        return;
+      }
+
+      if (this.disconnectHandler) {
+        this.disconnectHandler().catch((err) => {
+          this.logger.error({ err }, "[XStateAdapter] Error in disconnect handler");
+        });
+      }
+    });
+
+    this.intentionalShutdown = false;
     return browserRef.instance;
   }
 
   async shutdown(): Promise<void> {
+    this.intentionalShutdown = true;
     for (const hook of this.shutdownMutators) {
       await Promise.resolve(hook(this.config || null));
     }
@@ -120,7 +150,13 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   async endSession(): Promise<void> {
+    this.sessionContext = await this.getBrowserState().catch(() => null);
     await this.shutdown();
+    this.instrumentationLogger.resetContext?.();
+
+    if (this.keepAlive) {
+      await this.launch(this.defaultLaunchConfig);
+    }
   }
 
   getBrowserInstance(): Browser | null {
@@ -152,7 +188,23 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   async refreshPrimaryPage(): Promise<void> {
-    // No-op for now
+    const browser = this.getBrowserInstance();
+    if (!browser) return;
+
+    const oldPage = await this.getPrimaryPage();
+    const newPage = await browser.newPage();
+
+    // Notify plugins before closing old page
+    for (const plugin of this.pluginRegistry.values()) {
+      try {
+        await plugin.onBeforePageClose?.(oldPage);
+      } catch (err) {
+        this.logger.error({ err, plugin: plugin.name }, "Error in plugin onBeforePageClose");
+      }
+    }
+
+    await oldPage.close();
+    this.runtime.updatePrimaryPage(newPage);
   }
 
   getLaunchConfig(): BrowserLauncherOptions | undefined {
@@ -160,11 +212,14 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   getUserAgent(): string | undefined {
-    return this.config?.userAgent;
+    return this.config?.userAgent || this.runtime.getFingerprint()?.fingerprint.navigator.userAgent;
   }
 
   getDimensions(): { width: number; height: number } {
-    return this.config?.dimensions || { width: 1920, height: 1080 };
+    const fingerprint = this.runtime.getFingerprint();
+    return (
+      this.config?.dimensions || fingerprint?.fingerprint.screen || { width: 1920, height: 1080 }
+    );
   }
 
   getFingerprintData(): BrowserFingerprintWithHeaders | null {
@@ -184,15 +239,13 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     }
 
     try {
-      this.logger.info(`[XStateAdapter] Dumping session data from userDataDir: ${userDataDir}`);
-
       const [cookieData, sessionData, storageData] = await Promise.all([
         this.getCookies(),
         this.chromeContextService.getSessionData(userDataDir),
         this.getExistingPageSessionData(),
       ]);
 
-      const result = {
+      return {
         cookies: cookieData,
         localStorage: {
           ...(sessionData.localStorage || {}),
@@ -207,9 +260,6 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
           ...(storageData.indexedDB || {}),
         },
       };
-
-      this.logger.info("[XStateAdapter] Session data dumped successfully");
-      return result;
     } catch (error) {
       this.logger.error({ err: error }, "Error dumping session data");
       return {};
@@ -262,6 +312,10 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
     handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>,
   ): void {
     this.proxyWebSocketHandler = handler;
+  }
+
+  setDisconnectHandler(handler: () => Promise<void>): void {
+    this.disconnectHandler = handler;
   }
 
   async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
@@ -345,16 +399,26 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
   }
 
   private async getCookies(): Promise<Protocol.Network.Cookie[]> {
-    const primaryPage = await this.getPrimaryPage();
-    const client = await primaryPage.createCDPSession();
-    const { cookies } = await client.send("Network.getAllCookies");
-    await client.detach();
-    return cookies;
+    try {
+      const browser = this.getBrowserInstance();
+      if (!browser?.isConnected()) {
+        return [];
+      }
+
+      const primaryPage = await this.getPrimaryPage();
+      const client = await primaryPage.createCDPSession();
+      const { cookies } = await client.send("Network.getAllCookies");
+      await client.detach();
+      return cookies;
+    } catch (err) {
+      this.logger.debug({ err }, "Failed to get cookies via CDP, browser may be disconnected");
+      return [];
+    }
   }
 
   private async getExistingPageSessionData(): Promise<SessionData> {
     const browser = this.getBrowserInstance();
-    if (!browser) return {};
+    if (!browser || !browser.isConnected()) return {};
 
     const result: SessionData = {
       localStorage: {},
