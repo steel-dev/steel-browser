@@ -86,6 +86,22 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("true"),
+  STATE_TRANSITION_LOG_DIR: z.string().optional().default("/tmp/steel-state-logs"),
+  STATE_TRANSITION_LOG_MAX_SIZE_MB: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 10))
+    .default("10"),
+  STATE_TRANSITION_LOG_MAX_FILES: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 5))
+    .default("5"),
+  STATE_TRANSITION_LOG_ENABLED: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
 });
 
 export const env = envSchema.parse(process.env);
