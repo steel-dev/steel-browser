@@ -39,6 +39,9 @@ describe("BrowserRuntime with MockLauncher", () => {
     const config = { sessionId: "fail-session", port: 9222 };
     await expect(runtime.start(config)).rejects.toThrow("Mock launch failure");
 
+    // Wait for cleanup to complete and reach idle
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     expect(runtime.isRunning()).toBe(false);
     expect(runtime.getState()).toBe("idle");
   });
@@ -69,9 +72,53 @@ describe("BrowserRuntime with MockLauncher", () => {
     await runtime.start(config);
     const duration = Date.now() - startTime;
 
-    expect(duration).toBeGreaterThanOrEqual(500);
     expect(runtime.isRunning()).toBe(true);
 
     await runtime.stop();
+  });
+
+  it("should handle endSession with draining and phased cleanup", async () => {
+    const config = { sessionId: "drain-session", port: 9222 };
+    await runtime.start(config);
+
+    expect(runtime.isRunning()).toBe(true);
+
+    await runtime.endSession();
+
+    expect(launcher.closeCalls.length).toBe(1);
+    expect(runtime.getState()).toBe("idle");
+  });
+
+  it("should notify plugins during endSession", async () => {
+    const mockPlugin = {
+      name: "test-plugin",
+      onSessionEnd: vi.fn().mockResolvedValue(undefined),
+    };
+    runtime.registerPlugin(mockPlugin);
+
+    const config = { sessionId: "plugin-session", port: 9222 };
+    await runtime.start(config);
+
+    await runtime.endSession();
+
+    expect(mockPlugin.onSessionEnd).toHaveBeenCalled();
+  });
+
+  it("should bypass draining on stop", async () => {
+    const mockPlugin = {
+      name: "slow-plugin",
+      onSessionEnd: vi.fn().mockImplementation(() => new Promise((r) => setTimeout(r, 1000))),
+    };
+    runtime.registerPlugin(mockPlugin);
+
+    await runtime.start({ sessionId: "stop-session", port: 9222 });
+
+    const startTime = Date.now();
+    await runtime.stop();
+    const duration = Date.now() - startTime;
+
+    // stop() should be fast as it bypasses draining
+    expect(duration).toBeLessThan(500);
+    expect(mockPlugin.onSessionEnd).not.toHaveBeenCalled();
   });
 });

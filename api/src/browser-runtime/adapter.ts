@@ -170,7 +170,8 @@ export class XStateAdapter extends EventEmitter implements IBrowserRuntime {
 
   async endSession(): Promise<void> {
     this.sessionContext = await this.getBrowserState().catch(() => null);
-    await this.shutdown();
+
+    await this.runtime.endSession();
     this.instrumentationLogger.resetContext?.();
 
     if (this.sessionSpan) {

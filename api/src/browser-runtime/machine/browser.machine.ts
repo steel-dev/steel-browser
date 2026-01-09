@@ -17,6 +17,8 @@ import { startPluginManager, PluginManagerInput } from "../actors/plugin-manager
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
 import { traceBootPhase, traceOperation } from "../tracing/index.js";
+import { drain, DrainInput } from "../actors/drain-actor.js";
+import { closeBrowser, closeProxy, flushLogs } from "../actors/cleanup-phases.js";
 
 export interface MachineInput {
   launcher: BrowserLauncher;
@@ -56,27 +58,16 @@ export const browserMachine = setup({
     pluginManager: fromCallback<SupervisorEvent, PluginManagerInput>(({ sendBack, input }) =>
       startPluginManager(input, sendBack),
     ),
-    cleanupActor: fromPromise<
-      void,
-      {
-        launcher: BrowserLauncher;
-        browser: BrowserRef | null;
-        proxy: ProxyRef | null;
-        instrumentationLogger?: BrowserLogger;
-      }
-    >(async ({ input }) => {
-      await traceOperation("browser.cleanup", "detailed", async (span) => {
-        if (input.browser) {
-          await input.launcher.close(input.browser);
-        }
-        if (input.proxy) {
-          await input.proxy.close();
-        }
-        if (input.instrumentationLogger?.flush) {
-          await input.instrumentationLogger.flush();
-        }
-      });
-    }),
+    drainActor: fromPromise<void, DrainInput>(({ input }) => drain(input)),
+    closeBrowserActor: fromPromise<void, { launcher: BrowserLauncher; browser: BrowserRef | null }>(
+      ({ input }) => closeBrowser(input),
+    ),
+    closeProxyActor: fromPromise<void, { proxy: ProxyRef | null }>(({ input }) =>
+      closeProxy(input),
+    ),
+    flushLogsActor: fromPromise<void, { instrumentationLogger?: BrowserLogger }>(({ input }) =>
+      flushLogs(input),
+    ),
   },
   actions: {
     assignRawConfig: assign({
@@ -97,6 +88,9 @@ export const browserMachine = setup({
     }),
     assignError: assign({
       error: ({ event }) => (event as { error: Error }).error,
+    }),
+    captureSessionState: assign({
+      sessionState: ({ context }) => context.resolvedConfig?.sessionContext || null,
     }),
     clearContext: assign({
       rawConfig: null,
@@ -120,6 +114,7 @@ export const browserMachine = setup({
     fingerprint: null,
     error: null,
     plugins: input.plugins || [],
+    sessionState: null,
     instrumentationLogger: input.instrumentationLogger,
     appLogger: input.appLogger,
   }),
@@ -187,36 +182,59 @@ export const browserMachine = setup({
       },
     },
     ready: {
-      invoke: [
-        {
-          id: "dataPlane",
-          src: "dataPlane",
-          input: ({ context }) => ({
-            launcher: context.launcher,
-            browser: context.browser!,
-            config: context.resolvedConfig!,
-          }),
+      initial: "active",
+      states: {
+        active: {
+          invoke: [
+            {
+              id: "dataPlane",
+              src: "dataPlane",
+              input: ({ context }) => ({
+                launcher: context.launcher,
+                browser: context.browser!,
+                config: context.resolvedConfig!,
+              }),
+            },
+            {
+              id: "loggerActor",
+              src: "loggerActor",
+              input: ({ context }) => ({
+                browser: context.browser!,
+                config: context.resolvedConfig!,
+                instrumentationLogger: context.instrumentationLogger,
+                appLogger: context.appLogger,
+              }),
+            },
+            {
+              id: "pluginManager",
+              src: "pluginManager",
+              input: ({ context }) => ({
+                browser: context.browser!,
+                config: context.resolvedConfig!,
+                plugins: context.plugins,
+              }),
+            },
+          ],
+          on: {
+            END_SESSION: {
+              target: "draining",
+              actions: "captureSessionState",
+            },
+          },
         },
-        {
-          id: "loggerActor",
-          src: "loggerActor",
-          input: ({ context }) => ({
-            browser: context.browser!,
-            config: context.resolvedConfig!,
-            instrumentationLogger: context.instrumentationLogger,
-            appLogger: context.appLogger,
-          }),
+        draining: {
+          invoke: {
+            src: "drainActor",
+            input: ({ context }) => ({
+              instrumentationLogger: context.instrumentationLogger,
+              plugins: context.plugins,
+              config: context.resolvedConfig!,
+            }),
+            onDone: "#browserSupervisor.cleanup",
+            onError: "#browserSupervisor.cleanup",
+          },
         },
-        {
-          id: "pluginManager",
-          src: "pluginManager",
-          input: ({ context }) => ({
-            browser: context.browser!,
-            config: context.resolvedConfig!,
-            plugins: context.plugins,
-          }),
-        },
-      ],
+      },
       on: {
         STOP: "cleanup",
         USER_DISCONNECTED: "cleanup",
@@ -231,36 +249,53 @@ export const browserMachine = setup({
       },
     },
     cleanup: {
-      invoke: {
-        src: "cleanupActor",
-        input: ({ context }) => ({
-          launcher: context.launcher,
-          browser: context.browser,
-          proxy: context.proxy,
-          instrumentationLogger: context.instrumentationLogger,
-        }),
-        onDone: {
-          target: "idle",
-          actions: "clearContext",
+      initial: "closingBrowser",
+      states: {
+        closingBrowser: {
+          invoke: {
+            src: "closeBrowserActor",
+            input: ({ context }) => ({
+              launcher: context.launcher,
+              browser: context.browser,
+            }),
+            onDone: "closingProxy",
+            onError: "closingProxy",
+          },
+          after: {
+            10000: "closingProxy",
+          },
         },
-        onError: {
-          target: "idle",
-          actions: "clearContext",
+        closingProxy: {
+          invoke: {
+            src: "closeProxyActor",
+            input: ({ context }) => ({
+              proxy: context.proxy,
+            }),
+            onDone: "flushingLogs",
+            onError: "flushingLogs",
+          },
+          after: {
+            5000: "flushingLogs",
+          },
+        },
+        flushingLogs: {
+          invoke: {
+            src: "flushLogsActor",
+            input: ({ context }) => ({
+              instrumentationLogger: context.instrumentationLogger,
+            }),
+            onDone: "#browserSupervisor.idle",
+            onError: "#browserSupervisor.idle",
+          },
+          after: {
+            5000: "#browserSupervisor.idle",
+          },
+          exit: "clearContext",
         },
       },
     },
     failed: {
-      invoke: {
-        src: "cleanupActor",
-        input: ({ context }) => ({
-          launcher: context.launcher,
-          browser: context.browser,
-          proxy: context.proxy,
-          instrumentationLogger: context.instrumentationLogger,
-        }),
-        onDone: "idle",
-        onError: "idle",
-      },
+      always: { target: "cleanup" },
     },
   },
 });

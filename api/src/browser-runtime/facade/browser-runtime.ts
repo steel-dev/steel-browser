@@ -2,7 +2,13 @@ import { EventEmitter } from "events";
 import { createActor, waitFor, Actor, Snapshot } from "xstate";
 import { Page } from "puppeteer-core";
 import { browserMachine } from "../machine/browser.machine.js";
-import { RuntimeConfig, BrowserRef, SupervisorEvent, BrowserLauncher } from "../types.js";
+import {
+  RuntimeConfig,
+  BrowserRef,
+  SupervisorEvent,
+  BrowserLauncher,
+  SessionData,
+} from "../types.js";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { PuppeteerLauncher } from "../drivers/puppeteer-launcher.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
@@ -60,10 +66,10 @@ export class BrowserRuntime extends EventEmitter {
         previousState = currentState;
       }
 
-      if (snapshot.matches("ready")) {
+      if (snapshot.matches("ready" as any)) {
         this.emit("ready", snapshot.context.browser);
       }
-      if (snapshot.matches("failed")) {
+      if (snapshot.matches("failed" as any)) {
         const err = snapshot.context.error;
         if (this.listenerCount("error") > 0) {
           this.emit("error", err);
@@ -97,16 +103,19 @@ export class BrowserRuntime extends EventEmitter {
 
   async start(config: RuntimeConfig): Promise<BrowserRef> {
     const currentSnapshot = this.actor.getSnapshot();
-    if (!currentSnapshot.matches("idle")) {
+    if (!currentSnapshot.matches("idle" as any)) {
       throw new Error(`Cannot start: machine is in state ${JSON.stringify(currentSnapshot.value)}`);
     }
 
     this.actor.send({ type: "START", config, plugins: this.plugins });
 
-    const snapshot = await waitFor(this.actor, (s) => s.matches("ready") || s.matches("failed"));
+    const snapshot = await waitFor(
+      this.actor,
+      (s) => s.matches("ready" as any) || !!s.context.error,
+    );
 
-    if (snapshot.matches("failed")) {
-      throw snapshot.context.error || new Error("Failed to start browser");
+    if (snapshot.context.error) {
+      throw snapshot.context.error;
     }
 
     return snapshot.context.browser!;
@@ -114,15 +123,29 @@ export class BrowserRuntime extends EventEmitter {
 
   async stop(): Promise<void> {
     this.actor.send({ type: "STOP" });
-    await waitFor(this.actor, (s) => s.matches("idle"));
+    await waitFor(this.actor, (s) => s.matches("idle" as any));
+  }
+
+  async endSession(): Promise<void> {
+    const currentSnapshot = this.actor.getSnapshot();
+    if (currentSnapshot.matches("ready.active" as any)) {
+      this.actor.send({ type: "END_SESSION" });
+      await waitFor(this.actor, (s) => s.matches("idle" as any));
+    } else {
+      await this.stop();
+    }
   }
 
   isRunning(): boolean {
-    return this.actor.getSnapshot().matches("ready");
+    return this.actor.getSnapshot().matches("ready" as any);
   }
 
   getBrowser(): BrowserRef | null {
     return this.actor.getSnapshot().context.browser;
+  }
+
+  getSessionState(): SessionData | null {
+    return this.actor.getSnapshot().context.sessionState;
   }
 
   getFingerprint(): BrowserFingerprintWithHeaders | null {
