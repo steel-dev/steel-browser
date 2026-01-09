@@ -1,6 +1,7 @@
 import { Browser, Page, Target } from "puppeteer-core";
 import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
+import { SessionData } from "../../services/context/types.js";
 
 export interface RuntimeConfig {
   sessionId: string;
@@ -11,6 +12,7 @@ export interface RuntimeConfig {
   timezone?: string | Promise<string>;
   userAgent?: string;
   userDataDir?: string;
+  sessionContext?: SessionData | null;
   extensions?: string[];
   userPreferences?: Record<string, unknown>;
   fingerprint?: BrowserFingerprintWithHeaders | null;
@@ -33,6 +35,7 @@ export interface ResolvedConfig extends Omit<RuntimeConfig, "timezone"> {
   userDataDir: string;
   headless: boolean;
   fingerprint: BrowserFingerprintWithHeaders | null;
+  sessionContext: SessionData | null;
 }
 
 export interface ProxyRef {

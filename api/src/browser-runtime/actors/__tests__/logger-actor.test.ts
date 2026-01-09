@@ -47,7 +47,11 @@ describe("LoggerActor", () => {
   });
 
   it("should attach to existing targets on start", () => {
-    const mockTarget = { type: () => "page", url: () => "http://test.com" };
+    const mockTarget = {
+      type: () => "page",
+      url: () => "http://test.com",
+      page: vi.fn().mockResolvedValue(null),
+    };
     mockBrowser.instance.targets.mockReturnValue([mockTarget]);
 
     const input = {

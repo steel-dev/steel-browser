@@ -96,6 +96,7 @@ export class PuppeteerLauncher implements BrowserLauncher {
       "--noerrdialogs",
       "--force-device-scale-factor=1",
       "--disable-hang-monitor",
+      "--window-position=0,0",
     ];
 
     const headlessArgs = [
@@ -127,6 +128,7 @@ export class PuppeteerLauncher implements BrowserLauncher {
     ]).filter((arg) => !(config.filterChromeArgs || []).includes(arg));
 
     const launchOptions = {
+      headless: isHeadless,
       defaultViewport: null,
       args: launchArgs,
       executablePath: chromeExecPath,
@@ -135,7 +137,12 @@ export class PuppeteerLauncher implements BrowserLauncher {
       env: {
         HOME: os.userInfo().homedir,
         TZ: timezone,
-        ...(isHeadless ? {} : { DISPLAY: config.display || process.env.DISPLAY }),
+        ...(isHeadless
+          ? {}
+          : {
+              DISPLAY: config.display || process.env.DISPLAY,
+              XAUTHORITY: process.env.XAUTHORITY,
+            }),
       },
       userDataDir: config.userDataDir,
       dumpio: config.debugChromeProcess,
@@ -155,13 +162,25 @@ export class PuppeteerLauncher implements BrowserLauncher {
         await installMouseHelper(primaryPage, config.deviceConfig?.device || "desktop");
       }
 
-      // Inject fingerprint if available
       if (config.fingerprint) {
         await injectFingerprint(primaryPage, config.fingerprint, dummyLogger);
       }
 
-      // Block file protocol
       await this.setupFileProtocolBlocking(primaryPage, config.sessionId);
+
+      if (config.sessionContext?.cookies?.length) {
+        const client = await primaryPage.createCDPSession();
+        try {
+          await client.send("Network.setCookies", {
+            cookies: config.sessionContext.cookies.map((cookie) => ({
+              ...cookie,
+              partitionKey: cookie.partitionKey as any,
+            })),
+          });
+        } finally {
+          await client.detach().catch(() => {});
+        }
+      }
 
       return {
         id: config.sessionId,
@@ -192,8 +211,15 @@ export class PuppeteerLauncher implements BrowserLauncher {
   }
 
   async close(browser: BrowserRef): Promise<void> {
+    console.log(
+      `[PuppeteerLauncher] Closing browser (session: ${browser.id}, pid: ${browser.pid})`,
+    );
+    console.log(
+      `[PuppeteerLauncher] Browser connected before close: ${browser.instance.isConnected()}`,
+    );
     try {
       await browser.instance.close();
+      console.log(`[PuppeteerLauncher] Browser closed successfully`);
     } catch (err) {
       console.warn("[PuppeteerLauncher] Error closing browser:", err);
     }

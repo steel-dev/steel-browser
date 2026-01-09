@@ -53,5 +53,6 @@ export async function resolveConfig(rawConfig: RuntimeConfig): Promise<ResolvedC
     fingerprint,
     dimensions: resolvedDimensions,
     userAgent: resolvedUserAgent,
+    sessionContext: rawConfig.sessionContext ?? null,
   };
 }

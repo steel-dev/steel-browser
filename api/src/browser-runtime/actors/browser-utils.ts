@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { Page } from "puppeteer-core";
+import { env } from "../../env.js";
 
 export const getChromeExecutablePath = (customPath?: string) => {
   if (customPath) {
@@ -8,6 +9,14 @@ export const getChromeExecutablePath = (customPath?: string) => {
     if (fs.existsSync(normalizedPath)) {
       return customPath;
     }
+  }
+
+  if (env.CHROME_EXECUTABLE_PATH) {
+    const normalizedPath = path.normalize(env.CHROME_EXECUTABLE_PATH);
+    if (fs.existsSync(normalizedPath)) {
+      return env.CHROME_EXECUTABLE_PATH;
+    }
+    console.warn(`Custom chrome executable at ${normalizedPath} does not exist`);
   }
 
   if (process.platform === "win32") {

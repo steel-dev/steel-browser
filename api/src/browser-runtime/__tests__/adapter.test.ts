@@ -40,7 +40,17 @@ describe("XStateAdapter", () => {
 
   it("should return session context when getSessionContext is called", async () => {
     const sessionContext = { cookies: [{ name: "test", value: "val" }] as any };
-    (runtime.start as any).mockResolvedValue({ instance: {} });
+    runtime.getBrowser.mockReturnValue(null);
+    (runtime.start as any).mockResolvedValue({
+      instance: {
+        once: vi.fn(),
+        on: vi.fn(),
+        off: vi.fn(),
+        process: vi.fn().mockReturnValue({ pid: 12345 }),
+        wsEndpoint: vi.fn().mockReturnValue("ws://localhost:9222"),
+        isConnected: vi.fn().mockReturnValue(true),
+      },
+    });
 
     await adapter.launch({
       options: { headless: true },
@@ -62,7 +72,15 @@ describe("XStateAdapter", () => {
     };
     const mockBrowser = {
       pages: vi.fn().mockResolvedValue([mockPage]),
+      once: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      isConnected: vi.fn().mockReturnValue(true),
+      process: vi.fn().mockReturnValue({ pid: 12345 }),
+      wsEndpoint: vi.fn().mockReturnValue("ws://localhost:9222"),
     };
+
+    runtime.getBrowser.mockReturnValueOnce(null);
     (runtime.start as any).mockResolvedValue({ instance: mockBrowser });
     runtime.getBrowser.mockReturnValue({
       instance: mockBrowser,

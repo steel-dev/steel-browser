@@ -65,6 +65,7 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null;
+  private disconnectHandler: (() => Promise<void>) | null = null;
   private chromeContextService: ChromeContextService;
   private plugins: Map<string, BasePlugin>;
   private sessionHooks: SessionHooks;
@@ -503,6 +504,10 @@ export class Orchestrator extends EventEmitter implements BrowserRuntime {
     handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
   ): void {
     this.proxyWebSocketHandler = handler;
+  }
+
+  public setDisconnectHandler(handler: () => Promise<void>): void {
+    this.disconnectHandler = handler;
   }
 
   public async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {

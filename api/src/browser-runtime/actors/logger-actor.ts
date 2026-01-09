@@ -4,6 +4,7 @@ import { FastifyBaseLogger } from "fastify";
 import { TargetInstrumentationManager } from "../../services/cdp/instrumentation/target-manager.js";
 import { injectFingerprint } from "../services/fingerprint.service.js";
 import { Target } from "puppeteer-core";
+import { groupSessionStorageByOrigin, handleFrameNavigated } from "../../utils/context.js";
 
 export interface LoggerInput {
   browser: BrowserRef;
@@ -27,19 +28,31 @@ export function startLogger(
 
   const targetManager = new TargetInstrumentationManager(instrumentationLogger, appLogger);
 
+  const storageByOrigin = groupSessionStorageByOrigin(config.sessionContext || undefined);
+
   const targetCreatedHandler = (target: Target) => {
     targetManager.attach(target, target.type() as any).catch((err) => {
       appLogger.error({ err }, "[LoggerActor] Failed to attach to target");
     });
 
-    if (target.type() === "page" && config.fingerprint) {
+    if (target.type() === "page") {
       target
         .page()
         .then((page) => {
-          if (page) {
-            injectFingerprint(page, config.fingerprint!, appLogger).catch((err) => {
+          if (!page) return;
+
+          // Inject fingerprint
+          if (config.fingerprint) {
+            injectFingerprint(page, config.fingerprint, appLogger).catch((err) => {
               appLogger.error({ err }, "[LoggerActor] Failed to inject fingerprint into new page");
             });
+          }
+
+          // Inject storage on navigation
+          if (storageByOrigin.size > 0) {
+            page.on("framenavigated", (frame) =>
+              handleFrameNavigated(frame, storageByOrigin, appLogger),
+            );
           }
         })
         .catch((err) => {

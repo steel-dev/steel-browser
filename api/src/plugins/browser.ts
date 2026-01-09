@@ -77,7 +77,28 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
       appLogger: fastify.log,
     });
 
-    cdpService = new XStateAdapter(xstateRuntime, fastify.log, instrumentationLogger);
+    const defaultLaunchConfig: BrowserLauncherOptions = {
+      options: {
+        headless: env.CHROME_HEADLESS,
+        args: [],
+        ignoreDefaultArgs: ["--enable-automation"],
+      },
+      blockAds: true,
+      extensions: [],
+      userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
+      userPreferences: {
+        plugins: {
+          always_open_pdf_externally: true,
+          plugins_disabled: ["Chrome PDF Viewer"],
+        },
+      },
+      deviceConfig: { device: "desktop" },
+    };
+
+    cdpService = new XStateAdapter(xstateRuntime, fastify.log, instrumentationLogger, {
+      keepAlive: true,
+      defaultLaunchConfig,
+    });
   } else if (useSessionMachine) {
     fastify.log.info("Using SessionMachine runtime");
     cdpService = new Orchestrator({
