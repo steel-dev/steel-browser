@@ -49,6 +49,15 @@ export class PluginManager {
   }
 
   /**
+   * Track async plugin tasks and surface errors
+   */
+  public waitUntil(task: Promise<void>): void {
+    task.catch((error) => {
+      this.logger.error({ err: error }, "Plugin task failed in waitUntil");
+    });
+  }
+
+  /**
    * Notify all plugins about a browser launch
    */
   public async onBrowserLaunch(browser: Browser): Promise<void> {
