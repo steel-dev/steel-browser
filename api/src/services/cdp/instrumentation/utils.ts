@@ -1,4 +1,5 @@
 import type { Target, Protocol } from "puppeteer-core";
+import { safeStringify } from "./storage/safe-json.js";
 
 export function extractTargetId(target: Target): string {
   return (target as any)._targetId as string;
@@ -6,7 +7,7 @@ export function extractTargetId(target: Target): string {
 
 export function serializeRemoteObject(obj: Protocol.Runtime.RemoteObject): string {
   if (obj.value !== undefined) {
-    return typeof obj.value === "object" ? JSON.stringify(obj.value, null, 2) : String(obj.value);
+    return typeof obj.value === "object" ? safeStringify(obj.value) : String(obj.value);
   }
   return obj.description ?? "<unknown>";
 }
