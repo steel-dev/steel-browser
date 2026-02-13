@@ -172,7 +172,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
-      server.cdpService.getInstrumentationLogger().record({
+      server.cdpService.getInstrumentationLogger()?.record({
         type: BrowserEventType.Recording,
         timestamp: new Date().toISOString(),
         data: request.body,

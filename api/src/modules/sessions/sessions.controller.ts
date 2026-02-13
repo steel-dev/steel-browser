@@ -1,4 +1,4 @@
-import { CDPService } from "../../services/cdp/cdp.service.js";
+import { BrowserRuntime } from "../../types/browser-runtime.interface.js";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors.js";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
@@ -60,7 +60,11 @@ export const handleLaunchBrowserSession = async (
   } catch (e: unknown) {
     server.log.error({ err: e }, "Failed lauching browser session");
     const error = getErrors(e);
-    return reply.code(500).send({ success: false, message: error });
+    const statusCode =
+      typeof (e as { statusCode?: unknown } | null)?.statusCode === "number"
+        ? ((e as { statusCode: number }).statusCode as number)
+        : 500;
+    return reply.code(statusCode).send({ success: false, message: error });
   }
 };
 
@@ -80,7 +84,7 @@ export const handleExitBrowserSession = async (
 };
 
 export const handleGetBrowserContext = async (
-  browserService: CDPService,
+  browserService: BrowserRuntime,
   request: FastifyRequest,
   reply: FastifyReply,
 ) => {
@@ -177,7 +181,7 @@ export const handleGetSessionLiveDetails = async (
     const pagesInfo = await Promise.all(
       pages.map(async (page) => {
         try {
-          const pageId = page.target()._targetId;
+          const pageId = server.cdpService.getTargetId(page);
 
           const title = await page.title();
 
