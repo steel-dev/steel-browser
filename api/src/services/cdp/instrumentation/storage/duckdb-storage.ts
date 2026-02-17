@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import { LogStorage, LogQuery, LogQueryResult } from "./log-storage.interface.js";
 import { BrowserEventUnion } from "../types.js";
 import { randomUUID } from "crypto";
+import { safeStringify } from "./safe-json.js";
 
 export type ParquetCompression = "zstd" | "snappy" | "gzip" | "none";
 
@@ -182,8 +183,8 @@ export class DuckDBStorage implements LogStorage {
     const eventType = event.type;
     const targetType = event.targetType || null;
     const pageId = event.pageId || null;
-    const data = JSON.stringify(event);
-    const contextJson = JSON.stringify(context);
+    const data = safeStringify(event);
+    const contextJson = safeStringify(context);
 
     await stmt.run(id, timestamp, eventType, targetType, pageId, data, contextJson);
     await stmt.finalize();
@@ -229,8 +230,8 @@ export class DuckDBStorage implements LogStorage {
       const eventType = event.type;
       const targetType = event.targetType || null;
       const pageId = event.pageId || null;
-      const data = JSON.stringify(event);
-      const contextJson = JSON.stringify(context);
+      const data = safeStringify(event);
+      const contextJson = safeStringify(context);
 
       params.push(id, timestamp, eventType, targetType, pageId, data, contextJson);
     }

@@ -61,7 +61,7 @@ For detailed API documentation and examples, check out our [API reference](https
 
 > Steel is in public beta and evolving every day. Your suggestions, ideas, and reported bugs help us immensely. Do not hesitate to join in the conversation on [Discord](https://discord.gg/steel-dev) or raise a GitHub issue. We read everything, respond to most, and love you.
 
-If you love open-source, AI, and dev tools, [we're hiring across the stack](https://steel-dev.notion.site/jobs-at-steel?pvs=74)!
+If you love open-source, AI, and dev tools, [we're hiring across the stack](https://jobs.ashbyhq.com/steel)!
 
 ### Make sure to give us a star ⭐
 
