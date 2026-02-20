@@ -84,20 +84,21 @@ export function isHostBlocked(parsed: URL, blockedHosts?: string[]): boolean {
   return blockedHosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
 }
 
-export function isUrlMatchingPatterns(url: string, patterns?: string[]): boolean {
-  if (!patterns?.length) return false;
-  try {
-    const toRegex = (pattern: string) =>
-      new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`, "i");
-    return patterns.some((p) => {
-      try {
-        const re = toRegex(p);
-        return re.test(url);
-      } catch {
-        return url.includes(p);
-      }
-    });
-  } catch {
-    return false;
-  }
+export function compileUrlPatterns(patterns: string[]): RegExp[] {
+  return patterns.map((pattern) => {
+    try {
+      return new RegExp(
+        `^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`,
+        "i",
+      );
+    } catch {
+      // Fallback: escape the entire pattern for literal matching
+      return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    }
+  });
+}
+
+export function isUrlMatchingPatterns(url: string, compiledPatterns?: RegExp[]): boolean {
+  if (!compiledPatterns?.length) return false;
+  return compiledPatterns.some((re) => re.test(url));
 }
