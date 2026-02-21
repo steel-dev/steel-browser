@@ -179,9 +179,9 @@ For more details on installing and using the SDKs, please see the [Node SDK Refe
 The `/sessions` endpoint lets you relaunch the browser with custom options or extensions (e.g. with a custom proxy) and also reset the browser state. Perfect for complex, stateful workflows that need fine-grained control.
 
 Once you have a session, you can use the session ID or the root URL to interact with the browser. To do this, you will need to use Puppeteer or Playwright. You can find some examples of how to use Puppeteer and Playwright with Steel in the docs below:
-* [Puppeteer Integration](https://docs.steel.dev/overview/guides/connect-with-puppeteer)
-* [Playwright with Node](https://docs.steel.dev/overview/guides/connect-with-playwright-node)
-* [Playwright with Python](https://docs.steel.dev/overview/guides/connect-with-playwright-python)
+* [Puppeteer Integration](https://docs.steel.dev/overview/guides/puppeteer)
+* [Playwright with Node](https://docs.steel.dev/overview/guides/playwright-node)
+* [Playwright with Python](https://docs.steel.dev/overview/guides/playwright-python)
 
 <details open>
 <summary><b>Creating a Session using the Node SDK</b></summary>
@@ -280,7 +280,7 @@ curl -X POST http://localhost:3000/v1/sessions \
 </details>
 <br>
 
-The Selenium API is fully compatible with Selenium's WebDriver protocol, so you can use any existing Selenium clients to connect to the Steel browser. **For more details on using Selenium with Steel, refer to the [Selenium Docs](https://docs.steel.dev/overview/guides/connect-with-selenium).**
+The Selenium API is fully compatible with Selenium's WebDriver protocol, so you can use any existing Selenium clients to connect to the Steel browser. **For more details on using Selenium with Steel, refer to the [Selenium Docs](https://docs.steel.dev/overview/guides/selenium).**
 
 ### Quick Actions API
 The `/scrape`, `/screenshot`, and `/pdf` endpoints let you quickly extract clean, well-formatted data from any webpage using the running Steel server. Ideal for simple, read-only, on-demand jobs:
