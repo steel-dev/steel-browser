@@ -28,6 +28,7 @@ import { loadFingerprintScript } from "../../scripts/index.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
 import { BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types/index.js";
 import {
+  tryParseUrl,
   isAdRequest,
   isHeavyMediaRequest,
   isHostBlocked,
@@ -383,54 +384,56 @@ export class CDPService extends EventEmitter {
   }
 
   private async handlePageRequest(request: HTTPRequest, page: Page) {
+    const url = request.url();
     const headers = request.headers();
     delete headers["accept-language"]; // Patch to help with headless detection
 
-    const optimize = this.launchConfig?.optimizeBandwidth;
-    const blockedHosts = typeof optimize === "object" ? optimize.blockHosts : undefined;
-    const blockedUrlPatterns = typeof optimize === "object" ? optimize.blockUrlPatterns : undefined;
+    const parsed = tryParseUrl(url);
 
-    if (this.launchConfig?.blockAds && isAdRequest(request.url())) {
-      this.logger.info(`[CDPService] Blocked request to ad related resource: ${request.url()}`);
+    const optimize = this.launchConfig?.optimizeBandwidth;
+    const isOptimizeObject = typeof optimize === "object";
+    const blockedHosts = isOptimizeObject ? optimize.blockHosts : undefined;
+    const blockedUrlPatterns = isOptimizeObject ? optimize.blockUrlPatterns : undefined;
+
+    if (parsed && this.launchConfig?.blockAds && isAdRequest(parsed)) {
+      this.logger.info(`[CDPService] Blocked request to ad related resource: ${url}`);
       await request.abort();
       return;
     }
 
     if (
-      isHostBlocked(request.url(), blockedHosts) ||
-      isUrlMatchingPatterns(request.url(), blockedUrlPatterns)
+      (parsed && isHostBlocked(parsed, blockedHosts)) ||
+      isUrlMatchingPatterns(url, blockedUrlPatterns)
     ) {
-      this.logger.info(`[CDPService] Blocked request to blocked host or pattern: ${request.url()}`);
+      this.logger.info(`[CDPService] Blocked request to blocked host or pattern: ${url}`);
       await request.abort();
       return;
     }
 
     // Block resources via optimizeBandwidth
-    const blockImages = typeof optimize === "object" ? !!optimize.blockImages : false;
-    const blockMedia = typeof optimize === "object" ? !!optimize.blockMedia : false;
-    const blockStylesheets = typeof optimize === "object" ? !!optimize.blockStylesheets : false;
+    const blockImages = isOptimizeObject ? !!optimize.blockImages : false;
+    const blockMedia = isOptimizeObject ? !!optimize.blockMedia : false;
+    const blockStylesheets = isOptimizeObject ? !!optimize.blockStylesheets : false;
 
-    if (blockImages || blockMedia || blockStylesheets) {
+    if (parsed && (blockImages || blockMedia || blockStylesheets)) {
       const resourceType = request.resourceType();
       if (
-        (blockImages && (resourceType === "image" || isImageRequest(request.url()))) ||
-        (blockMedia && (resourceType === "media" || isHeavyMediaRequest(request.url()))) ||
+        (blockImages && (resourceType === "image" || isImageRequest(parsed))) ||
+        (blockMedia && (resourceType === "media" || isHeavyMediaRequest(parsed))) ||
         (blockStylesheets && resourceType === "stylesheet")
       ) {
         this.logger.info(
           `[CDPService] Blocked ${resourceType} resource due to optimizeBandwidth (${
             blockImages ? "blockImages" : ""
-          }${blockMedia ? "blockMedia" : ""}${
-            blockStylesheets ? "blockStylesheets" : ""
-          }): ${request.url()}`,
+          }${blockMedia ? "blockMedia" : ""}${blockStylesheets ? "blockStylesheets" : ""}): ${url}`,
         );
         await request.abort();
         return;
       }
     }
 
-    if (request.url().startsWith("file://")) {
-      this.logger.error(`[CDPService] Blocked request to file protocol: ${request.url()}`);
+    if (url.startsWith("file://")) {
+      this.logger.error(`[CDPService] Blocked request to file protocol: ${url}`);
       page.close().catch(() => {});
       this.shutdown();
     } else {
