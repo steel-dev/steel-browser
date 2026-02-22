@@ -617,7 +617,7 @@ export class CDPService extends EventEmitter {
         this.launchConfig = config || this.defaultLaunchConfig;
 
         const optimize = this.launchConfig.optimizeBandwidth;
-        const raw_patterns = typeof optimize === "object" ? optimize.blockUrlPatterns : undefined;
+        const rawPatterns = typeof optimize === "object" ? optimize.blockUrlPatterns : undefined;
         this.compiledUrlPatterns = raw_patterns?.length ? compileUrlPatterns(raw_patterns) : [];
 
         this.logger.info("[CDPService] Launching new browser instance.");
