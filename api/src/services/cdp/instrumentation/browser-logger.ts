@@ -1,11 +1,18 @@
-import pino from "pino";
-import type { FastifyBaseLogger } from "fastify";
 import { BrowserEventUnion } from "./types.js";
 import { LogStorage } from "./storage/index.js";
 import { EventEmitter } from "events";
 import { BrowserEventType, EmitEvent } from "../../../types/enums.js";
 
 export type Context = Record<string, any>;
+
+/**
+ * Logger interface compatible with both pino.Logger and FastifyBaseLogger.
+ * This avoids type conflicts between different pino versions (v9 vs v10).
+ */
+export interface Logger {
+  info(obj: object, msg?: string): void;
+  error(obj: object, msg?: string): void;
+}
 
 export interface BrowserLogger {
   record(event: BrowserEventUnion): void;
@@ -21,7 +28,7 @@ export interface BrowserLogger {
 }
 
 export interface CreateBrowserLoggerOptions {
-  baseLogger: pino.Logger | FastifyBaseLogger;
+  baseLogger: Logger;
   initialContext?: Context;
   storage?: LogStorage;
   enableConsoleLogging?: boolean;
