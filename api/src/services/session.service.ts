@@ -10,7 +10,7 @@ import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions
 import { BrowserLauncherOptions, OptimizeBandwidthOptions } from "../types/index.js";
 import { IProxyServer, ProxyServer } from "../utils/proxy.js";
 import { getBaseUrl, getUrl } from "../utils/url.js";
-import { CDPService } from "./cdp/cdp.service.js";
+import { BrowserRuntime } from "../types/browser-runtime.interface.js";
 import { CookieData } from "./context/types.js";
 import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
@@ -49,7 +49,7 @@ export type ProxyFactory = (proxyUrl: string) => Promise<IProxyServer> | IProxyS
 
 export class SessionService {
   private logger: FastifyBaseLogger;
-  private cdpService: CDPService;
+  private cdpService: BrowserRuntime;
   private seleniumService: SeleniumService;
   private fileService: FileService;
   private timezoneFetcher: TimezoneFetcher;
@@ -58,8 +58,14 @@ export class SessionService {
   public pastSessions: Session[] = [];
   public activeSession: Session;
 
+  private createSessionAlreadyActiveError(): Error & { statusCode: number } {
+    const error = new Error("SESSION_ALREADY_ACTIVE") as Error & { statusCode: number };
+    error.statusCode = 409;
+    return error;
+  }
+
   constructor(config: {
-    cdpService: CDPService;
+    cdpService: BrowserRuntime;
     seleniumService: SeleniumService;
     fileService: FileService;
     logger: FastifyBaseLogger;
@@ -127,6 +133,19 @@ export class SessionService {
       headless,
     } = options;
 
+    if (this.activeSession.status === "live") {
+      if (sessionId && sessionId !== this.activeSession.id) {
+        this.logger.warn(
+          `[SessionService] Session already active (${this.activeSession.id}); ignoring request for (${sessionId})`,
+        );
+      } else {
+        this.logger.warn(
+          `[SessionService] Session already active (${this.activeSession.id}); returning existing session`,
+        );
+      }
+      throw this.createSessionAlreadyActiveError();
+    }
+
     // start fetching timezone as early as possible
     let timezonePromise: Promise<string>;
     if (options.timezone) {
@@ -188,6 +207,7 @@ export class SessionService {
     const normalizedOptimize = normalizeOptimizeBandwidth(optimizeBandwidth);
 
     const browserLauncherOptions: BrowserLauncherOptions = {
+      sessionId: this.activeSession.id,
       options: {
         headless: headless ?? env.CHROME_HEADLESS,
         proxyUrl: this.activeSession.proxyServer?.url,

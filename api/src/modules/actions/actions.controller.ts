@@ -1,6 +1,6 @@
 import { FastifyReply } from "fastify";
+import { BrowserRuntime } from "../../types/browser-runtime.interface.js";
 import { BrowserContext, Page, HTTPResponse } from "puppeteer-core";
-import { CDPService } from "../../services/cdp/cdp.service.js";
 import { SessionService } from "../../services/session.service.js";
 import { ScrapeFormat } from "../../types/index.js";
 import { getErrors } from "../../utils/errors.js";
@@ -24,7 +24,7 @@ import { safeGoto } from "../../utils/scrape/safeGoTo.js";
 
 export const handleScrape = async (
   sessionService: SessionService,
-  browserService: CDPService,
+  browserService: BrowserRuntime,
   request: ScrapeRequest,
   reply: FastifyReply,
 ) => {
@@ -55,7 +55,7 @@ export const handleScrape = async (
       // If a proxy is used, we proceed with browser navigation; implementing proxy-aware Node fetch
       // would require an HTTP agent and is outside current scope.
       context = await browserService.createBrowserContext(proxy.url);
-      page = await context.newPage();
+      page = await context!.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
     } else {
       page = await browserService.getPrimaryPage();
@@ -300,7 +300,7 @@ export const handleScrape = async (
 
 export const handleSearch = async (
   sessionService: SessionService,
-  browserService: CDPService,
+  browserService: BrowserRuntime,
   request: SearchRequest,
   reply: FastifyReply,
 ) => {
@@ -413,7 +413,7 @@ export const handleSearch = async (
 
 export const handleScreenshot = async (
   sessionService: SessionService,
-  browserService: CDPService,
+  browserService: BrowserRuntime,
   request: ScreenshotRequest,
   reply: FastifyReply,
 ) => {
@@ -440,7 +440,7 @@ export const handleScreenshot = async (
 
     if (proxy) {
       context = await browserService.createBrowserContext(proxy.url);
-      page = await context.newPage();
+      page = await context!.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
     } else {
       page = await browserService.getPrimaryPage();
@@ -493,7 +493,7 @@ export const handleScreenshot = async (
 
 export const handlePDF = async (
   sessionService: SessionService,
-  browserService: CDPService,
+  browserService: BrowserRuntime,
   request: PDFRequest,
   reply: FastifyReply,
 ) => {
@@ -520,7 +520,7 @@ export const handlePDF = async (
 
     if (proxy) {
       context = await browserService.createBrowserContext(proxy.url);
-      page = await context.newPage();
+      page = await context!.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
     } else {
       page = await browserService.getPrimaryPage();

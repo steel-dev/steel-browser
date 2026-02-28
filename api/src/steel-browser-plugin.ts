@@ -26,12 +26,13 @@ import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
 import { SessionService } from "./services/session.service.js";
 import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.interface.js";
+import { BrowserRuntime } from "./types/browser-runtime.interface.js";
 
 // We need to redeclare any decorators from within the plugin that we want to expose
 declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: SteelBrowserConfig;
-    cdpService: CDPService;
+    cdpService: BrowserRuntime;
     sessionService: SessionService;
     webSocketRegistry: WebSocketRegistryService;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
