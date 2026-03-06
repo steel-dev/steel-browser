@@ -785,7 +785,9 @@ export class CDPService extends EventEmitter {
             ]
           : [];
 
-        const shouldDisableSandbox = typeof process.getuid === "function" && process.getuid() === 0;
+        const shouldDisableSandbox =
+          env.DISABLE_CHROME_SANDBOX ||
+          (typeof process.getuid === "function" && process.getuid() === 0);
 
         const staticDefaultArgs = [
           "--remote-allow-origins=*",

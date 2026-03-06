@@ -76,6 +76,11 @@ const envSchema = z.object({
     .transform((val) => val === "true" || val === "1")
     .default("false"),
   LOG_STORAGE_PATH: z.string().optional(),
+  DISABLE_CHROME_SANDBOX: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
 });
 
 export const env = envSchema.parse(process.env);
