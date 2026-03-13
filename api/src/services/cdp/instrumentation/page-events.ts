@@ -3,12 +3,18 @@ import { BrowserEventType } from "../../../types/index.js";
 import { BrowserLogger } from "./browser-logger.js";
 import { formatLocation, serializeRemoteObject } from "./utils.js";
 
+export interface AttachPageEventsOptions {
+  dangerouslyLogRequestDetails?: boolean;
+}
+
 export async function attachPageEvents(
   page: Page,
   logger: BrowserLogger,
   targetType: TargetType,
+  options?: AttachPageEventsOptions,
 ): Promise<void> {
   const pageId = (page.target() as any)._targetId as string;
+  const logBodies = options?.dangerouslyLogRequestDetails === true;
 
   // navigation
   page.on("framenavigated", (frame) => {
@@ -47,22 +53,62 @@ export async function attachPageEvents(
         method: event.request.method,
         url: event.request.url,
         resourceType: event.type,
+        ...(logBodies && event.request.postData ? { postData: event.request.postData } : {}),
+        ...(logBodies && event.request.headers
+          ? { headers: event.request.headers as Record<string, string> }
+          : {}),
       },
     });
   });
 
   session.on("Network.responseReceived", (event: Protocol.Network.ResponseReceivedEvent) => {
+    const responseData: {
+      status: number;
+      url: string;
+      mimeType?: string;
+      headers?: Record<string, string>;
+    } = {
+      status: event.response.status,
+      url: event.response.url,
+      mimeType: event.response.mimeType,
+    };
+
+    if (logBodies && event.response.headers) {
+      responseData.headers = event.response.headers as Record<string, string>;
+    }
+
     logger.record({
       type: BrowserEventType.Response,
       timestamp: new Date().toISOString(),
       pageId,
       targetType,
-      response: {
-        status: event.response.status,
-        url: event.response.url,
-        mimeType: event.response.mimeType,
-      },
+      response: responseData,
     });
+
+    // Attempt to capture response body when flag is enabled
+    if (logBodies) {
+      session
+        .send("Network.getResponseBody", { requestId: event.requestId })
+        .then((result) => {
+          if (result?.body) {
+            logger.record({
+              type: BrowserEventType.Response,
+              timestamp: new Date().toISOString(),
+              pageId,
+              targetType,
+              response: {
+                status: event.response.status,
+                url: event.response.url,
+                mimeType: event.response.mimeType,
+                body: result.body,
+              },
+            });
+          }
+        })
+        .catch(() => {
+          // Response body not available (redirects, evicted, etc.) — ignore
+        });
+    }
   });
 
   session.on("Network.loadingFailed", (event: Protocol.Network.LoadingFailedEvent) => {

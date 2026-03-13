@@ -106,6 +106,7 @@ export class SessionService {
     userPreferences?: Record<string, any>;
     deviceConfig?: { device: "desktop" | "mobile" };
     headless?: boolean;
+    dangerouslyLogRequestDetails?: boolean;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -125,6 +126,7 @@ export class SessionService {
       userPreferences,
       deviceConfig,
       headless,
+      dangerouslyLogRequestDetails,
     } = options;
 
     // start fetching timezone as early as possible
@@ -207,6 +209,7 @@ export class SessionService {
       credentials,
       skipFingerprintInjection,
       deviceConfig,
+      dangerouslyLogRequestDetails,
     };
 
     if (isSelenium) {
