@@ -47,7 +47,6 @@ export async function attachPageEvents(
         method: event.request.method,
         url: event.request.url,
         resourceType: event.type,
-        postData: event.request.postData,
       },
     });
   });
