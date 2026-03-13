@@ -128,9 +128,7 @@ export class TargetInstrumentationManager {
       case TargetType.BACKGROUND_PAGE:
         await enable("Runtime");
         await enable("Log");
-        if (isExtension) {
-          await enable("Network");
-        }
+        await enable("Network");
         break;
 
       case TargetType.SERVICE_WORKER:

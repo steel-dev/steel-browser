@@ -10,38 +10,6 @@ export async function attachPageEvents(
 ): Promise<void> {
   const pageId = (page.target() as any)._targetId as string;
 
-  // network requests
-  page.on("request", (req) => {
-    logger.record({
-      type: BrowserEventType.Request,
-      timestamp: new Date().toISOString(),
-      pageId,
-      targetType,
-      request: { method: req.method(), url: req.url() },
-    });
-  });
-
-  page.on("response", (res) => {
-    logger.record({
-      type: BrowserEventType.Response,
-      timestamp: new Date().toISOString(),
-      pageId,
-      targetType,
-      response: { status: res.status(), url: res.url() },
-    });
-  });
-
-  page.on("requestfailed", (req) => {
-    const failure = req.failure();
-    logger.record({
-      type: BrowserEventType.RequestFailed,
-      timestamp: new Date().toISOString(),
-      pageId,
-      targetType,
-      error: { message: failure?.errorText ?? "unknown", url: req.url() },
-    });
-  });
-
   // navigation
   page.on("framenavigated", (frame) => {
     if (frame.parentFrame()) return;
@@ -64,6 +32,49 @@ export async function attachPageEvents(
   });
 
   const session = await page.createCDPSession();
+
+  // Network request logging via CDP Network domain.
+  // This fires for ALL requests including form POST navigations, unlike
+  // Puppeteer's page.on("request") which depends on Fetch interception
+  // and can miss requests during same-tab navigations.
+  session.on("Network.requestWillBeSent", (event: Protocol.Network.RequestWillBeSentEvent) => {
+    logger.record({
+      type: BrowserEventType.Request,
+      timestamp: new Date().toISOString(),
+      pageId,
+      targetType,
+      request: {
+        method: event.request.method,
+        url: event.request.url,
+        resourceType: event.type,
+        postData: event.request.postData,
+      },
+    });
+  });
+
+  session.on("Network.responseReceived", (event: Protocol.Network.ResponseReceivedEvent) => {
+    logger.record({
+      type: BrowserEventType.Response,
+      timestamp: new Date().toISOString(),
+      pageId,
+      targetType,
+      response: {
+        status: event.response.status,
+        url: event.response.url,
+        mimeType: event.response.mimeType,
+      },
+    });
+  });
+
+  session.on("Network.loadingFailed", (event: Protocol.Network.LoadingFailedEvent) => {
+    logger.record({
+      type: BrowserEventType.RequestFailed,
+      timestamp: new Date().toISOString(),
+      pageId,
+      targetType,
+      error: { message: event.errorText },
+    });
+  });
 
   session.on("Runtime.consoleAPICalled", (event: Protocol.Runtime.ConsoleAPICalledEvent) => {
     const text = event.args.map(serializeRemoteObject).join(" ");
