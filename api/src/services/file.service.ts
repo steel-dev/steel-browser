@@ -31,7 +31,22 @@ export class FileService {
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
 
     const boundCreateArchive = this._createArchive.bind(this);
-    this.debouncedCreateArchive = debounce(boundCreateArchive, this.archiveDebounceTime);
+    const debouncedFn = debounce(boundCreateArchive, this.archiveDebounceTime);
+
+    // Wrap debounced function to catch unhandled rejections that would crash the process
+    const safeCreateArchive = () => {
+      const result = debouncedFn();
+      if (result) {
+        result.catch((err) => {
+          console.error("[FileService] Archive creation failed (caught):", err);
+        });
+      }
+      return result;
+    };
+    // Preserve debounce methods
+    safeCreateArchive.cancel = debouncedFn.cancel.bind(debouncedFn);
+    safeCreateArchive.flush = debouncedFn.flush.bind(debouncedFn);
+    this.debouncedCreateArchive = safeCreateArchive as typeof debouncedFn;
 
     this.initFileWatcher();
   }
@@ -289,17 +304,23 @@ export class FileService {
         console.log(`[FileService cleanupFiles] Deleted archive file: ${archivePath}`);
       }
 
-      const archiveDir = await fs.promises.readdir(this.prebuiltArchiveDir).catch(() => []);
-      for (const file of archiveDir) {
-        if (file.startsWith("files-") && file.endsWith(".zip.tmp")) {
-          const tempFilePath = path.join(this.prebuiltArchiveDir, file);
-          await fs.promises.unlink(tempFilePath).catch((err) => {
-            console.error(
-              `[FileService cleanupFiles] Error deleting temp archive ${tempFilePath}:`,
-              err,
-            );
-          });
+      // Only delete temp files if no archive operation is in progress,
+      // otherwise we'd pull the rug out from under the active archiver
+      if (!this.isArchiving) {
+        const archiveDir = await fs.promises.readdir(this.prebuiltArchiveDir).catch(() => []);
+        for (const file of archiveDir) {
+          if (file.startsWith("files-") && file.endsWith(".zip.tmp")) {
+            const tempFilePath = path.join(this.prebuiltArchiveDir, file);
+            await fs.promises.unlink(tempFilePath).catch((err) => {
+              console.error(
+                `[FileService cleanupFiles] Error deleting temp archive ${tempFilePath}:`,
+                err,
+              );
+            });
+          }
         }
+      } else {
+        console.log(`[FileService cleanupFiles] Skipping temp file cleanup - archive in progress`);
       }
     } catch (err: any) {
       console.error(`[FileService cleanupFiles] Error cleaning up archive files:`, err);
@@ -339,9 +360,9 @@ export class FileService {
   private _createArchive(): Promise<string | null> {
     return new Promise(async (resolvePromise, rejectPromise) => {
       if (this.isArchiving) {
-        console.warn(
-          `[_createArchive] Warning: Archiving process initiated while another is already in progress. This might lead to conflicts if not handled by caller.`,
-        );
+        console.log(`[_createArchive] Skipping: archive creation already in progress`);
+        // Return null to indicate skipped - don't reject as this is expected behavior
+        return resolvePromise(null);
       }
 
       this.isArchiving = true;
