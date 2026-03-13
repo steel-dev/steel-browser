@@ -44,6 +44,7 @@ export interface BrowserLauncherOptions {
   credentials?: CredentialsOptions;
   skipFingerprintInjection?: boolean;
   deviceConfig?: { device: "desktop" | "mobile" };
+  dangerouslyLogRequestDetails?: boolean;
 }
 
 export interface BrowserServerOptions {

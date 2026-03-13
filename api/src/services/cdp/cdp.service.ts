@@ -1264,6 +1264,13 @@ export class CDPService extends EventEmitter {
     this.currentSessionConfig = sessionConfig;
     this.trackedOrigins.clear(); // Clear tracked origins when starting a new session
 
+    // Recreate target instrumentation manager with session-specific options
+    this.targetInstrumentationManager = new TargetInstrumentationManager(
+      this.instrumentationLogger,
+      this.logger,
+      { dangerouslyLogRequestDetails: sessionConfig.dangerouslyLogRequestDetails },
+    );
+
     return this.launch(sessionConfig);
   }
 

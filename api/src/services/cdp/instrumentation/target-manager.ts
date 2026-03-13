@@ -1,7 +1,7 @@
 import { type Target, type CDPSession, TargetType } from "puppeteer-core";
 import type { FastifyBaseLogger } from "fastify";
 
-import { attachPageEvents } from "./page-events.js";
+import { attachPageEvents, AttachPageEventsOptions } from "./page-events.js";
 import { attachCDPEvents } from "./cdp-events.js";
 import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
@@ -14,10 +14,15 @@ const INTERNAL_EXTENSIONS = new Set<string>([
 export class TargetInstrumentationManager {
   private attachedSessions = new Set<string>();
 
+  private pageEventsOptions: AttachPageEventsOptions;
+
   constructor(
     private logger: BrowserLogger,
     private appLogger: FastifyBaseLogger,
-  ) {}
+    pageEventsOptions?: AttachPageEventsOptions,
+  ) {
+    this.pageEventsOptions = pageEventsOptions ?? {};
+  }
 
   async attach(target: Target, type: TargetType) {
     const url = target.url?.() ?? "";
@@ -35,7 +40,7 @@ export class TargetInstrumentationManager {
       case TargetType.BACKGROUND_PAGE: {
         const page = await target.page();
         if (page) {
-          await attachPageEvents(page, this.logger, type);
+          await attachPageEvents(page, this.logger, type, this.pageEventsOptions);
         }
 
         const session = await target.createCDPSession();
@@ -128,9 +133,7 @@ export class TargetInstrumentationManager {
       case TargetType.BACKGROUND_PAGE:
         await enable("Runtime");
         await enable("Log");
-        if (isExtension) {
-          await enable("Network");
-        }
+        await enable("Network");
         break;
 
       case TargetType.SERVICE_WORKER:

@@ -50,7 +50,20 @@ export function attachCDPEvents(session: CDPSession, logger: BrowserLogger): voi
     }
   } as typeof session.send;
 
-  const ignore = new Set(["Runtime.consoleAPICalled", "Log.entryAdded"]);
+  const ignore = new Set([
+    "Runtime.consoleAPICalled",
+    "Log.entryAdded",
+    // Network events are handled by page-events.ts via typed Request/Response events.
+    // Suppress here to avoid duplicate logging.
+    "Network.requestWillBeSent",
+    "Network.responseReceived",
+    "Network.dataReceived",
+    "Network.loadingFinished",
+    "Network.loadingFailed",
+    "Network.requestServedFromCache",
+    "Network.requestWillBeSentExtraInfo",
+    "Network.responseReceivedExtraInfo",
+  ]);
   session.on("event", (event: any) => {
     const { method, params } = event;
     if (ignore.has(method)) return;
