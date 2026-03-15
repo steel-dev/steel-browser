@@ -10,12 +10,33 @@ export interface BaseBrowserEvent {
 
 export interface RequestEvent extends BaseBrowserEvent {
   type: BrowserEventType.Request;
-  request: { method: string; url: string };
+  request: {
+    method: string;
+    url: string;
+    resourceType?: string;
+    postData?: string;
+    headers?: Record<string, string>;
+  };
 }
 
 export interface ResponseEvent extends BaseBrowserEvent {
   type: BrowserEventType.Response;
-  response: { status: number; url: string };
+  response: {
+    status: number;
+    url: string;
+    mimeType?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+}
+
+export interface ResponseBodyEvent extends BaseBrowserEvent {
+  type: BrowserEventType.ResponseBody;
+  responseBody: {
+    requestId: string;
+    body: string;
+    base64Encoded: boolean;
+  };
 }
 
 export interface NavigationEvent extends BaseBrowserEvent {
@@ -83,6 +104,7 @@ export interface ExtensionEvent extends BaseBrowserEvent {
 export type BrowserEventUnion =
   | RequestEvent
   | ResponseEvent
+  | ResponseBodyEvent
   | NavigationEvent
   | ConsoleEvent
   | ErrorEvent

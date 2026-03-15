@@ -1,7 +1,7 @@
 import { type Target, type CDPSession, TargetType } from "puppeteer-core";
 import type { FastifyBaseLogger } from "fastify";
 
-import { attachPageEvents } from "./page-events.js";
+import { attachPageEvents, AttachPageEventsOptions } from "./page-events.js";
 import { attachCDPEvents } from "./cdp-events.js";
 import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
@@ -13,11 +13,17 @@ const INTERNAL_EXTENSIONS = new Set<string>([
 
 export class TargetInstrumentationManager {
   private attachedSessions = new Set<string>();
+  private cdpSessions = new Map<string, CDPSession>();
+
+  private pageEventsOptions: AttachPageEventsOptions;
 
   constructor(
     private logger: BrowserLogger,
     private appLogger: FastifyBaseLogger,
-  ) {}
+    pageEventsOptions?: AttachPageEventsOptions,
+  ) {
+    this.pageEventsOptions = pageEventsOptions ?? {};
+  }
 
   async attach(target: Target, type: TargetType) {
     const url = target.url?.() ?? "";
@@ -33,13 +39,16 @@ export class TargetInstrumentationManager {
     switch (type) {
       case TargetType.PAGE:
       case TargetType.BACKGROUND_PAGE: {
+        // Create a single CDP session shared by page-events and cdp-events
+        const session = await target.createCDPSession();
+        this.cdpSessions.set(sessionId, session);
+        await this.enableDomainsForTarget(session, type, isExtensionTarget);
+
         const page = await target.page();
         if (page) {
-          await attachPageEvents(page, this.logger, type);
+          await attachPageEvents(page, session, this.logger, type, this.pageEventsOptions);
         }
 
-        const session = await target.createCDPSession();
-        await this.enableDomainsForTarget(session, type, isExtensionTarget);
         attachCDPEvents(session, this.logger);
 
         if (isExtensionTarget) {
@@ -50,6 +59,7 @@ export class TargetInstrumentationManager {
 
       case TargetType.SERVICE_WORKER: {
         const session = await target.createCDPSession();
+        this.cdpSessions.set(sessionId, session);
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
         attachCDPEvents(session, this.logger);
 
@@ -63,6 +73,7 @@ export class TargetInstrumentationManager {
 
       case TargetType.SHARED_WORKER: {
         const session = await target.createCDPSession();
+        this.cdpSessions.set(sessionId, session);
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
         attachCDPEvents(session, this.logger);
 
@@ -76,6 +87,7 @@ export class TargetInstrumentationManager {
 
       case TargetType.WEBVIEW: {
         const session = await target.createCDPSession();
+        this.cdpSessions.set(sessionId, session);
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
         attachCDPEvents(session, this.logger);
 
@@ -91,6 +103,7 @@ export class TargetInstrumentationManager {
       case TargetType.OTHER:
       default: {
         const session = await target.createCDPSession();
+        this.cdpSessions.set(sessionId, session);
         await this.enableDomainsForTarget(session, type, isExtensionTarget);
         attachCDPEvents(session, this.logger);
 
@@ -104,6 +117,13 @@ export class TargetInstrumentationManager {
 
   detach(targetId: string) {
     this.attachedSessions.delete(targetId);
+    const session = this.cdpSessions.get(targetId);
+    if (session) {
+      this.cdpSessions.delete(targetId);
+      session.detach().catch(() => {
+        // Session may already be closed if the target was destroyed
+      });
+    }
   }
 
   private async enableDomainsForTarget(
@@ -128,9 +148,7 @@ export class TargetInstrumentationManager {
       case TargetType.BACKGROUND_PAGE:
         await enable("Runtime");
         await enable("Log");
-        if (isExtension) {
-          await enable("Network");
-        }
+        await enable("Network");
         break;
 
       case TargetType.SERVICE_WORKER:
