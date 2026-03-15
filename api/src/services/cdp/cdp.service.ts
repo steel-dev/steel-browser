@@ -1289,6 +1289,13 @@ export class CDPService extends EventEmitter {
 
     this.instrumentationLogger.resetContext();
 
+    // Reset target instrumentation manager to clear session-specific options
+    // (e.g. dangerouslyLogRequestDetails) so they don't leak into the idle browser
+    this.targetInstrumentationManager = new TargetInstrumentationManager(
+      this.instrumentationLogger,
+      this.logger,
+    );
+
     await this.launch(this.defaultLaunchConfig);
   }
 

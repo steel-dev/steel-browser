@@ -30,6 +30,15 @@ export interface ResponseEvent extends BaseBrowserEvent {
   };
 }
 
+export interface ResponseBodyEvent extends BaseBrowserEvent {
+  type: BrowserEventType.ResponseBody;
+  responseBody: {
+    requestId: string;
+    body: string;
+    base64Encoded: boolean;
+  };
+}
+
 export interface NavigationEvent extends BaseBrowserEvent {
   type: BrowserEventType.Navigation;
   navigation: { url: string };
@@ -95,6 +104,7 @@ export interface ExtensionEvent extends BaseBrowserEvent {
 export type BrowserEventUnion =
   | RequestEvent
   | ResponseEvent
+  | ResponseBodyEvent
   | NavigationEvent
   | ConsoleEvent
   | ErrorEvent
