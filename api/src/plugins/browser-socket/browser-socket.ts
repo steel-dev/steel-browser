@@ -9,19 +9,12 @@ export interface BrowserSocketOptions {
   customHandlers?: WebSocketHandler[];
 }
 
-// WebSocket server instance
 const wss = new WebSocketServer({ noServer: true });
 
 const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
   fastify: FastifyInstance,
   options: BrowserSocketOptions,
 ) => {
-  if (!fastify.cdpService.isRunning()) {
-    fastify.log.info("Launching browser...");
-    await fastify.cdpService.launch();
-    fastify.log.info("Browser launched successfully");
-  }
-
   const registry = new WebSocketRegistryService();
 
   defaultHandlers.forEach((handler) => {
@@ -43,27 +36,48 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
       new URL(url || "", `http://${request.headers.host}`).searchParams.entries(),
     );
 
-    const context: WebSocketHandlerContext = {
-      fastify,
-      wss,
-      params,
-    };
+    const matchResult = registry.matchHandlerWithSession(url);
 
-    const handler = registry.matchHandler(url);
+    if (matchResult?.handler) {
+      const context: WebSocketHandlerContext = {
+        fastify,
+        wss,
+        params,
+        sessionId: matchResult.sessionId,
+      };
 
-    if (handler) {
       try {
-        await handler.handler(request, socket, head, context);
+        await matchResult.handler.handler(request, socket, head, context);
       } catch (err) {
         fastify.log.error({ err }, `WebSocket handler error for ${url}`);
         socket.destroy();
       }
+    } else if (matchResult?.sessionId) {
+      const session = fastify.sessionService.getSession(matchResult.sessionId);
+      if (session) {
+        fastify.log.info(`Proxying CDP WebSocket for session ${matchResult.sessionId}`);
+        try {
+          await session.cdpService.proxyWebSocket(request, socket, head);
+        } catch (err) {
+          fastify.log.error({ err }, "Session CDP WebSocket proxy error");
+          socket.destroy();
+        }
+      } else {
+        fastify.log.warn(`Session ${matchResult.sessionId} not found for CDP WebSocket`);
+        socket.destroy();
+      }
     } else {
-      fastify.log.info("Connecting to CDP...");
-      try {
-        await fastify.cdpService.proxyWebSocket(request, socket, head);
-      } catch (err) {
-        fastify.log.error({ err }, "CDP WebSocket error");
+      const sessions = fastify.sessionService.listSessions();
+      if (sessions.length > 0) {
+        fastify.log.info("Proxying CDP WebSocket to first active session (legacy fallback)");
+        try {
+          await sessions[0].cdpService.proxyWebSocket(request, socket, head);
+        } catch (err) {
+          fastify.log.error({ err }, "CDP WebSocket error");
+          socket.destroy();
+        }
+      } else {
+        fastify.log.warn("No active sessions for CDP WebSocket proxy");
         socket.destroy();
       }
     }

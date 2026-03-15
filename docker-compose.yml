@@ -4,6 +4,7 @@ services:
     ports:
       - "3000:3000"
       - "9223:9223"
+    shm_size: "2gb"
     volumes:
       - logs:/data/logs
       - exports:/tmp/steel-browser-exports
@@ -13,6 +14,8 @@ services:
       - CDP_DOMAIN=${CDP_DOMAIN:-localhost:9223}
       - LOG_STORAGE_ENABLED=true
       - LOG_STORAGE_PATH=/data/logs/browser-logs.duckdb
+      - MAX_SESSIONS=${MAX_SESSIONS:-5}
+      - CDP_PORT_BASE=${CDP_PORT_BASE:-9222}
     networks:
       - steel-network
 

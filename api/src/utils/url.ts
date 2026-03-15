@@ -34,6 +34,19 @@ export function getUrl(path: string, protocolType: "http" | "ws" = "http"): stri
 }
 
 /**
+ * Returns a fully qualified URL scoped to a specific session
+ */
+export function getSessionUrl(
+  sessionId: string,
+  path: string,
+  protocolType: "http" | "ws" = "http",
+): string {
+  const base = getBaseUrl(protocolType);
+  const formattedPath = path.startsWith("/") ? path.substring(1) : path;
+  return `${base}v1/sessions/${sessionId}/${formattedPath}`;
+}
+
+/**
  * Normalizes a URL by adding https:// protocol if missing
  * @param url The URL to normalize
  * @returns The normalized URL with proper protocol, or null if invalid
