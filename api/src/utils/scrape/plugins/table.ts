@@ -50,11 +50,11 @@ function extractTextFromCell(cellNode: HTMLElement): string {
   const uiComponentTags = new Set(["BUTTON", "SVG", "INPUT", "SELECT", "TEXTAREA", "FORM"]);
 
   function getTextContent(node: Node): string {
-    if (node.nodeType === Node.TEXT_NODE) {
+    if (node.nodeType === node.TEXT_NODE) {
       return node.textContent || "";
     }
 
-    if (node.nodeType === Node.ELEMENT_NODE) {
+    if (node.nodeType === node.ELEMENT_NODE) {
       const element = node as HTMLElement;
 
       if (uiComponentTags.has(element.tagName)) {
