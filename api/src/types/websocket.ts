@@ -7,6 +7,7 @@ export interface WebSocketHandlerContext {
   fastify: FastifyInstance;
   wss: WebSocketServer;
   params: Record<string, string>;
+  sessionId?: string;
 }
 
 export interface WebSocketHandler {

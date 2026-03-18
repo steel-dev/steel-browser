@@ -1,5 +1,10 @@
 import { WebSocketHandler, WebSocketHandlerRegistry } from "../types/websocket.js";
 
+export interface MatchResult {
+  handler: WebSocketHandler;
+  sessionId?: string;
+}
+
 export class WebSocketRegistryService implements WebSocketHandlerRegistry {
   public handlers = new Map<string, WebSocketHandler>();
 
@@ -12,13 +17,33 @@ export class WebSocketRegistryService implements WebSocketHandlerRegistry {
   }
 
   matchHandler(url: string): WebSocketHandler | undefined {
-    // TODO: use path-to-regexp or find-my-way to match the path
-    // Find the first handler whose path matches the start of the URL
     for (const [path, handler] of this.handlers.entries()) {
       if (url.startsWith(path)) {
         return handler;
       }
     }
+    return undefined;
+  }
+
+  matchHandlerWithSession(url: string): MatchResult | undefined {
+    const sessionCastMatch = url.match(/\/v1\/sessions\/([^/?]+)\/cast/);
+    if (sessionCastMatch) {
+      const castHandler = this.handlers.get("/v1/sessions/cast");
+      if (castHandler) {
+        return { handler: castHandler, sessionId: sessionCastMatch[1] };
+      }
+    }
+
+    const sessionCdpMatch = url.match(/\/v1\/sessions\/([^/?]+)\/cdp/);
+    if (sessionCdpMatch) {
+      return { handler: undefined as any, sessionId: sessionCdpMatch[1] };
+    }
+
+    const handler = this.matchHandler(url);
+    if (handler) {
+      return { handler };
+    }
+
     return undefined;
   }
 }

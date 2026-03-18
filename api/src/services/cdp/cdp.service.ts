@@ -111,16 +111,18 @@ export class CDPService extends EventEmitter {
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
   private disconnectHandler: () => Promise<void> = () => this.endSession();
+  public readonly cdpPort: number;
 
   constructor(
-    config: { keepAlive?: boolean },
+    config: { keepAlive?: boolean; cdpPort?: number },
     logger: FastifyBaseLogger,
     storage?: any,
     enableConsoleLogging?: boolean,
   ) {
     super();
     this.logger = logger.child({ component: "CDPService" });
-    const { keepAlive = true } = config;
+    const { keepAlive = true, cdpPort = 9222 } = config;
+    this.cdpPort = cdpPort;
 
     this.keepAlive = keepAlive;
     this.browserInstance = null;
@@ -186,6 +188,10 @@ export class CDPService extends EventEmitter {
 
   public getInstrumentationLogger(): BrowserLogger {
     return this.instrumentationLogger;
+  }
+
+  public getWsEndpoint(): string | null {
+    return this.wsEndpoint;
   }
 
   public getLogger(name: string) {
@@ -848,7 +854,7 @@ export class CDPService extends EventEmitter {
         const dynamicArgs = [
           this.launchConfig.dimensions ? "" : "--start-maximized",
           `--remote-debugging-address=${env.HOST}`,
-          "--remote-debugging-port=9222",
+          `--remote-debugging-port=${this.cdpPort}`,
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
             this.launchConfig.dimensions?.height ?? 1080
           }`,

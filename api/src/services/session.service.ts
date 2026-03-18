@@ -9,18 +9,20 @@ import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
 import { BrowserLauncherOptions, OptimizeBandwidthOptions } from "../types/index.js";
 import { IProxyServer, ProxyServer } from "../utils/proxy.js";
-import { getBaseUrl, getUrl } from "../utils/url.js";
+import { getBaseUrl, getUrl, getSessionUrl } from "../utils/url.js";
 import { CDPService } from "./cdp/cdp.service.js";
+import { BrowserPool, PoolSlot } from "./browser-pool.service.js";
 import { CookieData } from "./context/types.js";
 import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
 import { TimezoneFetcher } from "./timezone-fetcher.service.js";
 import { deepMerge } from "../utils/context.js";
 
-type Session = SessionDetails & {
+export type Session = SessionDetails & {
   completion: Promise<void>;
   complete: (value: void) => void;
   proxyServer: IProxyServer | undefined;
+  cdpService: CDPService;
 };
 
 const sessionStats = {
@@ -32,54 +34,37 @@ const sessionStats = {
   proxyRxBytes: 0,
 };
 
-const defaultSession = {
-  status: "idle" as SessionDetails["status"],
-  websocketUrl: getBaseUrl("ws"),
-  debugUrl: getUrl("v1/sessions/debug"),
-  debuggerUrl: getUrl("v1/devtools/inspector.html"),
-  sessionViewerUrl: getBaseUrl(),
-  dimensions: { width: 1920, height: 1080 },
-  userAgent: "",
-  isSelenium: false,
-  proxy: "",
-  solveCaptcha: false,
-};
-
 export type ProxyFactory = (proxyUrl: string) => Promise<IProxyServer> | IProxyServer;
 
 export class SessionService {
   private logger: FastifyBaseLogger;
-  private cdpService: CDPService;
+  private browserPool: BrowserPool;
   private seleniumService: SeleniumService;
   private fileService: FileService;
   private timezoneFetcher: TimezoneFetcher;
   public proxyFactory: ProxyFactory = (proxyUrl) => new ProxyServer(proxyUrl);
 
-  public pastSessions: Session[] = [];
-  public activeSession: Session;
+  private sessions = new Map<string, Session>();
 
   constructor(config: {
-    cdpService: CDPService;
+    browserPool: BrowserPool;
     seleniumService: SeleniumService;
     fileService: FileService;
     logger: FastifyBaseLogger;
   }) {
-    this.cdpService = config.cdpService;
+    this.browserPool = config.browserPool;
     this.seleniumService = config.seleniumService;
     this.fileService = config.fileService;
     this.logger = config.logger;
     this.timezoneFetcher = new TimezoneFetcher(config.logger);
-    this.activeSession = {
-      id: uuidv4(),
-      createdAt: new Date().toISOString(),
-      ...defaultSession,
-      ...sessionStats,
-      userAgent: this.cdpService.getUserAgent() ?? "",
-      dimensions: this.cdpService.getDimensions(),
-      completion: Promise.resolve(),
-      complete: () => {},
-      proxyServer: undefined,
-    };
+  }
+
+  public getSession(sessionId: string): Session | null {
+    return this.sessions.get(sessionId) ?? null;
+  }
+
+  public listSessions(): Session[] {
+    return Array.from(this.sessions.values());
   }
 
   public async startSession(options: {
@@ -109,7 +94,6 @@ export class SessionService {
     dangerouslyLogRequestDetails?: boolean;
   }): Promise<SessionDetails> {
     const {
-      sessionId,
       proxyUrl,
       userAgent,
       sessionContext,
@@ -129,7 +113,17 @@ export class SessionService {
       dangerouslyLogRequestDetails,
     } = options;
 
-    // start fetching timezone as early as possible
+    const sessionId = options.sessionId || uuidv4();
+
+    const slot = this.browserPool.acquire(sessionId);
+    if (!slot) {
+      throw new Error(
+        `Session pool is full (max ${this.browserPool.maxSessions} sessions). Release an existing session and retry.`,
+      );
+    }
+
+    const cdpService = slot.cdpService;
+
     let timezonePromise: Promise<string>;
     if (options.timezone) {
       timezonePromise = Promise.resolve(options.timezone);
@@ -140,27 +134,40 @@ export class SessionService {
       );
     }
 
-    // If dimensions not provided, get from CDP service
-    const finalDimensions = dimensions || this.cdpService.getDimensions();
+    const finalDimensions = dimensions || { width: 1920, height: 1080 };
 
-    await this.resetSessionInfo({
-      id: sessionId || uuidv4(),
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const session: Session = {
+      id: sessionId,
+      createdAt: new Date().toISOString(),
       status: "live",
-      proxy: proxyUrl,
-      solveCaptcha: false,
+      websocketUrl: getSessionUrl(sessionId, "cdp", "ws"),
+      debugUrl: getSessionUrl(sessionId, "debug"),
+      debuggerUrl: getUrl("v1/devtools/inspector.html"),
+      sessionViewerUrl: getBaseUrl(),
       dimensions: finalDimensions,
-      isSelenium,
-    });
+      userAgent: "",
+      isSelenium: !!isSelenium,
+      proxy: proxyUrl || "",
+      solveCaptcha: false,
+      ...sessionStats,
+      completion: promise,
+      complete: resolve,
+      proxyServer: undefined,
+      cdpService,
+    };
+
+    this.sessions.set(sessionId, session);
 
     const userDataDir =
       options.userDataDir || options.persist === true
         ? path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "user-data-dir")
-        : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
+        : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), `steel-chrome-${sessionId}`);
     await mkdir(userDataDir, { recursive: true });
 
     if (proxyUrl) {
-      this.activeSession.proxyServer = await this.proxyFactory(proxyUrl);
-      await this.activeSession.proxyServer.listen();
+      session.proxyServer = await this.proxyFactory(proxyUrl);
+      await session.proxyServer.listen();
     }
 
     const defaultUserPreferences = {
@@ -174,7 +181,6 @@ export class SessionService {
       ? deepMerge(defaultUserPreferences, userPreferences)
       : defaultUserPreferences;
 
-    // Normalize optimizeBandwidth: true => enable all flags (except lists)
     const normalizeOptimizeBandwidth = (
       value: boolean | OptimizeBandwidthOptions | undefined,
     ): OptimizeBandwidthOptions | undefined => {
@@ -192,7 +198,7 @@ export class SessionService {
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
         headless: headless ?? env.CHROME_HEADLESS,
-        proxyUrl: this.activeSession.proxyServer?.url,
+        proxyUrl: session.proxyServer?.url,
       },
       sessionContext,
       userAgent,
@@ -213,88 +219,58 @@ export class SessionService {
     };
 
     if (isSelenium) {
-      await this.cdpService.shutdown();
+      await cdpService.shutdown();
       await this.seleniumService.launch(browserLauncherOptions);
 
-      Object.assign(this.activeSession, {
+      Object.assign(session, {
         websocketUrl: "",
         debugUrl: "",
         sessionViewerUrl: "",
         userAgent:
           userAgent ||
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        dimensions: this.cdpService.getDimensions(),
       });
-
-      return this.activeSession;
     } else {
-      await this.cdpService.startNewSession(browserLauncherOptions);
+      await cdpService.startNewSession(browserLauncherOptions);
 
-      Object.assign(this.activeSession, {
-        websocketUrl: getBaseUrl("ws"),
-        debugUrl: getUrl("v1/sessions/debug"),
-        debuggerUrl: getUrl("v1/devtools/inspector.html"),
-        sessionViewerUrl: getBaseUrl(),
+      Object.assign(session, {
         userAgent:
-          this.cdpService.getUserAgent() ||
+          cdpService.getUserAgent() ||
           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        dimensions: this.cdpService.getDimensions(),
+        dimensions: cdpService.getDimensions(),
       });
     }
 
-    return this.activeSession;
+    return session;
   }
 
-  public async endSession(): Promise<SessionDetails> {
-    this.activeSession.complete();
-    this.activeSession.status = "released";
-    this.activeSession.duration =
-      new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
-
-    if (this.activeSession.proxyServer) {
-      this.activeSession.proxyTxBytes = this.activeSession.proxyServer.txBytes;
-      this.activeSession.proxyRxBytes = this.activeSession.proxyServer.rxBytes;
+  public async endSession(sessionId: string): Promise<SessionDetails> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
     }
 
-    if (this.activeSession.isSelenium) {
+    session.complete();
+    session.status = "released";
+    session.duration = Date.now() - new Date(session.createdAt).getTime();
+
+    if (session.proxyServer) {
+      session.proxyTxBytes = session.proxyServer.txBytes;
+      session.proxyRxBytes = session.proxyServer.rxBytes;
+      await session.proxyServer.close(true);
+      session.proxyServer = undefined;
+    }
+
+    if (session.isSelenium) {
       this.seleniumService.close();
-      await this.cdpService.launch();
-    } else {
-      await this.cdpService.endSession();
     }
 
-    const releasedSession = this.activeSession;
+    await session.cdpService.shutdown();
 
-    await this.resetSessionInfo({
-      id: uuidv4(),
-      status: "idle",
-    });
+    this.sessions.delete(sessionId);
+    this.browserPool.release(sessionId);
 
-    this.pastSessions.push(releasedSession);
-
-    return releasedSession;
-  }
-
-  private async resetSessionInfo(overrides?: Partial<SessionDetails>): Promise<SessionDetails> {
-    this.activeSession.complete();
-
-    await this.activeSession.proxyServer?.close(true);
-    this.activeSession.proxyServer = undefined;
-
-    const { promise, resolve } = Promise.withResolvers<void>();
-    this.activeSession = {
-      id: uuidv4(),
-      ...defaultSession,
-      ...overrides,
-      ...sessionStats,
-      userAgent: this.cdpService.getUserAgent() ?? "",
-      createdAt: new Date().toISOString(),
-      completion: promise,
-      complete: resolve,
-      proxyServer: undefined,
-    };
-
-    return this.activeSession;
+    return session;
   }
 
   public setProxyFactory(factory: ProxyFactory) {

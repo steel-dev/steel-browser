@@ -81,6 +81,8 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("false"),
+  MAX_SESSIONS: z.coerce.number().default(5),
+  CDP_PORT_BASE: z.coerce.number().default(9222),
 });
 
 export const env = envSchema.parse(process.env);
