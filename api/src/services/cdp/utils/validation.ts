@@ -170,20 +170,80 @@ export async function isSimilarConfig(
     ...nextExtra
   } = (next.extra ?? {}) as Record<string, unknown>;
 
-  return (
-    currentHeadless === nextHeadless &&
-    currentProxy === nextProxy &&
-    currentUserAgent === nextUserAgent &&
-    currentUserDataDir === nextUserDataDir &&
-    currentSkipFingerprint === nextSkipFingerprint &&
-    currentWidth === nextWidth &&
-    currentHeight === nextHeight &&
-    currentBlockAds === nextBlockAds &&
-    JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
-    JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
-    JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
-    JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences) &&
-    JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig) &&
-    (await timezoneComparisonPromise)
-  );
+  const timezoneMatch = await timezoneComparisonPromise;
+
+  const checks: Record<string, boolean> = {
+    headless: currentHeadless === nextHeadless,
+    proxy: currentProxy === nextProxy,
+    userAgent: currentUserAgent === nextUserAgent,
+    userDataDir: currentUserDataDir === nextUserDataDir,
+    skipFingerprint: currentSkipFingerprint === nextSkipFingerprint,
+    width: currentWidth === nextWidth,
+    height: currentHeight === nextHeight,
+    blockAds: currentBlockAds === nextBlockAds,
+    args: JSON.stringify(currentArgs) === JSON.stringify(nextArgs),
+    extensions: JSON.stringify(currentExt) === JSON.stringify(nextExt),
+    extra: JSON.stringify(currentExtra) === JSON.stringify(nextExtra),
+    userPreferences:
+      JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences),
+    deviceConfig: JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig),
+    timezone: timezoneMatch,
+  };
+
+  const mismatches = Object.entries(checks)
+    .filter(([, match]) => !match)
+    .map(([field]) => field);
+
+  if (mismatches.length > 0) {
+    const details: Record<string, { current: unknown; next: unknown }> = {};
+    for (const field of mismatches) {
+      switch (field) {
+        case "headless":
+          details[field] = { current: currentHeadless, next: nextHeadless };
+          break;
+        case "proxy":
+          details[field] = { current: currentProxy, next: nextProxy };
+          break;
+        case "userAgent":
+          details[field] = { current: currentUserAgent, next: nextUserAgent };
+          break;
+        case "userDataDir":
+          details[field] = { current: currentUserDataDir, next: nextUserDataDir };
+          break;
+        case "skipFingerprint":
+          details[field] = { current: currentSkipFingerprint, next: nextSkipFingerprint };
+          break;
+        case "width":
+          details[field] = { current: currentWidth, next: nextWidth };
+          break;
+        case "height":
+          details[field] = { current: currentHeight, next: nextHeight };
+          break;
+        case "blockAds":
+          details[field] = { current: currentBlockAds, next: nextBlockAds };
+          break;
+        case "args":
+          details[field] = { current: currentArgs, next: nextArgs };
+          break;
+        case "extensions":
+          details[field] = { current: currentExt, next: nextExt };
+          break;
+        case "extra":
+          details[field] = { current: currentExtra, next: nextExtra };
+          break;
+        case "userPreferences":
+          details[field] = { current: current.userPreferences, next: next.userPreferences };
+          break;
+        case "deviceConfig":
+          details[field] = { current: current.deviceConfig, next: next.deviceConfig };
+          break;
+        case "timezone":
+          details[field] = { current: "current.timezone", next: "next.timezone" };
+          break;
+      }
+    }
+    console.log("[isSimilarConfig] Mismatch detected:", JSON.stringify({ mismatches, details }));
+  }
+
+  return mismatches.length === 0;
 }
