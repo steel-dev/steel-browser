@@ -112,10 +112,12 @@ export async function validateTimezone(
  */
 
 export async function isSimilarConfig(
+  logger: FastifyBaseLogger,
   current?: BrowserLauncherOptions,
   next?: BrowserLauncherOptions,
 ): Promise<boolean> {
   if (!current || !next) {
+    logger.info({ current, next }, "[isSimilarConfig] early exit");
     return false;
   }
 
@@ -242,7 +244,7 @@ export async function isSimilarConfig(
           break;
       }
     }
-    console.log("[isSimilarConfig] Mismatch detected:", JSON.stringify({ mismatches, details }));
+    logger.info({ mismatches, details }, "[isSimilarConfig] Mismatch detected");
   }
 
   return mismatches.length === 0;

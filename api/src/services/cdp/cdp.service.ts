@@ -558,7 +558,7 @@ export class CDPService extends EventEmitter {
       const launchProcess = (async () => {
         const shouldReuseInstance =
           this.browserInstance &&
-          (await isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig));
+          (await isSimilarConfig(this.logger, this.launchConfig, config || this.defaultLaunchConfig));
 
         if (shouldReuseInstance) {
           this.logger.info(
