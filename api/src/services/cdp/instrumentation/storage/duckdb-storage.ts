@@ -8,8 +8,6 @@ import { safeStringify } from "./safe-json.js";
 
 export type ParquetCompression = "zstd" | "snappy" | "gzip" | "none";
 
-export type ParquetCompression = "zstd" | "snappy" | "gzip" | "none";
-
 export interface DuckDBStorageOptions {
   /**
    * Path to the database file. If not provided, uses in-memory database.
