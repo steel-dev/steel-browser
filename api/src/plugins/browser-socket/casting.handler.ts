@@ -379,14 +379,17 @@ export async function handleCastSession(
         });
 
         // Setup device metrics and start screencast
+        const isMobileSession = session.deviceConfig?.device === "mobile";
         await targetClient.send("Page.setDeviceMetricsOverride", {
           screenHeight: height,
           screenWidth: width,
           width,
           height,
-          mobile: false,
-          screenOrientation: { angle: 90, type: "landscapePrimary" },
-          deviceScaleFactor: 1,
+          mobile: isMobileSession,
+          screenOrientation: isMobileSession
+            ? { angle: 0, type: "portraitPrimary" }
+            : { angle: 90, type: "landscapePrimary" },
+          deviceScaleFactor: isMobileSession ? 3 : 1,
         });
 
         await targetClient.send("Page.startScreencast", {

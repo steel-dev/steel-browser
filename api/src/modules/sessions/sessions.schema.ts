@@ -7,6 +7,13 @@ import {
 } from "../actions/actions.schema.js";
 import { SessionContextSchema } from "../../services/context/types.js";
 
+const deviceConfigSchema = z
+  .object({
+    device: z.enum(["desktop", "mobile"]).default("desktop"),
+  })
+  .optional()
+  .describe("Device configuration for the session");
+
 export type CredentialsOptions = z.infer<typeof SessionCredentials>;
 export const SessionCredentials = z
   .object({
@@ -51,14 +58,7 @@ const CreateSession = z.object({
     .boolean()
     .optional()
     .describe("Flag to indicate if fingerprint injection should be skipped for this session."),
-  deviceConfig: z
-    .object({
-      device: z.enum(["desktop", "mobile"]).default("desktop"),
-    })
-    .optional()
-    .describe(
-      "Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations.",
-    ),
+  deviceConfig: deviceConfigSchema,
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Deprecated: Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
@@ -119,6 +119,7 @@ const SessionDetails = z.object({
     .describe("Amount of data received through the proxy"),
   solveCaptcha: z.boolean().optional().describe("Indicates if captcha solving is enabled"),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
+  deviceConfig: deviceConfigSchema,
 });
 
 const ReleaseSession = SessionDetails.merge(
