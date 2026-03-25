@@ -45,10 +45,10 @@ export async function handleCastSession(
   const tabDiscoveryMode =
     queryParams.get("tabInfo") === "true" || (!requestedPageId && !requestedPageIndex);
 
-  const { height, width } = (session.dimensions as { width: number; height: number }) ?? {
-    width: 1920,
-    height: 1080,
-  };
+  const isMobile = session.deviceConfig?.device === "mobile";
+  const defaultDimensions = isMobile ? { width: 393, height: 852 } : { width: 1920, height: 1080 };
+  const { height, width } =
+    (session.dimensions as { width: number; height: number }) ?? defaultDimensions;
 
   wss.handleUpgrade(request, socket, head, async (ws) => {
     let browser: Browser | null = null;
@@ -379,17 +379,16 @@ export async function handleCastSession(
         });
 
         // Setup device metrics and start screencast
-        const isMobileSession = session.deviceConfig?.device === "mobile";
         await targetClient.send("Page.setDeviceMetricsOverride", {
           screenHeight: height,
           screenWidth: width,
           width,
           height,
-          mobile: isMobileSession,
-          screenOrientation: isMobileSession
+          mobile: isMobile,
+          screenOrientation: isMobile
             ? { angle: 0, type: "portraitPrimary" }
             : { angle: 90, type: "landscapePrimary" },
-          deviceScaleFactor: isMobileSession ? 3 : 1,
+          deviceScaleFactor: isMobile ? 3 : 1,
         });
 
         await targetClient.send("Page.startScreencast", {
