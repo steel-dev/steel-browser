@@ -46,7 +46,7 @@ export async function handleCastSession(
     queryParams.get("tabInfo") === "true" || (!requestedPageId && !requestedPageIndex);
 
   const isMobile = session.deviceConfig?.device === "mobile";
-  const defaultDimensions = isMobile ? { width: 393, height: 852 } : { width: 1920, height: 1080 };
+  const defaultDimensions = isMobile ? { width: 508, height: 1074 } : { width: 1920, height: 1080 };
   const { height, width } =
     (session.dimensions as { width: number; height: number }) ?? defaultDimensions;
 
