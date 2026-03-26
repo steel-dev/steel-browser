@@ -141,7 +141,17 @@ export class SessionService {
     }
 
     // If dimensions not provided, get from CDP service
-    const finalDimensions = dimensions || this.cdpService.getDimensions();
+    const MIN_MOBILE_WIDTH = 508;
+    const MIN_MOBILE_HEIGHT = 1074;
+    const isMobileDevice = deviceConfig?.device === "mobile";
+    const resolvedDimensions = dimensions || this.cdpService.getDimensions();
+    const finalDimensions =
+      isMobileDevice && resolvedDimensions
+        ? {
+            width: Math.max(resolvedDimensions.width, MIN_MOBILE_WIDTH),
+            height: Math.max(resolvedDimensions.height, MIN_MOBILE_HEIGHT),
+          }
+        : resolvedDimensions;
 
     await this.resetSessionInfo({
       id: sessionId || uuidv4(),
@@ -150,6 +160,7 @@ export class SessionService {
       solveCaptcha: false,
       dimensions: finalDimensions,
       isSelenium,
+      deviceConfig,
     });
 
     const userDataDir =
@@ -202,7 +213,7 @@ export class SessionService {
       extensions: extensions || [],
       logSinkUrl,
       timezone: timezonePromise,
-      dimensions,
+      dimensions: finalDimensions,
       userDataDir,
       userPreferences: mergedUserPreferences,
       extra,
