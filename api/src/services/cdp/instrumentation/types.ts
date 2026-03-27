@@ -101,6 +101,16 @@ export interface ExtensionEvent extends BaseBrowserEvent {
   executionContextId?: number;
 }
 
+export interface StateTransitionEvent extends BaseBrowserEvent {
+  type: BrowserEventType.StateTransition;
+  sessionId: string;
+  fromState: string | null;
+  toState: string;
+  event: string;
+  duration?: number;
+  context?: Record<string, unknown>;
+}
+
 export type BrowserEventUnion =
   | RequestEvent
   | ResponseEvent
@@ -112,4 +122,5 @@ export type BrowserEventUnion =
   | CDPEvent
   | CDPCommandEvent
   | CDPCommandResultEvent
-  | ExtensionEvent;
+  | ExtensionEvent
+  | StateTransitionEvent;

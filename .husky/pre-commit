@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
+# API type checking
+echo "🎨 Running code formatting..."
+npm run typecheck -w api
+
 # Code formatting and linting
 echo "🎨 Running code formatting..."
 npm run pretty -w api
@@ -14,5 +18,8 @@ npm run build
 
 # Add formatted files back to staging
 git add -u
+
+# Run tests
+npm run test -w api
 
 echo "✅ Pre-commit checks passed!" 
