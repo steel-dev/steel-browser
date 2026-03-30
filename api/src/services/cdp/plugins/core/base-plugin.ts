@@ -23,6 +23,9 @@ export abstract class BasePlugin {
   }
 
   // Lifecycle methods
+  public onSessionStart(sessionConfig: BrowserLauncherOptions): void | Promise<void> {}
+  public onBeforeSessionEnd(sessionConfig: BrowserLauncherOptions): void | Promise<void> {}
+  public onAfterSessionEnd(sessionConfig: BrowserLauncherOptions): void | Promise<void> {}
   public async onBrowserLaunch(browser: Browser): Promise<void> {}
   public onBrowserReady(context: BrowserLauncherOptions): void | Promise<void> {}
   public async onPageCreated(page: Page): Promise<void> {}

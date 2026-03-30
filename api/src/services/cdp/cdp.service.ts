@@ -1271,7 +1271,16 @@ export class CDPService extends EventEmitter {
       { dangerouslyLogRequestDetails: sessionConfig.dangerouslyLogRequestDetails },
     );
 
-    return this.launch(sessionConfig);
+    // Notify plugins that a session is starting, before any launch/reuse work begins.
+    // This is the earliest point where session context (e.g. sessionId) is available.
+    await this.pluginManager.onSessionStart(sessionConfig);
+
+    try {
+      return await this.launch(sessionConfig);
+    } catch (error) {
+      await this.pluginManager.onAfterSessionEnd(sessionConfig);
+      throw error;
+    }
   }
 
   @traceable
@@ -1281,21 +1290,27 @@ export class CDPService extends EventEmitter {
 
     this.sessionContext = await this.getBrowserState().catch(() => null);
 
-    await this.shutdown();
-    await this.pluginManager.onSessionEnd(sessionConfig);
-    this.currentSessionConfig = null;
-    this.sessionContext = null;
-    this.trackedOrigins.clear();
+    try {
+      await this.pluginManager.onBeforeSessionEnd(sessionConfig);
+      await this.shutdown();
+      await this.pluginManager.onSessionEnd(sessionConfig);
+      this.currentSessionConfig = null;
+      this.sessionContext = null;
+      this.trackedOrigins.clear();
 
-    this.instrumentationLogger.resetContext();
+      this.instrumentationLogger.resetContext();
 
-    // Reset target instrumentation manager to clear session-specific options
-    // (e.g. dangerouslyLogRequestDetails) so they don't leak into the idle browser
-    this.targetInstrumentationManager = new TargetInstrumentationManager(
-      this.instrumentationLogger,
-      this.logger,
-    );
+      // Reset target instrumentation manager to clear session-specific options
+      // (e.g. dangerouslyLogRequestDetails) so they don't leak into the idle browser
+      this.targetInstrumentationManager = new TargetInstrumentationManager(
+        this.instrumentationLogger,
+        this.logger,
+      );
+    } finally {
+      await this.pluginManager.onAfterSessionEnd(sessionConfig);
+    }
 
+    // Relaunch the idle browser
     await this.launch(this.defaultLaunchConfig);
   }
 
