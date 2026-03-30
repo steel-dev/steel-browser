@@ -600,7 +600,15 @@ export class CDPService extends EventEmitter {
               },
             );
           }
-          await this.pluginManager.onBrowserReady(this.launchConfig);
+          if (!this.shuttingDown && this.browserInstance) {
+            await this.pluginManager.onBrowserReady(this.launchConfig);
+          } else {
+            this.logger.warn(
+              `[CDPService] Skipping onBrowserReady: shuttingDown=${
+                this.shuttingDown
+              }, browserInstance=${!!this.browserInstance}`,
+            );
+          }
 
           return this.browserInstance!;
         } else if (this.browserInstance) {
@@ -1031,7 +1039,15 @@ export class CDPService extends EventEmitter {
           this.logger.error({ err: error }, `[CDPService] Error attaching to existing targets`);
         }
 
-        await this.pluginManager.onBrowserReady(this.launchConfig);
+        if (!this.shuttingDown && this.browserInstance) {
+          await this.pluginManager.onBrowserReady(this.launchConfig);
+        } else {
+          this.logger.warn(
+            `[CDPService] Skipping onBrowserReady: shuttingDown=${
+              this.shuttingDown
+            }, browserInstance=${!!this.browserInstance}`,
+          );
+        }
 
         return this.browserInstance;
       })();
