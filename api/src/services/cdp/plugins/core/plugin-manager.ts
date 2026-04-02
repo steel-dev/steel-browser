@@ -49,6 +49,48 @@ export class PluginManager {
   }
 
   /**
+   * Notify all plugins when a session is starting (before launch/reuse)
+   */
+  public async onSessionStart(sessionConfig: BrowserLauncherOptions): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await Promise.resolve(plugin.onSessionStart(sessionConfig));
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onSessionStart: ${error}`);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  /**
+   * Notify all plugins before shutdown begins for the current session
+   */
+  public async onBeforeSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await Promise.resolve(plugin.onBeforeSessionEnd(sessionConfig));
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onBeforeSessionEnd: ${error}`);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  /**
+   * Notify all plugins after all teardown and session-end work is complete
+   */
+  public async onAfterSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await Promise.resolve(plugin.onAfterSessionEnd(sessionConfig));
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onAfterSessionEnd: ${error}`);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  /**
    * Notify all plugins about a browser launch
    */
   public async onBrowserLaunch(browser: Browser): Promise<void> {
