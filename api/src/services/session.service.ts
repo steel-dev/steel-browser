@@ -11,6 +11,7 @@ import { BrowserLauncherOptions, OptimizeBandwidthOptions } from "../types/index
 import { IProxyServer, ProxyServer } from "../utils/proxy.js";
 import { getBaseUrl, getUrl } from "../utils/url.js";
 import { CDPService } from "./cdp/cdp.service.js";
+import { ShutdownReason } from "./cdp/plugins/core/base-plugin.js";
 import { CookieData } from "./context/types.js";
 import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
@@ -224,7 +225,7 @@ export class SessionService {
     };
 
     if (isSelenium) {
-      await this.cdpService.shutdown();
+      await this.cdpService.shutdown(ShutdownReason.MODE_SWITCH);
       await this.seleniumService.launch(browserLauncherOptions);
 
       Object.assign(this.activeSession, {

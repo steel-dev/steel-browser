@@ -1,6 +1,6 @@
 import { Browser, Page } from "puppeteer-core";
 import { CDPService } from "../../cdp.service.js";
-import { BasePlugin } from "./base-plugin.js";
+import { BasePlugin, ShutdownReason } from "./base-plugin.js";
 import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../../../../types/browser.js";
 
@@ -190,10 +190,10 @@ export class PluginManager {
   /**
    * Notify all plugins about shutdown
    */
-  public async onShutdown(): Promise<void> {
+  public async onShutdown(reason: ShutdownReason): Promise<void> {
     const promises = Array.from(this.plugins.values()).map(async (plugin) => {
       try {
-        await plugin.onShutdown();
+        await plugin.onShutdown(reason);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onShutdown: ${error}`);
       }

@@ -69,7 +69,7 @@ import {
   SessionContextType,
   categorizeError,
 } from "./errors/launch-errors.js";
-import { BasePlugin } from "./plugins/core/base-plugin.js";
+import { BasePlugin, ShutdownReason } from "./plugins/core/base-plugin.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { isSimilarConfig, validateLaunchConfig, validateTimezone } from "./utils/validation.js";
 import { TargetInstrumentationManager } from "./instrumentation/target-manager.js";
@@ -376,7 +376,7 @@ export class CDPService extends EventEmitter {
               `[CDPService] Blocked response from file protocol: ${response.url()}`,
             );
             page.close().catch(() => {});
-            this.shutdown();
+            this.endSession(ShutdownReason.SECURITY_VIOLATION);
           }
         });
       }
@@ -436,7 +436,7 @@ export class CDPService extends EventEmitter {
     if (url.startsWith("file://")) {
       this.logger.error(`[CDPService] Blocked request to file protocol: ${url}`);
       page.close().catch(() => {});
-      this.shutdown();
+      this.endSession(ShutdownReason.SECURITY_VIOLATION);
     } else {
       await request.continue({ headers });
     }
@@ -456,16 +456,16 @@ export class CDPService extends EventEmitter {
   }
 
   @traceable
-  public async shutdown(): Promise<void> {
+  public async shutdown(reason: ShutdownReason): Promise<void> {
     this.shuttingDown = true;
-    this.logger.info(`[CDPService] Shutting down and cleaning up resources`);
+    this.logger.info(`[CDPService] Shutting down and cleaning up resources (reason: ${reason})`);
 
     try {
       if (this.browserInstance) {
         await this.pluginManager.onBrowserClose(this.browserInstance);
       }
 
-      await this.pluginManager.onShutdown();
+      await this.pluginManager.onShutdown(reason);
 
       this.removeAllHandlers();
       await this.browserInstance?.close();
@@ -527,7 +527,7 @@ export class CDPService extends EventEmitter {
         return await this.launchInternal(config);
       } catch (error) {
         try {
-          await this.pluginManager.onShutdown();
+          await this.pluginManager.onShutdown(ShutdownReason.LAUNCH_FAILURE);
           await this.shutdownHook();
         } catch (e) {
           this.logger.warn(
@@ -609,7 +609,7 @@ export class CDPService extends EventEmitter {
           );
           await executeBestEffort(
             this.logger,
-            async () => this.shutdown(),
+            async () => this.shutdown(ShutdownReason.RELAUNCH),
             "Error during shutdown before launch",
           );
         }
@@ -1278,13 +1278,16 @@ export class CDPService extends EventEmitter {
     try {
       return await this.launch(sessionConfig);
     } catch (error) {
+      // If launch fails, ensure we still notify plugins about session end to allow for proper cleanup
+      await this.pluginManager.onBeforeSessionEnd(sessionConfig);
+      await this.pluginManager.onSessionEnd(sessionConfig);
       await this.pluginManager.onAfterSessionEnd(sessionConfig);
       throw error;
     }
   }
 
   @traceable
-  public async endSession(): Promise<void> {
+  public async endSession(reason: ShutdownReason = ShutdownReason.SESSION_END): Promise<void> {
     this.logger.info("Ending current session and resetting to default configuration.");
     const sessionConfig = this.currentSessionConfig!;
 
@@ -1292,7 +1295,7 @@ export class CDPService extends EventEmitter {
 
     try {
       await this.pluginManager.onBeforeSessionEnd(sessionConfig);
-      await this.shutdown();
+      await this.shutdown(reason);
       await this.pluginManager.onSessionEnd(sessionConfig);
       this.currentSessionConfig = null;
       this.sessionContext = null;
