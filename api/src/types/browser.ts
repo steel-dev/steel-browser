@@ -8,13 +8,13 @@ import type {
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
-export type OptimizeBandwidthOptions = {
+export interface OptimizeBandwidthOptions {
   blockImages?: boolean;
   blockMedia?: boolean;
   blockStylesheets?: boolean;
   blockHosts?: string[];
   blockUrlPatterns?: string[];
-};
+}
 
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
