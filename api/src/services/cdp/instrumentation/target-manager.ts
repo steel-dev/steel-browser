@@ -66,7 +66,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          attachWorkerEvents(target, session, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type, this.pageEventsOptions);
         }
         break;
       }
@@ -80,7 +80,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          attachWorkerEvents(target, session, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type, this.pageEventsOptions);
         }
         break;
       }
@@ -94,7 +94,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          attachWorkerEvents(target, session, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type, this.pageEventsOptions);
         }
         break;
       }
@@ -155,18 +155,14 @@ export class TargetInstrumentationManager {
       case TargetType.SHARED_WORKER:
         await enable("Runtime");
         await enable("Log");
-        if (isExtension) {
-          await enable("Network");
-        }
+        await enable("Network");
         break;
 
       case TargetType.WEBVIEW:
       case TargetType.OTHER:
-        if (isExtension) {
-          await enable("Runtime");
-          await enable("Log");
-          await enable("Network");
-        }
+        await enable("Runtime");
+        await enable("Log");
+        await enable("Network");
         break;
 
       default:
