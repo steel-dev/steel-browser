@@ -490,6 +490,7 @@
     </div>
 
     <script>
+    (function() {
           // Global flag for single page mode
           const singlePageMode = <%= singlePageMode %>;
           const interactive = <%= interactive %>;
@@ -1705,6 +1706,7 @@
 
               return ws;
           };
+    })();
     </script>
 </body>
 </html>
