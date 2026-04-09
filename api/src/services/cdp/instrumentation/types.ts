@@ -63,8 +63,18 @@ export interface RecordingEvent extends BaseBrowserEvent {
   data: any;
 }
 
+export type ActionType = "mouse" | "keyboard" | "navigate";
+
+export interface ElementContext {
+  tagName: string;
+  text?: string;
+  attributes?: Record<string, string>;
+  boundingBox?: { x: number; y: number; width: number; height: number };
+}
+
 export interface CDPEvent extends BaseBrowserEvent {
   type: BrowserEventType.CDPEvent;
+  actionType?: ActionType | null;
   cdp: {
     name: string;
     params?: object;
@@ -73,6 +83,8 @@ export interface CDPEvent extends BaseBrowserEvent {
 
 export interface CDPCommandEvent extends BaseBrowserEvent {
   type: BrowserEventType.CDPCommand;
+  actionType?: ActionType | null;
+  element?: ElementContext;
   cdp: {
     command: string;
     params?: object;

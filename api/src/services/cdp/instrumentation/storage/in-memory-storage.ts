@@ -68,6 +68,12 @@ export class InMemoryStorage implements LogStorage {
       filtered = filtered.filter((e) => e.event.targetType === query.targetType);
     }
 
+    if (query.actionTypeNotNull) {
+      filtered = filtered.filter(
+        (e) => "actionType" in e.event && (e.event as any).actionType != null,
+      );
+    }
+
     // Sort by timestamp descending
     filtered.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 

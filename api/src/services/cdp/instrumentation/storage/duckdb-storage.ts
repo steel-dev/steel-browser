@@ -87,10 +87,12 @@ export class DuckDBStorage implements LogStorage {
         id VARCHAR PRIMARY KEY,
         timestamp TIMESTAMP NOT NULL,
         event_type VARCHAR NOT NULL,
+        action_type VARCHAR,
         target_type VARCHAR,
         page_id VARCHAR,
         data JSON NOT NULL,
         context JSON NOT NULL,
+        element_context JSON,
         indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -105,6 +107,9 @@ export class DuckDBStorage implements LogStorage {
     `);
     await this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_page_id ON browser_events(page_id);
+    `);
+    await this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_action_type ON browser_events(action_type);
     `);
 
     // Start periodic flush timer if write buffering is enabled
@@ -142,8 +147,8 @@ export class DuckDBStorage implements LogStorage {
     try {
       await this.writeBatchInternal(toFlush);
     } catch (err) {
-      // Put events back on failure (at the front)
-      this.writeBuffer.unshift(...toFlush);
+      // Put events back on failure (at the front) — avoid spread to prevent stack overflow
+      this.writeBuffer = [...toFlush, ...this.writeBuffer];
       throw err;
     } finally {
       this.isFlushing = false;
@@ -174,19 +179,32 @@ export class DuckDBStorage implements LogStorage {
     if (!this.db) return;
 
     const stmt = await this.db.prepare(`
-        INSERT INTO browser_events (id, timestamp, event_type, target_type, page_id, data, context, indexed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO browser_events (id, timestamp, event_type, action_type, target_type, page_id, data, context, element_context, indexed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `);
 
     const id = randomUUID();
     const timestamp = event.timestamp;
     const eventType = event.type;
+    const actionType = ("actionType" in event ? (event as any).actionType : null) ?? null;
     const targetType = event.targetType || null;
     const pageId = event.pageId || null;
     const data = safeStringify(event);
     const contextJson = safeStringify(context);
+    const elementContext =
+      "element" in event && (event as any).element ? safeStringify((event as any).element) : null;
 
-    await stmt.run(id, timestamp, eventType, targetType, pageId, data, contextJson);
+    await stmt.run(
+      id,
+      timestamp,
+      eventType,
+      actionType,
+      targetType,
+      pageId,
+      data,
+      contextJson,
+      elementContext,
+    );
     await stmt.finalize();
   }
 
@@ -223,21 +241,34 @@ export class DuckDBStorage implements LogStorage {
     const params: any[] = [];
 
     for (const { event, context } of events) {
-      values.push("(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)");
+      values.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)");
 
       const id = randomUUID();
       const timestamp = event.timestamp;
       const eventType = event.type;
+      const actionType = ("actionType" in event ? (event as any).actionType : null) ?? null;
       const targetType = event.targetType || null;
       const pageId = event.pageId || null;
       const data = safeStringify(event);
       const contextJson = safeStringify(context);
+      const elementContext =
+        "element" in event && (event as any).element ? safeStringify((event as any).element) : null;
 
-      params.push(id, timestamp, eventType, targetType, pageId, data, contextJson);
+      params.push(
+        id,
+        timestamp,
+        eventType,
+        actionType,
+        targetType,
+        pageId,
+        data,
+        contextJson,
+        elementContext,
+      );
     }
 
     const sql = `
-      INSERT INTO browser_events (id, timestamp, event_type, target_type, page_id, data, context, indexed_at)
+      INSERT INTO browser_events (id, timestamp, event_type, action_type, target_type, page_id, data, context, element_context, indexed_at)
       VALUES ${values.join(", ")}
     `;
 
@@ -282,23 +313,24 @@ export class DuckDBStorage implements LogStorage {
       params.push(query.targetType);
     }
 
+    if (query.actionTypeNotNull) {
+      conditions.push("action_type IS NOT NULL");
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const limit = query.limit || 100;
     const offset = query.offset || 0;
 
-    const countQuery = `SELECT COUNT(*) as total FROM browser_events ${whereClause}`;
-    const countResult = await this.db.all(countQuery, ...params);
-    // COUNT(*) may come back as a BigInt from DuckDB bindings – coerce safely for JSON
-    const total = Number(countResult[0]?.total ?? 0);
-
+    // Single query with window function to avoid double scan
     const eventsQuery = `
-      SELECT data, context
+      SELECT data, context, COUNT(*) OVER() as _total
       FROM browser_events
       ${whereClause}
       ORDER BY timestamp DESC
       LIMIT ? OFFSET ?
     `;
     const rows = await this.db.all(eventsQuery, ...params, limit, offset);
+    const total = rows.length > 0 ? Number((rows[0] as any)._total ?? 0) : 0;
 
     const events: BrowserEventUnion[] = rows.map((row: any) => {
       const data = JSON.parse(row.data);

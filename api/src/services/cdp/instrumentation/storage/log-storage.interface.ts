@@ -4,6 +4,7 @@ export interface LogQuery {
   startTime?: Date;
   endTime?: Date;
   eventTypes?: string[];
+  actionTypeNotNull?: boolean;
   pageId?: string;
   targetType?: string;
   limit?: number;
