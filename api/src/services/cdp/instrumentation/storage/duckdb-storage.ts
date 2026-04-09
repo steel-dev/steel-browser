@@ -57,6 +57,7 @@ export class DuckDBStorage implements LogStorage {
   private writeBuffer: Array<{ event: BrowserEventUnion; context: Record<string, any> }> = [];
   private writeBufferEnabled: boolean;
   private writeBufferSize: number;
+  private writeBufferMaxSize: number;
   private writeBufferFlushInterval: number;
   private flushTimer: NodeJS.Timeout | null = null;
   private isFlushing = false;
@@ -68,6 +69,7 @@ export class DuckDBStorage implements LogStorage {
     this.parquetCompression = options.parquetCompression ?? "snappy";
     this.writeBufferEnabled = options.enableWriteBuffer ?? true;
     this.writeBufferSize = options.writeBufferSize ?? 100;
+    this.writeBufferMaxSize = this.writeBufferSize * 50;
     this.writeBufferFlushInterval = options.writeBufferFlushInterval ?? 1000;
   }
 
@@ -149,6 +151,12 @@ export class DuckDBStorage implements LogStorage {
     } catch (err) {
       // Put events back on failure (at the front) — avoid spread to prevent stack overflow
       this.writeBuffer = [...toFlush, ...this.writeBuffer];
+      // Drop oldest events if buffer exceeds hard cap to prevent OOM
+      if (this.writeBuffer.length > this.writeBufferMaxSize) {
+        const dropped = this.writeBuffer.length - this.writeBufferMaxSize;
+        this.writeBuffer = this.writeBuffer.slice(-this.writeBufferMaxSize);
+        console.warn(`DuckDB write buffer overflow: dropped ${dropped} oldest events`);
+      }
       throw err;
     } finally {
       this.isFlushing = false;
