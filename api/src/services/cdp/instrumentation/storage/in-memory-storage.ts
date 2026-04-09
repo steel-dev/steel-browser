@@ -45,28 +45,17 @@ export class InMemoryStorage implements LogStorage {
   }
 
   async query(query: LogQuery): Promise<LogQueryResult> {
-    let filtered = [...this.events];
+    const hasEventTypes = query.eventTypes && query.eventTypes.length > 0;
 
-    // Apply filters
-    if (query.startTime) {
-      filtered = filtered.filter((e) => e.timestamp >= query.startTime!);
-    }
-
-    if (query.endTime) {
-      filtered = filtered.filter((e) => e.timestamp <= query.endTime!);
-    }
-
-    if (query.eventTypes && query.eventTypes.length > 0) {
-      filtered = filtered.filter((e) => query.eventTypes!.includes(e.event.type));
-    }
-
-    if (query.pageId) {
-      filtered = filtered.filter((e) => e.event.pageId === query.pageId);
-    }
-
-    if (query.targetType) {
-      filtered = filtered.filter((e) => e.event.targetType === query.targetType);
-    }
+    // Apply filters in a single pass
+    const filtered = this.events.filter((e) => {
+      if (query.startTime && e.timestamp < query.startTime) return false;
+      if (query.endTime && e.timestamp > query.endTime) return false;
+      if (hasEventTypes && !query.eventTypes!.includes(e.event.type)) return false;
+      if (query.pageId && e.event.pageId !== query.pageId) return false;
+      if (query.targetType && e.event.targetType !== query.targetType) return false;
+      return true;
+    });
 
     // Sort by timestamp descending
     filtered.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
