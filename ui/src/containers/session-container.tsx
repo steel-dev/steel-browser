@@ -28,6 +28,8 @@ export function SessionContainer() {
               variant="secondary"
               onClick={() => setShowConsole(!showConsole)}
               className="text-primary bg-[var(--gray-3)] ml-auto px-3 rounded-lg absolute top-2 right-2"
+              aria-label={showConsole ? "Hide console" : "Show console"}
+              title={showConsole ? "Hide console" : "Show console"}
             >
               {showConsole ? (
                 <ArrowRightIcon className="w-4 h-4" />
