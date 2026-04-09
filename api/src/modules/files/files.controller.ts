@@ -163,8 +163,9 @@ export class FilesController {
       const protocol = url.startsWith("https") ? https : http;
 
       protocol
-        .get(url, (response) => {
+        .get(url, { timeout: 30000 }, (response) => {
           if (response.statusCode !== 200) {
+            response.resume();
             return reject(new Error(`Failed to fetch file: ${response.statusCode}`));
           }
 
@@ -185,6 +186,9 @@ export class FilesController {
             contentType,
             name,
           });
+        })
+        .on("timeout", function (this: http.ClientRequest) {
+          this.destroy(new Error(`Request timeout fetching file`));
         })
         .on("error", reject);
     });
