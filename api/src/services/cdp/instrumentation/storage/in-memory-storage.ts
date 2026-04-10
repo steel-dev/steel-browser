@@ -1,5 +1,5 @@
 import { LogStorage, LogQuery, LogQueryResult } from "./log-storage.interface.js";
-import { BrowserEventUnion } from "../types.js";
+import { BrowserEventUnion, CDPCommandEvent, CDPEvent } from "../types.js";
 
 interface StoredEvent {
   event: BrowserEventUnion;
@@ -69,7 +69,7 @@ export class InMemoryStorage implements LogStorage {
 
     if (query.actionTypeNotNull) {
       filtered = filtered.filter(
-        (e) => "actionType" in e.event && (e.event as any).actionType != null,
+        (e) => (e.event as Partial<CDPCommandEvent | CDPEvent>).actionType != null,
       );
     }
 

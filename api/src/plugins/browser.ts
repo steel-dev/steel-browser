@@ -20,11 +20,7 @@ const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
 
   const storage: LogStorage = loggingConfig.storage ?? new InMemoryStorage(1000);
   await storage.initialize();
-  if (loggingConfig.storage) {
-    fastify.log.info("Log storage initialized (injected)");
-  } else {
-    fastify.log.info("Using in-memory log storage");
-  }
+  fastify.log.info({ injected: Boolean(loggingConfig.storage) }, "Log storage initialized");
 
   const cdpService = new CDPService({}, fastify.log, storage, enableConsoleLogging);
 

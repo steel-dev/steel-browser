@@ -111,7 +111,9 @@ export function attachCDPEvents(session: CDPSession, logger: BrowserLogger): voi
   const originalSend = session.send.bind(session);
   type Method = Parameters<typeof session.send>[0];
 
-  // Typing sequence optimization: only resolve active element on first keyDown
+  // Typing sequence optimization: resolve active element only on the first
+  // keyDown of a burst. mousePressed (can change focus) invalidates the cache;
+  // other commands like mouseMoved do NOT, to avoid wasteful re-resolution.
   let lastKeyDownTime = 0;
   let cachedActiveElement: ElementContext | undefined;
   const KEY_SEQUENCE_GAP = 500;
@@ -121,24 +123,25 @@ export function attachCDPEvents(session: CDPSession, logger: BrowserLogger): voi
     const actionType = classifyAction(method);
     const p = params as any;
 
-    // Resolve element context BEFORE dispatching the command
+    // Resolve element context BEFORE dispatching the command. Capture into a
+    // local (never read from the shared cache after an await) so concurrent
+    // send() invocations cannot clobber this call's element.
     let element: ElementContext | undefined;
     if (method === "Input.dispatchMouseEvent" && p?.type === "mousePressed") {
       element = await resolveElementAtPoint(originalSend, p.x, p.y);
-      // Reset key sequence state on non-key action
+      // A click may move focus, so the cached active element is no longer valid
       lastKeyDownTime = 0;
       cachedActiveElement = undefined;
     } else if (method === "Input.dispatchKeyEvent" && p?.type === "keyDown") {
       const now = Date.now();
       if (now - lastKeyDownTime > KEY_SEQUENCE_GAP) {
-        cachedActiveElement = await resolveActiveElement(originalSend);
+        const resolved = await resolveActiveElement(originalSend);
+        cachedActiveElement = resolved;
+        element = resolved;
+      } else {
+        element = cachedActiveElement;
       }
       lastKeyDownTime = now;
-      element = cachedActiveElement;
-    } else if (method !== "Input.dispatchKeyEvent") {
-      // Any non-key command breaks the key sequence
-      lastKeyDownTime = 0;
-      cachedActiveElement = undefined;
     }
 
     logger.record({
