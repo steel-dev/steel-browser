@@ -119,16 +119,17 @@ export async function handleCastSession(
       try {
         if (ws.readyState !== WebSocket.OPEN || !tabDiscoveryMode) return;
 
-        const tabList: PageInfo[] = [];
-
-        for (const [pageId, page] of activePages.entries()) {
-          tabList.push({
-            id: pageId,
-            url: page.url(),
-            title: await getPageTitle(page),
-            favicon: await getPageFavicon(page),
-          });
-        }
+        const tabList: PageInfo[] = await Promise.all(
+          Array.from(activePages.entries()).map(async ([pageId, page]) => {
+            const [title, favicon] = await Promise.all([getPageTitle(page), getPageFavicon(page)]);
+            return {
+              id: pageId,
+              url: page.url(),
+              title,
+              favicon,
+            };
+          }),
+        );
 
         ws.send(
           JSON.stringify({
@@ -406,8 +407,10 @@ export async function handleCastSession(
 
             if (ws.readyState === WebSocket.OPEN) {
               // Get page metadata
-              const title = await getPageTitle(targetPage!);
-              const favicon = await getPageFavicon(targetPage!);
+              const [title, favicon] = await Promise.all([
+                getPageTitle(targetPage!),
+                getPageFavicon(targetPage!),
+              ]);
 
               // Send frame data
               ws.send(
