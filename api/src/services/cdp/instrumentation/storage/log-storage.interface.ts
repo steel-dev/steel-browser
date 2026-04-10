@@ -4,6 +4,7 @@ export interface LogQuery {
   startTime?: Date;
   endTime?: Date;
   eventTypes?: string[];
+  actionTypeNotNull?: boolean;
   pageId?: string;
   targetType?: string;
   limit?: number;
@@ -38,16 +39,6 @@ export interface LogStorage {
    * Query events from storage
    */
   query(query: LogQuery): Promise<LogQueryResult>;
-
-  /**
-   * Check if Parquet export is supported by this storage backend
-   */
-  supportsParquetExport(): boolean;
-
-  /**
-   * Export logs to Parquet format
-   */
-  exportToParquet(filePath: string, query?: LogQuery): Promise<string>;
 
   /**
    * Get statistics about stored logs

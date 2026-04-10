@@ -23,20 +23,14 @@ export const LogQueryResultSchema = z.object({
   hasMore: z.boolean(),
 });
 
-export const ExportLogsSchema = z.object({
-  query: LogQuerySchema.optional(),
-});
-
 export type LogQueryInput = z.infer<typeof LogQuerySchema>;
 export type LogStatsOutput = z.infer<typeof LogStatsSchema>;
 export type LogQueryResultOutput = z.infer<typeof LogQueryResultSchema>;
-export type ExportLogsInput = z.infer<typeof ExportLogsSchema>;
 
 export const loggingSchemas = {
   LogQuerySchema,
   LogStatsSchema,
   LogQueryResultSchema,
-  ExportLogsSchema,
 };
 
 export default loggingSchemas;

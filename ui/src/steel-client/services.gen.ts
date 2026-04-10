@@ -16,6 +16,9 @@ import {
   type PdfData,
   type PdfError,
   type PdfResponse,
+  type SearchData,
+  type SearchError,
+  type SearchResponse2,
   type HealthError,
   type HealthResponse,
   type LaunchBrowserSessionData,
@@ -80,9 +83,6 @@ import {
   type GetV1LogsStatsResponse,
   type GetV1LogsStreamError,
   type GetV1LogsStreamResponse,
-  type PostV1LogsExportData,
-  type PostV1LogsExportError,
-  type PostV1LogsExportResponse,
   type DeleteV1LogsError,
   type DeleteV1LogsResponse,
   ScrapeResponseTransformer,
@@ -103,11 +103,7 @@ export const client = createClient(createConfig());
 export const scrape = <ThrowOnError extends boolean = false>(
   options?: Options<ScrapeData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).post<
-    ScrapeResponse2,
-    ScrapeError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).post<ScrapeResponse2, ScrapeError, ThrowOnError>({
     ...options,
     url: "/v1/scrape",
     responseTransformer: ScrapeResponseTransformer,
@@ -121,11 +117,7 @@ export const scrape = <ThrowOnError extends boolean = false>(
 export const screenshot = <ThrowOnError extends boolean = false>(
   options?: Options<ScreenshotData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).post<
-    ScreenshotResponse2,
-    ScreenshotError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).post<ScreenshotResponse2, ScreenshotError, ThrowOnError>({
     ...options,
     url: "/v1/screenshot",
   });
@@ -145,17 +137,26 @@ export const pdf = <ThrowOnError extends boolean = false>(
 };
 
 /**
+ * Use a search engine to search for URLs given a query
+ * Use a search engine to search for URLs given a query
+ */
+export const search = <ThrowOnError extends boolean = false>(
+  options?: Options<SearchData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<SearchResponse2, SearchError, ThrowOnError>({
+    ...options,
+    url: "/v1/search",
+  });
+};
+
+/**
  * Check if the server and browser are running
  * Check if the server and browser are running
  */
 export const health = <ThrowOnError extends boolean = false>(
   options?: Options<unknown, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
-    HealthResponse,
-    HealthError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).get<HealthResponse, HealthError, ThrowOnError>({
     ...options,
     url: "/v1/health",
   });
@@ -186,11 +187,7 @@ export const launchBrowserSession = <ThrowOnError extends boolean = false>(
 export const getSessions = <ThrowOnError extends boolean = false>(
   options?: Options<unknown, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
-    GetSessionsResponse,
-    GetSessionsError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).get<GetSessionsResponse, GetSessionsError, ThrowOnError>({
     ...options,
     url: "/v1/sessions",
   });
@@ -291,11 +288,7 @@ export const getSessionDebuggerStream = <ThrowOnError extends boolean = false>(
 export const receiveEvents = <ThrowOnError extends boolean = false>(
   options?: Options<ReceiveEventsData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).post<
-    ReceiveEventsResponse,
-    ReceiveEventsError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).post<ReceiveEventsResponse, ReceiveEventsError, ThrowOnError>({
     ...options,
     url: "/v1/events",
   });
@@ -325,11 +318,7 @@ export const getSessionLiveDetails = <ThrowOnError extends boolean = false>(
 export const scrapeSession = <ThrowOnError extends boolean = false>(
   options?: Options<ScrapeSessionData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).post<
-    ScrapeSessionResponse,
-    ScrapeSessionError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).post<ScrapeSessionResponse, ScrapeSessionError, ThrowOnError>({
     ...options,
     url: "/v1/sessions/scrape",
     responseTransformer: ScrapeSessionResponseTransformer,
@@ -360,11 +349,7 @@ export const screenshotSession = <ThrowOnError extends boolean = false>(
 export const pdfSession = <ThrowOnError extends boolean = false>(
   options?: Options<PdfSessionData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).post<
-    PdfSessionResponse,
-    PdfSessionError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).post<PdfSessionResponse, PdfSessionError, ThrowOnError>({
     ...options,
     url: "/v1/sessions/pdf",
   });
@@ -377,14 +362,12 @@ export const pdfSession = <ThrowOnError extends boolean = false>(
 export const getDevtoolsUrl = <ThrowOnError extends boolean = false>(
   options?: Options<GetDevtoolsUrlData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
-    GetDevtoolsUrlResponse,
-    GetDevtoolsUrlError,
-    ThrowOnError
-  >({
-    ...options,
-    url: "/v1/devtools/inspector.html",
-  });
+  return (options?.client ?? client).get<GetDevtoolsUrlResponse, GetDevtoolsUrlError, ThrowOnError>(
+    {
+      ...options,
+      url: "/v1/devtools/inspector.html",
+    },
+  );
 };
 
 /**
@@ -394,11 +377,7 @@ export const getDevtoolsUrl = <ThrowOnError extends boolean = false>(
 export const uploadFile = <ThrowOnError extends boolean = false>(
   options: Options<UploadFileData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).post<
-    UploadFileResponse,
-    UploadFileError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).post<UploadFileResponse, UploadFileError, ThrowOnError>({
     ...options,
     ...formDataBodySerializer,
     headers: {
@@ -417,11 +396,7 @@ export const uploadFile = <ThrowOnError extends boolean = false>(
 export const listFiles = <ThrowOnError extends boolean = false>(
   options: Options<ListFilesData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
-    ListFilesResponse,
-    ListFilesError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).get<ListFilesResponse, ListFilesError, ThrowOnError>({
     ...options,
     url: "/v1/sessions/{sessionId}/files",
   });
@@ -451,11 +426,7 @@ export const deleteAllFiles = <ThrowOnError extends boolean = false>(
 export const downloadFile = <ThrowOnError extends boolean = false>(
   options: Options<DownloadFileData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
-    DownloadFileResponse,
-    DownloadFileError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).get<DownloadFileResponse, DownloadFileError, ThrowOnError>({
     ...options,
     url: "/v1/sessions/{sessionId}/files/{*}",
   });
@@ -468,11 +439,7 @@ export const downloadFile = <ThrowOnError extends boolean = false>(
 export const deleteFile = <ThrowOnError extends boolean = false>(
   options: Options<DeleteFileData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).delete<
-    DeleteFileResponse,
-    DeleteFileError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).delete<DeleteFileResponse, DeleteFileError, ThrowOnError>({
     ...options,
     url: "/v1/sessions/{sessionId}/files/{*}",
   });
@@ -501,14 +468,12 @@ export const downloadArchive = <ThrowOnError extends boolean = false>(
 export const getV1LogsQuery = <ThrowOnError extends boolean = false>(
   options?: Options<GetV1LogsQueryData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
-    GetV1LogsQueryResponse,
-    GetV1LogsQueryError,
-    ThrowOnError
-  >({
-    ...options,
-    url: "/v1/logs/query",
-  });
+  return (options?.client ?? client).get<GetV1LogsQueryResponse, GetV1LogsQueryError, ThrowOnError>(
+    {
+      ...options,
+      url: "/v1/logs/query",
+    },
+  );
 };
 
 /**
@@ -517,14 +482,12 @@ export const getV1LogsQuery = <ThrowOnError extends boolean = false>(
 export const getV1LogsStats = <ThrowOnError extends boolean = false>(
   options?: Options<unknown, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
-    GetV1LogsStatsResponse,
-    GetV1LogsStatsError,
-    ThrowOnError
-  >({
-    ...options,
-    url: "/v1/logs/stats",
-  });
+  return (options?.client ?? client).get<GetV1LogsStatsResponse, GetV1LogsStatsError, ThrowOnError>(
+    {
+      ...options,
+      url: "/v1/logs/stats",
+    },
+  );
 };
 
 /**
@@ -544,32 +507,12 @@ export const getV1LogsStream = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Export browser logs to Parquet format
- */
-export const postV1LogsExport = <ThrowOnError extends boolean = false>(
-  options?: Options<PostV1LogsExportData, ThrowOnError>,
-) => {
-  return (options?.client ?? client).post<
-    PostV1LogsExportResponse,
-    PostV1LogsExportError,
-    ThrowOnError
-  >({
-    ...options,
-    url: "/v1/logs/export",
-  });
-};
-
-/**
  * Clear all browser logs from storage
  */
 export const deleteV1Logs = <ThrowOnError extends boolean = false>(
   options?: Options<unknown, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).delete<
-    DeleteV1LogsResponse,
-    DeleteV1LogsError,
-    ThrowOnError
-  >({
+  return (options?.client ?? client).delete<DeleteV1LogsResponse, DeleteV1LogsError, ThrowOnError>({
     ...options,
     url: "/v1/logs/",
   });

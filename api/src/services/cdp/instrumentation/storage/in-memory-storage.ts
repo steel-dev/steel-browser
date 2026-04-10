@@ -1,5 +1,5 @@
 import { LogStorage, LogQuery, LogQueryResult } from "./log-storage.interface.js";
-import { BrowserEventUnion } from "../types.js";
+import { BrowserEventUnion, CDPCommandEvent, CDPEvent } from "../types.js";
 
 interface StoredEvent {
   event: BrowserEventUnion;
@@ -9,7 +9,6 @@ interface StoredEvent {
 
 /**
  * Simple in-memory log storage for testing or when persistence is not needed.
- * Note: This implementation does not support Parquet export.
  */
 export class InMemoryStorage implements LogStorage {
   private events: StoredEvent[] = [];
@@ -68,6 +67,12 @@ export class InMemoryStorage implements LogStorage {
       filtered = filtered.filter((e) => e.event.targetType === query.targetType);
     }
 
+    if (query.actionTypeNotNull) {
+      filtered = filtered.filter(
+        (e) => (e.event as Partial<CDPCommandEvent | CDPEvent>).actionType != null,
+      );
+    }
+
     // Sort by timestamp descending
     filtered.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
@@ -84,14 +89,6 @@ export class InMemoryStorage implements LogStorage {
       total,
       hasMore: offset + limit < total,
     };
-  }
-
-  supportsParquetExport(): boolean {
-    return false;
-  }
-
-  async exportToParquet(filePath: string, query?: LogQuery): Promise<string> {
-    throw new Error("Parquet export not supported in InMemoryStorage. Use DuckDBStorage instead.");
   }
 
   async getStats(): Promise<{
