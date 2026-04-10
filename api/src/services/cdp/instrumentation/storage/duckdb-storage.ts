@@ -77,8 +77,17 @@ export class DuckDBStorage implements LogStorage {
     this.db = await Database.create(this.dbPath, {});
 
     // Throttle CPU usage: limit threads and memory
-    await this.db.run(`SET threads = ${this.maxThreads}`);
-    await this.db.run(`SET memory_limit = '${this.memoryLimit}'`);
+    // These are configuration settings, but we validate them for safety
+    const threads = Math.max(1, Math.min(128, Number(this.maxThreads) || 2));
+    await this.db.run(`SET threads = ${threads}`);
+
+    // memoryLimit should be a string like "256MB" or "1GB"
+    const memoryLimit = String(this.memoryLimit);
+    if (/^\d+(B|KB|MB|GB|TB)$/i.test(memoryLimit)) {
+      await this.db.run(`SET memory_limit = '${memoryLimit}'`);
+    } else {
+      await this.db.run("SET memory_limit = '256MB'");
+    }
 
     console.log(`DuckDB initialized: threads=${this.maxThreads}, memory=${this.memoryLimit}`);
 
@@ -373,7 +382,7 @@ export class DuckDBStorage implements LogStorage {
       ) TO '${sanitizedPath}' (FORMAT PARQUET${compressionClause})
     `;
 
-    await this.db.run(exportQuery);
+    await this.db.run(exportQuery, ...params);
 
     return filePath;
   }

@@ -12,7 +12,7 @@ import {
   htmlToMarkdown,
   transformHtml,
 } from "../../utils/scrape/index.js";
-import { normalizeUrl } from "../../utils/url.js";
+import { normalizeUrl, isSafeUrl } from "../../utils/url.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 import { DefuddleResponse } from "defuddle";
 import pdf2html from "pdf2html";
@@ -105,11 +105,42 @@ export const handleScrape = async (
         const u = new URL(targetUrl);
         fetchHeaders["Referer"] = u.origin + "/";
       }
-      const nodeRes = await fetch(targetUrl, {
-        method: "GET",
-        redirect: "follow",
-        headers: fetchHeaders,
-      });
+
+      let finalUrl = targetUrl;
+      let nodeRes: Response;
+      let maxRedirects = 10;
+      let currentRedirects = 0;
+      let currentHeaders: Record<string, string> = { ...fetchHeaders };
+
+      while (true) {
+        if (currentRedirects >= maxRedirects) {
+          throw new Error("Too many redirects");
+        }
+
+        if (!(await isSafeUrl(finalUrl))) {
+          throw new Error(`SSRF Prevention: URL resolves to a private or invalid IP address.`);
+        }
+
+        const res = await fetch(finalUrl, {
+          method: "GET",
+          redirect: "manual",
+          headers: currentHeaders,
+        });
+
+        if (res.status >= 300 && res.status < 400 && res.headers.has("location")) {
+          const newLocation = res.headers.get("location");
+          if (!newLocation) {
+            nodeRes = res;
+            break;
+          }
+          finalUrl = new URL(newLocation, finalUrl).toString();
+          currentRedirects++;
+        } else {
+          nodeRes = res;
+          break;
+        }
+      }
+
       const nodeCT = (nodeRes.headers.get("content-type") || "").toLowerCase();
       if (!nodeRes.ok || !nodeCT.includes("application/pdf")) {
         throw new Error(`Expected PDF; got status ${nodeRes.status} content-type ${nodeCT}`);
