@@ -99,6 +99,29 @@ export class DuckDBStorage implements LogStorage {
       )
     `);
 
+    // Migrate pre-existing tables that predate action_type / element_context columns.
+    // Relevant for persistent dbPath users who upgrade in place. DuckDB has no
+    // ADD COLUMN IF NOT EXISTS, so check information_schema first.
+    const existingColumns = await this.db.all(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'browser_events'`,
+    );
+    const columnNames = new Set(existingColumns.map((r: any) => r.column_name));
+    let migrated = false;
+    if (!columnNames.has("action_type")) {
+      await this.db.run(`ALTER TABLE browser_events ADD COLUMN action_type VARCHAR`);
+      migrated = true;
+    }
+    if (!columnNames.has("element_context")) {
+      await this.db.run(`ALTER TABLE browser_events ADD COLUMN element_context JSON`);
+      migrated = true;
+    }
+    if (migrated) {
+      // Force CHECKPOINT so the ALTER is flushed from WAL to the main DB file.
+      // Without this, a subsequent crash-recovery open triggers WAL replay of
+      // the ALTER, which hits an internal DuckDB error for ADD COLUMN.
+      await this.db.run(`CHECKPOINT`);
+    }
+
     console.log("Created browser_events table");
 
     await this.db.run(`
