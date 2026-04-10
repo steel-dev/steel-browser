@@ -9,7 +9,6 @@ interface StoredEvent {
 
 /**
  * Simple in-memory log storage for testing or when persistence is not needed.
- * Note: This implementation does not support Parquet export.
  */
 export class InMemoryStorage implements LogStorage {
   private events: StoredEvent[] = [];
@@ -90,14 +89,6 @@ export class InMemoryStorage implements LogStorage {
       total,
       hasMore: offset + limit < total,
     };
-  }
-
-  supportsParquetExport(): boolean {
-    return false;
-  }
-
-  async exportToParquet(filePath: string, query?: LogQuery): Promise<string> {
-    throw new Error("Parquet export not supported in InMemoryStorage. Use DuckDBStorage instead.");
   }
 
   async getStats(): Promise<{

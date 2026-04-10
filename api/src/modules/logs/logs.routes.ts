@@ -1,8 +1,6 @@
 import { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { LogQuerySchema, ExportLogsSchema, LogQueryInput } from "./logs.schema.js";
-import { randomUUID } from "crypto";
+import { LogQueryInput } from "./logs.schema.js";
 import { $ref } from "../../plugins/schemas.js";
-import { LogQuery } from "../../services/cdp/instrumentation/storage/index.js";
 import { EmitEvent } from "../../types/enums.js";
 
 const logsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -111,35 +109,6 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
       request.raw.on("close", () => {
         logger.off?.(EmitEvent.Log, handleLog);
       });
-    },
-  );
-
-  /**
-   * Export logs to Parquet format
-   */
-  fastify.post(
-    "/export",
-    {
-      schema: {
-        querystring: $ref("LogQuerySchema"),
-        tags: ["Logs"],
-        description: "Export browser logs to Parquet format",
-      },
-    },
-    async (request: FastifyRequest<{ Querystring: LogQuery }>) => {
-      const query = request.query;
-
-      // Generate a unique filename
-      const fileName = `steel-browser-logs-${randomUUID()}.parquet`;
-      const filePath = `/tmp/steel-browser-exports/${fileName}`;
-
-      // Export with optional query filters
-      const exportedPath = await storage.exportToParquet(filePath, query);
-
-      return {
-        filePath: exportedPath,
-        message: "Logs exported successfully",
-      };
     },
   );
 

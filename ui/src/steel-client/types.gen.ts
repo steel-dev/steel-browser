@@ -71,6 +71,23 @@ export type PDFRequest = {
 
 export type PDFResponse = unknown;
 
+export type SearchRequest = {
+  query: string;
+  /**
+   * Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.
+   */
+  proxyUrl?: string | null;
+  logUrl?: string;
+};
+
+export type SearchResponse = {
+  results: Array<{
+    title: string;
+    url: string;
+    description?: string | null;
+  }>;
+};
+
 export type CreateSession = {
   /**
    * Unique identifier for the session
@@ -233,7 +250,7 @@ export type CreateSession = {
    */
   skipFingerprintInjection?: boolean;
   /**
-   * Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations.
+   * Device configuration for the session
    */
   deviceConfig?: {
     device?: "desktop" | "mobile";
@@ -374,6 +391,12 @@ export type SessionDetails = {
    * Indicates if Selenium is used in the session
    */
   isSelenium?: boolean;
+  /**
+   * Device configuration for the session
+   */
+  deviceConfig?: {
+    device?: "desktop" | "mobile";
+  };
 };
 
 /**
@@ -468,6 +491,12 @@ export type MultipleSessions = {
      * Indicates if Selenium is used in the session
      */
     isSelenium?: boolean;
+    /**
+     * Device configuration for the session
+     */
+    deviceConfig?: {
+      device?: "desktop" | "mobile";
+    };
   }>;
 };
 
@@ -677,6 +706,12 @@ export type ReleaseSession = {
    */
   isSelenium?: boolean;
   /**
+   * Device configuration for the session
+   */
+  deviceConfig?: {
+    device?: "desktop" | "mobile";
+  };
+  /**
    * Indicates if the session was successfully released
    */
   success: boolean;
@@ -768,18 +803,6 @@ export type LogQueryResultSchema = {
   }>;
   total: number;
   hasMore: boolean;
-};
-
-export type ExportLogsSchema = {
-  query?: {
-    startTime?: Date;
-    endTime?: Date;
-    eventTypes?: string;
-    pageId?: string;
-    targetType?: string;
-    limit?: number;
-    offset?: number;
-  };
 };
 
 export type GetDevtoolsUrlSchema = {
@@ -890,6 +913,14 @@ export type PdfData = {
 export type PdfResponse = PDFResponse;
 
 export type PdfError = unknown;
+
+export type SearchData = {
+  body?: SearchRequest;
+};
+
+export type SearchResponse2 = SearchResponse;
+
+export type SearchError = unknown;
 
 export type HealthResponse = unknown;
 
@@ -1109,43 +1140,24 @@ export type GetV1LogsStreamResponse = unknown;
 
 export type GetV1LogsStreamError = unknown;
 
-export type PostV1LogsExportData = {
-  query?: {
-    endTime?: Date;
-    eventTypes?: string;
-    limit?: number;
-    offset?: number;
-    pageId?: string;
-    startTime?: Date;
-    targetType?: string;
-  };
-};
-
-export type PostV1LogsExportResponse = unknown;
-
-export type PostV1LogsExportError = unknown;
-
 export type DeleteV1LogsResponse = unknown;
 
 export type DeleteV1LogsError = unknown;
 
 export type ScrapeResponseTransformer = (data: any) => Promise<ScrapeResponse>;
 
-export type ScrapeResponseModelResponseTransformer = (
-  data: any,
-) => ScrapeResponse;
+export type ScrapeResponseModelResponseTransformer = (data: any) => ScrapeResponse;
 
-export const ScrapeResponseModelResponseTransformer: ScrapeResponseModelResponseTransformer =
-  (data) => {
-    if (data?.metadata?.timestamp) {
-      data.metadata.timestamp = new Date(data.metadata.timestamp);
-    }
-    return data;
-  };
-
-export const ScrapeResponseTransformer: ScrapeResponseTransformer = async (
+export const ScrapeResponseModelResponseTransformer: ScrapeResponseModelResponseTransformer = (
   data,
 ) => {
+  if (data?.metadata?.timestamp) {
+    data.metadata.timestamp = new Date(data.metadata.timestamp);
+  }
+  return data;
+};
+
+export const ScrapeResponseTransformer: ScrapeResponseTransformer = async (data) => {
   ScrapeResponseModelResponseTransformer(data);
   return data;
 };
@@ -1154,17 +1166,16 @@ export type LaunchBrowserSessionResponseTransformer = (
   data: any,
 ) => Promise<LaunchBrowserSessionResponse>;
 
-export type SessionDetailsModelResponseTransformer = (
-  data: any,
-) => SessionDetails;
+export type SessionDetailsModelResponseTransformer = (data: any) => SessionDetails;
 
-export const SessionDetailsModelResponseTransformer: SessionDetailsModelResponseTransformer =
-  (data) => {
-    if (data?.createdAt) {
-      data.createdAt = new Date(data.createdAt);
-    }
-    return data;
-  };
+export const SessionDetailsModelResponseTransformer: SessionDetailsModelResponseTransformer = (
+  data,
+) => {
+  if (data?.createdAt) {
+    data.createdAt = new Date(data.createdAt);
+  }
+  return data;
+};
 
 export const LaunchBrowserSessionResponseTransformer: LaunchBrowserSessionResponseTransformer =
   async (data) => {
@@ -1176,27 +1187,27 @@ export type GetSessionDetailsResponseTransformer = (
   data: any,
 ) => Promise<GetSessionDetailsResponse>;
 
-export const GetSessionDetailsResponseTransformer: GetSessionDetailsResponseTransformer =
-  async (data) => {
-    SessionDetailsModelResponseTransformer(data);
-    return data;
-  };
+export const GetSessionDetailsResponseTransformer: GetSessionDetailsResponseTransformer = async (
+  data,
+) => {
+  SessionDetailsModelResponseTransformer(data);
+  return data;
+};
 
 export type ReleaseBrowserSessionResponseTransformer = (
   data: any,
 ) => Promise<ReleaseBrowserSessionResponse>;
 
-export type ReleaseSessionModelResponseTransformer = (
-  data: any,
-) => ReleaseSession;
+export type ReleaseSessionModelResponseTransformer = (data: any) => ReleaseSession;
 
-export const ReleaseSessionModelResponseTransformer: ReleaseSessionModelResponseTransformer =
-  (data) => {
-    if (data?.createdAt) {
-      data.createdAt = new Date(data.createdAt);
-    }
-    return data;
-  };
+export const ReleaseSessionModelResponseTransformer: ReleaseSessionModelResponseTransformer = (
+  data,
+) => {
+  if (data?.createdAt) {
+    data.createdAt = new Date(data.createdAt);
+  }
+  return data;
+};
 
 export const ReleaseBrowserSessionResponseTransformer: ReleaseBrowserSessionResponseTransformer =
   async (data) => {
@@ -1214,32 +1225,25 @@ export const ReleaseBrowserSessionsResponseTransformer: ReleaseBrowserSessionsRe
     return data;
   };
 
-export type ScrapeSessionResponseTransformer = (
-  data: any,
-) => Promise<ScrapeSessionResponse>;
+export type ScrapeSessionResponseTransformer = (data: any) => Promise<ScrapeSessionResponse>;
 
-export const ScrapeSessionResponseTransformer: ScrapeSessionResponseTransformer =
-  async (data) => {
-    ScrapeResponseModelResponseTransformer(data);
-    return data;
-  };
+export const ScrapeSessionResponseTransformer: ScrapeSessionResponseTransformer = async (data) => {
+  ScrapeResponseModelResponseTransformer(data);
+  return data;
+};
 
-export type UploadFileResponseTransformer = (
-  data: any,
-) => Promise<UploadFileResponse>;
+export type UploadFileResponseTransformer = (data: any) => Promise<UploadFileResponse>;
 
 export type FileDetailsModelResponseTransformer = (data: any) => FileDetails;
 
-export const FileDetailsModelResponseTransformer: FileDetailsModelResponseTransformer =
-  (data) => {
-    if (data?.lastModified) {
-      data.lastModified = new Date(data.lastModified);
-    }
-    return data;
-  };
+export const FileDetailsModelResponseTransformer: FileDetailsModelResponseTransformer = (data) => {
+  if (data?.lastModified) {
+    data.lastModified = new Date(data.lastModified);
+  }
+  return data;
+};
 
-export const UploadFileResponseTransformer: UploadFileResponseTransformer =
-  async (data) => {
-    FileDetailsModelResponseTransformer(data);
-    return data;
-  };
+export const UploadFileResponseTransformer: UploadFileResponseTransformer = async (data) => {
+  FileDetailsModelResponseTransformer(data);
+  return data;
+};

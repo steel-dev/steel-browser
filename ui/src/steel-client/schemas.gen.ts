@@ -191,6 +191,56 @@ export const PDFResponseSchema = {
   title: "PDFResponse",
 } as const;
 
+export const SearchRequestSchema = {
+  title: "SearchRequest",
+  type: "object",
+  properties: {
+    query: {
+      type: "string",
+    },
+    proxyUrl: {
+      type: "string",
+      nullable: true,
+      description:
+        "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
+    },
+    logUrl: {
+      type: "string",
+    },
+  },
+  required: ["query"],
+  additionalProperties: false,
+} as const;
+
+export const SearchResponseSchema = {
+  title: "SearchResponse",
+  type: "object",
+  properties: {
+    results: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+          },
+          url: {
+            type: "string",
+          },
+          description: {
+            type: "string",
+            nullable: true,
+          },
+        },
+        required: ["title", "url"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["results"],
+  additionalProperties: false,
+} as const;
+
 export const CreateSessionSchema = {
   title: "CreateSession",
   type: "object",
@@ -311,8 +361,7 @@ export const CreateSessionSchema = {
               type: "string",
             },
           },
-          description:
-            "Domain-specific localStorage items to initialize in the session",
+          description: "Domain-specific localStorage items to initialize in the session",
         },
         sessionStorage: {
           type: "object",
@@ -322,8 +371,7 @@ export const CreateSessionSchema = {
               type: "string",
             },
           },
-          description:
-            "Domain-specific sessionStorage items to initialize in the session",
+          description: "Domain-specific sessionStorage items to initialize in the session",
         },
         indexedDB: {
           type: "object",
@@ -399,8 +447,7 @@ export const CreateSessionSchema = {
               additionalProperties: false,
             },
           },
-          description:
-            "Domain-specific indexedDB items to initialize in the session",
+          description: "Domain-specific indexedDB items to initialize in the session",
         },
       },
       additionalProperties: false,
@@ -452,8 +499,7 @@ export const CreateSessionSchema = {
     },
     skipFingerprintInjection: {
       type: "boolean",
-      description:
-        "Flag to indicate if fingerprint injection should be skipped for this session.",
+      description: "Flag to indicate if fingerprint injection should be skipped for this session.",
     },
     deviceConfig: {
       type: "object",
@@ -465,8 +511,7 @@ export const CreateSessionSchema = {
         },
       },
       additionalProperties: false,
-      description:
-        "Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations.",
+      description: "Device configuration for the session",
     },
     logSinkUrl: {
       type: "string",
@@ -616,8 +661,7 @@ export const SessionDetailsSchema = {
     },
     debugUrl: {
       type: "string",
-      description:
-        "URL for a viewing the live browser instance for the session",
+      description: "URL for a viewing the live browser instance for the session",
     },
     debuggerUrl: {
       type: "string",
@@ -652,6 +696,18 @@ export const SessionDetailsSchema = {
     isSelenium: {
       type: "boolean",
       description: "Indicates if Selenium is used in the session",
+    },
+    deviceConfig: {
+      type: "object",
+      properties: {
+        device: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          default: "desktop",
+        },
+      },
+      additionalProperties: false,
+      description: "Device configuration for the session",
     },
   },
   required: [
@@ -732,8 +788,7 @@ export const MultipleSessionsSchema = {
           },
           debugUrl: {
             type: "string",
-            description:
-              "URL for a viewing the live browser instance for the session",
+            description: "URL for a viewing the live browser instance for the session",
           },
           debuggerUrl: {
             type: "string",
@@ -768,6 +823,18 @@ export const MultipleSessionsSchema = {
           isSelenium: {
             type: "boolean",
             description: "Indicates if Selenium is used in the session",
+          },
+          deviceConfig: {
+            type: "object",
+            properties: {
+              device: {
+                type: "string",
+                enum: ["desktop", "mobile"],
+                default: "desktop",
+              },
+            },
+            additionalProperties: false,
+            description: "Device configuration for the session",
           },
         },
         required: [
@@ -897,8 +964,7 @@ export const SessionContextSchemaSchema = {
           type: "string",
         },
       },
-      description:
-        "Domain-specific localStorage items to initialize in the session",
+      description: "Domain-specific localStorage items to initialize in the session",
     },
     sessionStorage: {
       type: "object",
@@ -908,8 +974,7 @@ export const SessionContextSchemaSchema = {
           type: "string",
         },
       },
-      description:
-        "Domain-specific sessionStorage items to initialize in the session",
+      description: "Domain-specific sessionStorage items to initialize in the session",
     },
     indexedDB: {
       type: "object",
@@ -985,8 +1050,7 @@ export const SessionContextSchemaSchema = {
           additionalProperties: false,
         },
       },
-      description:
-        "Domain-specific indexedDB items to initialize in the session",
+      description: "Domain-specific indexedDB items to initialize in the session",
     },
   },
   additionalProperties: false,
@@ -1060,8 +1124,7 @@ export const ReleaseSessionSchema = {
     },
     debugUrl: {
       type: "string",
-      description:
-        "URL for a viewing the live browser instance for the session",
+      description: "URL for a viewing the live browser instance for the session",
     },
     debuggerUrl: {
       type: "string",
@@ -1096,6 +1159,18 @@ export const ReleaseSessionSchema = {
     isSelenium: {
       type: "boolean",
       description: "Indicates if Selenium is used in the session",
+    },
+    deviceConfig: {
+      type: "object",
+      properties: {
+        device: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          default: "desktop",
+        },
+      },
+      additionalProperties: false,
+      description: "Device configuration for the session",
     },
     success: {
       type: "boolean",
@@ -1225,13 +1300,7 @@ export const SessionLiveDetailsResponseSchema = {
           type: "number",
         },
       },
-      required: [
-        "status",
-        "userAgent",
-        "browserVersion",
-        "initialDimensions",
-        "pageCount",
-      ],
+      required: ["status", "userAgent", "browserVersion", "initialDimensions", "pageCount"],
       additionalProperties: false,
     },
   },
@@ -1325,48 +1394,6 @@ export const LogQueryResultSchemaSchema = {
     },
   },
   required: ["events", "total", "hasMore"],
-  additionalProperties: false,
-} as const;
-
-export const ExportLogsSchemaSchema = {
-  title: "ExportLogsSchema",
-  type: "object",
-  properties: {
-    query: {
-      type: "object",
-      properties: {
-        startTime: {
-          type: "string",
-          format: "date-time",
-        },
-        endTime: {
-          type: "string",
-          format: "date-time",
-        },
-        eventTypes: {
-          type: "string",
-        },
-        pageId: {
-          type: "string",
-        },
-        targetType: {
-          type: "string",
-        },
-        limit: {
-          type: "integer",
-          minimum: 1,
-          maximum: 1000,
-          default: 100,
-        },
-        offset: {
-          type: "integer",
-          minimum: 0,
-          default: 0,
-        },
-      },
-      additionalProperties: false,
-    },
-  },
   additionalProperties: false,
 } as const;
 

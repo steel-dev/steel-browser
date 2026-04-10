@@ -204,6 +204,60 @@
       "PDFResponse": {
         "title": "PDFResponse"
       },
+      "SearchRequest": {
+        "title": "SearchRequest",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "proxyUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used."
+          },
+          "logUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "SearchResponse": {
+        "title": "SearchResponse",
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "title",
+                "url"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "additionalProperties": false
+      },
       "CreateSession": {
         "title": "CreateSession",
         "type": "object",
@@ -504,7 +558,7 @@
               }
             },
             "additionalProperties": false,
-            "description": "Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations."
+            "description": "Device configuration for the session"
           },
           "logSinkUrl": {
             "type": "string",
@@ -698,6 +752,21 @@
           "isSelenium": {
             "type": "boolean",
             "description": "Indicates if Selenium is used in the session"
+          },
+          "deviceConfig": {
+            "type": "object",
+            "properties": {
+              "device": {
+                "type": "string",
+                "enum": [
+                  "desktop",
+                  "mobile"
+                ],
+                "default": "desktop"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Device configuration for the session"
           }
         },
         "required": [
@@ -820,6 +889,21 @@
                 "isSelenium": {
                   "type": "boolean",
                   "description": "Indicates if Selenium is used in the session"
+                },
+                "deviceConfig": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "type": "string",
+                      "enum": [
+                        "desktop",
+                        "mobile"
+                      ],
+                      "default": "desktop"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Device configuration for the session"
                 }
               },
               "required": [
@@ -1182,6 +1266,21 @@
             "type": "boolean",
             "description": "Indicates if Selenium is used in the session"
           },
+          "deviceConfig": {
+            "type": "object",
+            "properties": {
+              "device": {
+                "type": "string",
+                "enum": [
+                  "desktop",
+                  "mobile"
+                ],
+                "default": "desktop"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Device configuration for the session"
+          },
           "success": {
             "type": "boolean",
             "description": "Indicates if the session was successfully released"
@@ -1429,47 +1528,6 @@
           "total",
           "hasMore"
         ],
-        "additionalProperties": false
-      },
-      "ExportLogsSchema": {
-        "title": "ExportLogsSchema",
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "object",
-            "properties": {
-              "startTime": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "endTime": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "eventTypes": {
-                "type": "string"
-              },
-              "pageId": {
-                "type": "string"
-              },
-              "targetType": {
-                "type": "string"
-              },
-              "limit": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1000,
-                "default": 100
-              },
-              "offset": {
-                "type": "integer",
-                "minimum": 0,
-                "default": 0
-              }
-            },
-            "additionalProperties": false
-          }
-        },
         "additionalProperties": false
       },
       "GetDevtoolsUrlSchema": {
@@ -1763,6 +1821,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PDFResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "post": {
+        "operationId": "search",
+        "summary": "Use a search engine to search for URLs given a query",
+        "tags": [
+          "Browser Actions"
+        ],
+        "description": "Use a search engine to search for URLs given a query",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
                 }
               }
             }
@@ -2484,84 +2573,6 @@
           "Logs"
         ],
         "description": "Stream browser logs in real-time using SSE",
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/v1/logs/export": {
-      "post": {
-        "tags": [
-          "Logs"
-        ],
-        "description": "Export browser logs to Parquet format",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "in": "query",
-            "name": "startTime",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "in": "query",
-            "name": "endTime",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "query",
-            "name": "eventTypes",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "query",
-            "name": "pageId",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "query",
-            "name": "targetType",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1000,
-              "default": 100
-            },
-            "in": "query",
-            "name": "limit",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0
-            },
-            "in": "query",
-            "name": "offset",
-            "required": false
-          }
-        ],
         "responses": {
           "200": {
             "description": "Default Response"

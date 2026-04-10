@@ -2,14 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import { CDPService } from "../services/cdp/cdp.service.js";
 import fp from "fastify-plugin";
 import { BrowserLauncherOptions } from "../types/index.js";
-import {
-  DuckDBStorage,
-  InMemoryStorage,
-  LogStorage,
-} from "../services/cdp/instrumentation/storage/index.js";
-import path from "path";
-import os from "os";
-import { env } from "../env.js";
+import { InMemoryStorage, LogStorage } from "../services/cdp/instrumentation/storage/index.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -23,32 +16,13 @@ declare module "fastify" {
 
 const browserInstancePlugin: FastifyPluginAsync = async (fastify, _options) => {
   const loggingConfig = fastify.steelBrowserConfig?.logging || {};
-  const enableStorage = loggingConfig.enableStorage ?? env.LOG_STORAGE_ENABLED ?? false;
   const enableConsoleLogging = loggingConfig.enableConsoleLogging ?? true;
 
-  let storage: LogStorage | null = null;
-  if (enableStorage) {
-    const storagePath =
-      loggingConfig.storagePath ||
-      env.LOG_STORAGE_PATH ||
-      path.join(os.tmpdir(), "steel-browser-logs", "logs.duckdb");
-
-    storage = new DuckDBStorage({
-      dbPath: storagePath,
-      maxThreads: 1,
-      memoryLimit: "128MB",
-      parquetCompression: "none",
-      enableWriteBuffer: true,
-      writeBufferSize: 200,
-      writeBufferFlushInterval: 2000,
-    });
-
-    await storage.initialize();
-    fastify.log.info(`Log storage initialized at ${storagePath}`);
+  const storage: LogStorage = loggingConfig.storage ?? new InMemoryStorage(1000);
+  await storage.initialize();
+  if (loggingConfig.storage) {
+    fastify.log.info("Log storage initialized (injected)");
   } else {
-    // Use in-memory storage for development
-    storage = new InMemoryStorage(1000);
-    await storage.initialize();
     fastify.log.info("Using in-memory log storage");
   }
 
