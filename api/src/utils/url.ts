@@ -1,3 +1,6 @@
+import dns from "dns";
+import { promisify } from "util";
+import net from "net";
 import { env } from "../env.js";
 
 /**
@@ -59,5 +62,82 @@ export function normalizeUrl(url: string): string | null {
     return normalizedUrl;
   } catch {
     return null;
+  }
+}
+
+const lookup = promisify(dns.lookup);
+
+function isPrivateIP(ip: string): boolean {
+  if (!net.isIP(ip)) return false;
+  if (net.isIPv4(ip)) {
+    const parts = ip.split(".").map(Number);
+    return (
+      parts[0] === 10 || // 10.0.0.0/8
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || // 172.16.0.0/12
+      (parts[0] === 192 && parts[1] === 168) || // 192.168.0.0/16
+      parts[0] === 127 || // 127.0.0.0/8
+      (parts[0] === 169 && parts[1] === 254) || // 169.254.0.0/16
+      parts[0] === 0 || // 0.0.0.0/8
+      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) || // 100.64.0.0/10
+      (parts[0] === 192 && parts[1] === 0 && parts[2] === 0) || // 192.0.0.0/24
+      (parts[0] === 192 && parts[1] === 0 && parts[2] === 2) || // 192.0.2.0/24
+      (parts[0] === 198 && parts[1] >= 18 && parts[1] <= 19) || // 198.18.0.0/15
+      (parts[0] === 198 && parts[1] === 51 && parts[2] === 100) || // 198.51.100.0/24
+      (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) || // 203.0.113.0/24
+      parts[0] >= 224 // 224.0.0.0/4 and 240.0.0.0/4
+    );
+  } else if (net.isIPv6(ip)) {
+    const ipLower = ip.toLowerCase();
+    if (
+      ipLower === "::1" ||
+      ipLower === "::" ||
+      ipLower.startsWith("fc") ||
+      ipLower.startsWith("fd") || // fc00::/7
+      ipLower.startsWith("fe8") ||
+      ipLower.startsWith("fe9") ||
+      ipLower.startsWith("fea") ||
+      ipLower.startsWith("feb") // fe80::/10
+    ) {
+      return true;
+    }
+    if (ipLower.startsWith("::ffff:")) {
+      const ipv4Part = ipLower.split("::ffff:")[1];
+      return isPrivateIP(ipv4Part);
+    }
+  }
+  return false;
+}
+
+export async function isSafeUrl(urlString: string): Promise<boolean> {
+  try {
+    const url = new URL(urlString);
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return false;
+    }
+
+    const hostname = url.hostname.replace(/^\[|\]$/g, "");
+
+    if (net.isIP(hostname)) {
+      return !isPrivateIP(hostname);
+    }
+
+    try {
+      const addresses = await lookup(hostname, { all: true });
+
+      for (const { address } of addresses) {
+        if (isPrivateIP(address)) {
+          return false;
+        }
+      }
+    } catch (e) {
+      // If we can't resolve it, we err on the side of caution or allow it?
+      // Usually better to fail safely for SSRF if it doesn't resolve, but fetch might still try if proxy is used.
+      return false;
+    }
+
+    return true;
+  } catch (e) {
+    return false;
   }
 }
