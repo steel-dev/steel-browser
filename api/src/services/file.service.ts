@@ -208,26 +208,28 @@ export class FileService {
     const collectFilesRecursively = async (currentDir: string) => {
       try {
         const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
-        for (const entry of entries) {
-          const entryPath = path.join(currentDir, entry.name);
-          if (entry.isFile()) {
-            try {
-              const stats = await fs.promises.stat(entryPath);
-              allFiles.push({
-                path: entryPath,
-                size: stats.size,
-                lastModified: stats.mtime,
-              });
-            } catch (statError) {
-              console.error(
-                `[FileService] Error getting stats for file ${entryPath} during listFiles:`,
-                statError,
-              );
+        await Promise.all(
+          entries.map(async (entry) => {
+            const entryPath = path.join(currentDir, entry.name);
+            if (entry.isFile()) {
+              try {
+                const stats = await fs.promises.stat(entryPath);
+                allFiles.push({
+                  path: entryPath,
+                  size: stats.size,
+                  lastModified: stats.mtime,
+                });
+              } catch (statError) {
+                console.error(
+                  `[FileService] Error getting stats for file ${entryPath} during listFiles:`,
+                  statError,
+                );
+              }
+            } else if (entry.isDirectory()) {
+              await collectFilesRecursively(entryPath);
             }
-          } else if (entry.isDirectory()) {
-            await collectFilesRecursively(entryPath);
-          }
-        }
+          }),
+        );
       } catch (readDirError) {
         console.error(
           `[FileService] Error reading directory ${currentDir} during listFiles:`,
