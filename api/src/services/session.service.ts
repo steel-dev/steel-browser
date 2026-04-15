@@ -46,7 +46,10 @@ const defaultSession = {
   solveCaptcha: false,
 };
 
-export type ProxyFactory = (proxyUrl: string) => Promise<IProxyServer> | IProxyServer;
+export type ProxyFactory = (
+  proxyUrl: string,
+  options?: OptimizeBandwidthOptions,
+) => Promise<IProxyServer> | IProxyServer;
 
 export class SessionService {
   private logger: FastifyBaseLogger;
@@ -170,11 +173,6 @@ export class SessionService {
         : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
     await mkdir(userDataDir, { recursive: true });
 
-    if (proxyUrl) {
-      this.activeSession.proxyServer = await this.proxyFactory(proxyUrl);
-      await this.activeSession.proxyServer.listen();
-    }
-
     const defaultUserPreferences = {
       plugins: {
         always_open_pdf_externally: true,
@@ -200,6 +198,11 @@ export class SessionService {
     };
 
     const normalizedOptimize = normalizeOptimizeBandwidth(optimizeBandwidth);
+
+    if (proxyUrl) {
+      this.activeSession.proxyServer = await this.proxyFactory(proxyUrl, normalizedOptimize);
+      await this.activeSession.proxyServer.listen();
+    }
 
     const browserLauncherOptions: BrowserLauncherOptions = {
       options: {
