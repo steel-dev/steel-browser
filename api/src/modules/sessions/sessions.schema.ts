@@ -59,6 +59,10 @@ const CreateSession = z.object({
     .optional()
     .describe("Flag to indicate if fingerprint injection should be skipped for this session."),
   deviceConfig: deviceConfigSchema,
+  fullscreen: z
+    .boolean()
+    .optional()
+    .describe("Launch the browser in fullscreen mode, covering the full screen with no Chrome UI."),
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Deprecated: Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
