@@ -43,7 +43,7 @@ export interface BrowserLauncherOptions {
   extra?: Record<string, Record<string, string>>;
   credentials?: CredentialsOptions;
   skipFingerprintInjection?: boolean;
-  deviceConfig?: { device: "desktop" | "mobile" };
+  deviceConfig?: { device: "desktop" | "mobile"; displayMode?: "default" | "fullscreen" };
   dangerouslyLogRequestDetails?: boolean;
 }
 

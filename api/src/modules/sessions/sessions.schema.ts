@@ -10,6 +10,12 @@ import { SessionContextSchema } from "../../services/context/types.js";
 const deviceConfigSchema = z
   .object({
     device: z.enum(["desktop", "mobile"]).default("desktop"),
+    displayMode: z
+      .enum(["default", "fullscreen"])
+      .default("default")
+      .describe(
+        "Browser window display mode. Use 'fullscreen' to launch the browser covering the full screen with no Chrome UI.",
+      ),
   })
   .optional()
   .describe("Device configuration for the session");

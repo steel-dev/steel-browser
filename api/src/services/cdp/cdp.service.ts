@@ -864,6 +864,7 @@ export class CDPService extends EventEmitter {
           this.launchConfig.options.proxyUrl
             ? `--proxy-server=${this.launchConfig.options.proxyUrl}`
             : "",
+          this.launchConfig.deviceConfig?.displayMode === "fullscreen" ? "--kiosk" : "",
         ];
 
         const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));

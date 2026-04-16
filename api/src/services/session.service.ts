@@ -105,7 +105,7 @@ export class SessionService {
     credentials: CredentialsOptions;
     skipFingerprintInjection?: boolean;
     userPreferences?: Record<string, any>;
-    deviceConfig?: { device: "desktop" | "mobile" };
+    deviceConfig?: { device: "desktop" | "mobile"; displayMode?: "default" | "fullscreen" };
     headless?: boolean;
     dangerouslyLogRequestDetails?: boolean;
   }): Promise<SessionDetails> {
@@ -161,7 +161,9 @@ export class SessionService {
       solveCaptcha: false,
       dimensions: finalDimensions,
       isSelenium,
-      deviceConfig,
+      deviceConfig: deviceConfig
+        ? { device: deviceConfig.device, displayMode: deviceConfig.displayMode ?? "default" }
+        : undefined,
     });
 
     const userDataDir =
