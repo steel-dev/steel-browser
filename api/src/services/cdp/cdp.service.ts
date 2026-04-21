@@ -744,8 +744,7 @@ export class CDPService extends EventEmitter {
             // Check for session extensions passed from the API
             let sessionExtensionPaths: string[] = [];
             if (this.launchConfig!.extra?.orgExtensions?.paths) {
-              sessionExtensionPaths = this.launchConfig!.extra.orgExtensions
-                .paths as unknown as string[];
+              sessionExtensionPaths = this.launchConfig!.extra.orgExtensions.paths;
               this.logger.info(
                 `[CDPService] Found ${sessionExtensionPaths.length} session extension paths`,
               );

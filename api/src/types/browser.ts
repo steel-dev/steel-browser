@@ -8,13 +8,20 @@ import type {
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
-export type OptimizeBandwidthOptions = {
+export interface OptimizeBandwidthOptions {
   blockImages?: boolean;
   blockMedia?: boolean;
   blockStylesheets?: boolean;
   blockHosts?: string[];
   blockUrlPatterns?: string[];
-};
+}
+
+export interface BrowserLaunchExtra {
+  orgExtensions?: {
+    paths?: string[];
+  };
+  [key: string]: unknown;
+}
 
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
@@ -40,7 +47,7 @@ export interface BrowserLauncherOptions {
   } | null;
   userDataDir?: string;
   userPreferences?: Record<string, any>;
-  extra?: Record<string, Record<string, string>>;
+  extra?: BrowserLaunchExtra;
   credentials?: CredentialsOptions;
   skipFingerprintInjection?: boolean;
   deviceConfig?: { device: "desktop" | "mobile" };
