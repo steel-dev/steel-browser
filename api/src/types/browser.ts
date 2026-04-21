@@ -16,10 +16,12 @@ export interface OptimizeBandwidthOptions {
   blockUrlPatterns?: string[];
 }
 
+export interface BrowserOrgExtensionsExtra {
+  paths?: string[];
+}
+
 export interface BrowserLaunchExtra {
-  orgExtensions?: {
-    paths?: string[];
-  };
+  orgExtensions?: BrowserOrgExtensionsExtra;
   [key: string]: unknown;
 }
 
