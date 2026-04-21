@@ -29,6 +29,12 @@
         "types": "./build/services/cdp/instrumentation/storage/log-storage.interface.d.ts",
         "default": "./build/services/cdp/instrumentation/storage/log-storage.interface.js"
       }
+    },
+    "./browser": {
+      "import": {
+        "types": "./build/types/browser.d.ts",
+        "default": "./build/types/browser.js"
+      }
     }
   },
   "scripts": {
