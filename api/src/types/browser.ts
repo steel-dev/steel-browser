@@ -53,6 +53,7 @@ export interface BrowserLauncherOptions {
   credentials?: CredentialsOptions;
   skipFingerprintInjection?: boolean;
   deviceConfig?: { device: "desktop" | "mobile" };
+  fullscreen?: boolean;
   dangerouslyLogRequestDetails?: boolean;
 }
 

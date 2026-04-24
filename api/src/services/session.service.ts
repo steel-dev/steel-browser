@@ -113,6 +113,7 @@ export class SessionService {
     skipFingerprintInjection?: boolean;
     userPreferences?: Record<string, any>;
     deviceConfig?: { device: "desktop" | "mobile" };
+    fullscreen?: boolean;
     headless?: boolean;
     dangerouslyLogRequestDetails?: boolean;
   }): Promise<SessionDetails> {
@@ -133,6 +134,7 @@ export class SessionService {
       skipFingerprintInjection,
       userPreferences,
       deviceConfig,
+      fullscreen,
       headless,
       dangerouslyLogRequestDetails,
     } = options;
@@ -228,6 +230,7 @@ export class SessionService {
       credentials,
       skipFingerprintInjection,
       deviceConfig,
+      fullscreen,
       dangerouslyLogRequestDetails,
     };
 
