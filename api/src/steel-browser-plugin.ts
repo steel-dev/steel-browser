@@ -49,8 +49,10 @@ export interface SteelBrowserConfig {
   };
   customWsHandlers?: WebSocketHandler[];
   logging?: {
-    enableStorage?: boolean;
-    storagePath?: string;
+    /**
+     * Optional log storage implementation. If omitted, `InMemoryStorage` is used.
+     */
+    storage?: LogStorage;
     enableConsoleLogging?: boolean;
     enableLogsRoutes?: boolean;
   };
