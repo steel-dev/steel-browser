@@ -20,6 +20,7 @@ export class FileService {
   private prebuiltArchiveDir: string;
   private prebuiltArchivePath: string;
   private isArchiving: boolean = false;
+  private currentArchivePromise: Promise<string | null> | null = null;
   private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
 
@@ -281,6 +282,7 @@ export class FileService {
     console.log(`[FileService cleanupFiles] Starting cleanup for directory: ${this.baseFilesPath}`);
 
     this.debouncedCreateArchive.cancel();
+    await this.waitForArchiveToFinish();
 
     try {
       const archivePath = path.join(this.prebuiltArchiveDir, "files.zip");
@@ -336,8 +338,22 @@ export class FileService {
     return this.prebuiltArchivePath;
   }
 
+  private async waitForArchiveToFinish(): Promise<void> {
+    if (!this.currentArchivePromise) return;
+
+    try {
+      await this.currentArchivePromise;
+    } catch (err) {
+      console.warn("[FileService cleanupFiles] Archive in progress failed before cleanup:", err);
+    }
+  }
+
   private _createArchive(): Promise<string | null> {
-    return new Promise(async (resolvePromise, rejectPromise) => {
+    if (this.currentArchivePromise) {
+      return this.currentArchivePromise;
+    }
+
+    const archivePromise = new Promise<string | null>(async (resolvePromise, rejectPromise) => {
       if (this.isArchiving) {
         console.warn(
           `[_createArchive] Warning: Archiving process initiated while another is already in progress. This might lead to conflicts if not handled by caller.`,
@@ -469,5 +485,11 @@ export class FileService {
         operationCleanup(false, null, err);
       }
     });
+
+    this.currentArchivePromise = archivePromise.finally(() => {
+      this.currentArchivePromise = null;
+    });
+
+    return this.currentArchivePromise;
   }
 }
