@@ -684,7 +684,7 @@ export class CDPService extends EventEmitter {
               let fingerprintOptions: Partial<FingerprintGeneratorOptions> = {
                 devices: ["desktop"],
                 operatingSystems: ["linux"],
-                browsers: [{ name: "chrome", minVersion: 136 }],
+                browsers: [{ name: "chrome", minVersion: 146 }],
                 locales: ["en-US", "en"],
                 screen: {
                   minWidth: this.launchConfig!.dimensions?.width ?? 1920,
