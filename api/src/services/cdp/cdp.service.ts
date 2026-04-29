@@ -684,7 +684,7 @@ export class CDPService extends EventEmitter {
               let fingerprintOptions: Partial<FingerprintGeneratorOptions> = {
                 devices: ["desktop"],
                 operatingSystems: ["linux"],
-                browsers: [{ name: "chrome", minVersion: 136 }],
+                browsers: [{ name: "chrome", minVersion: 146 }],
                 locales: ["en-US", "en"],
                 screen: {
                   minWidth: this.launchConfig!.dimensions?.width ?? 1920,
@@ -800,7 +800,7 @@ export class CDPService extends EventEmitter {
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync",
+          "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync,DisableLoadExtensionCommandLineSwitch,DisableDisableExtensionsExceptCommandLineSwitch",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--disable-sync",
