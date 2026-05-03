@@ -26,12 +26,15 @@ type Session = SessionDetails & {
   completion: Promise<void>;
   complete: (value: void) => void;
   proxyServer: IProxyServer | undefined;
+  inactivityTimer?: NodeJS.Timeout;
+  _lastActivityAtMs: number; // Internal tracking of last activity timestamp in milliseconds
 };
 
 const sessionStats = {
   duration: 0,
   eventCount: 0,
   timeout: 0,
+  inactivityTimeout: 0,
   creditsUsed: 0,
   proxyTxBytes: 0,
   proxyRxBytes: 0,
@@ -65,6 +68,7 @@ export class SessionService {
 
   public pastSessions: Session[] = [];
   public activeSession: Session;
+  private inactivityCheckInterval?: NodeJS.Timeout;
 
   constructor(config: {
     cdpService: CDPService;
@@ -87,7 +91,121 @@ export class SessionService {
       completion: Promise.resolve(),
       complete: () => {},
       proxyServer: undefined,
+      _lastActivityAtMs: Date.now(),
+    } as Session;
+  }
+
+  /**
+   * Converts the internal Session object to SessionDetails schema format
+   * @private
+   */
+  private getSessionDetails(session: Session): SessionDetails {
+    const details: SessionDetails = {
+      ...session,
+      lastActivityAt: new Date(session._lastActivityAtMs).toISOString(),
     };
+    // Remove internal properties from the response
+    delete (details as any)._lastActivityAtMs;
+    delete (details as any).completion;
+    delete (details as any).complete;
+    delete (details as any).proxyServer;
+    delete (details as any).inactivityTimer;
+    return details;
+  }
+
+  /**
+   * Updates the last activity timestamp for the session and resets inactivity timer
+   */
+  public recordActivity(): void {
+    this.activeSession._lastActivityAtMs = Date.now();
+    if (this.activeSession.status === "live" && this.activeSession.inactivityTimeout > 0) {
+      this.resetInactivityTimer();
+    }
+  }
+
+  /**
+   * Sets up the inactivity timer for the active session
+   * @private
+   */
+  private resetInactivityTimer(): void {
+    // Clear existing timer
+    if (this.activeSession.inactivityTimer) {
+      clearTimeout(this.activeSession.inactivityTimer);
+    }
+
+    const timeoutMs = this.activeSession.inactivityTimeout * 1000;
+    this.activeSession.inactivityTimer = setTimeout(() => {
+      this.logger.warn(
+        {
+          sessionId: this.activeSession.id,
+          inactivityTimeout: this.activeSession.inactivityTimeout,
+        },
+        "Session terminated due to inactivity",
+      );
+      this.endSession().catch((err) => {
+        this.logger.error(
+          { err, sessionId: this.activeSession.id },
+          "Failed to end session due to inactivity",
+        );
+      });
+    }, timeoutMs);
+  }
+
+  /**
+   * Clears the inactivity timer for the active session
+   * @private
+   */
+  private clearInactivityTimer(): void {
+    if (this.activeSession.inactivityTimer) {
+      clearTimeout(this.activeSession.inactivityTimer);
+      this.activeSession.inactivityTimer = undefined;
+    }
+  }
+
+  /**
+   * Starts the global inactivity check interval if enabled
+   * @private
+   */
+  private startInactivityCheckInterval(): void {
+    if (this.inactivityCheckInterval) {
+      clearInterval(this.inactivityCheckInterval);
+    }
+
+    const checkInterval = env.SESSION_INACTIVITY_CHECK_INTERVAL;
+    this.inactivityCheckInterval = setInterval(() => {
+      if (this.activeSession.status === "live" && this.activeSession.inactivityTimeout > 0) {
+        const lastActivityMs = Date.now() - this.activeSession._lastActivityAtMs;
+        const timeoutMs = this.activeSession.inactivityTimeout * 1000;
+
+        if (lastActivityMs >= timeoutMs) {
+          this.logger.warn(
+            {
+              sessionId: this.activeSession.id,
+              inactivityTimeout: this.activeSession.inactivityTimeout,
+              inactiveFor: Math.floor(lastActivityMs / 1000),
+            },
+            "Session terminated due to inactivity",
+          );
+          this.endSession().catch((err) => {
+            this.logger.error(
+              { err, sessionId: this.activeSession.id },
+              "Failed to end session due to inactivity",
+            );
+          });
+        }
+      }
+    }, checkInterval);
+  }
+
+  /**
+   * Stops the global inactivity check interval
+   * @private
+   */
+  private stopInactivityCheckInterval(): void {
+    if (this.inactivityCheckInterval) {
+      clearInterval(this.inactivityCheckInterval);
+      this.inactivityCheckInterval = undefined;
+    }
   }
 
   public async startSession(options: {
@@ -116,6 +234,7 @@ export class SessionService {
     fullscreen?: boolean;
     headless?: boolean;
     dangerouslyLogRequestDetails?: boolean;
+    inactivityTimeout?: number;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -137,6 +256,7 @@ export class SessionService {
       fullscreen,
       headless,
       dangerouslyLogRequestDetails,
+      inactivityTimeout,
     } = options;
 
     // start fetching timezone as early as possible
@@ -163,6 +283,10 @@ export class SessionService {
           }
         : resolvedDimensions;
 
+    // Determine the inactivity timeout for this session
+    const finalInactivityTimeout =
+      inactivityTimeout !== undefined ? inactivityTimeout : env.SESSION_INACTIVITY_TIMEOUT;
+
     await this.resetSessionInfo({
       id: sessionId || uuidv4(),
       status: "live",
@@ -171,7 +295,14 @@ export class SessionService {
       dimensions: finalDimensions,
       isSelenium,
       deviceConfig,
+      inactivityTimeout: finalInactivityTimeout,
     });
+
+    // Start inactivity monitoring if timeout is enabled
+    if (finalInactivityTimeout > 0) {
+      this.startInactivityCheckInterval();
+      this.resetInactivityTimer();
+    }
 
     const userDataDir =
       options.userDataDir || options.persist === true
@@ -249,7 +380,7 @@ export class SessionService {
         deviceConfig,
       });
 
-      return this.activeSession;
+      return this.getSessionDetails(this.activeSession);
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
 
@@ -266,10 +397,14 @@ export class SessionService {
       });
     }
 
-    return this.activeSession;
+    return this.getSessionDetails(this.activeSession);
   }
 
   public async endSession(): Promise<SessionDetails> {
+    // Clear inactivity timers
+    this.clearInactivityTimer();
+    this.stopInactivityCheckInterval();
+
     this.activeSession.complete();
     this.activeSession.status = "released";
     this.activeSession.duration =
@@ -296,7 +431,7 @@ export class SessionService {
 
     this.pastSessions.push(releasedSession);
 
-    return releasedSession;
+    return this.getSessionDetails(releasedSession);
   }
 
   private async resetSessionInfo(overrides?: Partial<SessionDetails>): Promise<SessionDetails> {
@@ -316,9 +451,10 @@ export class SessionService {
       completion: promise,
       complete: resolve,
       proxyServer: undefined,
-    };
+      _lastActivityAtMs: Date.now(),
+    } as Session;
 
-    return this.activeSession;
+    return this.getSessionDetails(this.activeSession);
   }
 
   public setProxyFactory(factory: ProxyFactory) {

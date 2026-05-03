@@ -24,6 +24,18 @@ const envSchema = z.object({
     .transform((val) => (val ? JSON.parse(val) : {}))
     .pipe(z.record(z.string()).optional().default({})),
   KILL_TIMEOUT: z.string().optional().default("0"),
+  SESSION_INACTIVITY_TIMEOUT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 0))
+    .default("0")
+    .describe("Inactivity timeout for sessions in seconds (0 = disabled)"),
+  SESSION_INACTIVITY_CHECK_INTERVAL: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 10000))
+    .default("10000")
+    .describe("Interval to check for inactive sessions in milliseconds"),
   CHROME_EXECUTABLE_PATH: z.string().optional(),
   CHROME_HEADLESS: z
     .string()

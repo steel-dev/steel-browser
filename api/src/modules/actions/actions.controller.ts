@@ -28,6 +28,9 @@ export const handleScrape = async (
   request: ScrapeRequest,
   reply: FastifyReply,
 ) => {
+  // Record activity for inactivity timeout tracking
+  sessionService.recordActivity();
+
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, format, screenshot, pdf, proxyUrl, logUrl, delay } = request.body;
@@ -304,6 +307,9 @@ export const handleSearch = async (
   request: SearchRequest,
   reply: FastifyReply,
 ) => {
+  // Record activity for inactivity timeout tracking
+  sessionService.recordActivity();
+
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { query, proxyUrl, logUrl } = request.body;
@@ -417,6 +423,9 @@ export const handleScreenshot = async (
   request: ScreenshotRequest,
   reply: FastifyReply,
 ) => {
+  // Record activity for inactivity timeout tracking
+  sessionService.recordActivity();
+
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay, fullPage } = request.body;
@@ -497,6 +506,9 @@ export const handlePDF = async (
   request: PDFRequest,
   reply: FastifyReply,
 ) => {
+  // Record activity for inactivity timeout tracking
+  sessionService.recordActivity();
+
   const startTime = Date.now();
   let times: Record<string, number> = {};
   const { url, logUrl, proxyUrl, delay } = request.body;

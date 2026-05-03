@@ -63,6 +63,14 @@ const CreateSession = z.object({
     .boolean()
     .optional()
     .describe("Launch the browser in fullscreen mode, covering the full screen with no Chrome UI."),
+  inactivityTimeout: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe(
+      "Inactivity timeout for this session in seconds (0 = disabled, uses default if not provided)",
+    ),
   // Specific to hosted steel
   logSinkUrl: z.string().optional().describe("Deprecated: Log sink URL to use for the session"),
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
@@ -104,6 +112,16 @@ const SessionDetails = z.object({
     .optional()
     .describe("Dimensions used for the session"),
   timeout: z.number().int().describe("Session timeout duration in milliseconds"),
+  inactivityTimeout: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("Inactivity timeout for this session in seconds (0 = disabled)"),
+  lastActivityAt: z
+    .string()
+    .datetime()
+    .optional()
+    .describe("Timestamp of the last activity in the session"),
   creditsUsed: z.number().int().describe("Amount of credits consumed by the session"),
   websocketUrl: z.string().describe("URL for the session's WebSocket connection"),
   debugUrl: z.string().describe("URL for a viewing the live browser instance for the session"),

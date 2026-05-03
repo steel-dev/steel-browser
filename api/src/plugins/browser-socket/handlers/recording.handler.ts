@@ -9,6 +9,8 @@ function handleRecordingWebSocket(context: WebSocketHandlerContext, ws: WebSocke
 
   const messageHandler = (payload: { events: Record<string, any>[] }) => {
     if (ws.readyState === WebSocket.OPEN) {
+      // Record activity for inactivity timeout tracking
+      fastify.sessionService.recordActivity();
       ws.send(JSON.stringify(payload.events));
     }
   };
@@ -16,7 +18,10 @@ function handleRecordingWebSocket(context: WebSocketHandlerContext, ws: WebSocke
   fastify.cdpService.on(EmitEvent.Recording, messageHandler);
 
   // TODO: handle inputs to browser from client
-  ws.on("message", async (message) => {});
+  ws.on("message", async (message) => {
+    // Record activity for inactivity timeout tracking
+    fastify.sessionService.recordActivity();
+  });
 
   ws.on("close", () => {
     fastify.log.info("Recording WebSocket connection closed");

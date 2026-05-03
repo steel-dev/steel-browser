@@ -9,6 +9,8 @@ function handleLogsWebSocket(context: WebSocketHandlerContext, ws: WebSocket) {
 
   const messageHandler = (payload: { pageId: string }) => {
     if (ws.readyState === WebSocket.OPEN) {
+      // Record activity for inactivity timeout tracking
+      fastify.sessionService.recordActivity();
       ws.send(JSON.stringify([payload]));
     }
   };

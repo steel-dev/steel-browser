@@ -290,6 +290,9 @@ export async function handleCastSession(
               | GetSelectedTextEvent = JSON.parse(message.toString());
             const { type } = data;
 
+            // Record activity for inactivity timeout tracking
+            sessionService.recordActivity();
+
             if (!targetClient || !targetPage) {
               console.error("No target page or client available for input handling");
               return;
