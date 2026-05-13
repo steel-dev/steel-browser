@@ -7,7 +7,15 @@ export const BROWSER_INTERACTION_BINDING = "__steelBrowserInteractionLog";
 export const BROWSER_INTERACTION_WORLD = "__steel_browser_interactions__";
 
 const MAX_TEXT_LENGTH = 256;
-const ALLOWED_ACTIONS = new Set(["click", "doubleClick", "keyPress", "input", "change", "submit"]);
+const ALLOWED_ACTIONS = new Set([
+  "click",
+  "doubleClick",
+  "keyPress",
+  "input",
+  "change",
+  "submit",
+  "scroll",
+]);
 
 function truncate(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -427,25 +435,17 @@ function createBrowserInteractionScript(bindingName: string): string {
     { capture: true, passive: true },
   );
 
-  const inputDebounce = new WeakMap();
-  const inputDebounceMs = 100;
-
+  // Per-event emission. Sink-side collapse (logging.utils:collapseActivities)
+  // merges consecutive input/change events on the same target into the latest
+  // value, so source-level debouncing is unnecessary and only loses precision.
   document.addEventListener(
     "input",
     (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const existing = inputDebounce.get(target);
-      if (existing) clearTimeout(existing);
-      const timer = setTimeout(() => {
-        inputDebounce.delete(target);
-        send(event, {
-          action: "input",
-          eventType: "input",
-          value: valueSnapshot(event),
-        });
-      }, inputDebounceMs);
-      inputDebounce.set(target, timer);
+      send(event, {
+        action: "input",
+        eventType: "input",
+        value: valueSnapshot(event),
+      });
     },
     { capture: true, passive: true },
   );
@@ -453,14 +453,6 @@ function createBrowserInteractionScript(bindingName: string): string {
   document.addEventListener(
     "change",
     (event) => {
-      const target = event.target;
-      if (target instanceof Element) {
-        const pending = inputDebounce.get(target);
-        if (pending) {
-          clearTimeout(pending);
-          inputDebounce.delete(target);
-        }
-      }
       send(event, {
         action: "change",
         eventType: "change",
@@ -479,6 +471,41 @@ function createBrowserInteractionScript(bindingName: string): string {
       });
     },
     { capture: true, passive: true },
+  );
+
+  // Scroll: throttle to one emission per gesture (trailing edge) since the sink
+  // does not currently coalesce scrolls, and raw scroll events fire at frame rate.
+  // capture: false → only main-page scroll (scroll does not bubble on elements).
+  let scrollTimer = null;
+  const scrollDebounceMs = 200;
+
+  document.addEventListener(
+    "scroll",
+    () => {
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null;
+        const binding = window[bindingName];
+        if (typeof binding !== "function") return;
+        try {
+          binding(
+            JSON.stringify({
+              source,
+              timestamp: new Date().toISOString(),
+              interaction: {
+                action: "scroll",
+                eventType: "scroll",
+                pointer: { x: window.scrollX, y: window.scrollY },
+                page: { url: location.href, title: document.title },
+              },
+            }),
+          );
+        } catch {
+          // Logging must never affect the page.
+        }
+      }, scrollDebounceMs);
+    },
+    { capture: false, passive: true },
   );
 })();
 `;

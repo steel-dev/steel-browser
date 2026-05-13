@@ -96,7 +96,15 @@ export interface BrowserInteractionTarget {
 export interface BrowserInteractionEvent extends BaseBrowserEvent {
   type: BrowserEventType.BrowserInteraction;
   interaction: {
-    action: "click" | "doubleClick" | "keyPress" | "input" | "change" | "submit" | "navigate";
+    action:
+      | "click"
+      | "doubleClick"
+      | "keyPress"
+      | "input"
+      | "change"
+      | "submit"
+      | "scroll"
+      | "navigate";
     eventType: string;
     target?: BrowserInteractionTarget;
     pointer?: {
