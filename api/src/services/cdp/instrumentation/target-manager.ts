@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 
 import { attachPageEvents, AttachPageEventsOptions } from "./page-events.js";
 import { attachCDPEvents } from "./cdp-events.js";
+import { attachBrowserInteractionEvents } from "./browser-interaction-events.js";
 import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
 import { BrowserLogger } from "./browser-logger.js";
@@ -47,6 +48,9 @@ export class TargetInstrumentationManager {
         const page = await target.page();
         if (page) {
           await attachPageEvents(page, session, this.logger, type, this.pageEventsOptions);
+          if (!isExtensionTarget) {
+            await attachBrowserInteractionEvents(session, page, this.logger, type, sessionId);
+          }
         }
 
         attachCDPEvents(session, this.logger);
