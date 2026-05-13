@@ -151,6 +151,7 @@ export class TargetInstrumentationManager {
       case TargetType.PAGE:
       case TargetType.BACKGROUND_PAGE:
         await enable("Runtime");
+        await enable("Page");
         await enable("Log");
         await enable("Network");
         break;
