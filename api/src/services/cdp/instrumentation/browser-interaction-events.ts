@@ -157,6 +157,24 @@ function createBrowserInteractionScript(bindingName: string): string {
       : normalized;
   };
 
+  const directText = (element) => {
+    if (!(element instanceof Element)) return undefined;
+
+    let value = "";
+    for (const node of element.childNodes) {
+      if (node.nodeType !== Node.TEXT_NODE) continue;
+      const text = node.textContent || "";
+      if (!/\\S/.test(text)) continue;
+
+      const remaining = maxTextLength - value.length;
+      if (remaining <= 0) break;
+
+      value += " " + text.slice(0, remaining);
+    }
+
+    return compact(value);
+  };
+
   const attr = (element, name) => {
     if (!element || !element.getAttribute) return undefined;
     return compact(element.getAttribute(name) || undefined);
@@ -219,7 +237,7 @@ function createBrowserInteractionScript(bindingName: string): string {
     attr(element, "alt") ||
     attr(element, "title") ||
     attr(element, "placeholder") ||
-    compact(element.textContent || undefined);
+    directText(element);
 
   const isMeaningfulElement = (element) => {
     if (!(element instanceof Element)) return false;
@@ -297,7 +315,7 @@ function createBrowserInteractionScript(bindingName: string): string {
       tagName: compact(element.tagName.toLowerCase()),
       role: attr(element, "role") || implicitRole(element),
       accessibleName: accessibleName(element),
-      text: compact(element.textContent || undefined),
+      text: directText(element),
       attributes: {
         id: attr(element, "id"),
         name: attr(element, "name"),
