@@ -55,6 +55,7 @@ export interface BrowserLauncherOptions {
   deviceConfig?: { device: "desktop" | "mobile" };
   fullscreen?: boolean;
   dangerouslyLogRequestDetails?: boolean;
+  semanticAgentLogs?: boolean;
 }
 
 export interface BrowserServerOptions {

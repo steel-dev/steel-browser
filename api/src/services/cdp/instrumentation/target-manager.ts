@@ -12,18 +12,25 @@ const INTERNAL_EXTENSIONS = new Set<string>([
   // TODO: need secret manager, recorder, and capacha IDs
 ]);
 
+export interface InteractionEventsOptions {
+  semanticAgentLogs?: boolean;
+}
+
 export class TargetInstrumentationManager {
   private attachedSessions = new Set<string>();
   private cdpSessions = new Map<string, CDPSession>();
 
   private pageEventsOptions: AttachPageEventsOptions;
+  private interactionEventsOptions: InteractionEventsOptions;
 
   constructor(
     private logger: BrowserLogger,
     private appLogger: FastifyBaseLogger,
     pageEventsOptions?: AttachPageEventsOptions,
+    interactionEventsOptions?: InteractionEventsOptions,
   ) {
     this.pageEventsOptions = pageEventsOptions ?? {};
+    this.interactionEventsOptions = interactionEventsOptions ?? {};
   }
 
   async attach(target: Target, type: TargetType) {
@@ -48,7 +55,7 @@ export class TargetInstrumentationManager {
         const page = await target.page();
         if (page) {
           await attachPageEvents(page, session, this.logger, type, this.pageEventsOptions);
-          if (!isExtensionTarget) {
+          if (!isExtensionTarget && this.interactionEventsOptions.semanticAgentLogs) {
             await attachBrowserInteractionEvents(session, page, this.logger, type, sessionId);
           }
         }
