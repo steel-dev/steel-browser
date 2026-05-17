@@ -63,6 +63,75 @@ export interface RecordingEvent extends BaseBrowserEvent {
   data: any;
 }
 
+export interface BrowserInteractionTarget {
+  tagName?: string;
+  role?: string;
+  accessibleName?: string;
+  text?: string;
+  attributes?: {
+    id?: string;
+    name?: string;
+    type?: string;
+    href?: string;
+    ariaLabel?: string;
+    placeholder?: string;
+    title?: string;
+    testId?: string;
+  };
+  selector?: {
+    css?: string;
+    id?: string;
+    testId?: string;
+    name?: string;
+    aria?: string;
+  };
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface BrowserInteractionEvent extends BaseBrowserEvent {
+  type: BrowserEventType.BrowserInteraction;
+  interaction: {
+    action:
+      | "click"
+      | "doubleClick"
+      | "keyPress"
+      | "input"
+      | "change"
+      | "submit"
+      | "scroll"
+      | "navigate";
+    eventType: string;
+    target?: BrowserInteractionTarget;
+    pointer?: {
+      x: number;
+      y: number;
+      button?: number;
+      clickCount?: number;
+    };
+    keyboard?: {
+      key?: string;
+      code?: string;
+    };
+    value?: {
+      inputType?: string;
+      valueLength?: number;
+      checked?: boolean;
+    };
+    navigation?: {
+      url: string;
+    };
+    page?: {
+      url?: string;
+      title?: string;
+    };
+  };
+}
+
 export interface CDPEvent extends BaseBrowserEvent {
   type: BrowserEventType.CDPEvent;
   cdp: {
@@ -109,6 +178,7 @@ export type BrowserEventUnion =
   | ConsoleEvent
   | ErrorEvent
   | RecordingEvent
+  | BrowserInteractionEvent
   | CDPEvent
   | CDPCommandEvent
   | CDPCommandResultEvent
