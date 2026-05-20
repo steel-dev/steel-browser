@@ -181,11 +181,35 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
     );
     this.instrumentationLogger?.on?.(EmitEvent.Log, (event, context) => {
       this.emit(EmitEvent.Log, event);
+      this.postLogSink({ ...(context || {}), ...event });
     });
-    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload) => {
+    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload, context, event) => {
       this.emit(EmitEvent.Recording, payload);
+      this.postLogSink(
+        event
+          ? { ...(context || {}), ...event }
+          : {
+              ...(context || {}),
+              type: BrowserEventType.Recording,
+              timestamp: new Date().toISOString(),
+              data: payload,
+            },
+      );
     });
     this.logger.info("[CDPService] Target instrumentation enabled");
+  }
+
+  private postLogSink(event: unknown): void {
+    const logSinkUrl = this.currentSessionConfig?.logSinkUrl || this.launchConfig?.logSinkUrl;
+    if (!logSinkUrl) return;
+
+    fetch(logSinkUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event),
+    }).catch((err) => {
+      this.logger.error({ err }, "[CDPService] Failed to deliver log sink event");
+    });
   }
 
   public getInstrumentationLogger(): BrowserLogger {

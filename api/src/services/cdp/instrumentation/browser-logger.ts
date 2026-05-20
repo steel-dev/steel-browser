@@ -71,7 +71,7 @@ export function createBrowserLogger(options: CreateBrowserLoggerOptions): Browse
     }
 
     if (event.type === BrowserEventType.Recording) {
-      eventEmitter.emit(EmitEvent.Recording, event.data, context);
+      eventEmitter.emit(EmitEvent.Recording, event.data, context, event);
     } else {
       eventEmitter.emit(EmitEvent.Log, event, context);
     }

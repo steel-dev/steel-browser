@@ -69,6 +69,7 @@ export interface BrowserProcess {
 
 export interface BrowserLauncher {
   launch(config: ResolvedConfig, proxy: ProxyRef | null): Promise<BrowserRef>;
+  preparePage?(browser: BrowserRef, page: Page, config: ResolvedConfig): Promise<void>;
   close(browser: BrowserRef): Promise<void>;
   forceClose(browser: BrowserRef): Promise<void>;
 

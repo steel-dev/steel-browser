@@ -24,6 +24,8 @@ import type { OptimizeBandwidthOptions } from "../../types/browser.js";
 const dummyLogger = pino({ level: "silent" });
 
 export class PuppeteerLauncher implements BrowserLauncher {
+  private readonly networkingPages = new WeakSet<Page>();
+
   async launch(config: ResolvedConfig, proxy: ProxyRef | null): Promise<BrowserRef> {
     return traceOperation("browser.launch", "minimal", async (span) => {
       span.setAttribute("session.id", config.sessionId);
@@ -194,9 +196,9 @@ export class PuppeteerLauncher implements BrowserLauncher {
           launchedAt: Date.now(),
         };
 
-        await this.setupPageNetworking(primaryPage, config, (url) => {
-          instance!.emit("fileProtocolViolation", { url });
-        });
+        for (const page of pages) {
+          await this.preparePage(browserRef, page, config);
+        }
 
         // Setup blocking for any new pages created
         instance.on("targetcreated", async (target) => {
@@ -204,9 +206,7 @@ export class PuppeteerLauncher implements BrowserLauncher {
             try {
               const page = await target.page();
               if (page) {
-                await this.setupPageNetworking(page, config, (url) => {
-                  instance!.emit("fileProtocolViolation", { url });
-                });
+                await this.preparePage(browserRef, page, config);
               }
             } catch (error) {
               console.warn(`[PuppeteerLauncher] Failed to attach blocking to new page: ${error}`);
@@ -243,15 +243,31 @@ export class PuppeteerLauncher implements BrowserLauncher {
     });
   }
 
+  async preparePage(browser: BrowserRef, page: Page, config: ResolvedConfig): Promise<void> {
+    await this.setupPageNetworking(page, config, (url) => {
+      browser.instance.emit("fileProtocolViolation", { url });
+    });
+  }
+
   private async setupPageNetworking(
     page: Page,
     config: ResolvedConfig,
     onViolation?: (url: string) => void,
   ): Promise<void> {
+    if (this.networkingPages.has(page)) {
+      return;
+    }
+
+    this.networkingPages.add(page);
+
     try {
       const extraHeaders = this.getExtraHTTPHeaders(config);
       if (Object.keys(extraHeaders).length > 0) {
-        await page.setExtraHTTPHeaders(extraHeaders);
+        try {
+          await page.setExtraHTTPHeaders(extraHeaders);
+        } catch (error) {
+          console.warn(`[PuppeteerLauncher] Failed to set extra HTTP headers: ${error}`);
+        }
       }
       const optimize = this.normalizeOptimizeBandwidth(config.optimizeBandwidth);
       const compiledPatterns = optimize?.blockUrlPatterns?.length
@@ -286,7 +302,8 @@ export class PuppeteerLauncher implements BrowserLauncher {
         }
       });
     } catch (error) {
-      console.warn(`[PuppeteerLauncher] Failed to set up file protocol detection: ${error}`);
+      this.networkingPages.delete(page);
+      throw error;
     }
   }
 
@@ -352,11 +369,22 @@ export class PuppeteerLauncher implements BrowserLauncher {
       return;
     }
 
+    if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
+      await request.continue();
+      return;
+    }
+
+    const shouldInjectHeaders = request.method?.() !== "OPTIONS";
     const requestHeaders = request.headers?.();
-    const headers =
-      requestHeaders || Object.keys(extraHeaders).length > 0
-        ? { ...(requestHeaders || {}), ...extraHeaders }
-        : undefined;
+    const headers = requestHeaders
+      ? {
+          ...requestHeaders,
+          ...(shouldInjectHeaders ? extraHeaders : {}),
+        }
+      : shouldInjectHeaders && Object.keys(extraHeaders).length > 0
+      ? { ...extraHeaders }
+      : undefined;
+
     if (headers) {
       delete headers["accept-language"];
       await request.continue({ headers });

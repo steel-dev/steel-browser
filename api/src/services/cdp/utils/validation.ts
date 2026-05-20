@@ -153,6 +153,12 @@ export async function isSimilarConfig(
   const currentSkipFingerprint = current.skipFingerprintInjection ?? false;
   const nextSkipFingerprint = next.skipFingerprintInjection ?? false;
 
+  const currentLogSinkUrl = current.logSinkUrl || "";
+  const nextLogSinkUrl = next.logSinkUrl || "";
+
+  const currentDangerouslyLogRequestDetails = current.dangerouslyLogRequestDetails ?? false;
+  const nextDangerouslyLogRequestDetails = next.dangerouslyLogRequestDetails ?? false;
+
   const currentWidth = current.dimensions?.width ?? 1920;
   const nextWidth = next.dimensions?.width ?? 1920;
 
@@ -176,9 +182,13 @@ export async function isSimilarConfig(
     currentUserAgent === nextUserAgent &&
     currentUserDataDir === nextUserDataDir &&
     currentSkipFingerprint === nextSkipFingerprint &&
+    currentLogSinkUrl === nextLogSinkUrl &&
+    currentDangerouslyLogRequestDetails === nextDangerouslyLogRequestDetails &&
     currentWidth === nextWidth &&
     currentHeight === nextHeight &&
     currentBlockAds === nextBlockAds &&
+    JSON.stringify(current.optimizeBandwidth) === JSON.stringify(next.optimizeBandwidth) &&
+    JSON.stringify(current.customHeaders) === JSON.stringify(next.customHeaders) &&
     JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
     JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
     JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&

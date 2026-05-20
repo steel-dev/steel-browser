@@ -95,6 +95,18 @@ export class MockLauncher implements BrowserLauncher {
     this.closeCalls.push(browser);
   }
 
+  async preparePage(_browser: BrowserRef, page: Page, _config: ResolvedConfig): Promise<void> {
+    const pageWithNetworking = page as Page & {
+      setRequestInterception?: (value: boolean) => Promise<void>;
+      on?: (event: string, callback: (...args: any[]) => void) => void;
+    };
+
+    await pageWithNetworking.setRequestInterception?.(true);
+    pageWithNetworking.on?.("request", (request: any) => {
+      request.continue?.();
+    });
+  }
+
   async forceClose(browser: BrowserRef): Promise<void> {
     this.forceCloseCalls.push(browser);
   }

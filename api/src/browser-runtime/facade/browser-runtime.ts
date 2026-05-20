@@ -87,14 +87,18 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
       this.emit(EmitEvent.Log, event);
       this.postLogSink({ ...(context || {}), ...event });
     });
-    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload, context) => {
+    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload, context, event) => {
       this.emit(EmitEvent.Recording, payload);
-      this.postLogSink({
-        ...(context || {}),
-        type: BrowserEventType.Recording,
-        timestamp: new Date().toISOString(),
-        data: payload,
-      });
+      this.postLogSink(
+        event
+          ? { ...(context || {}), ...event }
+          : {
+              ...(context || {}),
+              type: BrowserEventType.Recording,
+              timestamp: new Date().toISOString(),
+              data: payload,
+            },
+      );
     });
 
     this.actor.on("targetCreated", (event) => {
@@ -105,7 +109,14 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
       }
     });
     this.actor.on("targetDestroyed", (event) => this.emit("targetDestroyed", event));
-    this.actor.on("fileProtocolViolation", (event) => this.emit("fileProtocolViolation", event));
+    this.actor.on("fileProtocolViolation", (event) => {
+      this.emit("fileProtocolViolation", event);
+      this.intentionalShutdown = true;
+      this.actor.send({
+        type: "FATAL_ERROR",
+        error: new Error(`Blocked file protocol URL: ${(event as any).url ?? "unknown"}`),
+      });
+    });
 
     let previousState: string | null = null;
     this.actor.subscribe((snapshot) => {
@@ -367,9 +378,15 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
   }
 
   async createPage(): Promise<Page> {
-    const browser = this.getBrowserInstance();
-    if (!browser) throw new Error("Browser not launched");
-    return browser.newPage();
+    const browserRef = this.actor.getSnapshot().context.browser;
+    if (!browserRef) throw new Error("Browser not launched");
+    const page = await browserRef.instance.newPage();
+    const resolvedConfig = this.actor.getSnapshot().context.resolvedConfig;
+    const launcher = this.actor.getSnapshot().context.launcher;
+    if (resolvedConfig && launcher.preparePage) {
+      await launcher.preparePage(browserRef, page, resolvedConfig);
+    }
+    return page;
   }
 
   async createBrowserContext(proxyUrl?: string): Promise<BrowserContext> {
@@ -389,7 +406,7 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
     if (!browser) return;
 
     const oldPage = await this.getPrimaryPage();
-    const newPage = await browser.newPage();
+    const newPage = await this.createPage();
 
     // Notify plugins before closing old page
     for (const plugin of this.pluginRegistry.values()) {

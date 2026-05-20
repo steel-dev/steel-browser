@@ -174,6 +174,11 @@ describe("BrowserLogger", () => {
     expect(recordingListener).toHaveBeenCalledWith(
       { events: [{ type: "click" }] },
       { sessionId: "session-1" },
+      {
+        type: BrowserEventType.Recording,
+        timestamp: "2025-01-01T00:00:00Z",
+        data: { events: [{ type: "click" }] },
+      },
     );
     expect(logListener).not.toHaveBeenCalled();
   });
