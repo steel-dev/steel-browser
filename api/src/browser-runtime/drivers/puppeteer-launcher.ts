@@ -1,4 +1,4 @@
-import puppeteer, { Browser, Page, Target } from "puppeteer-core";
+import puppeteer, { Browser, HTTPRequest, Page, Target } from "puppeteer-core";
 import os from "os";
 import path from "path";
 import fs from "fs";
@@ -10,6 +10,16 @@ import { deepMerge } from "../utils.js";
 import { injectFingerprint } from "../services/fingerprint.service.js";
 import { traceOperation } from "../tracing/index.js";
 import { pino } from "pino";
+import {
+  compileUrlPatterns,
+  isAdRequest,
+  isHeavyMediaRequest,
+  isHostBlocked,
+  isImageRequest,
+  isUrlMatchingPatterns,
+  tryParseUrl,
+} from "../../utils/requests.js";
+import type { OptimizeBandwidthOptions } from "../../types/browser.js";
 
 const dummyLogger = pino({ level: "silent" });
 
@@ -184,7 +194,7 @@ export class PuppeteerLauncher implements BrowserLauncher {
           launchedAt: Date.now(),
         };
 
-        await this.setupFileProtocolBlocking(primaryPage, config.sessionId, (url) => {
+        await this.setupPageNetworking(primaryPage, config, (url) => {
           instance!.emit("fileProtocolViolation", { url });
         });
 
@@ -194,7 +204,7 @@ export class PuppeteerLauncher implements BrowserLauncher {
             try {
               const page = await target.page();
               if (page) {
-                await this.setupFileProtocolBlocking(page, config.sessionId, (url) => {
+                await this.setupPageNetworking(page, config, (url) => {
                   instance!.emit("fileProtocolViolation", { url });
                 });
               }
@@ -233,28 +243,41 @@ export class PuppeteerLauncher implements BrowserLauncher {
     });
   }
 
-  private async setupFileProtocolBlocking(
+  private async setupPageNetworking(
     page: Page,
-    sessionId: string,
+    config: ResolvedConfig,
     onViolation?: (url: string) => void,
   ): Promise<void> {
     try {
+      const extraHeaders = this.getExtraHTTPHeaders(config);
+      if (Object.keys(extraHeaders).length > 0) {
+        await page.setExtraHTTPHeaders(extraHeaders);
+      }
+      const optimize = this.normalizeOptimizeBandwidth(config.optimizeBandwidth);
+      const compiledPatterns = optimize?.blockUrlPatterns?.length
+        ? compileUrlPatterns(optimize.blockUrlPatterns)
+        : [];
+
       await page.setRequestInterception(true);
       page.on("request", (request) => {
-        if (request.url().startsWith("file://")) {
-          console.warn(`[PuppeteerLauncher] Blocked file:// access in session ${sessionId}`);
-          if (onViolation) {
-            onViolation(request.url());
-          }
-          request.abort("accessdenied");
-        } else {
-          request.continue();
-        }
+        this.handlePageRequest(
+          request,
+          config,
+          extraHeaders,
+          optimize,
+          compiledPatterns,
+          onViolation,
+        ).catch((error) => {
+          console.warn(`[PuppeteerLauncher] Request handler failed: ${error}`);
+          request.continue().catch(() => {});
+        });
       });
 
       page.on("response", (response) => {
         if (response.url().startsWith("file://")) {
-          console.warn(`[PuppeteerLauncher] Blocked file:// response in session ${sessionId}`);
+          console.warn(
+            `[PuppeteerLauncher] Blocked file:// response in session ${config.sessionId}`,
+          );
           if (onViolation) {
             onViolation(response.url());
           }
@@ -264,6 +287,81 @@ export class PuppeteerLauncher implements BrowserLauncher {
       });
     } catch (error) {
       console.warn(`[PuppeteerLauncher] Failed to set up file protocol detection: ${error}`);
+    }
+  }
+
+  private getExtraHTTPHeaders(config: ResolvedConfig): Record<string, string> {
+    return {
+      ...(config.defaultHeaders || {}),
+      ...(config.customHeaders || {}),
+    };
+  }
+
+  private normalizeOptimizeBandwidth(
+    optimizeBandwidth: boolean | OptimizeBandwidthOptions | undefined,
+  ): OptimizeBandwidthOptions | undefined {
+    if (optimizeBandwidth === true) {
+      return { blockImages: true, blockMedia: true, blockStylesheets: true };
+    }
+    if (optimizeBandwidth && typeof optimizeBandwidth === "object") {
+      return optimizeBandwidth;
+    }
+    return undefined;
+  }
+
+  private async handlePageRequest(
+    request: HTTPRequest,
+    config: ResolvedConfig,
+    extraHeaders: Record<string, string>,
+    optimize: OptimizeBandwidthOptions | undefined,
+    compiledPatterns: RegExp[],
+    onViolation?: (url: string) => void,
+  ): Promise<void> {
+    const url = request.url();
+
+    if (url.startsWith("file://")) {
+      console.warn(`[PuppeteerLauncher] Blocked file:// access in session ${config.sessionId}`);
+      onViolation?.(url);
+      await request.abort("accessdenied");
+      return;
+    }
+
+    const parsed = tryParseUrl(url);
+
+    if (parsed && config.blockAds && isAdRequest(parsed)) {
+      await request.abort();
+      return;
+    }
+
+    if (
+      (parsed && isHostBlocked(parsed, optimize?.blockHosts)) ||
+      isUrlMatchingPatterns(url, compiledPatterns)
+    ) {
+      await request.abort();
+      return;
+    }
+
+    const resourceType = request.resourceType?.();
+    if (
+      parsed &&
+      ((optimize?.blockImages && (resourceType === "image" || isImageRequest(parsed))) ||
+        (optimize?.blockMedia && (resourceType === "media" || isHeavyMediaRequest(parsed))) ||
+        (optimize?.blockStylesheets && resourceType === "stylesheet"))
+    ) {
+      await request.abort();
+      return;
+    }
+
+    const requestHeaders = request.headers?.();
+    const headers =
+      requestHeaders || Object.keys(extraHeaders).length > 0
+        ? { ...(requestHeaders || {}), ...extraHeaders }
+        : undefined;
+    if (headers) {
+      delete headers["accept-language"];
+      await request.continue({ headers });
+    } else {
+      await request.continue();
     }
   }
 

@@ -23,7 +23,7 @@ import { isSimilarConfig } from "../../services/cdp/utils/validation.js";
 import { env } from "../../env.js";
 import { traceSession } from "../tracing/index.js";
 import { Span } from "@opentelemetry/api";
-import { EmitEvent } from "../../types/enums.js";
+import { BrowserEventType, EmitEvent } from "../../types/enums.js";
 
 export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
   private actor: Actor<typeof browserMachine>;
@@ -83,11 +83,18 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
       },
     });
 
-    this.instrumentationLogger?.on?.(EmitEvent.Log, (event) => {
+    this.instrumentationLogger?.on?.(EmitEvent.Log, (event, context) => {
       this.emit(EmitEvent.Log, event);
+      this.postLogSink({ ...(context || {}), ...event });
     });
-    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload) => {
+    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload, context) => {
       this.emit(EmitEvent.Recording, payload);
+      this.postLogSink({
+        ...(context || {}),
+        type: BrowserEventType.Recording,
+        timestamp: new Date().toISOString(),
+        data: payload,
+      });
     });
 
     this.actor.on("targetCreated", (event) => {
@@ -192,6 +199,29 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
       debugChromeProcess: env.DEBUG_CHROME_PROCESS,
       disableChromeSandbox: env.DISABLE_CHROME_SANDBOX,
     };
+  }
+
+  private postLogSink(event: unknown): void {
+    const logSinkUrl = this.config?.logSinkUrl;
+    if (!logSinkUrl) return;
+
+    fetch(logSinkUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const body = await response.text().catch(() => "");
+          this.logger.error(
+            { status: response.status, body },
+            "[BrowserRuntime] Log sink returned non-success status",
+          );
+        }
+      })
+      .catch((err) => {
+        this.logger.error({ err }, "[BrowserRuntime] Failed to deliver log sink event");
+      });
   }
 
   async launch(config?: BrowserLauncherOptions): Promise<Browser> {

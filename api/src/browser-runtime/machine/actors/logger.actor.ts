@@ -26,7 +26,9 @@ export function startLogger(
 
   console.log(`[LoggerActor] Starting for session: ${config.sessionId}`);
 
-  const targetManager = new TargetInstrumentationManager(instrumentationLogger, appLogger);
+  const targetManager = new TargetInstrumentationManager(instrumentationLogger, appLogger, {
+    dangerouslyLogRequestDetails: config.dangerouslyLogRequestDetails,
+  });
 
   const storageByOrigin = groupSessionStorageByOrigin(config.sessionContext || undefined);
 

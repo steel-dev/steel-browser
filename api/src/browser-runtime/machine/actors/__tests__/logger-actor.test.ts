@@ -39,6 +39,7 @@ describe("LoggerActor", () => {
     expect(TargetInstrumentationManager).toHaveBeenCalledWith(
       mockInstrumentationLogger,
       mockAppLogger,
+      { dangerouslyLogRequestDetails: undefined },
     );
     expect(mockBrowser.instance.on).toHaveBeenCalledWith("targetcreated", expect.any(Function));
 
@@ -65,5 +66,22 @@ describe("LoggerActor", () => {
 
     const targetManagerInstance = vi.mocked(TargetInstrumentationManager).mock.instances[0];
     expect(targetManagerInstance.attach).toHaveBeenCalledWith(mockTarget, "page");
+  });
+
+  it("should pass request detail logging option to target manager", () => {
+    const input = {
+      browser: mockBrowser,
+      config: { sessionId: "test-session", dangerouslyLogRequestDetails: true } as any,
+      instrumentationLogger: mockInstrumentationLogger,
+      appLogger: mockAppLogger,
+    };
+
+    startLogger(input, sendBack);
+
+    expect(TargetInstrumentationManager).toHaveBeenCalledWith(
+      mockInstrumentationLogger,
+      mockAppLogger,
+      { dangerouslyLogRequestDetails: true },
+    );
   });
 });

@@ -494,6 +494,26 @@ describe("BrowserRuntime Facade", () => {
       expect(page).toBeDefined();
     });
 
+    it("should return managed new pages only after request controls are installed", async () => {
+      await runtime.launch({ options: { headless: true } } as any);
+      const managedPage = {
+        url: () => "about:blank",
+        setRequestInterception: vi.fn().mockResolvedValue(undefined),
+        setExtraHTTPHeaders: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+        close: vi.fn().mockResolvedValue(undefined),
+        target: () => ({ _targetId: "managed-target", type: () => "page" }),
+      };
+      const browser = runtime.getBrowserInstance() as any;
+      browser.newPage = vi.fn().mockResolvedValue(managedPage);
+
+      const page = await runtime.createPage();
+
+      expect(page).toBe(managedPage);
+      expect(managedPage.setRequestInterception).toHaveBeenCalledWith(true);
+      expect(managedPage.on).toHaveBeenCalledWith("request", expect.any(Function));
+    });
+
     it("should create browser context", async () => {
       await runtime.launch({ options: { headless: true } } as any);
       const browser = runtime.getBrowserInstance()!;
@@ -681,6 +701,20 @@ describe("BrowserRuntime Facade", () => {
       expect(listener).toHaveBeenCalledWith(expect.objectContaining({ url: "file:///test" }));
     });
 
+    it("should stop the runtime when a file protocol violation is reported", async () => {
+      await runtime.launch({ options: { headless: true } } as any);
+      const actor = (runtime as any).actor;
+
+      actor.send({
+        type: "BROWSER_EVENT",
+        event: "fileProtocolViolation",
+        data: { url: "file:///etc/passwd" },
+      });
+      await Promise.resolve();
+
+      expect(runtime.isRunning()).toBe(false);
+    });
+
     it("should forward instrumentation log events", async () => {
       const instrumentationLogger = createBrowserLogger({ baseLogger: mockLogger });
       const eventRuntime = new BrowserRuntime({
@@ -705,6 +739,43 @@ describe("BrowserRuntime Facade", () => {
       await eventRuntime.shutdown();
     });
 
+    it("should deliver instrumentation log events to log sink", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+      const instrumentationLogger = createBrowserLogger({ baseLogger: mockLogger });
+      const eventRuntime = new BrowserRuntime({
+        launcher,
+        appLogger: mockLogger,
+        instrumentationLogger,
+        keepAlive: false,
+      });
+
+      try {
+        await eventRuntime.launch({
+          options: { headless: true },
+          logSinkUrl: "https://sink.example/logs",
+        } as any);
+
+        instrumentationLogger.record({
+          type: BrowserEventType.Console,
+          timestamp: "2025-01-01T00:00:00Z",
+          console: { level: "log", text: "hello" },
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          "https://sink.example/logs",
+          expect.objectContaining({
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: expect.stringContaining(BrowserEventType.Console),
+          }),
+        );
+      } finally {
+        await eventRuntime.shutdown();
+        vi.unstubAllGlobals();
+      }
+    });
+
     it("should forward recording events with the websocket payload shape", async () => {
       const instrumentationLogger = createBrowserLogger({ baseLogger: mockLogger });
       const eventRuntime = new BrowserRuntime({
@@ -725,6 +796,51 @@ describe("BrowserRuntime Facade", () => {
       expect(listener).toHaveBeenCalledWith({ events: [{ type: "click" }] });
 
       await eventRuntime.shutdown();
+    });
+
+    it("should deliver recording events to log sink", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+      const instrumentationLogger = createBrowserLogger({ baseLogger: mockLogger });
+      const eventRuntime = new BrowserRuntime({
+        launcher,
+        appLogger: mockLogger,
+        instrumentationLogger,
+        keepAlive: false,
+      });
+
+      try {
+        await eventRuntime.launch({
+          options: { headless: true },
+          logSinkUrl: "https://sink.example/logs",
+        } as any);
+
+        instrumentationLogger.record({
+          type: BrowserEventType.Recording,
+          timestamp: "2025-01-01T00:00:00Z",
+          pageId: "page-1",
+          targetType: "page" as any,
+          data: { events: [{ type: "click" }] },
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          "https://sink.example/logs",
+          expect.objectContaining({
+            method: "POST",
+            body: expect.stringContaining(BrowserEventType.Recording),
+          }),
+        );
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+          type: BrowserEventType.Recording,
+          timestamp: "2025-01-01T00:00:00Z",
+          pageId: "page-1",
+          targetType: "page",
+          data: { events: [{ type: "click" }] },
+        });
+      } finally {
+        await eventRuntime.shutdown();
+        vi.unstubAllGlobals();
+      }
     });
 
     it("should emit legacy pageId events for created targets", async () => {

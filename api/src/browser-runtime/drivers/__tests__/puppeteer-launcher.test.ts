@@ -51,6 +51,7 @@ describe("PuppeteerLauncher", () => {
       url: vi.fn().mockReturnValue("about:blank"),
       close: vi.fn().mockResolvedValue(undefined),
       setRequestInterception: vi.fn().mockResolvedValue(undefined),
+      setExtraHTTPHeaders: vi.fn().mockResolvedValue(undefined),
       evaluateOnNewDocument: vi.fn().mockResolvedValue(undefined),
       on: vi.fn(),
       off: vi.fn(),
@@ -140,6 +141,241 @@ describe("PuppeteerLauncher", () => {
       expect(mockRequest.abort).not.toHaveBeenCalled();
     });
 
+    it("should merge default and custom headers for allowed requests", async () => {
+      await launcher.launch(
+        {
+          ...defaultConfig,
+          defaultHeaders: { "x-default": "default", "x-overridden": "default" },
+          customHeaders: { "x-custom": "custom", "x-overridden": "custom" },
+        },
+        null,
+      );
+
+      expect(mockPage.setExtraHTTPHeaders).toHaveBeenCalledWith({
+        "x-default": "default",
+        "x-overridden": "custom",
+        "x-custom": "custom",
+      });
+
+      const requestHandler = mockPage.on.mock.calls.find(
+        (call: any[]) => call[0] === "request",
+      )?.[1];
+      const mockRequest = {
+        url: vi.fn().mockReturnValue("https://example.com"),
+        headers: vi.fn().mockReturnValue({ "accept-language": "en", "x-existing": "existing" }),
+        resourceType: vi.fn().mockReturnValue("document"),
+        abort: vi.fn().mockResolvedValue(undefined),
+        continue: vi.fn().mockResolvedValue(undefined),
+      };
+
+      await requestHandler(mockRequest);
+
+      expect(mockRequest.continue).toHaveBeenCalledWith({
+        headers: {
+          "x-existing": "existing",
+          "x-default": "default",
+          "x-overridden": "custom",
+          "x-custom": "custom",
+        },
+      });
+    });
+
+    it("should block ad requests when blockAds is enabled", async () => {
+      await launcher.launch({ ...defaultConfig, blockAds: true }, null);
+
+      const requestHandler = mockPage.on.mock.calls.find(
+        (call: any[]) => call[0] === "request",
+      )?.[1];
+      const mockRequest = {
+        url: vi.fn().mockReturnValue("https://doubleclick.net/ad.js"),
+        headers: vi.fn().mockReturnValue({}),
+        resourceType: vi.fn().mockReturnValue("script"),
+        abort: vi.fn().mockResolvedValue(undefined),
+        continue: vi.fn().mockResolvedValue(undefined),
+      };
+
+      await requestHandler(mockRequest);
+
+      expect(mockRequest.abort).toHaveBeenCalled();
+      expect(mockRequest.continue).not.toHaveBeenCalled();
+    });
+
+    it("should block optimizeBandwidth hosts and URL patterns", async () => {
+      await launcher.launch(
+        {
+          ...defaultConfig,
+          optimizeBandwidth: {
+            blockHosts: ["blocked.example"],
+            blockUrlPatterns: ["*tracker*"],
+          },
+        },
+        null,
+      );
+
+      const requestHandler = mockPage.on.mock.calls.find(
+        (call: any[]) => call[0] === "request",
+      )?.[1];
+      const hostRequest = {
+        url: vi.fn().mockReturnValue("https://blocked.example/script.js"),
+        headers: vi.fn().mockReturnValue({}),
+        resourceType: vi.fn().mockReturnValue("script"),
+        abort: vi.fn().mockResolvedValue(undefined),
+        continue: vi.fn().mockResolvedValue(undefined),
+      };
+      const patternRequest = {
+        url: vi.fn().mockReturnValue("https://example.com/path/tracker.js"),
+        headers: vi.fn().mockReturnValue({}),
+        resourceType: vi.fn().mockReturnValue("script"),
+        abort: vi.fn().mockResolvedValue(undefined),
+        continue: vi.fn().mockResolvedValue(undefined),
+      };
+
+      await requestHandler(hostRequest);
+      await requestHandler(patternRequest);
+
+      expect(hostRequest.abort).toHaveBeenCalled();
+      expect(patternRequest.abort).toHaveBeenCalled();
+      expect(hostRequest.continue).not.toHaveBeenCalled();
+      expect(patternRequest.continue).not.toHaveBeenCalled();
+    });
+
+    it("should block optimized image, media, and stylesheet resources", async () => {
+      await launcher.launch(
+        {
+          ...defaultConfig,
+          optimizeBandwidth: { blockImages: true, blockMedia: true, blockStylesheets: true },
+        },
+        null,
+      );
+
+      const requestHandler = mockPage.on.mock.calls.find(
+        (call: any[]) => call[0] === "request",
+      )?.[1];
+      const requests = [
+        {
+          url: vi.fn().mockReturnValue("https://example.com/image.png"),
+          headers: vi.fn().mockReturnValue({}),
+          resourceType: vi.fn().mockReturnValue("image"),
+          abort: vi.fn().mockResolvedValue(undefined),
+          continue: vi.fn().mockResolvedValue(undefined),
+        },
+        {
+          url: vi.fn().mockReturnValue("https://example.com/video.mp4"),
+          headers: vi.fn().mockReturnValue({}),
+          resourceType: vi.fn().mockReturnValue("media"),
+          abort: vi.fn().mockResolvedValue(undefined),
+          continue: vi.fn().mockResolvedValue(undefined),
+        },
+        {
+          url: vi.fn().mockReturnValue("https://example.com/site.css"),
+          headers: vi.fn().mockReturnValue({}),
+          resourceType: vi.fn().mockReturnValue("stylesheet"),
+          abort: vi.fn().mockResolvedValue(undefined),
+          continue: vi.fn().mockResolvedValue(undefined),
+        },
+      ];
+
+      for (const request of requests) {
+        await requestHandler(request);
+        expect(request.abort).toHaveBeenCalled();
+        expect(request.continue).not.toHaveBeenCalled();
+      }
+    });
+
+    it("should still install request controls when extra header setup fails", async () => {
+      mockPage.setExtraHTTPHeaders.mockRejectedValueOnce(new Error("invalid header"));
+
+      await launcher.launch(
+        {
+          ...defaultConfig,
+          customHeaders: { "x-test": "value" },
+        },
+        null,
+      );
+
+      expect(mockPage.setExtraHTTPHeaders).toHaveBeenCalledWith({ "x-test": "value" });
+      expect(mockPage.setRequestInterception).toHaveBeenCalledWith(true);
+      expect(mockPage.on).toHaveBeenCalledWith("request", expect.any(Function));
+      expect(mockPage.on).toHaveBeenCalledWith("response", expect.any(Function));
+    });
+
+    it("should fail launch when primary page request interception cannot be installed", async () => {
+      mockPage.setRequestInterception.mockRejectedValueOnce(new Error("interception failed"));
+
+      await expect(launcher.launch(defaultConfig, null)).rejects.toThrow("interception failed");
+      expect(mockBrowser.close).toHaveBeenCalled();
+    });
+
+    it("should not inject custom headers into non-http requests", async () => {
+      await launcher.launch(
+        {
+          ...defaultConfig,
+          customHeaders: { authorization: "Bearer secret" },
+        },
+        null,
+      );
+
+      const requestHandler = mockPage.on.mock.calls.find(
+        (call: any[]) => call[0] === "request",
+      )?.[1];
+      const mockRequest = {
+        url: vi.fn().mockReturnValue("data:text/plain,hello"),
+        headers: vi.fn().mockReturnValue({}),
+        resourceType: vi.fn().mockReturnValue("document"),
+        abort: vi.fn().mockResolvedValue(undefined),
+        continue: vi.fn().mockResolvedValue(undefined),
+      };
+
+      await requestHandler(mockRequest);
+
+      expect(mockRequest.continue).toHaveBeenCalledWith();
+      expect(mockRequest.abort).not.toHaveBeenCalled();
+    });
+
+    it("should not inject custom headers into CORS preflight requests", async () => {
+      await launcher.launch(
+        {
+          ...defaultConfig,
+          customHeaders: { authorization: "Bearer secret" },
+        },
+        null,
+      );
+
+      const requestHandler = mockPage.on.mock.calls.find(
+        (call: any[]) => call[0] === "request",
+      )?.[1];
+      const mockRequest = {
+        url: vi.fn().mockReturnValue("https://api.example.test/resource"),
+        method: vi.fn().mockReturnValue("OPTIONS"),
+        headers: vi.fn().mockReturnValue({ "access-control-request-method": "POST" }),
+        resourceType: vi.fn().mockReturnValue("fetch"),
+        abort: vi.fn().mockResolvedValue(undefined),
+        continue: vi.fn().mockResolvedValue(undefined),
+      };
+
+      await requestHandler(mockRequest);
+
+      const continuedHeaders = mockRequest.continue.mock.calls[0]?.[0]?.headers || {};
+      expect(continuedHeaders).not.toHaveProperty("authorization");
+      expect(mockRequest.abort).not.toHaveBeenCalled();
+    });
+
+    it("should install request controls on every page present after launch", async () => {
+      const secondaryPage = {
+        ...mockPage,
+        setRequestInterception: vi.fn().mockResolvedValue(undefined),
+        setExtraHTTPHeaders: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+      };
+      mockBrowser.pages.mockResolvedValueOnce([mockPage, secondaryPage]);
+
+      await launcher.launch(defaultConfig, null);
+
+      expect(mockPage.setRequestInterception).toHaveBeenCalledWith(true);
+      expect(secondaryPage.setRequestInterception).toHaveBeenCalledWith(true);
+      expect(secondaryPage.on).toHaveBeenCalledWith("request", expect.any(Function));
+    });
+
     it("should block file:// protocol responses", async () => {
       await launcher.launch(defaultConfig, null);
 
@@ -173,6 +409,7 @@ describe("PuppeteerLauncher", () => {
 
       const newMockPage = {
         setRequestInterception: vi.fn().mockResolvedValue(undefined),
+        setExtraHTTPHeaders: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
       };
 
