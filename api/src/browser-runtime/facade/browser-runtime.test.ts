@@ -365,6 +365,47 @@ describe("BrowserRuntime Facade", () => {
   });
 
   describe("Configuration Access", () => {
+    it("should pass parity launch options into runtime config", async () => {
+      await runtime.launch({
+        sessionId: "parity-config-session",
+        options: {
+          headless: true,
+          proxyUrl: "http://proxy.example:8080",
+          args: ["--api-arg"],
+        },
+        optimizeBandwidth: {
+          blockImages: true,
+          blockMedia: true,
+          blockStylesheets: true,
+          blockHosts: ["ads.example"],
+          blockUrlPatterns: [".*tracker.*"],
+        },
+        customHeaders: { "x-test": "1" },
+        logSinkUrl: "https://sink.example/logs",
+        dangerouslyLogRequestDetails: true,
+      } as any);
+
+      expect(launcher.launchCalls[0]).toMatchObject({
+        sessionId: "parity-config-session",
+        proxyUrl: "http://proxy.example:8080",
+        optimizeBandwidth: {
+          blockImages: true,
+          blockMedia: true,
+          blockStylesheets: true,
+          blockHosts: ["ads.example"],
+          blockUrlPatterns: [".*tracker.*"],
+        },
+        customHeaders: { "x-test": "1" },
+        defaultHeaders: expect.any(Object),
+        logSinkUrl: "https://sink.example/logs",
+        dangerouslyLogRequestDetails: true,
+        filterChromeArgs: expect.any(Array),
+        debugChromeProcess: expect.any(Boolean),
+        disableChromeSandbox: expect.any(Boolean),
+      });
+      expect(launcher.launchCalls[0].chromeArgs).toEqual(expect.arrayContaining(["--api-arg"]));
+    });
+
     it("should return correct configuration and state getters", async () => {
       const config = {
         sessionId: "test-session",

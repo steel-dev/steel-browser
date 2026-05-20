@@ -276,6 +276,21 @@ describe("PuppeteerLauncher", () => {
       expect(args).not.toContain("--disable-gpu");
     });
 
+    it("should add sandbox-disabling args when configured", async () => {
+      await launcher.launch(
+        {
+          ...defaultConfig,
+          disableChromeSandbox: true,
+        },
+        null,
+      );
+
+      const args = (puppeteer.launch as any).mock.calls[0][0].args;
+      expect(args).toEqual(
+        expect.arrayContaining(["--no-sandbox", "--disable-setuid-sandbox", "--no-zygote"]),
+      );
+    });
+
     it("should handle launch failure and cleanup", async () => {
       (puppeteer.launch as any).mockRejectedValueOnce(new Error("Launch failed"));
 

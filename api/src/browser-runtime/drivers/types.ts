@@ -3,6 +3,7 @@ import { BrowserPlugin } from "../plugins/base-plugin.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { SessionData } from "../../services/context/types.js";
 import { TaskRegistryRef } from "../machine/actors/task-registry.actor.js";
+import type { OptimizeBandwidthOptions } from "../../types/browser.js";
 
 export { SessionData };
 
@@ -20,6 +21,11 @@ export interface RuntimeConfig {
   userPreferences?: Record<string, unknown>;
   fingerprint?: BrowserFingerprintWithHeaders | null;
   blockAds?: boolean;
+  optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
+  customHeaders?: Record<string, string>;
+  defaultHeaders?: Record<string, string>;
+  logSinkUrl?: string;
+  dangerouslyLogRequestDetails?: boolean;
   credentials?: unknown;
   skipFingerprintInjection?: boolean;
   deviceConfig?: { device: "desktop" | "mobile" };
@@ -31,6 +37,7 @@ export interface RuntimeConfig {
   filterChromeArgs?: string[];
   display?: string;
   debugChromeProcess?: boolean;
+  disableChromeSandbox?: boolean;
 }
 
 export interface ResolvedConfig extends Omit<RuntimeConfig, "timezone"> {

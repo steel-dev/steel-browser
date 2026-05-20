@@ -53,7 +53,9 @@ export class PuppeteerLauncher implements BrowserLauncher {
         await this.setupUserPreferences(config.userDataDir, config.userPreferences);
       }
 
-      const shouldDisableSandbox = typeof process.getuid === "function" && process.getuid() === 0;
+      const shouldDisableSandbox =
+        config.disableChromeSandbox ||
+        (typeof process.getuid === "function" && process.getuid() === 0);
 
       const staticDefaultArgs = [
         "--remote-allow-origins=*",

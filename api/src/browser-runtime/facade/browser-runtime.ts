@@ -175,12 +175,22 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
       userPreferences: options.userPreferences,
       fingerprint: options.fingerprint,
       blockAds: options.blockAds,
+      optimizeBandwidth: options.optimizeBandwidth,
+      customHeaders: options.customHeaders,
+      defaultHeaders: env.DEFAULT_HEADERS,
+      logSinkUrl: options.logSinkUrl,
+      dangerouslyLogRequestDetails: options.dangerouslyLogRequestDetails,
       credentials: options.credentials,
       skipFingerprintInjection: options.skipFingerprintInjection,
       deviceConfig: options.deviceConfig,
       dimensions: options.dimensions ?? null,
       host: env.HOST,
+      chromeExecutablePath: env.CHROME_EXECUTABLE_PATH,
+      chromeArgs: [...(options.options.args || []), ...(env.CHROME_ARGS || [])],
+      filterChromeArgs: env.FILTER_CHROME_ARGS,
       display: env.DISPLAY,
+      debugChromeProcess: env.DEBUG_CHROME_PROCESS,
+      disableChromeSandbox: env.DISABLE_CHROME_SANDBOX,
     };
   }
 
