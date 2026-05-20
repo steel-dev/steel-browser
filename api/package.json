@@ -20,8 +20,8 @@
     },
     "./logger": {
       "import": {
-        "types": "./build/plugins/logging/browser-logger.d.ts",
-        "default": "./build/plugins/logging/browser-logger.js"
+        "types": "./build/services/cdp/instrumentation/browser-logger.d.ts",
+        "default": "./build/services/cdp/instrumentation/browser-logger.js"
       }
     },
     "./storage": {

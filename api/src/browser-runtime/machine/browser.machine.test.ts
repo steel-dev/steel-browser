@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createActor, waitFor } from "xstate";
 import { browserMachine } from "./browser.machine.js";
@@ -63,6 +64,56 @@ describe("browserMachine", () => {
     actor.send({ type: "STOP" });
     await waitFor(actor, (s) => s.matches("idle"), { timeout: 5000 });
     expect(actor.getSnapshot().matches("idle")).toBe(true);
+  });
+
+  it("should remove file protocol violation listener after each stop", async () => {
+    const page = (await createMockBrowserInstance().pages())[0];
+    const instance = Object.assign(new EventEmitter(), {
+      wsEndpoint: vi.fn().mockReturnValue("ws://localhost:9222"),
+      process: vi.fn().mockReturnValue({ pid: 12345 }),
+      close: vi.fn().mockResolvedValue(undefined),
+      once: vi.fn(),
+      isConnected: vi.fn().mockReturnValue(true),
+      pages: vi.fn().mockResolvedValue([page]),
+      targets: vi.fn().mockReturnValue([]),
+      version: vi.fn().mockResolvedValue("Chrome/120.0.0.0"),
+      userAgent: vi.fn().mockResolvedValue("Mozilla/5.0..."),
+    });
+
+    const removeCreated = vi.fn();
+    const removeDestroyed = vi.fn();
+    const launcher: BrowserLauncher = {
+      launch: vi.fn(async (config) => ({
+        id: config.sessionId,
+        instance: instance as any,
+        primaryPage: page as any,
+        pid: 12345,
+        wsEndpoint: instance.wsEndpoint(),
+        launchedAt: Date.now(),
+      })),
+      close: vi.fn(async () => {}),
+      forceClose: vi.fn(async () => {}),
+      getProcess: vi.fn(() => null),
+      onDisconnected: vi.fn(() => () => {}),
+      onTargetCreated: vi.fn(() => removeCreated),
+      onTargetDestroyed: vi.fn(() => removeDestroyed),
+    };
+
+    const actor = createActor(browserMachine, { input: { launcher } });
+    actor.start();
+
+    for (const sessionId of ["first-session", "second-session"]) {
+      actor.send({ type: "START", config: { sessionId, port: 0, dataPlanePort: 0 } });
+      await waitFor(actor, (s) => s.matches({ ready: "active" }), { timeout: 5000 });
+      expect(instance.listenerCount("fileProtocolViolation")).toBe(1);
+
+      actor.send({ type: "STOP" });
+      await waitFor(actor, (s) => s.matches("idle"), { timeout: 5000 });
+      expect(instance.listenerCount("fileProtocolViolation")).toBe(0);
+    }
+
+    expect(removeCreated).toHaveBeenCalledTimes(2);
+    expect(removeDestroyed).toHaveBeenCalledTimes(2);
   });
 
   it("should handle browser crash", async () => {

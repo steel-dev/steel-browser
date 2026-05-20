@@ -182,6 +182,9 @@ export class CDPService extends EventEmitter implements BrowserRuntime {
     this.instrumentationLogger?.on?.(EmitEvent.Log, (event, context) => {
       this.emit(EmitEvent.Log, event);
     });
+    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload) => {
+      this.emit(EmitEvent.Recording, payload);
+    });
     this.logger.info("[CDPService] Target instrumentation enabled");
   }
 

@@ -7,40 +7,39 @@ export interface PluginManagerInput {
   plugins: BrowserPlugin[];
 }
 
+export async function startPluginStartup(input: PluginManagerInput): Promise<void> {
+  const { browser, config, plugins } = input;
+
+  await Promise.allSettled(
+    plugins.map(async (plugin) => {
+      try {
+        if (plugin.onBrowserLaunch) {
+          await plugin.onBrowserLaunch(browser.instance);
+        }
+      } catch (err) {
+        console.error(`[PluginManager] ${plugin.name} onBrowserLaunch failed:`, err);
+      }
+    }),
+  );
+
+  await Promise.allSettled(
+    plugins.map(async (plugin) => {
+      try {
+        if (plugin.onBrowserReady) {
+          await plugin.onBrowserReady(config);
+        }
+      } catch (err) {
+        console.error(`[PluginManager] ${plugin.name} onBrowserReady failed:`, err);
+      }
+    }),
+  );
+}
+
 export function startPluginManager(
   input: PluginManagerInput,
   sendBack: (event: SupervisorEvent) => void,
 ): () => void {
-  const { browser, config, plugins } = input;
-
-  // Run initialization hooks in background but with proper error handling and awaiting
-  (async () => {
-    // onBrowserLaunch - parallel
-    await Promise.allSettled(
-      plugins.map(async (plugin) => {
-        try {
-          if (plugin.onBrowserLaunch) {
-            await plugin.onBrowserLaunch(browser.instance);
-          }
-        } catch (err) {
-          console.error(`[PluginManager] ${plugin.name} onBrowserLaunch failed:`, err);
-        }
-      }),
-    );
-
-    // onBrowserReady - parallel
-    await Promise.allSettled(
-      plugins.map(async (plugin) => {
-        try {
-          if (plugin.onBrowserReady) {
-            await plugin.onBrowserReady(config);
-          }
-        } catch (err) {
-          console.error(`[PluginManager] ${plugin.name} onBrowserReady failed:`, err);
-        }
-      }),
-    );
-  })();
+  const { browser, plugins } = input;
 
   const targetCreatedHandler = async (target: any) => {
     if (target.type() === "page") {

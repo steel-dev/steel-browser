@@ -23,6 +23,7 @@ import { isSimilarConfig } from "../../services/cdp/utils/validation.js";
 import { env } from "../../env.js";
 import { traceSession } from "../tracing/index.js";
 import { Span } from "@opentelemetry/api";
+import { EmitEvent } from "../../types/enums.js";
 
 export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
   private actor: Actor<typeof browserMachine>;
@@ -39,6 +40,9 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
     [];
+  private shutdownCleanupMutators: ((
+    config: BrowserLauncherOptions | null,
+  ) => Promise<void> | void)[] = [];
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
@@ -79,7 +83,20 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
       },
     });
 
-    this.actor.on("targetCreated", (event) => this.emit("targetCreated", event));
+    this.instrumentationLogger?.on?.(EmitEvent.Log, (event) => {
+      this.emit(EmitEvent.Log, event);
+    });
+    this.instrumentationLogger?.on?.(EmitEvent.Recording, (payload) => {
+      this.emit(EmitEvent.Recording, payload);
+    });
+
+    this.actor.on("targetCreated", (event) => {
+      this.emit("targetCreated", event);
+      const pageId = (event as any).target?._targetId ?? (event as any).target?.targetId;
+      if (pageId) {
+        this.emit(EmitEvent.PageId, { pageId });
+      }
+    });
     this.actor.on("targetDestroyed", (event) => this.emit("targetDestroyed", event));
     this.actor.on("fileProtocolViolation", (event) => this.emit("fileProtocolViolation", event));
 
@@ -227,7 +244,7 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
         }
       });
 
-      this.registerShutdownHook(async () => {
+      this.registerShutdownCleanupHook(async () => {
         removeDisconnectListener();
       });
 
@@ -242,15 +259,8 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
 
   private async shutdownInternal(): Promise<void> {
     this.intentionalShutdown = true;
-    const mutators = [...this.shutdownMutators];
-    this.shutdownMutators = []; // Clear hooks to avoid double-running or accumulation
-    for (const hook of mutators) {
-      try {
-        await Promise.resolve(hook(this.config || null));
-      } catch (err) {
-        this.logger.error({ err }, "[BrowserRuntime] Error in shutdown hook");
-      }
-    }
+    await this.runShutdownHooks(this.shutdownMutators, this.config || null);
+    await this.runShutdownCleanupHooks(this.config || null);
     await this.stop();
 
     if (this.sessionSpan) {
@@ -275,6 +285,10 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
   private async endSessionInternal(): Promise<void> {
     this.sessionContext = await this.getBrowserState().catch(() => null);
 
+    const wasIntentionalShutdown = this.intentionalShutdown;
+    this.intentionalShutdown = true;
+    await this.runShutdownCleanupHooks(this.config || null);
+
     const currentSnapshot = this.actor.getSnapshot();
     if (currentSnapshot.matches({ ready: "active" })) {
       this.actor.send({ type: "END_SESSION" });
@@ -291,7 +305,14 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
     }
 
     if (this.keepAlive) {
-      await this.launchInternal(this.defaultLaunchConfig);
+      try {
+        await this.launchInternal(this.defaultLaunchConfig);
+      } catch (err) {
+        this.intentionalShutdown = wasIntentionalShutdown;
+        throw err;
+      }
+    } else {
+      this.intentionalShutdown = wasIntentionalShutdown;
     }
   }
 
@@ -407,6 +428,7 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
   }
 
   registerPlugin(plugin: BasePlugin): void {
+    plugin.setService?.(this as any);
     this.pluginRegistry.set(plugin.name, plugin);
     // Compatibility with current machine's plugin expectation
     this.plugins.push({
@@ -452,6 +474,31 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
     hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
   ): void {
     this.shutdownMutators.push(hook);
+  }
+
+  private async runShutdownHooks(
+    hooks: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[],
+    config: BrowserLauncherOptions | null,
+  ): Promise<void> {
+    for (const hook of hooks) {
+      try {
+        await Promise.resolve(hook(config));
+      } catch (err) {
+        this.logger.error({ err }, "[BrowserRuntime] Error in shutdown hook");
+      }
+    }
+  }
+
+  private async runShutdownCleanupHooks(config: BrowserLauncherOptions | null): Promise<void> {
+    const mutators = [...this.shutdownCleanupMutators];
+    this.shutdownCleanupMutators = [];
+    await this.runShutdownHooks(mutators, config);
+  }
+
+  private registerShutdownCleanupHook(
+    hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
+  ): void {
+    this.shutdownCleanupMutators.push(hook);
   }
 
   setProxyWebSocketHandler(

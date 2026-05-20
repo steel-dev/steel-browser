@@ -23,8 +23,8 @@ export interface BrowserLogger {
   getContext(): Readonly<Context>;
   flush?(): Promise<void>;
   getStorage?(): LogStorage | null;
-  on?(event: EmitEvent.Log, listener: (event: BrowserEventUnion, context: Context) => void): this;
-  off?(event: EmitEvent.Log, listener: (event: BrowserEventUnion, context: Context) => void): this;
+  on?(event: EmitEvent, listener: (...args: any[]) => void): this;
+  off?(event: EmitEvent, listener: (...args: any[]) => void): this;
 }
 
 export interface CreateBrowserLoggerOptions {
@@ -70,7 +70,11 @@ export function createBrowserLogger(options: CreateBrowserLoggerOptions): Browse
       });
     }
 
-    if (event.type !== BrowserEventType.Recording) eventEmitter.emit(EmitEvent.Log, event, context);
+    if (event.type === BrowserEventType.Recording) {
+      eventEmitter.emit(EmitEvent.Recording, event.data, context);
+    } else {
+      eventEmitter.emit(EmitEvent.Log, event, context);
+    }
   };
 
   const flush = async () => {
@@ -81,18 +85,12 @@ export function createBrowserLogger(options: CreateBrowserLoggerOptions): Browse
 
   const getStorage = () => storage;
 
-  const on = (
-    event: EmitEvent.Log,
-    listener: (event: BrowserEventUnion, context: Context) => void,
-  ) => {
+  const on = (event: EmitEvent, listener: (...args: any[]) => void) => {
     eventEmitter.on(event, listener);
     return logger;
   };
 
-  const off = (
-    event: EmitEvent.Log,
-    listener: (event: BrowserEventUnion, context: Context) => void,
-  ) => {
+  const off = (event: EmitEvent, listener: (...args: any[]) => void) => {
     eventEmitter.off(event, listener);
     return logger;
   };

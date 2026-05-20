@@ -1,17 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { startPluginManager } from "../plugin-manager.actor.js";
+import { startPluginManager, startPluginStartup } from "../plugin-manager.actor.js";
 
 describe("Plugin Manager Actor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("should call lifecycle hooks on start", async () => {
+  it("should call startup lifecycle hooks", async () => {
     const browser = {
-      instance: {
-        on: vi.fn(),
-        off: vi.fn(),
-      },
+      instance: {},
     } as any;
     const plugin = {
       name: "test",
@@ -19,46 +16,53 @@ describe("Plugin Manager Actor", () => {
       onBrowserReady: vi.fn().mockResolvedValue(undefined),
     };
 
+    await startPluginStartup({
+      browser,
+      config: {} as any,
+      plugins: [plugin as any],
+    });
+
+    expect(plugin.onBrowserLaunch).toHaveBeenCalledWith(browser.instance);
+    expect(plugin.onBrowserReady).toHaveBeenCalled();
+  });
+
+  it("should register page event hooks", () => {
+    const browser = {
+      instance: {
+        on: vi.fn(),
+        off: vi.fn(),
+      },
+    } as any;
+
     const stop = startPluginManager(
       {
         browser,
         config: {} as any,
-        plugins: [plugin as any],
+        plugins: [],
       },
       vi.fn(),
     );
 
-    // Wait for background async init
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(plugin.onBrowserLaunch).toHaveBeenCalledWith(browser.instance);
-    expect(plugin.onBrowserReady).toHaveBeenCalled();
     expect(browser.instance.on).toHaveBeenCalledWith("targetcreated", expect.any(Function));
-
     stop();
     expect(browser.instance.off).toHaveBeenCalledWith("targetcreated", expect.any(Function));
   });
 
-  it("should handle hook errors without crashing", async () => {
+  it("should handle startup hook errors without crashing", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const browser = {
-      instance: { on: vi.fn(), off: vi.fn() },
+      instance: {},
     } as any;
     const failingPlugin = {
       name: "fail",
       onBrowserReady: vi.fn().mockRejectedValue(new Error("Fail")),
     };
 
-    startPluginManager(
-      {
-        browser,
-        config: {} as any,
-        plugins: [failingPlugin as any],
-      },
-      vi.fn(),
-    );
-
-    await new Promise((r) => setTimeout(r, 50));
+    await startPluginStartup({
+      browser,
+      config: {} as any,
+      plugins: [failingPlugin as any],
+    });
 
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();

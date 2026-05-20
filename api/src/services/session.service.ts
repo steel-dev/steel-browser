@@ -162,8 +162,10 @@ export class SessionService {
     // If dimensions not provided, get from CDP service
     const finalDimensions = dimensions || this.cdpService.getDimensions();
 
+    const nextSessionId = sessionId || uuidv4();
+
     await this.resetSessionInfo({
-      id: sessionId || uuidv4(),
+      id: nextSessionId,
       status: "live",
       proxy: proxyUrl,
       solveCaptcha: false,
@@ -172,9 +174,10 @@ export class SessionService {
     });
 
     const userDataDir =
-      options.userDataDir || options.persist === true
+      options.userDataDir ??
+      (options.persist === true
         ? path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "user-data-dir")
-        : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
+        : path.join(os.tmpdir(), nextSessionId));
     await mkdir(userDataDir, { recursive: true });
 
     if (proxyUrl) {

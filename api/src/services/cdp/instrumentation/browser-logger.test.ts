@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createBrowserLogger } from "./browser-logger.js";
-import { BrowserEventType } from "../../../types/enums.js";
+import { BrowserEventType, EmitEvent } from "../../../types/enums.js";
 
 describe("BrowserLogger", () => {
   it("should merge context into events", () => {
@@ -141,5 +141,40 @@ describe("BrowserLogger", () => {
       }),
       BrowserEventType.Request,
     );
+  });
+
+  it("should emit recording events on the recording channel", () => {
+    const baseLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      fatal: vi.fn(),
+      trace: vi.fn(),
+      silent: vi.fn(),
+      child: vi.fn(),
+      level: "info",
+    };
+    const logger = createBrowserLogger({
+      baseLogger: baseLogger as any,
+      initialContext: { sessionId: "session-1" },
+    });
+    const recordingListener = vi.fn();
+    const logListener = vi.fn();
+
+    logger.on?.(EmitEvent.Recording, recordingListener);
+    logger.on?.(EmitEvent.Log, logListener);
+
+    logger.record({
+      type: BrowserEventType.Recording,
+      timestamp: "2025-01-01T00:00:00Z",
+      data: { events: [{ type: "click" }] },
+    });
+
+    expect(recordingListener).toHaveBeenCalledWith(
+      { events: [{ type: "click" }] },
+      { sessionId: "session-1" },
+    );
+    expect(logListener).not.toHaveBeenCalled();
   });
 });

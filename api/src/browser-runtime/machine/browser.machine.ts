@@ -13,7 +13,11 @@ import { resolveConfig } from "../services/config-resolver.js";
 import { launchProxy } from "./actors/proxy-launcher.actor.js";
 import { startDataPlane, DataPlaneInput } from "./actors/data-plane.actor.js";
 import { startLogger, LoggerInput } from "./actors/logger.actor.js";
-import { startPluginManager, PluginManagerInput } from "./actors/plugin-manager.actor.js";
+import {
+  startPluginManager,
+  startPluginStartup,
+  PluginManagerInput,
+} from "./actors/plugin-manager.actor.js";
 import { BrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
 import { FastifyBaseLogger } from "fastify";
 import { traceBootPhase } from "../tracing/index.js";
@@ -68,6 +72,7 @@ export const browserMachine = setup({
     pluginManager: fromCallback<SupervisorEvent, PluginManagerInput>(({ sendBack, input }) =>
       startPluginManager(input, sendBack),
     ),
+    pluginStartup: fromPromise<void, PluginManagerInput>(({ input }) => startPluginStartup(input)),
     drainActor: fromPromise<void, DrainInput>(({ input }) => drain(input)),
     closeBrowserActor: fromPromise<void, { launcher: BrowserLauncher; browser: BrowserRef | null }>(
       ({ input }) => closeBrowser(input),
@@ -90,14 +95,15 @@ export const browserMachine = setup({
         const removeDestroyed = launcher.onTargetDestroyed(browser, (targetId: string) => {
           sendBack({ type: "BROWSER_EVENT", event: "targetDestroyed", data: { targetId } });
         });
-        browser.instance.on("fileProtocolViolation", (data: any) => {
+        const fileProtocolViolationHandler = (data: any) => {
           sendBack({ type: "BROWSER_EVENT", event: "fileProtocolViolation", data });
-        });
+        };
+        browser.instance.on("fileProtocolViolation", fileProtocolViolationHandler);
 
         return () => {
           removeCreated();
           removeDestroyed();
-          browser.instance.off("fileProtocolViolation", () => {});
+          browser.instance.off("fileProtocolViolation", fileProtocolViolationHandler);
         };
       },
     ),
@@ -246,13 +252,25 @@ export const browserMachine = setup({
               proxy: context.proxy,
             }),
             onDone: {
-              target: "#browserSupervisor.ready",
+              target: "startingPlugins",
               actions: "assignBrowser",
             },
             onError: {
               target: "#browserSupervisor.failed",
               actions: "assignError",
             },
+          },
+        },
+        startingPlugins: {
+          invoke: {
+            src: "pluginStartup",
+            input: ({ context }) => ({
+              browser: context.browser!,
+              config: context.resolvedConfig!,
+              plugins: context.plugins,
+            }),
+            onDone: "#browserSupervisor.ready",
+            onError: "#browserSupervisor.ready",
           },
         },
       },

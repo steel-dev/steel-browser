@@ -5,6 +5,9 @@ import { pino } from "pino";
 import { isSimilarConfig } from "../../services/cdp/utils/validation.js";
 import httpProxy from "http-proxy";
 import { extractStorageForPage } from "../../utils/context.js";
+import { createBrowserLogger } from "../../services/cdp/instrumentation/browser-logger.js";
+import { BrowserEventType, EmitEvent } from "../../types/enums.js";
+import { BasePlugin } from "../../services/cdp/plugins/core/base-plugin.js";
 
 vi.mock("../../utils/context.js", () => ({
   extractStorageForPage: vi.fn().mockResolvedValue({
@@ -168,9 +171,6 @@ describe("BrowserRuntime Facade", () => {
 
       await runtime.launch({ options: { headless: true } } as any);
 
-      // Wait for async initialization
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
       expect(mockPlugin.onBrowserLaunch).toHaveBeenCalled();
       expect(mockPlugin.onBrowserReady).toHaveBeenCalled();
 
@@ -180,6 +180,75 @@ describe("BrowserRuntime Facade", () => {
 
       await runtime.shutdown();
       expect(mockPlugin.onShutdown).toHaveBeenCalled();
+    });
+
+    it("should set service on BasePlugin registrations", async () => {
+      let resolveReady!: () => void;
+      const readyPromise = new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      });
+
+      class ServiceAwarePlugin extends BasePlugin {
+        public serviceDuringReady: unknown = null;
+
+        constructor() {
+          super({ name: "service-aware-plugin" });
+        }
+
+        public getService(): unknown {
+          return this.cdpService;
+        }
+
+        public override onBrowserReady(): void {
+          this.serviceDuringReady = this.cdpService;
+          resolveReady();
+        }
+      }
+
+      const plugin = new ServiceAwarePlugin();
+      runtime.registerPlugin(plugin);
+
+      expect(plugin.getService()).toBe(runtime);
+
+      await runtime.launch({ options: { headless: true } } as any);
+      await readyPromise;
+
+      expect(plugin.serviceDuringReady).toBe(runtime);
+    });
+
+    it("should wait for startup plugin hooks before launch resolves", async () => {
+      let resolveStarted!: () => void;
+      const startedPromise = new Promise<void>((resolve) => {
+        resolveStarted = resolve;
+      });
+      let resolveReady!: () => void;
+      const readyPromise = new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      });
+      const slowPlugin = {
+        name: "slow-plugin",
+        onBrowserReady: vi.fn(() => {
+          resolveStarted();
+          return readyPromise;
+        }),
+      };
+
+      runtime.registerPlugin(slowPlugin as any);
+
+      let resolved = false;
+      const launchPromise = runtime.launch({ options: { headless: true } } as any).then(() => {
+        resolved = true;
+      });
+
+      await startedPromise;
+      await Promise.resolve();
+      expect(resolved).toBe(false);
+
+      resolveReady();
+      await launchPromise;
+
+      expect(resolved).toBe(true);
+      expect(slowPlugin.onBrowserReady).toHaveBeenCalled();
     });
 
     it("should call onBeforePageClose during refreshPrimaryPage", async () => {
@@ -207,11 +276,8 @@ describe("BrowserRuntime Facade", () => {
 
       runtime.registerPlugin(failingPlugin as any);
 
-      // Should not throw
       await expect(runtime.launch({ options: { headless: true } } as any)).resolves.toBeDefined();
-
-      // Wait for async ready call
-      await new Promise((r) => setTimeout(r, 100));
+      expect(failingPlugin.onBrowserReady).toHaveBeenCalled();
     });
 
     it("should allow unregistering plugins", async () => {
@@ -250,6 +316,42 @@ describe("BrowserRuntime Facade", () => {
       await runtime.launch({ options: { headless: true } } as any);
       await runtime.shutdown();
       expect(hookCalled).toHaveBeenCalled();
+    });
+
+    it("should keep registered shutdown hooks across launches", async () => {
+      const hookCalled = vi.fn();
+      runtime.registerShutdownHook(async (config) => {
+        hookCalled(config);
+      });
+
+      await runtime.launch({ sessionId: "s1", options: { headless: true } } as any);
+      await runtime.shutdown();
+      await runtime.launch({ sessionId: "s2", options: { headless: true } } as any);
+      await runtime.shutdown();
+
+      expect(hookCalled).toHaveBeenCalledTimes(2);
+      expect(hookCalled.mock.calls[0][0]).toMatchObject({ sessionId: "s1" });
+      expect(hookCalled.mock.calls[1][0]).toMatchObject({ sessionId: "s2" });
+    });
+
+    it("should run disconnect listener cleanup once per launch", async () => {
+      const removeDisconnectListeners: ReturnType<typeof vi.fn>[] = [];
+      launcher.onDisconnected = vi.fn(() => {
+        const remove = vi.fn();
+        removeDisconnectListeners.push(remove);
+        return remove;
+      });
+
+      await runtime.launch({ sessionId: "s1", options: { headless: true } } as any);
+      await runtime.shutdown();
+      await runtime.launch({ sessionId: "s2", options: { headless: true } } as any);
+      await runtime.shutdown();
+
+      expect(launcher.onDisconnected).toHaveBeenCalledTimes(4);
+      expect(removeDisconnectListeners).toHaveLength(4);
+      for (const remove of removeDisconnectListeners) {
+        expect(remove).toHaveBeenCalledTimes(1);
+      }
     });
 
     it("should handle async hook errors without crashing", async () => {
@@ -443,6 +545,33 @@ describe("BrowserRuntime Facade", () => {
       await kaRuntime.shutdown();
     });
 
+    it("should not trigger disconnect recovery during controlled endSession close", async () => {
+      class DisconnectingCloseLauncher extends MockLauncher {
+        public override async close(browser: any): Promise<void> {
+          await super.close(browser);
+          this.simulateCrash(browser);
+        }
+      }
+
+      const closeLauncher = new DisconnectingCloseLauncher();
+      const kaRuntime = new BrowserRuntime({
+        launcher: closeLauncher,
+        appLogger: mockLogger,
+        keepAlive: true,
+      });
+      const disconnectHandler = vi.fn(async () => {});
+      kaRuntime.setDisconnectHandler(disconnectHandler);
+
+      await kaRuntime.launch({ options: { headless: true } } as any);
+      await kaRuntime.endSession();
+
+      expect(disconnectHandler).not.toHaveBeenCalled();
+      expect(closeLauncher.launchCalls).toHaveLength(2);
+      expect(kaRuntime.isRunning()).toBe(true);
+
+      await kaRuntime.shutdown();
+    });
+
     it("should NOT relaunch after endSession when keepAlive is false", async () => {
       const noKaRuntime = new BrowserRuntime({
         launcher,
@@ -509,6 +638,67 @@ describe("BrowserRuntime Facade", () => {
       });
 
       expect(listener).toHaveBeenCalledWith(expect.objectContaining({ url: "file:///test" }));
+    });
+
+    it("should forward instrumentation log events", async () => {
+      const instrumentationLogger = createBrowserLogger({ baseLogger: mockLogger });
+      const eventRuntime = new BrowserRuntime({
+        launcher,
+        appLogger: mockLogger,
+        instrumentationLogger,
+        keepAlive: false,
+      });
+      const listener = vi.fn();
+      eventRuntime.on(EmitEvent.Log, listener);
+
+      instrumentationLogger.record({
+        type: BrowserEventType.Console,
+        timestamp: "2025-01-01T00:00:00Z",
+        console: { level: "log", text: "hello" },
+      });
+
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ type: BrowserEventType.Console }),
+      );
+
+      await eventRuntime.shutdown();
+    });
+
+    it("should forward recording events with the websocket payload shape", async () => {
+      const instrumentationLogger = createBrowserLogger({ baseLogger: mockLogger });
+      const eventRuntime = new BrowserRuntime({
+        launcher,
+        appLogger: mockLogger,
+        instrumentationLogger,
+        keepAlive: false,
+      });
+      const listener = vi.fn();
+      eventRuntime.on(EmitEvent.Recording, listener);
+
+      instrumentationLogger.record({
+        type: BrowserEventType.Recording,
+        timestamp: "2025-01-01T00:00:00Z",
+        data: { events: [{ type: "click" }] },
+      });
+
+      expect(listener).toHaveBeenCalledWith({ events: [{ type: "click" }] });
+
+      await eventRuntime.shutdown();
+    });
+
+    it("should emit legacy pageId events for created targets", async () => {
+      const listener = vi.fn();
+      runtime.on(EmitEvent.PageId, listener);
+
+      await runtime.launch({ options: { headless: true } } as any);
+      const browserRef = (runtime as any).getBrowser()!;
+
+      launcher.simulateTargetCreated(browserRef, {
+        _targetId: "new-target",
+        type: () => "page",
+      } as any);
+
+      expect(listener).toHaveBeenCalledWith({ pageId: "new-target" });
     });
   });
 

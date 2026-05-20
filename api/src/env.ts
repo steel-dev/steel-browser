@@ -90,7 +90,7 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("true"),
+    .default("false"),
   STATE_TRANSITION_LOG_DIR: z.string().optional().default("/tmp/steel-state-logs"),
   STATE_TRANSITION_LOG_MAX_SIZE_MB: z
     .string()
