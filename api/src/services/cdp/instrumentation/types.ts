@@ -127,6 +127,8 @@ export interface BrowserInteractionEvent extends BaseBrowserEvent {
     value?: {
       inputType?: string;
       valueLength?: number;
+      text?: string;
+      redacted?: boolean;
       checked?: boolean;
     };
     navigation?: {

@@ -149,6 +149,8 @@ function sanitizeInteractionPayload(
       ? {
           inputType: optionalString(value.inputType),
           valueLength: optionalNumber(value.valueLength),
+          text: optionalString(value.text),
+          redacted: value.redacted === true ? true : undefined,
           checked: typeof value.checked === "boolean" ? value.checked : undefined,
         }
       : undefined,
@@ -363,15 +365,59 @@ function createBrowserInteractionScript(bindingName: string): string {
     };
   };
 
+  const sensitiveKeywords = [
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "card",
+    "cardnumber",
+    "cc-number",
+    "cc-csc",
+    "cc-exp",
+    "cvv",
+    "cvc",
+    "ssn",
+    "social",
+    "otp",
+    "tax",
+  ];
+
+  const isSensitiveField = (target) => {
+    if (target instanceof HTMLInputElement) {
+      const type = (target.type || "").toLowerCase();
+      if (type === "password") return true;
+      const autocomplete = (target.getAttribute("autocomplete") || "").toLowerCase();
+      if (autocomplete.startsWith("cc-")) return true;
+      if (autocomplete === "current-password" || autocomplete === "new-password") return true;
+      if (autocomplete === "one-time-code") return true;
+    }
+    const haystacks = [
+      (target.getAttribute && target.getAttribute("name")) || "",
+      target.id || "",
+      (target.getAttribute && target.getAttribute("aria-label")) || "",
+      (target.getAttribute && target.getAttribute("placeholder")) || "",
+      (target.getAttribute && target.getAttribute("data-testid")) || "",
+    ].map((s) => s.toLowerCase());
+    return haystacks.some((s) =>
+      sensitiveKeywords.some((kw) => s.includes(kw)),
+    );
+  };
+
   const valueSnapshot = (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
       return undefined;
     }
     const inputType = target instanceof HTMLInputElement ? target.type : target.tagName.toLowerCase();
+    const rawValue = typeof target.value === "string" ? target.value : undefined;
+    const valueLength = typeof rawValue === "string" ? rawValue.length : undefined;
+    const sensitive = isSensitiveField(target);
     return {
       inputType,
-      valueLength: typeof target.value === "string" ? target.value.length : undefined,
+      valueLength,
+      text: !sensitive && rawValue ? compact(rawValue) : undefined,
+      redacted: sensitive || undefined,
       checked: target instanceof HTMLInputElement && ["checkbox", "radio"].includes(target.type) ? target.checked : undefined,
     };
   };
