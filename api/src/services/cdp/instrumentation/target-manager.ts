@@ -13,7 +13,7 @@ const INTERNAL_EXTENSIONS = new Set<string>([
 ]);
 
 export interface InteractionEventsOptions {
-  semanticAgentLogs?: boolean;
+  agentTraces?: boolean;
 }
 
 export class TargetInstrumentationManager {
@@ -55,7 +55,7 @@ export class TargetInstrumentationManager {
         const page = await target.page();
         if (page) {
           await attachPageEvents(page, session, this.logger, type, this.pageEventsOptions);
-          if (!isExtensionTarget && this.interactionEventsOptions.semanticAgentLogs) {
+          if (!isExtensionTarget && this.interactionEventsOptions.agentTraces) {
             await attachBrowserInteractionEvents(session, page, this.logger, type, sessionId);
           }
         }

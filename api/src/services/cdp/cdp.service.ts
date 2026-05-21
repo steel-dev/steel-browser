@@ -1285,7 +1285,7 @@ export class CDPService extends EventEmitter {
       this.instrumentationLogger,
       this.logger,
       { dangerouslyLogRequestDetails: sessionConfig.dangerouslyLogRequestDetails },
-      { semanticAgentLogs: sessionConfig.semanticAgentLogs ?? false },
+      { agentTraces: sessionConfig.agentTraces ?? false },
     );
 
     // Notify plugins that a session is starting, before any launch/reuse work begins.

@@ -116,7 +116,7 @@ export class SessionService {
     fullscreen?: boolean;
     headless?: boolean;
     dangerouslyLogRequestDetails?: boolean;
-    semanticAgentLogs?: boolean;
+    agentTraces?: boolean;
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -138,7 +138,7 @@ export class SessionService {
       fullscreen,
       headless,
       dangerouslyLogRequestDetails,
-      semanticAgentLogs,
+      agentTraces,
     } = options;
 
     // start fetching timezone as early as possible
@@ -234,7 +234,7 @@ export class SessionService {
       deviceConfig,
       fullscreen,
       dangerouslyLogRequestDetails,
-      semanticAgentLogs,
+      agentTraces,
     };
 
     if (isSelenium) {
