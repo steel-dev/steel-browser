@@ -104,14 +104,21 @@ export interface BrowserInteractionEvent extends BaseBrowserEvent {
       | "change"
       | "submit"
       | "scroll"
-      | "navigate";
+      | "navigate"
+      | "drag";
     eventType: string;
     target?: BrowserInteractionTarget;
+    endTarget?: BrowserInteractionTarget;
+    endTimestamp?: string;
     pointer?: {
-      x: number;
-      y: number;
+      x?: number;
+      y?: number;
       button?: number;
       clickCount?: number;
+      startX?: number;
+      startY?: number;
+      endX?: number;
+      endY?: number;
     };
     keyboard?: {
       key?: string;

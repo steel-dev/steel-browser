@@ -15,6 +15,7 @@ const ALLOWED_ACTIONS = new Set([
   "change",
   "submit",
   "scroll",
+  "drag",
 ]);
 
 function truncate(value: unknown): string | undefined {
@@ -106,20 +107,38 @@ function sanitizeInteractionPayload(
 
   const x = optionalNumber(pointer?.x);
   const y = optionalNumber(pointer?.y);
+  const startX = optionalNumber(pointer?.startX);
+  const startY = optionalNumber(pointer?.startY);
+  const endX = optionalNumber(pointer?.endX);
+  const endY = optionalNumber(pointer?.endY);
+  const hasDragPointer =
+    startX !== undefined || startY !== undefined || endX !== undefined || endY !== undefined;
 
   return {
     action: action as BrowserInteractionEvent["interaction"]["action"],
     eventType,
     target: sanitizeTarget(interaction.target),
-    pointer:
-      x !== undefined && y !== undefined
-        ? {
-            x,
-            y,
-            button: optionalNumber(pointer?.button),
-            clickCount: optionalNumber(pointer?.clickCount),
-          }
+    endTarget: action === "drag" ? sanitizeTarget(interaction.endTarget) : undefined,
+    endTimestamp:
+      action === "drag" && typeof interaction.endTimestamp === "string"
+        ? interaction.endTimestamp
         : undefined,
+    pointer: hasDragPointer
+      ? {
+          startX,
+          startY,
+          endX,
+          endY,
+          button: optionalNumber(pointer?.button),
+        }
+      : x !== undefined && y !== undefined
+      ? {
+          x,
+          y,
+          button: optionalNumber(pointer?.button),
+          clickCount: optionalNumber(pointer?.clickCount),
+        }
+      : undefined,
     keyboard: keyboard
       ? {
           key: optionalString(keyboard.key),
@@ -380,9 +399,80 @@ function createBrowserInteractionScript(bindingName: string): string {
     }
   };
 
+  // Drag detection. mousedown→mouseup with duration > 500ms (sync with
+  // apps/live/src/viewer/input/input-interactions.ts dragHoldThresholdMs) or
+  // movement > 8px is treated as a drag; otherwise the browser's own click
+  // event fires the normal click/doubleClick path.
+  const dragHoldThresholdMs = 500;
+  const dragMoveThresholdPx = 8;
+  let dragState = null;
+  let suppressClickUntil = 0;
+
+  document.addEventListener(
+    "mousedown",
+    (event) => {
+      dragState = {
+        startX: event.clientX,
+        startY: event.clientY,
+        startTime: Date.now(),
+        startTargetSnapshot: targetSnapshot(event),
+        button: event.button,
+      };
+    },
+    { capture: true, passive: true },
+  );
+
+  document.addEventListener(
+    "mouseup",
+    (event) => {
+      const current = dragState;
+      dragState = null;
+      if (!current || current.button !== event.button) return;
+
+      const dx = event.clientX - current.startX;
+      const dy = event.clientY - current.startY;
+      const distance = Math.hypot(dx, dy);
+      const endTime = Date.now();
+      const duration = endTime - current.startTime;
+
+      if (distance <= dragMoveThresholdPx && duration <= dragHoldThresholdMs) return;
+
+      suppressClickUntil = endTime + 50;
+      const binding = window[bindingName];
+      if (typeof binding !== "function") return;
+      try {
+        binding(
+          JSON.stringify({
+            source,
+            timestamp: new Date(current.startTime).toISOString(),
+            interaction: {
+              action: "drag",
+              eventType: "drag",
+              target: current.startTargetSnapshot,
+              endTarget: targetSnapshot(event),
+              endTimestamp: new Date(endTime).toISOString(),
+              pointer: {
+                startX: current.startX,
+                startY: current.startY,
+                endX: event.clientX,
+                endY: event.clientY,
+                button: event.button,
+              },
+              page: { url: location.href, title: document.title },
+            },
+          }),
+        );
+      } catch {
+        // Logging must never affect the page.
+      }
+    },
+    { capture: true, passive: true },
+  );
+
   document.addEventListener(
     "click",
     (event) => {
+      if (Date.now() < suppressClickUntil) return;
       send(event, {
         action: event.detail > 1 ? "doubleClick" : "click",
         eventType: event.type,
