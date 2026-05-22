@@ -321,14 +321,22 @@ function createBrowserInteractionScript(bindingName: string): string {
     return compact(parts.join(" > "));
   };
 
+  const testAttribute = (element) => {
+    for (const name of ["data-testid", "data-test", "data-cy"]) {
+      const value = attr(element, name);
+      if (value) return { name, value };
+    }
+    return undefined;
+  };
+
   const selectorCandidates = (element) => {
     const id = attr(element, "id");
-    const testId = attr(element, "data-testid") || attr(element, "data-test") || attr(element, "data-cy");
+    const testId = testAttribute(element);
     const name = attr(element, "name");
     const ariaLabel = attr(element, "aria-label");
     return {
       id: id ? "#" + cssEscape(id) : undefined,
-      testId: testId ? '[data-testid="' + cssEscape(testId) + '"]' : undefined,
+      testId: testId ? "[" + testId.name + '="' + cssEscape(testId.value) + '"]' : undefined,
       name: name ? '[name="' + cssEscape(name) + '"]' : undefined,
       aria: ariaLabel ? '[aria-label="' + cssEscape(ariaLabel) + '"]' : undefined,
       css: cssPath(element),
@@ -339,7 +347,7 @@ function createBrowserInteractionScript(bindingName: string): string {
     const element = meaningfulElementFromPath(event);
     if (!(element instanceof Element)) return undefined;
     const rect = element.getBoundingClientRect();
-    const testId = attr(element, "data-testid") || attr(element, "data-test") || attr(element, "data-cy");
+    const testId = testAttribute(element)?.value;
     return {
       tagName: compact(element.tagName.toLowerCase()),
       role: attr(element, "role") || implicitRole(element),
