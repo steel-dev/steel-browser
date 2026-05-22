@@ -4,7 +4,7 @@ import { BROWSER_INTERACTION_BINDING } from "./browser-interaction-events.js";
 import { createBrowserInteractionScript } from "./browser-interaction-script.js";
 import { BROWSER_INTERACTION_SOURCE } from "./browser-interaction-sanitize.js";
 
-function createDom(html: string) {
+function createDom(html: string, options?: { logTextValues?: boolean }) {
   const dom = new JSDOM(html, {
     url: "https://example.com/form",
     runScripts: "outside-only",
@@ -12,7 +12,7 @@ function createDom(html: string) {
   });
   const binding = vi.fn();
   (dom.window as any)[BROWSER_INTERACTION_BINDING] = binding;
-  dom.window.eval(createBrowserInteractionScript(BROWSER_INTERACTION_BINDING));
+  dom.window.eval(createBrowserInteractionScript(BROWSER_INTERACTION_BINDING, options));
   return { dom, binding };
 }
 
@@ -68,7 +68,7 @@ describe("browser interaction injected script", () => {
     dom.window.close();
   });
 
-  it("redacts sensitive inputs while preserving non-sensitive input text", () => {
+  it("omits input text by default while preserving length and redaction metadata", () => {
     const { dom, binding } = createDom(`
       <input id="email" name="email" />
       <input id="password" type="password" />
@@ -90,8 +90,8 @@ describe("browser interaction injected script", () => {
     expect(interactions[0].value).toMatchObject({
       inputType: "text",
       valueLength: "user@example.com".length,
-      text: "user@example.com",
     });
+    expect(interactions[0].value.text).toBeUndefined();
     expect(interactions[1].value).toMatchObject({
       inputType: "password",
       valueLength: "super-secret".length,
@@ -104,6 +104,71 @@ describe("browser interaction injected script", () => {
       redacted: true,
     });
     expect(interactions[2].value.text).toBeUndefined();
+    dom.window.close();
+  });
+
+  it("preserves non-sensitive input text when explicitly enabled", () => {
+    const { dom, binding } = createDom(`<input id="email" name="email" />`, {
+      logTextValues: true,
+    });
+    const email = dom.window.document.querySelector<HTMLInputElement>("#email")!;
+
+    email.value = "user@example.com";
+    email.dispatchEvent(new dom.window.Event("input", { bubbles: true, composed: true }));
+
+    const [payload] = payloads(binding);
+    expect(payload.interaction.value).toMatchObject({
+      inputType: "text",
+      valueLength: "user@example.com".length,
+      text: "user@example.com",
+    });
+    dom.window.close();
+  });
+
+  it("redacts sensitive inputs identified by test attributes", () => {
+    const { dom, binding } = createDom(`
+      <input data-test="credit-card-number" />
+      <input data-cy="password" />
+    `);
+    const creditCard = dom.window.document.querySelector<HTMLInputElement>("[data-test]")!;
+    const password = dom.window.document.querySelector<HTMLInputElement>("[data-cy]")!;
+
+    creditCard.value = "4111111111111111";
+    password.value = "secret-from-data-cy";
+
+    creditCard.dispatchEvent(new dom.window.Event("input", { bubbles: true, composed: true }));
+    password.dispatchEvent(new dom.window.Event("input", { bubbles: true, composed: true }));
+
+    const interactions = payloads(binding).map((payload) => payload.interaction);
+    expect(interactions[0].value).toMatchObject({
+      valueLength: "4111111111111111".length,
+      redacted: true,
+    });
+    expect(interactions[0].value.text).toBeUndefined();
+    expect(interactions[1].value).toMatchObject({
+      valueLength: "secret-from-data-cy".length,
+      redacted: true,
+    });
+    expect(interactions[1].value.text).toBeUndefined();
+    dom.window.close();
+  });
+
+  it("uses the matched test attribute when building selectors", () => {
+    const { dom, binding } = createDom(`<button data-cy="save">Save</button>`);
+    const button = dom.window.document.querySelector("button")!;
+
+    button.dispatchEvent(
+      new dom.window.MouseEvent("click", {
+        bubbles: true,
+        composed: true,
+        detail: 1,
+      }),
+    );
+
+    const [payload] = payloads(binding);
+    expect(payload.interaction.target.attributes.testId).toBe("save");
+    expect(payload.interaction.target.selector.testId).toBe('[data-cy="save"]');
+    expect(payload.interaction.target.selector.css).toContain('[data-cy="save"]');
     dom.window.close();
   });
 

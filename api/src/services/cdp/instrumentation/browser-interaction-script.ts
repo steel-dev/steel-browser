@@ -7,10 +7,11 @@ export interface BrowserInteractionLoggerOptions {
   bindingName: string;
   source: string;
   maxTextLength: number;
+  logTextValues?: boolean;
 }
 
 export function installBrowserInteractionLogger(options: BrowserInteractionLoggerOptions): void {
-  const { bindingName, source, maxTextLength } = options;
+  const { bindingName, source, maxTextLength, logTextValues = false } = options;
   const steelWindow = window as unknown as Window & {
     __steelBrowserInteractionInstalled?: boolean;
     [key: string]: unknown;
@@ -61,6 +62,19 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
     }
     return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
   };
+
+  const testAttributeNames = ["data-testid", "data-test", "data-cy"];
+
+  const testAttribute = (element: Element) => {
+    for (const name of testAttributeNames) {
+      const value = attr(element, name);
+      if (value) return { name, value };
+    }
+    return undefined;
+  };
+
+  const testAttributeSelector = (testAttr: { name: string; value: string }) =>
+    "[" + testAttr.name + '="' + cssEscape(testAttr.value) + '"]';
 
   const implicitRole = (element: Element) => {
     const tagName = element.tagName?.toLowerCase();
@@ -157,12 +171,9 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
         break;
       }
       let part = tagName;
-      const testId =
-        current.getAttribute("data-testid") ||
-        current.getAttribute("data-test") ||
-        current.getAttribute("data-cy");
-      if (testId) {
-        part += '[data-testid="' + cssEscape(testId) + '"]';
+      const testAttr = testAttribute(current);
+      if (testAttr) {
+        part += testAttributeSelector(testAttr);
       } else {
         const parent = current.parentElement;
         if (parent) {
@@ -180,13 +191,12 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
 
   const selectorCandidates = (element: Element) => {
     const id = attr(element, "id");
-    const testId =
-      attr(element, "data-testid") || attr(element, "data-test") || attr(element, "data-cy");
+    const testAttr = testAttribute(element);
     const name = attr(element, "name");
     const ariaLabel = attr(element, "aria-label");
     return {
       id: id ? "#" + cssEscape(id) : undefined,
-      testId: testId ? '[data-testid="' + cssEscape(testId) + '"]' : undefined,
+      testId: testAttr ? testAttributeSelector(testAttr) : undefined,
       name: name ? '[name="' + cssEscape(name) + '"]' : undefined,
       aria: ariaLabel ? '[aria-label="' + cssEscape(ariaLabel) + '"]' : undefined,
       css: cssPath(element),
@@ -257,7 +267,7 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
       (target as HTMLElement).id || "",
       target.getAttribute("aria-label") || "",
       target.getAttribute("placeholder") || "",
-      target.getAttribute("data-testid") || "",
+      ...testAttributeNames.map((name) => target.getAttribute(name) || ""),
     ].map((s) => s.toLowerCase());
     return haystacks.some((s) => sensitiveKeywords.some((kw) => s.includes(kw)));
   };
@@ -281,7 +291,7 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
     return {
       inputType,
       valueLength,
-      text: !sensitive && rawValue ? compact(rawValue) : undefined,
+      text: logTextValues && !sensitive && rawValue ? compact(rawValue) : undefined,
       redacted: sensitive || undefined,
       checked:
         target instanceof HTMLInputElement && ["checkbox", "radio"].includes(target.type)
@@ -509,10 +519,16 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
   );
 }
 
-export function createBrowserInteractionScript(bindingName: string): string {
-  return `(${installBrowserInteractionLogger.toString()})(${JSON.stringify({
-    bindingName,
-    source: BROWSER_INTERACTION_SOURCE,
-    maxTextLength: MAX_BROWSER_INTERACTION_TEXT_LENGTH,
-  })});`;
+export function createBrowserInteractionScript(
+  bindingName: string,
+  options?: { logTextValues?: boolean },
+): string {
+  return `(() => { const __name = (fn) => fn; (${installBrowserInteractionLogger.toString()})(${JSON.stringify(
+    {
+      bindingName,
+      source: BROWSER_INTERACTION_SOURCE,
+      maxTextLength: MAX_BROWSER_INTERACTION_TEXT_LENGTH,
+      logTextValues: options?.logTextValues === true,
+    },
+  )}); })();`;
 }

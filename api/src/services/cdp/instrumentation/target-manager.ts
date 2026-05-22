@@ -3,7 +3,10 @@ import type { FastifyBaseLogger } from "fastify";
 
 import { attachPageEvents, AttachPageEventsOptions } from "./page-events.js";
 import { attachCDPEvents } from "./cdp-events.js";
-import { attachBrowserInteractionEvents } from "./browser-interaction-events.js";
+import {
+  attachBrowserInteractionEvents,
+  AttachBrowserInteractionEventsOptions,
+} from "./browser-interaction-events.js";
 import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
 import { BrowserLogger } from "./browser-logger.js";
@@ -12,18 +15,22 @@ const INTERNAL_EXTENSIONS = new Set<string>([
   // TODO: need secret manager, recorder, and capacha IDs
 ]);
 
+export interface TargetInstrumentationOptions
+  extends AttachPageEventsOptions,
+    AttachBrowserInteractionEventsOptions {}
+
 export class TargetInstrumentationManager {
   private attachedSessions = new Set<string>();
   private cdpSessions = new Map<string, CDPSession>();
 
-  private pageEventsOptions: AttachPageEventsOptions;
+  private instrumentationOptions: TargetInstrumentationOptions;
 
   constructor(
     private logger: BrowserLogger,
     private appLogger: FastifyBaseLogger,
-    pageEventsOptions?: AttachPageEventsOptions,
+    instrumentationOptions?: TargetInstrumentationOptions,
   ) {
-    this.pageEventsOptions = pageEventsOptions ?? {};
+    this.instrumentationOptions = instrumentationOptions ?? {};
   }
 
   async attach(target: Target, type: TargetType) {
@@ -47,9 +54,16 @@ export class TargetInstrumentationManager {
 
         const page = await target.page();
         if (page) {
-          await attachPageEvents(page, session, this.logger, type, this.pageEventsOptions);
+          await attachPageEvents(page, session, this.logger, type, this.instrumentationOptions);
           if (!isExtensionTarget) {
-            await attachBrowserInteractionEvents(session, page, this.logger, type, sessionId);
+            await attachBrowserInteractionEvents(
+              session,
+              page,
+              this.logger,
+              type,
+              sessionId,
+              this.instrumentationOptions,
+            );
           }
         }
 
