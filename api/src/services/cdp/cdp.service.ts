@@ -1284,7 +1284,9 @@ export class CDPService extends EventEmitter {
     this.targetInstrumentationManager = new TargetInstrumentationManager(
       this.instrumentationLogger,
       this.logger,
-      { dangerouslyLogRequestDetails: sessionConfig.dangerouslyLogRequestDetails },
+      {
+        dangerouslyLogRequestDetails: sessionConfig.dangerouslyLogRequestDetails,
+      },
     );
 
     // Notify plugins that a session is starting, before any launch/reuse work begins.
@@ -1320,7 +1322,7 @@ export class CDPService extends EventEmitter {
       this.instrumentationLogger.resetContext();
 
       // Reset target instrumentation manager to clear session-specific options
-      // (e.g. dangerouslyLogRequestDetails) so they don't leak into the idle browser
+      // (e.g. dangerous logging flags) so they don't leak into the idle browser
       this.targetInstrumentationManager = new TargetInstrumentationManager(
         this.instrumentationLogger,
         this.logger,

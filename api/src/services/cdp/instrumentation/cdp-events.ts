@@ -1,6 +1,7 @@
 import type { CDPSession } from "puppeteer-core";
 import { BrowserEventType } from "../../../types/index.js";
 import { BrowserLogger } from "./browser-logger.js";
+import { BROWSER_INTERACTION_BINDING } from "./browser-interaction-events.js";
 
 /**
  * Attaches protocol tracing to a CDP session.
@@ -67,6 +68,7 @@ export function attachCDPEvents(session: CDPSession, logger: BrowserLogger): voi
   session.on("event", (event: any) => {
     const { method, params } = event;
     if (ignore.has(method)) return;
+    if (method === "Runtime.bindingCalled" && params?.name === BROWSER_INTERACTION_BINDING) return;
     logger.record({
       type: BrowserEventType.CDPEvent,
       timestamp: ts(),

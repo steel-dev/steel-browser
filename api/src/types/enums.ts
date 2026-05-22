@@ -18,6 +18,7 @@ export enum BrowserEventType {
   BrowserError = "BrowserError",
   Recording = "Recording",
   ScreencastFrame = "ScreencastFrame",
+  BrowserInteraction = "BrowserInteraction",
   CDPCommand = "CDPCommand",
   CDPCommandResult = "CDPCommandResult",
   CDPEvent = "CDPEvent",
