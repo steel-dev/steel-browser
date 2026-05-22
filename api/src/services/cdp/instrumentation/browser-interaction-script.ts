@@ -7,11 +7,10 @@ export interface BrowserInteractionLoggerOptions {
   bindingName: string;
   source: string;
   maxTextLength: number;
-  logTextValues?: boolean;
 }
 
 export function installBrowserInteractionLogger(options: BrowserInteractionLoggerOptions): void {
-  const { bindingName, source, maxTextLength, logTextValues = false } = options;
+  const { bindingName, source, maxTextLength } = options;
   const steelWindow = window as unknown as Window & {
     __steelBrowserInteractionInstalled?: boolean;
     [key: string]: unknown;
@@ -291,7 +290,7 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
     return {
       inputType,
       valueLength,
-      text: logTextValues && !sensitive && rawValue ? compact(rawValue) : undefined,
+      text: undefined,
       redacted: sensitive || undefined,
       checked:
         target instanceof HTMLInputElement && ["checkbox", "radio"].includes(target.type)
@@ -519,16 +518,12 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
   );
 }
 
-export function createBrowserInteractionScript(
-  bindingName: string,
-  options?: { logTextValues?: boolean },
-): string {
+export function createBrowserInteractionScript(bindingName: string): string {
   return `(() => { const __name = (fn) => fn; (${installBrowserInteractionLogger.toString()})(${JSON.stringify(
     {
       bindingName,
       source: BROWSER_INTERACTION_SOURCE,
       maxTextLength: MAX_BROWSER_INTERACTION_TEXT_LENGTH,
-      logTextValues: options?.logTextValues === true,
     },
   )}); })();`;
 }

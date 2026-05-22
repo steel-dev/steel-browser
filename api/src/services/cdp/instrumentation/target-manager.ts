@@ -3,10 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 
 import { attachPageEvents, AttachPageEventsOptions } from "./page-events.js";
 import { attachCDPEvents } from "./cdp-events.js";
-import {
-  attachBrowserInteractionEvents,
-  AttachBrowserInteractionEventsOptions,
-} from "./browser-interaction-events.js";
+import { attachBrowserInteractionEvents } from "./browser-interaction-events.js";
 import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
 import { BrowserLogger } from "./browser-logger.js";
@@ -15,9 +12,7 @@ const INTERNAL_EXTENSIONS = new Set<string>([
   // TODO: need secret manager, recorder, and capacha IDs
 ]);
 
-export interface TargetInstrumentationOptions
-  extends AttachPageEventsOptions,
-    AttachBrowserInteractionEventsOptions {}
+export interface TargetInstrumentationOptions extends AttachPageEventsOptions {}
 
 export class TargetInstrumentationManager {
   private attachedSessions = new Set<string>();
@@ -56,14 +51,7 @@ export class TargetInstrumentationManager {
         if (page) {
           await attachPageEvents(page, session, this.logger, type, this.instrumentationOptions);
           if (!isExtensionTarget) {
-            await attachBrowserInteractionEvents(
-              session,
-              page,
-              this.logger,
-              type,
-              sessionId,
-              this.instrumentationOptions,
-            );
+            await attachBrowserInteractionEvents(session, page, this.logger, type, sessionId);
           }
         }
 

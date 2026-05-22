@@ -11,17 +11,12 @@ import {
 export const BROWSER_INTERACTION_BINDING = "__steelBrowserInteractionLog";
 export const BROWSER_INTERACTION_WORLD = "__steel_browser_interactions__";
 
-export interface AttachBrowserInteractionEventsOptions {
-  dangerouslyLogInteractionValues?: boolean;
-}
-
 export async function attachBrowserInteractionEvents(
   session: CDPSession,
   page: Page,
   logger: BrowserLogger,
   targetType: TargetType,
   pageId: string,
-  options?: AttachBrowserInteractionEventsOptions,
 ): Promise<void> {
   const emitNavigate = (url: string) => {
     logger.record({
@@ -81,9 +76,7 @@ export async function attachBrowserInteractionEvents(
     return;
   }
 
-  const source = createBrowserInteractionScript(BROWSER_INTERACTION_BINDING, {
-    logTextValues: options?.dangerouslyLogInteractionValues === true,
-  });
+  const source = createBrowserInteractionScript(BROWSER_INTERACTION_BINDING);
   try {
     await session.send("Page.addScriptToEvaluateOnNewDocument" as any, {
       source,

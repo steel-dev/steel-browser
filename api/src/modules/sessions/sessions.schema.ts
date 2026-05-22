@@ -88,10 +88,6 @@ const CreateSession = z.object({
     .describe("Extra metadata to help initialize the session"),
   credentials: SessionCredentials,
   headless: z.boolean().optional().describe("Headless mode for the session"),
-  dangerouslyLogInteractionValues: z
-    .boolean()
-    .optional()
-    .describe("Include non-sensitive input text in browser interaction logs."),
 });
 
 const SessionDetails = z.object({

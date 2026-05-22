@@ -110,28 +110,6 @@ describe("browser interaction CDP attachment", () => {
     ]);
   });
 
-  it("passes interaction value logging opt-in to the injected script", async () => {
-    const session = new FakeSession();
-    const page = new FakePage();
-    const { logger } = createLogger();
-
-    await attachBrowserInteractionEvents(
-      session as any,
-      page as any,
-      logger,
-      TargetType.PAGE,
-      "page-1",
-      { dangerouslyLogInteractionValues: true },
-    );
-
-    expect(session.calls[1]).toMatchObject({
-      method: "Page.addScriptToEvaluateOnNewDocument",
-      params: expect.objectContaining({
-        source: expect.stringContaining('"logTextValues":true'),
-      }),
-    });
-  });
-
   it("records sanitized binding payloads as browser interactions", async () => {
     const session = new FakeSession();
     const page = new FakePage();

@@ -4,7 +4,7 @@ import { BROWSER_INTERACTION_BINDING } from "./browser-interaction-events.js";
 import { createBrowserInteractionScript } from "./browser-interaction-script.js";
 import { BROWSER_INTERACTION_SOURCE } from "./browser-interaction-sanitize.js";
 
-function createDom(html: string, options?: { logTextValues?: boolean }) {
+function createDom(html: string) {
   const dom = new JSDOM(html, {
     url: "https://example.com/form",
     runScripts: "outside-only",
@@ -12,7 +12,7 @@ function createDom(html: string, options?: { logTextValues?: boolean }) {
   });
   const binding = vi.fn();
   (dom.window as any)[BROWSER_INTERACTION_BINDING] = binding;
-  dom.window.eval(createBrowserInteractionScript(BROWSER_INTERACTION_BINDING, options));
+  dom.window.eval(createBrowserInteractionScript(BROWSER_INTERACTION_BINDING));
   return { dom, binding };
 }
 
@@ -104,24 +104,6 @@ describe("browser interaction injected script", () => {
       redacted: true,
     });
     expect(interactions[2].value.text).toBeUndefined();
-    dom.window.close();
-  });
-
-  it("preserves non-sensitive input text when explicitly enabled", () => {
-    const { dom, binding } = createDom(`<input id="email" name="email" />`, {
-      logTextValues: true,
-    });
-    const email = dom.window.document.querySelector<HTMLInputElement>("#email")!;
-
-    email.value = "user@example.com";
-    email.dispatchEvent(new dom.window.Event("input", { bubbles: true, composed: true }));
-
-    const [payload] = payloads(binding);
-    expect(payload.interaction.value).toMatchObject({
-      inputType: "text",
-      valueLength: "user@example.com".length,
-      text: "user@example.com",
-    });
     dom.window.close();
   });
 
