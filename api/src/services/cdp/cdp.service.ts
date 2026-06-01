@@ -356,7 +356,7 @@ export class CDPService extends EventEmitter {
         }
 
         // Inject fingerprint only if it's not skipped
-        if (!env.SKIP_FINGERPRINT_INJECTION) {
+        if (!env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection) {
           // Use our safer fingerprint injection method instead of FingerprintInjector
           await this.injectFingerprintSafely(page, this.fingerprintData);
           this.logger.debug("[CDPService] Injected fingerprint into page");
