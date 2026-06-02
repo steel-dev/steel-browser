@@ -241,6 +241,7 @@ export const handleScrape = async (
         const readabilityStart = Date.now();
         readabilityContent = await getDefuddleContent(
           transformHtml(htmlContent, normalizedUrl || url),
+          normalizedUrl || url,
         );
         times.readabilityTime = Date.now() - readabilityStart;
 
