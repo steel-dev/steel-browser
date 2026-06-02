@@ -192,6 +192,10 @@ export class CDPService extends EventEmitter {
     return this.logger.child({ component: name });
   }
 
+  public setChromeExecPath(execPath: string): void {
+    this.chromeExecPath = execPath;
+  }
+
   public setProxyWebSocketHandler(
     handler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>) | null,
   ): void {
@@ -354,6 +358,8 @@ export class CDPService extends EventEmitter {
         } else if (env.DEFAULT_HEADERS) {
           await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
         }
+
+        await this.applyDeviceMetricsOverride(page);
 
         // Inject fingerprint only if it's not skipped
         if (!env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection) {
@@ -1410,33 +1416,12 @@ export class CDPService extends EventEmitter {
       // TypeScript fix - access userAgent through navigator property
       const userAgent = fingerprint.navigator.userAgent;
       const userAgentMetadata = fingerprint.navigator.userAgentData;
-      const { screen } = fingerprint;
 
       await page.setUserAgent(userAgent);
 
       const session = await page.createCDPSession();
 
       try {
-        await session.send("Page.setDeviceMetricsOverride", {
-          screenHeight: screen.height,
-          screenWidth: screen.width,
-          width: screen.width,
-          height: screen.height,
-          viewport: {
-            width: screen.availWidth,
-            height: screen.availHeight,
-            scale: 1,
-            x: 0,
-            y: 0,
-          },
-          mobile: /phone|android|mobile/i.test(userAgent),
-          screenOrientation:
-            screen.height > screen.width
-              ? { angle: 0, type: "portraitPrimary" }
-              : { angle: 90, type: "landscapePrimary" },
-          deviceScaleFactor: screen.devicePixelRatio,
-        });
-
         const injectedHeaders = filterHeaders(headers);
 
         await page.setExtraHTTPHeaders(injectedHeaders);
@@ -1490,6 +1475,37 @@ export class CDPService extends EventEmitter {
       const fingerprintInjector = new FingerprintInjector();
       // @ts-ignore - Ignore type mismatch between puppeteer versions
       await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
+    }
+  }
+
+  @traceable
+  private async applyDeviceMetricsOverride(page: Page): Promise<void> {
+    const screen = this.fingerprintData?.fingerprint?.screen;
+    if (!screen) {
+      this.logger.warn(
+        "[CDPService] No fingerprint screen data available, skipping Page.setDeviceMetricsOverride",
+      );
+      return;
+    }
+
+    const userAgent = this.getUserAgent() ?? "";
+    const session = await page.createCDPSession();
+    try {
+      await session.send("Page.setDeviceMetricsOverride", {
+        screenWidth: screen.width,
+        screenHeight: screen.height,
+        width: screen.width,
+        height: screen.height,
+        viewport: { width: screen.availWidth, height: screen.availHeight, scale: 1, x: 0, y: 0 },
+        mobile: /phone|android|mobile/i.test(userAgent),
+        screenOrientation:
+          screen.height > screen.width
+            ? { angle: 0, type: "portraitPrimary" }
+            : { angle: 90, type: "landscapePrimary" },
+        deviceScaleFactor: screen.devicePixelRatio,
+      });
+    } finally {
+      await session.detach().catch(() => {});
     }
   }
 
