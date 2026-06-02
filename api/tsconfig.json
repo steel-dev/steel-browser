@@ -19,7 +19,6 @@
   "include": ["src"],
   "files": [
     "./src/types/fastify.d.ts",
-    "src/services/cdp/plugins/pptr-extensions.d.ts",
-    "src/types/turndown.d.ts"
+    "src/services/cdp/plugins/pptr-extensions.d.ts"
   ]
 }

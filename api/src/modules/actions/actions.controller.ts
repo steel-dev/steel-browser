@@ -6,12 +6,7 @@ import { ScrapeFormat } from "../../types/index.js";
 import { getErrors } from "../../utils/errors.js";
 import { updateLog } from "../../utils/logging.js";
 import { IProxyServer } from "../../utils/proxy.js";
-import {
-  cleanHtml,
-  getDefuddleContent,
-  htmlToMarkdown,
-  transformHtml,
-} from "../../utils/scrape/index.js";
+import { cleanHtml, getDefuddleContent, transformHtml } from "../../utils/scrape/index.js";
 import { normalizeUrl } from "../../utils/url.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 import { DefuddleResponse } from "defuddle";
@@ -256,7 +251,7 @@ export const handleScrape = async (
 
       if (format.includes(ScrapeFormat.MARKDOWN)) {
         const markdownStart = Date.now();
-        scrapeResponse.content.markdown = await htmlToMarkdown(readabilityContent!.content);
+        scrapeResponse.content.markdown = readabilityContent!.contentMarkdown ?? "";
         times.markdownTime = Date.now() - markdownStart;
       }
     } else {
