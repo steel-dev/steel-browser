@@ -45,6 +45,7 @@ const ScrapeResponse = z.object({
     favicon: z.string().optional(),
 
     jsonLd: z.any().optional(),
+    wordCount: z.number().optional(),
     statusCode: z.number().int(),
   }),
   links: z.array(

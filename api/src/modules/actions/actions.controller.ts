@@ -243,6 +243,12 @@ export const handleScrape = async (
         readabilityContent = await getDefuddleContent(htmlContent, normalizedUrl || url);
         times.readabilityTime = Date.now() - readabilityStart;
 
+        scrapeResponse.metadata.author =
+          scrapeResponse.metadata.author || readabilityContent.author || null;
+        scrapeResponse.metadata.publishedTime =
+          scrapeResponse.metadata.publishedTime || readabilityContent.published || null;
+        scrapeResponse.metadata.wordCount = readabilityContent.wordCount;
+
         if (format.includes(ScrapeFormat.READABILITY)) {
           scrapeResponse.content.readability = readabilityContent.content;
         }
