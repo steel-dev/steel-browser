@@ -15,11 +15,7 @@ import {
 import { normalizeUrl } from "../../utils/url.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 import { DefuddleResponse } from "defuddle";
-import pdf2html from "pdf2html";
-import {
-  buildHtmlLikeMetadataFromPdf,
-  extractLinksFromConvertedHtml,
-} from "../../utils/scrape/pdfToHtml.js";
+import { buildHtmlLikeMetadataFromPdf, convertPdfWithMupdf } from "../../utils/scrape/pdfToHtml.js";
 import { safeGoto } from "../../utils/scrape/safeGoTo.js";
 
 export const handleScrape = async (
@@ -118,20 +114,17 @@ export const handleScrape = async (
       const pdfBuffer = Buffer.from(arrBuf);
 
       const convertStart = Date.now();
-      htmlContent = await pdf2html.html(pdfBuffer);
+      const { html, links, meta } = convertPdfWithMupdf(pdfBuffer);
+      htmlContent = html;
       times.pdfHtmlConvertTime = Date.now() - convertStart;
 
-      const metaStart = Date.now();
-      const pdfMeta = await pdf2html.meta(pdfBuffer);
-      times.pdfMetaTime = Date.now() - metaStart;
-
-      const htmlMeta = buildHtmlLikeMetadataFromPdf(pdfMeta, {
+      const htmlMeta = buildHtmlLikeMetadataFromPdf(meta, {
         urlSource: targetUrl,
         statusCode: nodeRes.status,
         htmlForFallback: htmlContent,
       });
 
-      const htmlLinks = extractLinksFromConvertedHtml(htmlContent);
+      const htmlLinks = links;
 
       scrapeResponse = {
         content: {},
