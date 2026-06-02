@@ -6,7 +6,7 @@ import { ScrapeFormat } from "../../types/index.js";
 import { getErrors } from "../../utils/errors.js";
 import { updateLog } from "../../utils/logging.js";
 import { IProxyServer } from "../../utils/proxy.js";
-import { cleanHtml, getDefuddleContent, transformHtml } from "../../utils/scrape/index.js";
+import { cleanHtml, getDefuddleContent } from "../../utils/scrape/index.js";
 import { normalizeUrl } from "../../utils/url.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 import { DefuddleResponse } from "defuddle";
@@ -239,10 +239,7 @@ export const handleScrape = async (
 
       if (needsReadability) {
         const readabilityStart = Date.now();
-        readabilityContent = await getDefuddleContent(
-          transformHtml(htmlContent, normalizedUrl || url),
-          normalizedUrl || url,
-        );
+        readabilityContent = await getDefuddleContent(htmlContent, normalizedUrl || url);
         times.readabilityTime = Date.now() - readabilityStart;
 
         if (format.includes(ScrapeFormat.READABILITY)) {
