@@ -86,7 +86,6 @@ RUN apt-get update && \
     xvfb \
     curl \
     unzip \
-    default-jre \
     dbus \
     dbus-x11 \
     procps \

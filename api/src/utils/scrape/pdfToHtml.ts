@@ -1,4 +1,5 @@
 import { load as loadHtml } from "cheerio";
+import * as mupdf from "mupdf";
 
 function parsePdfDate(pdfDate?: string | null): string | null {
   if (!pdfDate) return null;
@@ -52,17 +53,6 @@ type HtmlLikeMetadata = {
   jsonLd: any[];
   statusCode: number;
 };
-
-export function extractLinksFromConvertedHtml(html: string): { url: string; text: string }[] {
-  const $ = loadHtml(html);
-  return $("a[href]")
-    .map((_, a) => {
-      const url = $(a).attr("href") || "";
-      const text = $(a).text()?.trim() || "";
-      return { url, text };
-    })
-    .get();
-}
 
 export function buildHtmlLikeMetadataFromPdf(
   pdfMeta: any,
@@ -135,4 +125,86 @@ export function buildHtmlLikeMetadataFromPdf(
     jsonLd: [],
     statusCode,
   };
+}
+
+export type PdfConversion = {
+  html: string;
+  links: { url: string; text: string }[];
+  meta: {
+    title: string | null;
+    author: string | null;
+    subject: string | null;
+    keywords: string | null;
+    creationDate: string | null;
+    modDate: string | null;
+  };
+};
+
+export function convertPdfWithMupdf(pdfBuffer: Buffer): PdfConversion {
+  const doc = mupdf.Document.openDocument(new Uint8Array(pdfBuffer), "application/pdf");
+  try {
+    const pageCount = doc.countPages();
+    const sections: string[] = [];
+    const links: { url: string; text: string }[] = [];
+    const seen = new Set<string>();
+
+    for (let i = 0; i < pageCount; i++) {
+      const page = doc.loadPage(i);
+      try {
+        const stext = page.toStructuredText("preserve-whitespace");
+        try {
+          const body = loadHtml(stext.asHTML(i))("body").html();
+          sections.push(`<section data-page="${i + 1}">${body ?? ""}</section>`);
+
+          const external = page.getLinks().filter((link) => link.isExternal());
+          if (external.length > 0) {
+            const buckets = external.map((link) => ({
+              url: link.getURI(),
+              rect: link.getBounds(),
+              chars: [] as string[],
+            }));
+            stext.walk({
+              onChar(c, _origin, _font, _size, quad) {
+                const cx = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
+                const cy = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
+                for (const b of buckets) {
+                  if (cx >= b.rect[0] && cx <= b.rect[2] && cy >= b.rect[1] && cy <= b.rect[3]) {
+                    b.chars.push(c);
+                    break;
+                  }
+                }
+              },
+            });
+            for (const b of buckets) {
+              if (!b.url || seen.has(b.url)) continue;
+              seen.add(b.url);
+              links.push({ url: b.url, text: b.chars.join("").replace(/\s+/g, " ").trim() });
+            }
+          }
+        } finally {
+          stext.destroy();
+        }
+      } finally {
+        page.destroy();
+      }
+    }
+
+    const meta = {
+      title: doc.getMetaData("info:Title") || null,
+      author: doc.getMetaData("info:Author") || null,
+      subject: doc.getMetaData("info:Subject") || null,
+      keywords: doc.getMetaData("info:Keywords") || null,
+      creationDate: doc.getMetaData("info:CreationDate") || null,
+      modDate: doc.getMetaData("info:ModDate") || null,
+    };
+
+    const titleTag = meta.title ? `<title>${meta.title}</title>` : "";
+    const html = `<!DOCTYPE html><html><head>${titleTag}</head><body>${sections.join(
+      "",
+    )}</body></html>`;
+
+    return { html, links, meta };
+  } finally {
+    doc.destroy();
+  }
 }
