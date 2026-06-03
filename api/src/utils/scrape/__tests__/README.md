@@ -27,6 +27,7 @@ npm run test:heavy -w api      # also runs the heavy SEC fixture (~11s); use in 
 | `arxiv.html.gz` | math → LaTeX, modal/nav/TOC noise removal |
 | `sec.html.gz` | 10 MB filing — robustness / no crash (heavy lane) |
 | `synthetic.html` | hand-built: relative urls, srcset, base64 image, fenced code, table, nav/footer |
+| `fallback.html` | hand-built: main content inside a `role="dialog"` overlay that selector removal erases — exercises the full-page fallback |
 | `api.json` | JSON-response fencing |
 
 The `.html.gz` files are gzipped raw HTML originally captured by the benchmark.
@@ -42,6 +43,9 @@ They are frozen on purpose: the suite tests the converter, not the live web.
 - defuddle still returns author / wordCount used for metadata enrichment
 - defuddle makes no network requests of its own (`useAsync: false`), so extraction
   never bypasses the session proxy or leaks the server IP
+- when extraction strips a page to almost nothing, a full-page fallback conversion
+  recovers the content without leaking script/style text — and it stays off for
+  pages that extract normally
 
 ## Updating the baseline
 

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Steel Browser 0.6 Release Notes</title>
+    <meta name="description" content="Changelog rendered inside a modal dialog overlay." />
+  </head>
+  <body>
+    <nav class="navbar">
+      <a href="/">Home</a>
+      <a href="/docs">Docs</a>
+      <a href="/changelog">Changelog</a>
+    </nav>
+    <p>Loading the full changelog…</p>
+    <div role="dialog" class="changelog-overlay">
+      <h1>Steel Browser 0.6 Release Notes</h1>
+      <script>
+        window.leakedSecretToken = "sk-fixture-not-a-real-secret";
+        document.querySelectorAll(".changelog-overlay").forEach(function (el) {
+          el.dataset.hydrated = "true";
+        });
+      </script>
+      <p>
+        This release introduces connection pooling for CDP sessions, which reduces the time to
+        acquire a page on a warm instance by roughly forty percent. Pools are created per browser
+        context and drained gracefully on shutdown, so long running scrape jobs no longer race
+        against context teardown when a session is released back to the pool.
+      </p>
+      <p>
+        The scrape endpoint now streams large responses instead of buffering them in memory. For
+        multi megabyte filings and generated reports this keeps the resident set size flat, and it
+        allows the server to apply backpressure when a slow client cannot keep up with the rate at
+        which content is produced by the rendering pipeline.
+      </p>
+      <p>
+        Proxy handling received a significant overhaul as well. Upstream credentials are now
+        scoped to the session that created them, rotation happens without dropping inflight
+        requests, and the dashboard surfaces per session bandwidth so that operators can spot a
+        runaway crawl before it exhausts the monthly quota allocated to the workspace.
+      </p>
+    </div>
+    <footer class="footer">Copyright 2026 Steel.</footer>
+  </body>
+</html>

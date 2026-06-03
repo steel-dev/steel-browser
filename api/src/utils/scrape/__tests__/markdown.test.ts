@@ -119,6 +119,36 @@ describe("synthetic kitchen-sink", () => {
   });
 });
 
+describe("extraction fallback", () => {
+  it("recovers full-page content when extraction prunes the page to almost nothing", async () => {
+    const result = await getDefuddleContent(
+      loadRaw("fallback.html"),
+      "https://fallback.test/changelog",
+    );
+    const markdown = result.contentMarkdown ?? "";
+
+    expect(markdown).toContain("connection pooling");
+    expect(markdown).toContain("Proxy handling");
+    expect(wordCount(markdown)).toBeGreaterThan(100);
+    expect(result.wordCount).toBeGreaterThan(100);
+    expect(result.title).toBe("Steel Browser 0.6 Release Notes");
+
+    expect(markdown).not.toContain("leakedSecretToken");
+    expect(relativeLinkCount(markdown)).toBe(0);
+  });
+
+  it("does not fire on pages that extract normally", async () => {
+    const result = await getDefuddleContent(
+      loadRaw("synthetic.html"),
+      "https://synthetic.test/page",
+    );
+    const markdown = result.contentMarkdown ?? "";
+
+    expect(markdown).not.toContain("About Us");
+    expect(markdown).not.toContain("Privacy Policy");
+  });
+});
+
 describe("network isolation", () => {
   it("never fetches, even for urls whose defuddle extractor prefers async network extraction", async () => {
     const fetchSpy = vi.fn(async () => {
