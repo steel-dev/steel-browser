@@ -153,6 +153,11 @@ export const handleScrape = async (
       }
       htmlContent = rawJson;
 
+      const [base64Screenshot, pdfBuffer] = await Promise.all([
+        screenshot ? page.screenshot({ encoding: "base64", type: "jpeg", quality: 100 }) : null,
+        pdf ? page.pdf() : null,
+      ]);
+
       scrapeResponse = {
         content: {},
         metadata: {
@@ -163,6 +168,13 @@ export const handleScrape = async (
         },
         links: [],
       };
+
+      if (base64Screenshot) {
+        scrapeResponse.screenshot = base64Screenshot;
+      }
+      if (pdfBuffer) {
+        scrapeResponse.pdf = Buffer.from(pdfBuffer).toString("base64");
+      }
     } else {
       // Regular HTML flow
       await page.evaluate(() => {
