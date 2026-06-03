@@ -40,6 +40,8 @@ They are frozen on purpose: the suite tests the converter, not the live web.
 - `removeBase64Images` strips inline data URIs but keeps alt text
 - JSON responses become a valid ```json fence
 - defuddle still returns author / wordCount used for metadata enrichment
+- defuddle makes no network requests of its own (`useAsync: false`), so extraction
+  never bypasses the session proxy or leaks the server IP
 
 ## Updating the baseline
 

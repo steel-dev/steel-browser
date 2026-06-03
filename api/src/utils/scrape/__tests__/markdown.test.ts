@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getDefuddleContent } from "../readability";
 import { jsonToMarkdown } from "../jsonToMarkdown";
 import { stripBase64Images } from "../stripBase64Images";
@@ -116,6 +116,25 @@ describe("synthetic kitchen-sink", () => {
     const stripped = stripBase64Images(markdown);
     expect(base64ImageCount(stripped)).toBe(0);
     expect(stripped).toContain("(<Base64-Image-Removed>)");
+  });
+});
+
+describe("network isolation", () => {
+  it("never fetches, even for urls whose defuddle extractor prefers async network extraction", async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error("network disabled in tests");
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const result = await getDefuddleContent(
+        loadRaw("synthetic.html"),
+        "https://www.reddit.com/r/test/comments/abc123/example_thread/",
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(result.contentMarkdown ?? "").toContain("Markdown Conversion Fidelity");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
