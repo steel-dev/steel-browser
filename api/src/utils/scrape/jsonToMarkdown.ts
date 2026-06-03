@@ -1,3 +1,5 @@
+export const isJsonContentType = (contentType: string): boolean => /[+/]json\b/i.test(contentType);
+
 export const jsonToMarkdown = (raw: string): string => {
   let body = raw;
   try {

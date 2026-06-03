@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getDefuddleContent } from "../readability";
-import { jsonToMarkdown } from "../jsonToMarkdown";
+import { isJsonContentType, jsonToMarkdown } from "../jsonToMarkdown";
 import { stripBase64Images } from "../stripBase64Images";
 import baseline from "./baseline.json";
 import {
@@ -135,6 +135,26 @@ describe("network isolation", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("isJsonContentType", () => {
+  it("matches plain json, structured syntax suffixes, and text/json", () => {
+    expect(isJsonContentType("application/json")).toBe(true);
+    expect(isJsonContentType("application/json; charset=utf-8")).toBe(true);
+    expect(isJsonContentType("application/hal+json")).toBe(true);
+    expect(isJsonContentType("application/vnd.api+json")).toBe(true);
+    expect(isJsonContentType("application/ld+json")).toBe(true);
+    expect(isJsonContentType("text/json")).toBe(true);
+    expect(isJsonContentType("APPLICATION/JSON")).toBe(true);
+  });
+
+  it("rejects non-json content types", () => {
+    expect(isJsonContentType("text/html; charset=utf-8")).toBe(false);
+    expect(isJsonContentType("application/javascript")).toBe(false);
+    expect(isJsonContentType("application/json5")).toBe(false);
+    expect(isJsonContentType("application/x-ndjson")).toBe(false);
+    expect(isJsonContentType("")).toBe(false);
   });
 });
 

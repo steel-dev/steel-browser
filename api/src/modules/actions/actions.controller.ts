@@ -9,6 +9,7 @@ import { IProxyServer } from "../../utils/proxy.js";
 import {
   cleanHtml,
   getDefuddleContent,
+  isJsonContentType,
   jsonToMarkdown,
   stripBase64Images,
 } from "../../utils/scrape/index.js";
@@ -85,7 +86,7 @@ export const handleScrape = async (
     }
 
     const contentType = response?.headers()["content-type"]?.toLowerCase() || "";
-    const isJson = contentType.includes("application/json");
+    const isJson = isJsonContentType(contentType);
 
     let scrapeResponse: Record<string, any> = {};
     let htmlContent = "";
