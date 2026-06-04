@@ -40,6 +40,7 @@ export interface BrowserLauncherOptions {
   logSinkUrl?: string;
   blockAds?: boolean;
   fingerprint?: BrowserFingerprintWithHeaders;
+  caCertificates?: string[];
   optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
   customHeaders?: Record<string, string>;
   timezone?: Promise<string>;

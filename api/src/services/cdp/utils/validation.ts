@@ -141,6 +141,9 @@ export async function isSimilarConfig(
   const currentExt = normalizeExt(current.extensions);
   const nextExt = normalizeExt(next.extensions);
 
+  const currentCaCertificates = (current.caCertificates || []).slice().sort();
+  const nextCaCertificates = (next.caCertificates || []).slice().sort();
+
   const currentBlockAds = current.blockAds ?? true;
   const nextBlockAds = next.blockAds ?? true;
 
@@ -181,6 +184,7 @@ export async function isSimilarConfig(
     currentBlockAds === nextBlockAds &&
     JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
     JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
+    JSON.stringify(currentCaCertificates) === JSON.stringify(nextCaCertificates) &&
     JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
     JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences) &&
     JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig) &&

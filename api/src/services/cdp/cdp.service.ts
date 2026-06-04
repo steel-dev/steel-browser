@@ -46,6 +46,10 @@ import {
 } from "../../utils/context.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { RetryManager, RetryOptions } from "../../utils/retry.js";
+import {
+  cleanupCaCertificatePolicy,
+  setupCaCertificatePolicy,
+} from "../../utils/ca-certificates.js";
 import { ChromeContextService } from "../context/chrome-context.service.js";
 import { SessionData } from "../context/types.js";
 import { FileService } from "../file.service.js";
@@ -477,6 +481,11 @@ export class CDPService extends EventEmitter {
       await this.browserInstance?.close();
       await this.browserInstance?.process()?.kill();
       await this.shutdownHook();
+      await executeBestEffort(
+        this.logger,
+        async () => cleanupCaCertificatePolicy(this.logger),
+        "Failed to clean up CA certificate policy",
+      );
 
       this.logger.info("[CDPService] Cleaning up files during shutdown");
       try {
@@ -498,6 +507,11 @@ export class CDPService extends EventEmitter {
       await this.browserInstance?.close();
       await this.browserInstance?.process()?.kill();
       await this.shutdownHook();
+      await executeBestEffort(
+        this.logger,
+        async () => cleanupCaCertificatePolicy(this.logger),
+        "Failed to clean up CA certificate policy during error recovery",
+      );
 
       try {
         await FileService.getInstance().cleanupFiles();
@@ -535,6 +549,11 @@ export class CDPService extends EventEmitter {
         try {
           await this.pluginManager.onShutdown(ShutdownReason.LAUNCH_FAILURE);
           await this.shutdownHook();
+          await executeBestEffort(
+            this.logger,
+            async () => cleanupCaCertificatePolicy(this.logger),
+            "Failed to clean up CA certificate policy after launch failure",
+          );
         } catch (e) {
           this.logger.warn(
             `[CDPService] Error during retry cleanup (onShutdown/shutdownHook): ${e}`,
@@ -640,6 +659,18 @@ export class CDPService extends EventEmitter {
         await executeCritical(
           async () => validateLaunchConfig(this.launchConfig!),
           (error) => categorizeError(error, "configuration validation"),
+        );
+
+        await executeCritical(
+          async () => setupCaCertificatePolicy(this.launchConfig?.caCertificates, this.logger),
+          (error) =>
+            new BrowserProcessError(
+              `Failed to configure CA certificate policy: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              BrowserProcessState.LAUNCH_FAILED,
+              error,
+            ),
         );
 
         // File cleanup - non-critical, log errors but continue

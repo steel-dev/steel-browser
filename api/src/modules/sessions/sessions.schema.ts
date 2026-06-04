@@ -14,6 +14,14 @@ const deviceConfigSchema = z
   .optional()
   .describe("Device configuration for the session");
 
+const caCertificateSchema = z
+  .string()
+  .max(64 * 1024, "Each CA certificate must be 64KB or smaller")
+  .regex(
+    /-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/,
+    "Each CA certificate must be PEM-encoded, including BEGIN and END CERTIFICATE markers",
+  );
+
 export type CredentialsOptions = z.infer<typeof SessionCredentials>;
 export const SessionCredentials = z
   .object({
@@ -33,6 +41,13 @@ const CreateSession = z.object({
     "Session context data to be used in the created session",
   ),
   isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
+  caCertificates: z
+    .array(caCertificateSchema)
+    .max(20, "At most 20 CA certificates can be trusted for a session")
+    .optional()
+    .describe(
+      "PEM-encoded CA certificates to trust for TLS server authentication during this session.",
+    ),
   blockAds: z
     .boolean()
     .optional()

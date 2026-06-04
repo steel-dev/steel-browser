@@ -4,6 +4,7 @@ import { BrowserLauncherOptions, BrowserEvent, BrowserEventType } from "../types
 import path, { dirname } from "path";
 import { FastifyBaseLogger } from "fastify";
 import { fileURLToPath } from "url";
+import { cleanupCaCertificatePolicy, setupCaCertificatePolicy } from "../utils/ca-certificates.js";
 
 export class SeleniumService extends EventEmitter {
   private seleniumProcess: ChildProcess | null = null;
@@ -35,6 +36,8 @@ export class SeleniumService extends EventEmitter {
     if (this.seleniumProcess) {
       await this.close();
     }
+
+    await setupCaCertificatePolicy(launchOptions.caCertificates, this.logger);
 
     const projectRoot = path.resolve(dirname(fileURLToPath(import.meta.url)), "../../");
     const seleniumServerPath = path.join(projectRoot, "selenium", "server", "selenium-server.jar");
@@ -81,11 +84,13 @@ export class SeleniumService extends EventEmitter {
     });
   }
 
-  public close(): void {
+  public async close(): Promise<void> {
     if (this.seleniumProcess) {
       this.seleniumProcess.kill("SIGINT");
       this.seleniumProcess = null;
     }
+
+    await cleanupCaCertificatePolicy(this.logger);
   }
 
   public getSeleniumServerUrl(): string {

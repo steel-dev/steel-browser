@@ -99,6 +99,7 @@ export class SessionService {
       localStorage?: Record<string, Record<string, any>>;
     };
     isSelenium?: boolean;
+    caCertificates?: string[];
     fingerprint?: BrowserFingerprintWithHeaders;
     logSinkUrl?: string;
     userDataDir?: string;
@@ -126,6 +127,7 @@ export class SessionService {
       logSinkUrl,
       dimensions,
       fingerprint,
+      caCertificates,
       isSelenium,
       blockAds,
       optimizeBandwidth,
@@ -219,6 +221,7 @@ export class SessionService {
       userAgent,
       blockAds,
       fingerprint,
+      caCertificates,
       optimizeBandwidth: normalizedOptimize,
       extensions: extensions || [],
       logSinkUrl,
@@ -281,7 +284,7 @@ export class SessionService {
     }
 
     if (this.activeSession.isSelenium) {
-      this.seleniumService.close();
+      await this.seleniumService.close();
       await this.cdpService.launch();
     } else {
       await this.cdpService.endSession();
