@@ -7,6 +7,7 @@ const ScrapeRequest = z.object({
   format: z.array(z.nativeEnum(ScrapeFormat)).optional(),
   screenshot: z.boolean().optional(),
   pdf: z.boolean().optional(),
+  removeBase64Images: z.boolean().optional(),
   proxyUrl: z
     .string()
     .nullable()
@@ -44,6 +45,7 @@ const ScrapeResponse = z.object({
     favicon: z.string().optional(),
 
     jsonLd: z.any().optional(),
+    wordCount: z.number().optional(),
     statusCode: z.number().int(),
   }),
   links: z.array(

@@ -1,0 +1,7 @@
+{
+  "article": { "minWords": 9700, "maxWords": 13200 },
+  "wikipedia": { "minWords": 7200, "maxWords": 9800 },
+  "arxiv": { "minWords": 4800, "maxWords": 6500 },
+  "sec": { "minWords": 148000, "maxWords": 210000 },
+  "synthetic": { "minWords": 280, "maxWords": 380 }
+}

@@ -9,8 +9,9 @@ import { IProxyServer } from "../../utils/proxy.js";
 import {
   cleanHtml,
   getDefuddleContent,
-  htmlToMarkdown,
-  transformHtml,
+  isJsonContentType,
+  jsonToMarkdown,
+  stripBase64Images,
 } from "../../utils/scrape/index.js";
 import { normalizeUrl } from "../../utils/url.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
@@ -26,7 +27,8 @@ export const handleScrape = async (
 ) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
-  const { url, format, screenshot, pdf, proxyUrl, logUrl, delay } = request.body;
+  const { url, format, screenshot, pdf, proxyUrl, logUrl, delay, removeBase64Images } =
+    request.body;
 
   let proxy: IProxyServer | null = null;
   let context: BrowserContext | null = null;
@@ -84,6 +86,7 @@ export const handleScrape = async (
     }
 
     const contentType = response?.headers()["content-type"]?.toLowerCase() || "";
+    const isJson = isJsonContentType(contentType);
 
     let scrapeResponse: Record<string, any> = {};
     let htmlContent = "";
@@ -140,6 +143,37 @@ export const handleScrape = async (
 
       if (pdf) {
         scrapeResponse.pdf = pdfBuffer.toString("base64");
+      }
+    } else if (isJson) {
+      let rawJson = "";
+      try {
+        rawJson = (await response?.text()) ?? "";
+      } catch {
+        rawJson = "";
+      }
+      htmlContent = rawJson;
+
+      const [base64Screenshot, pdfBuffer] = await Promise.all([
+        screenshot ? page.screenshot({ encoding: "base64", type: "jpeg", quality: 100 }) : null,
+        pdf ? page.pdf() : null,
+      ]);
+
+      scrapeResponse = {
+        content: {},
+        metadata: {
+          urlSource: normalizedUrl || url,
+          timestamp: new Date().toISOString(),
+          originalContentType: contentType,
+          statusCode: response?.status() ?? 200,
+        },
+        links: [],
+      };
+
+      if (base64Screenshot) {
+        scrapeResponse.screenshot = base64Screenshot;
+      }
+      if (pdfBuffer) {
+        scrapeResponse.pdf = Buffer.from(pdfBuffer).toString("base64");
       }
     } else {
       // Regular HTML flow
@@ -232,7 +266,7 @@ export const handleScrape = async (
       const needsReadability =
         format.includes(ScrapeFormat.READABILITY) || format.includes(ScrapeFormat.MARKDOWN);
 
-      if (needsCleanedHtml) {
+      if (needsCleanedHtml && !isJson) {
         const cleanHtmlStart = Date.now();
         cleanedHtml = cleanHtml(htmlContent);
         times.cleanedHtmlTime = Date.now() - cleanHtmlStart;
@@ -242,12 +276,16 @@ export const handleScrape = async (
         }
       }
 
-      if (needsReadability) {
+      if (needsReadability && !isJson) {
         const readabilityStart = Date.now();
-        readabilityContent = await getDefuddleContent(
-          transformHtml(htmlContent, normalizedUrl || url),
-        );
+        readabilityContent = await getDefuddleContent(htmlContent, normalizedUrl || url);
         times.readabilityTime = Date.now() - readabilityStart;
+
+        scrapeResponse.metadata.author =
+          scrapeResponse.metadata.author || readabilityContent.author || null;
+        scrapeResponse.metadata.publishedTime =
+          scrapeResponse.metadata.publishedTime || readabilityContent.published || null;
+        scrapeResponse.metadata.wordCount = readabilityContent.wordCount;
 
         if (format.includes(ScrapeFormat.READABILITY)) {
           scrapeResponse.content.readability = readabilityContent.content;
@@ -256,7 +294,15 @@ export const handleScrape = async (
 
       if (format.includes(ScrapeFormat.MARKDOWN)) {
         const markdownStart = Date.now();
-        scrapeResponse.content.markdown = await htmlToMarkdown(readabilityContent!.content);
+        if (isJson) {
+          scrapeResponse.content.markdown = jsonToMarkdown(htmlContent);
+        } else {
+          let markdown = readabilityContent!.contentMarkdown ?? "";
+          if (removeBase64Images) {
+            markdown = stripBase64Images(markdown);
+          }
+          scrapeResponse.content.markdown = markdown;
+        }
         times.markdownTime = Date.now() - markdownStart;
       }
     } else {
