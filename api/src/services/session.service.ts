@@ -138,8 +138,8 @@ export class SessionService {
       fullscreen,
       headless,
       dangerouslyLogRequestDetails,
+      caCertificates,
     } = options;
-    const { caCertificates } = options;
 
     // start fetching timezone as early as possible
     let timezonePromise: Promise<string>;
