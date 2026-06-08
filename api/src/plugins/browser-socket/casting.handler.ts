@@ -4,6 +4,7 @@ import { Duplex } from "stream";
 import WebSocket, { Server } from "ws";
 
 import { env } from "../../env.js";
+import { getInternalHost } from "../../utils/url.js";
 import { SessionService } from "../../services/session.service.js";
 import {
   CloseTabEvent,
@@ -174,7 +175,7 @@ export async function handleCastSession(
 
     try {
       browser = await puppeteer.connect({
-        browserWSEndpoint: `ws://${env.HOST}:${env.PORT}`,
+        browserWSEndpoint: `ws://${getInternalHost()}:${env.PORT}`,
       });
 
       if (!browser) {

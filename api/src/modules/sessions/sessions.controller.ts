@@ -3,7 +3,7 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors.js";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
 import { CookieData } from "../../services/context/types.js";
-import { getUrl, getBaseUrl } from "../../utils/url.js";
+import { getUrl, getBaseUrl, getBaseUrlFromRequest, getUrlFromRequest } from "../../utils/url.js";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -94,6 +94,13 @@ export const handleGetSessionDetails = async (
   reply: FastifyReply,
 ) => {
   const sessionId = request.params.sessionId;
+  const requestScopedUrls = {
+    websocketUrl: getBaseUrlFromRequest(request, "ws"),
+    debugUrl: getUrlFromRequest(request, "v1/sessions/debug"),
+    debuggerUrl: getUrlFromRequest(request, "v1/devtools/inspector.html"),
+    sessionViewerUrl: getBaseUrlFromRequest(request),
+  };
+
   if (sessionId !== server.sessionService.activeSession.id) {
     return reply.send({
       id: sessionId,
@@ -103,10 +110,7 @@ export const handleGetSessionDetails = async (
       eventCount: 0,
       timeout: 0,
       creditsUsed: 0,
-      websocketUrl: getBaseUrl("ws"),
-      debugUrl: getUrl("v1/sessions/debug"),
-      debuggerUrl: getUrl("v1/devtools/inspector.html"),
-      sessionViewerUrl: getBaseUrl(),
+      ...requestScopedUrls,
       userAgent: "",
       isSelenium: false,
       proxy: "",
@@ -121,6 +125,7 @@ export const handleGetSessionDetails = async (
   console.log("duration", duration);
   return reply.send({
     ...session,
+    ...requestScopedUrls,
     duration,
   });
 };
@@ -132,6 +137,10 @@ export const handleGetSessions = async (
 ) => {
   const currentSession = {
     ...server.sessionService.activeSession,
+    websocketUrl: getBaseUrlFromRequest(request, "ws"),
+    debugUrl: getUrlFromRequest(request, "v1/sessions/debug"),
+    debuggerUrl: getUrlFromRequest(request, "v1/devtools/inspector.html"),
+    sessionViewerUrl: getBaseUrlFromRequest(request),
     duration:
       new Date().getTime() - new Date(server.sessionService.activeSession.createdAt).getTime(),
   };
@@ -229,9 +238,9 @@ export const handleGetSessionLiveDetails = async (
     return reply.send({
       pages: validPagesInfo,
       browserState,
-      websocketUrl: server.sessionService.activeSession.websocketUrl,
-      sessionViewerUrl: server.sessionService.activeSession.sessionViewerUrl,
-      sessionViewerFullscreenUrl: `${server.sessionService.activeSession.sessionViewerUrl}?showControls=false`,
+      websocketUrl: getBaseUrlFromRequest(request, "ws"),
+      sessionViewerUrl: getBaseUrlFromRequest(request),
+      sessionViewerFullscreenUrl: `${getBaseUrlFromRequest(request)}?showControls=false`,
     });
   } catch (error) {
     console.error("Error getting session state:", error);
