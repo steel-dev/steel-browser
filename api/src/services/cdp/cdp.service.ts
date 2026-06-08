@@ -772,12 +772,6 @@ export class CDPService extends EventEmitter {
           const validatedTimezone = await executeOptional(
             this.logger,
             async () => {
-              if (this.launchConfig?.skipFingerprintInjection) {
-                this.logger.info(
-                  `Skipping timezone validation as skipFingerprintInjection is enabled`,
-                );
-                return this.defaultTimezone;
-              }
               const tz = await validateTimezone(this.logger, config.timezone!);
               this.logger.info(`Resolved and validated timezone: ${tz}`);
               return tz;
