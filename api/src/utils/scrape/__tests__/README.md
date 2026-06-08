@@ -47,6 +47,34 @@ They are frozen on purpose: the suite tests the converter, not the live web.
   recovers the content without leaking script/style text — and it stays off for
   pages that extract normally
 
+## Tier 1 invariant harness (`eval/`)
+
+The fixtures above assert *page-specific* facts (canary/noise phrases, word bands).
+The Tier 1 harness instead asserts **label-free invariants that must hold for the
+markdown of _any_ page** — so it keeps working as the corpus grows toward the long
+tail of real traffic, which 6 hand-picked fixtures can't represent.
+
+- `eval/invariants.ts` — the invariants. `error` = hard contract (gates CI); `warn`
+  = quality signal (reported only). Covers script/style leakage, relative/mangled/
+  empty/fragment links, empty-on-contentful, secret leakage, leaked chrome tags,
+  unbalanced code fences, html comments, and oversized output.
+- `eval/invariants.test.ts` — unit tests proving each invariant catches its failure
+  mode (feeds crafted bad markdown) and passes clean markdown. No defuddle needed.
+- `eval/corpus.ts` — the corpus registry, tagged by category. **Grow this** — add a
+  row + a frozen fixture per new page class (docs, ecommerce PDP, forum, paywall…).
+- `eval/corpus.test.ts` — runs every corpus page through the real pipeline and fails
+  CI if any `error` invariant is violated. Network is hard-stubbed to catch proxy bypass.
+
+```bash
+npm run test -w api            # includes the invariant gate (light corpus)
+npm run test:heavy -w api      # full corpus incl. heavy pages
+npm run eval:report -w api     # aggregate report → eval-report.json (latency p50/p95,
+                               # empty-output rate, extractor mix, per-invariant pass rates)
+```
+
+`eval:report` is the on-demand view that frozen fixtures never give you; run it after
+dep bumps or corpus changes and watch the aggregates, not just green/red.
+
 ## Updating the baseline
 
 When a change intentionally shifts output size, re-measure and update the word-count

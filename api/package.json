@@ -47,6 +47,7 @@
     "dev": "npm run prepare:recorder && tsx watch src/index.ts",
     "test": "vitest run",
     "test:heavy": "SCRAPE_EVAL_HEAVY=1 vitest run",
+    "eval:report": "tsx src/utils/scrape/__tests__/eval/runEval.ts",
     "pretty": "prettier --write \"src/**/*.ts\"",
     "generate:openapi": "tsx ./openapi/generate.ts"
   },
