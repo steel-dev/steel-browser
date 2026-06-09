@@ -707,8 +707,55 @@ export class CDPService extends EventEmitter {
                 };
               }
 
-              const fingerprintGen = new FingerprintGenerator(fingerprintOptions);
-              this.fingerprintData = fingerprintGen.getFingerprint();
+              // The bundled fingerprint-generator dataset does not always have
+              // samples for the newest Chrome at the requested screen box (e.g.
+              // Chrome 146 has none at a fixed 1920x1080), which makes
+              // getFingerprint() throw and fails the entire browser launch.
+              // Retry with progressively older minVersions so a missing newest
+              // sample degrades to a slightly older real fingerprint instead of
+              // a hard launch failure.
+              const requestedBrowser = fingerprintOptions.browsers?.[0];
+              const requestedMinVersion =
+                requestedBrowser && typeof requestedBrowser === "object"
+                  ? requestedBrowser.minVersion
+                  : undefined;
+              const minVersionFallbacks = [
+                requestedMinVersion,
+                ...[144, 140, 136, undefined].filter(
+                  (version) =>
+                    requestedMinVersion === undefined ||
+                    version === undefined ||
+                    version < requestedMinVersion,
+                ),
+              ];
+
+              let lastError: unknown;
+              for (const minVersion of minVersionFallbacks) {
+                const attemptOptions =
+                  fingerprintOptions.browsers && minVersion !== undefined
+                    ? {
+                        ...fingerprintOptions,
+                        browsers: [{ name: "chrome", minVersion }],
+                      }
+                    : fingerprintOptions;
+                try {
+                  this.fingerprintData = new FingerprintGenerator(
+                    attemptOptions,
+                  ).getFingerprint();
+                  if (minVersion !== requestedMinVersion) {
+                    this.logger.warn(
+                      `[CDPService] No fingerprint sample for the requested Chrome version; fell back to minVersion ${minVersion ?? "any"}`,
+                    );
+                  }
+                  lastError = undefined;
+                  break;
+                } catch (generationError) {
+                  lastError = generationError;
+                }
+              }
+              if (lastError) {
+                throw lastError;
+              }
             },
             (error) => {
               this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
