@@ -80,6 +80,46 @@ import {
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
+const DEFAULT_DESKTOP_WIDTH = 1920;
+const DEFAULT_DESKTOP_HEIGHT = 1080;
+const DEFAULT_DESKTOP_FINGERPRINT_SCREEN = {
+  minWidth: 1280,
+  minHeight: 720,
+  maxWidth: 2560,
+  maxHeight: 1440,
+};
+
+export function buildFingerprintOptions(
+  launchConfig: BrowserLauncherOptions,
+): Partial<FingerprintGeneratorOptions> {
+  if (launchConfig.deviceConfig?.device === "mobile") {
+    return {
+      devices: ["mobile"],
+      locales: ["en-US", "en"],
+    };
+  }
+
+  const dimensions = launchConfig.dimensions;
+  const isDefaultDesktopSize =
+    !dimensions ||
+    (dimensions.width === DEFAULT_DESKTOP_WIDTH && dimensions.height === DEFAULT_DESKTOP_HEIGHT);
+
+  return {
+    devices: ["desktop"],
+    operatingSystems: ["linux"],
+    browsers: [{ name: "chrome", minVersion: 146 }],
+    locales: ["en-US", "en"],
+    screen: isDefaultDesktopSize
+      ? DEFAULT_DESKTOP_FINGERPRINT_SCREEN
+      : {
+          minWidth: dimensions.width,
+          minHeight: dimensions.height,
+          maxWidth: dimensions.width,
+          maxHeight: dimensions.height,
+        },
+  };
+}
+
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
@@ -687,26 +727,7 @@ export class CDPService extends EventEmitter {
         ) {
           await executeCritical(
             async () => {
-              let fingerprintOptions: Partial<FingerprintGeneratorOptions> = {
-                devices: ["desktop"],
-                operatingSystems: ["linux"],
-                browsers: [{ name: "chrome", minVersion: 146 }],
-                locales: ["en-US", "en"],
-                screen: {
-                  minWidth: this.launchConfig!.dimensions?.width ?? 1920,
-                  minHeight: this.launchConfig!.dimensions?.height ?? 1080,
-                  maxWidth: this.launchConfig!.dimensions?.width ?? 1920,
-                  maxHeight: this.launchConfig!.dimensions?.height ?? 1080,
-                },
-              };
-
-              if (this.launchConfig!.deviceConfig?.device === "mobile") {
-                fingerprintOptions = {
-                  devices: ["mobile"],
-                  locales: ["en-US", "en"],
-                };
-              }
-
+              const fingerprintOptions = buildFingerprintOptions(this.launchConfig!);
               const fingerprintGen = new FingerprintGenerator(fingerprintOptions);
               this.fingerprintData = fingerprintGen.getFingerprint();
             },
