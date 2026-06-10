@@ -2,7 +2,7 @@ import { CDPService } from "../../services/cdp/cdp.service.js";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors.js";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
-import { CookieData } from "../../services/context/types.js";
+import { resolveSessionConfig } from "./session-config.resolver.js";
 import { getUrl, getBaseUrl } from "../../utils/url.js";
 
 export const handleLaunchBrowserSession = async (
@@ -11,52 +11,9 @@ export const handleLaunchBrowserSession = async (
   reply: FastifyReply,
 ) => {
   try {
-    const {
-      sessionId,
-      proxyUrl,
-      userDataDir,
-      persist,
-      userAgent,
-      sessionContext,
-      extensions,
-      logSinkUrl,
-      timezone,
-      dimensions,
-      isSelenium,
-      blockAds,
-      optimizeBandwidth,
-      extra,
-      credentials,
-      skipFingerprintInjection,
-      userPreferences,
-      deviceConfig,
-      headless,
-    } = request.body;
+    const config = resolveSessionConfig(request.body);
 
-    return await server.sessionService.startSession({
-      sessionId,
-      proxyUrl,
-      userDataDir,
-      persist,
-      userAgent,
-      sessionContext: sessionContext as {
-        cookies?: CookieData[] | undefined;
-        localStorage?: Record<string, Record<string, any>> | undefined;
-      },
-      extensions,
-      logSinkUrl,
-      timezone,
-      dimensions,
-      isSelenium,
-      blockAds,
-      optimizeBandwidth,
-      extra,
-      credentials,
-      skipFingerprintInjection,
-      userPreferences,
-      deviceConfig,
-      headless,
-    });
+    return await server.sessionService.startSession(config);
   } catch (e: unknown) {
     server.log.error({ err: e }, "Failed lauching browser session");
     const error = getErrors(e);
