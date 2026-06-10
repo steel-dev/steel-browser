@@ -31,6 +31,7 @@ export const handleLaunchBrowserSession = async (
       userPreferences,
       deviceConfig,
       headless,
+      fullscreen,
     } = request.body;
 
     return await server.sessionService.startSession({
@@ -56,6 +57,7 @@ export const handleLaunchBrowserSession = async (
       userPreferences,
       deviceConfig,
       headless,
+      fullscreen,
     });
   } catch (e: unknown) {
     server.log.error({ err: e }, "Failed lauching browser session");
