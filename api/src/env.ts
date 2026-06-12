@@ -8,6 +8,7 @@ const envSchema = z.object({
     .enum(["test", "development", "staging", "production", "preview"])
     .default("development"),
   HOST: z.string().optional().default("0.0.0.0"),
+  HOST_IP: z.string().optional().default("localhost"),
   DOMAIN: z.string().optional(),
   PORT: z.string().optional().default("3000"),
   USE_SSL: z
