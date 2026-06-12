@@ -33,7 +33,7 @@ export const handleLaunchBrowserSession = async (
       headless,
     } = request.body;
 
-    return await server.sessionService.startSession({
+    const session = await server.sessionService.startSession({
       sessionId,
       proxyUrl,
       userDataDir,
@@ -57,6 +57,14 @@ export const handleLaunchBrowserSession = async (
       deviceConfig,
       headless,
     });
+
+    return {
+      ...session,
+      websocketUrl: getBaseUrlFromRequest(request, "ws"),
+      debugUrl: getUrlFromRequest(request, "v1/sessions/debug"),
+      debuggerUrl: getUrlFromRequest(request, "v1/devtools/inspector.html"),
+      sessionViewerUrl: getBaseUrlFromRequest(request),
+    };
   } catch (e: unknown) {
     server.log.error({ err: e }, "Failed lauching browser session");
     const error = getErrors(e);
