@@ -708,7 +708,27 @@ export class CDPService extends EventEmitter {
               }
 
               const fingerprintGen = new FingerprintGenerator(fingerprintOptions);
-              this.fingerprintData = fingerprintGen.getFingerprint();
+              try {
+                this.fingerprintData = fingerprintGen.getFingerprint();
+              } catch (error) {
+                if (this.launchConfig!.deviceConfig?.device === "mobile") {
+                  throw error;
+                }
+                this.logger.warn(
+                  { err: error, fingerprintOptions },
+                  "[CDPService] Retrying fingerprint generation with relaxed desktop screen bounds",
+                );
+                const relaxedFingerprintOptions: Partial<FingerprintGeneratorOptions> = {
+                  ...fingerprintOptions,
+                  screen: {
+                    minWidth: this.launchConfig!.dimensions?.width ?? 1280,
+                    minHeight: this.launchConfig!.dimensions?.height ?? 720,
+                  },
+                };
+                this.fingerprintData = new FingerprintGenerator(
+                  relaxedFingerprintOptions,
+                ).getFingerprint();
+              }
             },
             (error) => {
               this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
