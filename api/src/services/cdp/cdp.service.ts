@@ -707,8 +707,35 @@ export class CDPService extends EventEmitter {
                 };
               }
 
-              const fingerprintGen = new FingerprintGenerator(fingerprintOptions);
-              this.fingerprintData = fingerprintGen.getFingerprint();
+              // fingerprint-generator's bundled dataset lags the latest Chrome
+              // release, so a hardcoded newest-Chrome `minVersion` (and/or the
+              // tight `screen` box) can leave zero matching samples and make
+              // getFingerprint() throw deterministically. Prefer the strict
+              // options for best stealth, but relax progressively rather than
+              // hard-fail when the dataset cannot satisfy them.
+              const fallbackOptions: Array<Partial<FingerprintGeneratorOptions>> = [
+                fingerprintOptions,
+                { ...fingerprintOptions, browsers: [{ name: "chrome" }] },
+                { ...fingerprintOptions, browsers: [{ name: "chrome" }], screen: undefined },
+              ];
+              let fingerprintErr: unknown;
+              for (const options of fallbackOptions) {
+                try {
+                  this.fingerprintData = new FingerprintGenerator(options).getFingerprint();
+                  if (options !== fingerprintOptions) {
+                    this.logger.warn(
+                      { requested: fingerprintOptions, used: options },
+                      "[CDPService] Strict fingerprint constraints unsatisfiable in the bundled dataset; generated with relaxed constraints",
+                    );
+                  }
+                  break;
+                } catch (err) {
+                  fingerprintErr = err;
+                }
+              }
+              if (!this.fingerprintData) {
+                throw fingerprintErr;
+              }
             },
             (error) => {
               this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
