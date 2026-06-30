@@ -1,18 +1,22 @@
 import { type Target, type CDPSession, TargetType } from "puppeteer-core";
 import type { FastifyBaseLogger } from "fastify";
 
-import { attachPageEvents, AttachPageEventsOptions } from "./page-events.js";
+import { attachPageEvents } from "./page-events.js";
+import type { AttachPageEventsOptions } from "./page-events.js";
 import { attachCDPEvents } from "./cdp-events.js";
 import { attachBrowserInteractionEvents } from "./browser-interaction-events.js";
 import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
+import type { AttachWorkerEventsOptions } from "./worker-events.js";
 import { BrowserLogger } from "./browser-logger.js";
 
 const INTERNAL_EXTENSIONS = new Set<string>([
   // TODO: need secret manager, recorder, and capacha IDs
 ]);
 
-export interface TargetInstrumentationOptions extends AttachPageEventsOptions {}
+export interface TargetInstrumentationOptions extends AttachPageEventsOptions {
+  captureWorkerNetwork?: boolean;
+}
 
 export class TargetInstrumentationManager {
   private attachedSessions = new Set<string>();
@@ -72,7 +76,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          attachWorkerEvents(target, session, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type, this.workerEventsOptions());
         }
         break;
       }
@@ -86,7 +90,7 @@ export class TargetInstrumentationManager {
         if (isExtensionTarget) {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else {
-          attachWorkerEvents(target, session, this.logger, type);
+          attachWorkerEvents(target, session, this.logger, type, this.workerEventsOptions());
         }
         break;
       }
@@ -162,7 +166,7 @@ export class TargetInstrumentationManager {
       case TargetType.SHARED_WORKER:
         await enable("Runtime");
         await enable("Log");
-        if (isExtension) {
+        if (isExtension || this.instrumentationOptions.captureWorkerNetwork === true) {
           await enable("Network");
         }
         break;
@@ -179,5 +183,12 @@ export class TargetInstrumentationManager {
       default:
         break;
     }
+  }
+
+  private workerEventsOptions(): AttachWorkerEventsOptions {
+    return {
+      dangerouslyLogRequestDetails: this.instrumentationOptions.dangerouslyLogRequestDetails,
+      captureNetwork: this.instrumentationOptions.captureWorkerNetwork === true,
+    };
   }
 }

@@ -116,6 +116,7 @@ export class SessionService {
     fullscreen?: boolean;
     headless?: boolean;
     dangerouslyLogRequestDetails?: boolean;
+    captureWorkerNetwork?: boolean;
     caCertificates?: string[];
   }): Promise<SessionDetails> {
     const {
@@ -138,6 +139,7 @@ export class SessionService {
       fullscreen,
       headless,
       dangerouslyLogRequestDetails,
+      captureWorkerNetwork,
       caCertificates,
     } = options;
 
@@ -234,6 +236,7 @@ export class SessionService {
       deviceConfig,
       fullscreen,
       dangerouslyLogRequestDetails,
+      captureWorkerNetwork,
       caCertificates,
     };
 

@@ -1313,6 +1313,7 @@ export class CDPService extends EventEmitter {
       this.logger,
       {
         dangerouslyLogRequestDetails: sessionConfig.dangerouslyLogRequestDetails,
+        captureWorkerNetwork: sessionConfig.captureWorkerNetwork,
       },
     );
 
