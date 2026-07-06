@@ -55,6 +55,8 @@ export interface BrowserLauncherOptions {
   deviceConfig?: { device: "desktop" | "mobile" };
   fullscreen?: boolean;
   dangerouslyLogRequestDetails?: boolean;
+  captureWorkerNetwork?: boolean;
+  caCertificates?: string[];
 }
 
 export interface BrowserServerOptions {

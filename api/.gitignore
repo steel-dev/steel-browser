@@ -30,3 +30,5 @@ files/*
 static/*
 # Ignore future changes to this file
 src/services/cdp-lifecycle.service.ts
+# tier1 eval artifact
+eval-report.json

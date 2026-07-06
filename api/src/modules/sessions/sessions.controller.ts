@@ -5,6 +5,49 @@ import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./se
 import { CookieData } from "../../services/context/types.js";
 import { getUrl, getBaseUrl } from "../../utils/url.js";
 
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+function getBaseUrlFromRequest(
+  request: FastifyRequest,
+  protocolType: "http" | "ws" = "http",
+): string {
+  const forwardedProto = firstHeaderValue(request.headers["x-forwarded-proto"]);
+  const forwardedHost = firstHeaderValue(request.headers["x-forwarded-host"]);
+  const host = forwardedHost ?? firstHeaderValue(request.headers.host);
+
+  if (!host) {
+    return getBaseUrl(protocolType);
+  }
+
+  const normalizedProto =
+    forwardedProto?.split(",")[0]?.trim() || (protocolType === "ws" ? "ws" : "http");
+  const protocol =
+    protocolType === "ws"
+      ? normalizedProto === "https"
+        ? "wss"
+        : normalizedProto === "http"
+        ? "ws"
+        : normalizedProto
+      : normalizedProto;
+
+  return `${protocol}://${host}/`;
+}
+
+function getUrlFromRequest(
+  request: FastifyRequest,
+  path: string,
+  protocolType: "http" | "ws" = "http",
+): string {
+  const base = getBaseUrlFromRequest(request, protocolType);
+  const formattedPath = path.startsWith("/") ? path.slice(1) : path;
+  return `${base}${formattedPath}`;
+}
+
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
   request: CreateSessionRequest,

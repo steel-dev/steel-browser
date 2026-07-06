@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Synthetic Kitchen Sink</title>
+    <meta name="description" content="A controlled fixture exercising links, images, code and tables." />
+  </head>
+  <body>
+    <nav class="navbar">
+      <a href="/home">Home</a>
+      <a href="/about">About Us</a>
+      <a href="/login">Login</a>
+    </nav>
+    <article>
+      <h1>Understanding Markdown Conversion Fidelity</h1>
+      <p>
+        High quality markdown extraction matters because downstream language models consume the
+        output as retrieval context. When boilerplate leaks into the text, the signal to noise
+        ratio drops and the model wastes tokens on navigation chrome, cookie banners, and footers
+        that carry no meaning for the reader. A good pipeline isolates the main article body and
+        leaves the surrounding furniture behind.
+      </p>
+      <p>
+        Relative links and responsive images are two common sources of breakage. A scraper that
+        does not resolve relative URLs against the page location produces links that cannot be
+        followed once the markdown leaves the original domain. Likewise, a responsive image with a
+        srcset attribute should collapse to a single concrete source so the markdown image points
+        at a real asset rather than a comma separated candidate list.
+      </p>
+      <p>
+        Code blocks deserve special care. Technical documentation relies on fenced code with a
+        language hint so that the rendered output can apply syntax highlighting and so that models
+        understand the snippet is executable rather than prose. Tables are another structural
+        element that must survive the conversion intact, preserving rows and columns as pipe
+        delimited markdown that a reader can parse at a glance.
+      </p>
+      <img src="/img/hero.png" srcset="/img/hero-320.png 320w, /img/hero-1280.png 1280w" alt="hero diagram" />
+      <p>
+        The image above should resolve to the largest candidate and to an absolute address. The
+        diagram below is embedded inline as a data URI, which bloats token counts without adding
+        value for a text model, so an opt in pass can replace it with a short placeholder.
+      </p>
+      <img
+        width="800"
+        height="600"
+        alt="embedded diagram"
+        src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJgggiVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkAAAABJRU5ErkJggg=="
+      />
+      <p>
+        Read the <a href="/docs/guide">conversion guide</a> for the full set of guarantees and
+        edge cases that the extraction layer is expected to handle on real world pages.
+      </p>
+      <pre><code class="language-python">def greet(name):
+    return f"hello {name}"</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>Stage</th>
+            <th>Responsibility</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>alpha</td>
+            <td>extract main content</td>
+          </tr>
+          <tr>
+            <td>beta</td>
+            <td>convert to markdown</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Taken together these elements give the regression suite a deterministic surface to assert
+        against without depending on any third party website remaining stable over time.
+      </p>
+    </article>
+    <footer class="footer">
+      Copyright 2026 Synthetic Incorporated. Read our <a href="/privacy">Privacy Policy</a>.
+    </footer>
+  </body>
+</html>

@@ -45,6 +45,15 @@ export interface DuckDBStorageOptions {
   writeBufferFlushInterval?: number;
 }
 
+/**
+ * Maximum number of rows inserted per INSERT statement. A single INSERT that
+ * spans the entire write buffer builds a statement with ~7 bound parameters per
+ * row; spreading hundreds of thousands of params into `db.run(sql, ...params)`
+ * overflows the V8 call stack ("Maximum call stack size exceeded"). Capping the
+ * rows per statement keeps each flush bounded regardless of buffer size.
+ */
+const WRITE_CHUNK_SIZE = 1000;
+
 export class DuckDBStorage implements LogStorage {
   private db: Database | null = null;
   private dbPath: string;
@@ -142,8 +151,11 @@ export class DuckDBStorage implements LogStorage {
     try {
       await this.writeBatchInternal(toFlush);
     } catch (err) {
-      // Put events back on failure (at the front)
-      this.writeBuffer.unshift(...toFlush);
+      // Put events back on failure (at the front). Use concat rather than
+      // `unshift(...toFlush)`: spreading a large array as call arguments throws
+      // "Maximum call stack size exceeded" once the buffer is big enough, which
+      // would mask the original failure and lose the buffered events.
+      this.writeBuffer = toFlush.concat(this.writeBuffer);
       throw err;
     } finally {
       this.isFlushing = false;
@@ -215,6 +227,19 @@ export class DuckDBStorage implements LogStorage {
   }
 
   private async writeBatchInternal(
+    events: Array<{ event: BrowserEventUnion; context: Record<string, any> }>,
+  ): Promise<void> {
+    if (!this.db || events.length === 0) return;
+
+    // Insert in fixed-size chunks so a large buffer never produces a single
+    // statement with hundreds of thousands of bound parameters (see
+    // WRITE_CHUNK_SIZE).
+    for (let i = 0; i < events.length; i += WRITE_CHUNK_SIZE) {
+      await this.writeChunk(events.slice(i, i + WRITE_CHUNK_SIZE));
+    }
+  }
+
+  private async writeChunk(
     events: Array<{ event: BrowserEventUnion; context: Record<string, any> }>,
   ): Promise<void> {
     if (!this.db || events.length === 0) return;

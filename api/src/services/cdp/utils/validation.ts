@@ -184,6 +184,8 @@ export async function isSimilarConfig(
     JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
     JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences) &&
     JSON.stringify(current.deviceConfig) === JSON.stringify(next.deviceConfig) &&
+    JSON.stringify((current.caCertificates ?? []).slice().sort()) ===
+      JSON.stringify((next.caCertificates ?? []).slice().sort()) &&
     (await timezoneComparisonPromise)
   );
 }

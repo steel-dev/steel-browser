@@ -116,6 +116,8 @@ export class SessionService {
     fullscreen?: boolean;
     headless?: boolean;
     dangerouslyLogRequestDetails?: boolean;
+    captureWorkerNetwork?: boolean;
+    caCertificates?: string[];
   }): Promise<SessionDetails> {
     const {
       sessionId,
@@ -137,6 +139,8 @@ export class SessionService {
       fullscreen,
       headless,
       dangerouslyLogRequestDetails,
+      captureWorkerNetwork,
+      caCertificates,
     } = options;
 
     // start fetching timezone as early as possible
@@ -232,6 +236,8 @@ export class SessionService {
       deviceConfig,
       fullscreen,
       dangerouslyLogRequestDetails,
+      captureWorkerNetwork,
+      caCertificates,
     };
 
     if (isSelenium) {
