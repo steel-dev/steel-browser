@@ -492,7 +492,7 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
 
   // Scroll: throttle to one emission per gesture (trailing edge) since the sink
   // does not currently coalesce scrolls, and raw scroll events fire at frame rate.
-  // capture: false -> only main-page scroll (scroll does not bubble on elements).
+  // Scroll does not bubble, so capture it to include focused nested scroll containers.
   let scrollTimer: ReturnType<typeof setTimeout> | null = null;
   const scrollDebounceMs = 200;
 
@@ -514,7 +514,7 @@ export function installBrowserInteractionLogger(options: BrowserInteractionLogge
         });
       }, scrollDebounceMs);
     },
-    { capture: false, passive: true },
+    { capture: true, passive: true },
   );
 }
 

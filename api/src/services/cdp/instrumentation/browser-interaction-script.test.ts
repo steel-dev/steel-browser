@@ -269,6 +269,20 @@ describe("browser interaction injected script", () => {
     dom.window.close();
   });
 
+  it("captures scrolls from nested scroll containers", async () => {
+    const { dom, binding } = createDom(`<main id="scrollable">content</main>`);
+    const scrollable = dom.window.document.querySelector("#scrollable")!;
+
+    scrollable.dispatchEvent(new dom.window.Event("scroll"));
+
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 250));
+
+    const interactions = payloads(binding).map((payload) => payload.interaction);
+    expect(interactions).toHaveLength(1);
+    expect(interactions[0]).toMatchObject({ action: "scroll" });
+    dom.window.close();
+  });
+
   it("does not install duplicate listeners", () => {
     const { dom, binding } = createDom(`<button>Save</button>`);
     const button = dom.window.document.querySelector("button")!;
