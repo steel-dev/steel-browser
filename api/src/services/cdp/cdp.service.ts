@@ -78,6 +78,7 @@ import {
   BrowserLogger,
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
+import { clearUserDataDir } from "./clear-userdata-dir.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
 export class CDPService extends EventEmitter {
@@ -1355,6 +1356,13 @@ export class CDPService extends EventEmitter {
       );
     } finally {
       await this.pluginManager.onAfterSessionEnd(sessionConfig);
+    }
+
+    const dirToClear = sessionConfig.userDataDir || this.defaultLaunchConfig.userDataDir;
+    if (dirToClear && !env.CHROME_USER_DATA_DIR) {
+      await clearUserDataDir(dirToClear).catch((err) => {
+        this.logger.warn(`[CDPService] Failed to clear userDataDir after session end: ${err}`);
+      });
     }
 
     // Relaunch the idle browser
