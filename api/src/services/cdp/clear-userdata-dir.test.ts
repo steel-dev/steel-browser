@@ -62,14 +62,12 @@ describe("clearUserDataDir", () => {
     const entries = await fs.readdir(tmpDir);
     expect(entries).toHaveLength(0);
   });
-});
+
   it("does not clear persistent profile directories", async () => {
     const persistDir = path.join(os.tmpdir(), "user-data-dir");
     await fs.mkdir(persistDir, { recursive: true });
     await fs.writeFile(path.join(persistDir, "profile.txt"), "persistent");
 
-    // Only Steel-owned temp dirs should be cleared
-    // A directory named "user-data-dir" is not the default temp dir
     const defaultTempDir = path.join(os.tmpdir(), "steel-chrome");
     const isSteelTempDir = path.resolve(persistDir) === path.resolve(defaultTempDir);
     expect(isSteelTempDir).toBe(false);
