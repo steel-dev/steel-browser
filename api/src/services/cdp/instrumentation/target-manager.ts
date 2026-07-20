@@ -35,6 +35,8 @@ export class TargetInstrumentationManager {
   async attach(target: Target, type: TargetType) {
     const url = target.url?.() ?? "";
     const isExtensionTarget = url.startsWith("chrome-extension://");
+    const isDedicatedWorker =
+      type === TargetType.OTHER && (target as any)._getTargetInfo?.().type === "worker";
     const sessionId = (target as any)._targetId;
 
     if (this.attachedSessions.has(sessionId)) {
@@ -109,8 +111,21 @@ export class TargetInstrumentationManager {
         break;
       }
 
+      case TargetType.OTHER: {
+        const session = await target.createCDPSession();
+        this.cdpSessions.set(sessionId, session);
+        await this.enableDomainsForTarget(session, type, isExtensionTarget, isDedicatedWorker);
+        attachCDPEvents(session, this.logger);
+
+        if (isExtensionTarget) {
+          await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
+        } else if (isDedicatedWorker) {
+          attachWorkerEvents(target, session, this.logger, type, this.workerEventsOptions());
+        }
+        break;
+      }
+
       case TargetType.BROWSER:
-      case TargetType.OTHER:
       default: {
         const session = await target.createCDPSession();
         this.cdpSessions.set(sessionId, session);
@@ -140,6 +155,7 @@ export class TargetInstrumentationManager {
     session: CDPSession,
     type: TargetType,
     isExtension: boolean,
+    isDedicatedWorker = false,
   ): Promise<void> {
     const enabledDomains = new Set<string>();
 
@@ -173,10 +189,12 @@ export class TargetInstrumentationManager {
 
       case TargetType.WEBVIEW:
       case TargetType.OTHER:
-        if (isExtension) {
+        if (isExtension || isDedicatedWorker) {
           await enable("Runtime");
           await enable("Log");
-          await enable("Network");
+          if (isExtension || this.instrumentationOptions.captureWorkerNetwork === true) {
+            await enable("Network");
+          }
         }
         break;
 
