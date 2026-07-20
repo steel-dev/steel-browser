@@ -1359,10 +1359,17 @@ export class CDPService extends EventEmitter {
     }
 
     const dirToClear = sessionConfig.userDataDir || this.defaultLaunchConfig.userDataDir;
-    if (dirToClear && !env.CHROME_USER_DATA_DIR) {
-      await clearUserDataDir(dirToClear).catch((err) => {
+    const defaultTempDir = path.join(os.tmpdir(), "steel-chrome");
+    const isSteelTempDir = dirToClear && path.resolve(dirToClear) === path.resolve(defaultTempDir);
+
+    if (isSteelTempDir) {
+      try {
+        await clearUserDataDir(dirToClear);
+      } catch (err) {
         this.logger.warn(`[CDPService] Failed to clear userDataDir after session end: ${err}`);
-      });
+        const freshDir = path.join(os.tmpdir(), `steel-chrome-${Date.now()}`);
+        this.defaultLaunchConfig.userDataDir = freshDir;
+      }
     }
 
     // Relaunch the idle browser
