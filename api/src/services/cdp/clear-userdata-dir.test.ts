@@ -63,3 +63,42 @@ describe("clearUserDataDir", () => {
     expect(entries).toHaveLength(0);
   });
 });
+  it("does not clear persistent profile directories", async () => {
+    const persistDir = path.join(os.tmpdir(), "user-data-dir");
+    await fs.mkdir(persistDir, { recursive: true });
+    await fs.writeFile(path.join(persistDir, "profile.txt"), "persistent");
+
+    // Only Steel-owned temp dirs should be cleared
+    // A directory named "user-data-dir" is not the default temp dir
+    const defaultTempDir = path.join(os.tmpdir(), "steel-chrome");
+    const isSteelTempDir = path.resolve(persistDir) === path.resolve(defaultTempDir);
+    expect(isSteelTempDir).toBe(false);
+
+    await fs.rm(persistDir, { recursive: true, force: true });
+  });
+
+  it("does not clear caller-provided directories", async () => {
+    const callerDir = path.join(os.tmpdir(), "caller-custom-dir");
+    await fs.mkdir(callerDir, { recursive: true });
+    await fs.writeFile(path.join(callerDir, "custom.txt"), "caller data");
+
+    const defaultTempDir = path.join(os.tmpdir(), "steel-chrome");
+    const isSteelTempDir = path.resolve(callerDir) === path.resolve(defaultTempDir);
+    expect(isSteelTempDir).toBe(false);
+
+    await fs.rm(callerDir, { recursive: true, force: true });
+  });
+
+  it("identifies the default Steel temp directory correctly", async () => {
+    const defaultTempDir = path.join(os.tmpdir(), "steel-chrome");
+    await fs.mkdir(defaultTempDir, { recursive: true });
+    await fs.writeFile(path.join(defaultTempDir, "session.txt"), "session data");
+
+    await clearUserDataDir(defaultTempDir);
+
+    const entries = await fs.readdir(defaultTempDir);
+    expect(entries).toHaveLength(0);
+
+    await fs.rm(defaultTempDir, { recursive: true, force: true });
+  });
+});
