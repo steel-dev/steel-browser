@@ -8,16 +8,11 @@ export interface TargetTaskTrackerOptions {
   onTimeout?: (pendingTasks: number) => void;
 }
 
-function targetCloseMessage(error: unknown): string {
-  if (!(error instanceof Error)) return "";
-  const cause = "cause" in error ? targetCloseMessage(error.cause) : "";
-  return `${error.name}: ${error.message}\n${cause}`;
-}
-
 export function isTargetCloseError(error: unknown): boolean {
-  return /(?:TargetCloseError|Protocol error[^\n]*(?:Target|Session) closed|(?:Target|Session) closed)/i.test(
-    targetCloseMessage(error),
-  );
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TargetCloseError") return true;
+  if (/^Protocol error \([^\r\n()]+\): (?:Target|Session) closed(?:\.|$)/i.test(error.message)) return true;
+  return "cause" in error && isTargetCloseError(error.cause);
 }
 
 export class TargetTaskTracker {
@@ -72,8 +67,9 @@ export class TargetTaskTracker {
     const completed = await Promise.race([drained, timedOut]);
     if (timer) clearTimeout(timer);
     if (!completed) {
+      for (const record of pending) this.tasks.delete(record);
       try {
-        this.options.onTimeout?.(this.tasks.size);
+        this.options.onTimeout?.(pending.length);
       } catch {
         // Timeout reporting is best effort and must not break shutdown.
       }

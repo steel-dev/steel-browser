@@ -337,13 +337,25 @@ export class CDPService extends EventEmitter {
     }
   }
 
+  private createTargetInstrumentationManager(): TargetInstrumentationManager {
+    return new TargetInstrumentationManager(
+      this.instrumentationLogger,
+      this.logger,
+      {
+        dangerouslyLogRequestDetails: this.launchConfig?.dangerouslyLogRequestDetails,
+        captureWorkerNetwork: this.launchConfig?.captureWorkerNetwork,
+      },
+    );
+  }
+
   private async handleNewTarget(
     target: Target,
     isActive: () => boolean = () => !this.shuttingDown,
+    instrumentationManager: TargetInstrumentationManager = this.targetInstrumentationManager,
   ) {
     if (!isActive()) return;
     try {
-      await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
+      await instrumentationManager.attach(target, target.type() as TargetType);
     } catch (error) {
       this.logger.error({ err: error }, `[CDPService] Error attaching target instrumentation`);
     }
@@ -1053,10 +1065,12 @@ export class CDPService extends EventEmitter {
           "Failed to configure download behavior",
         );
 
+        const instrumentationManager = this.createTargetInstrumentationManager();
+        this.targetInstrumentationManager = instrumentationManager;
         this.targetTasks.resume();
         this.browserInstance.on("targetcreated", (target) => {
           this.targetTasks.schedule(
-            async (isActive) => await this.handleNewTarget(target, isActive),
+            async (isActive) => await this.handleNewTarget(target, isActive, instrumentationManager),
           );
         });
         this.browserInstance.on("targetchanged", (target) => {
@@ -1066,7 +1080,7 @@ export class CDPService extends EventEmitter {
         });
         this.browserInstance.on("targetdestroyed", (target) => {
           const targetId = (target as any)._targetId;
-          this.targetInstrumentationManager.detach(targetId);
+          instrumentationManager.detach(targetId);
         });
         this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
 
@@ -1084,7 +1098,7 @@ export class CDPService extends EventEmitter {
         await executeOptional(
           this.logger,
           async () => {
-            await this.handleNewTarget(this.primaryPage!.target());
+            await this.handleNewTarget(this.primaryPage!.target(), () => !this.shuttingDown, instrumentationManager);
             await this.handleTargetChange(this.primaryPage!.target());
           },
           (error) =>
@@ -1099,7 +1113,7 @@ export class CDPService extends EventEmitter {
           const existingTargets = await this.browserInstance.targets();
           for (const target of existingTargets) {
             if ((target as any)._targetId !== (this.primaryPage.target() as any)._targetId) {
-              await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
+              await instrumentationManager.attach(target, target.type() as TargetType);
             }
           }
           this.logger.info(

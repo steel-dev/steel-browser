@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { TargetTaskTracker } from "./target-task-tracker.js";
+import { TargetTaskTracker, isTargetCloseError } from "./target-task-tracker.js";
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -109,5 +109,41 @@ describe("TargetTaskTracker", () => {
       process.off("unhandledRejection", onUnhandled);
       vi.useRealTimers();
     }
+  });
+
+  it("drops timed-out records while retaining late rejection handling", async () => {
+    vi.useFakeTimers();
+    const onError = vi.fn();
+    const pending = deferred();
+    const tracker = new TargetTaskTracker({ onError });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      tracker.schedule(() => pending.promise);
+      const stopping = tracker.stop(25);
+      await vi.advanceTimersByTimeAsync(25);
+      await expect(stopping).resolves.toBe(false);
+      expect(tracker.size).toBe(0);
+
+      pending.reject(new Error("Protocol error (Fetch.enable): Target closed"));
+      await vi.runAllTimersAsync();
+      await Promise.resolve();
+      expect(onError).not.toHaveBeenCalled();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [Object.assign(new Error("Protocol error (Page.addScriptToEvaluateOnNewDocument): Target closed"), { name: "TargetCloseError" }), true],
+    [new Error("Protocol error (Fetch.enable): Session closed. Most likely the page has been closed."), true],
+    [new Error("customer session closed by policy"), false],
+    [new Error("Target closed accounting invariant failed"), false],
+  ])("classifies target-close errors narrowly: %#", (error, expected) => {
+    expect(isTargetCloseError(error)).toBe(expected);
   });
 });
