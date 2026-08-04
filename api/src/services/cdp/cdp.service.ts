@@ -79,6 +79,9 @@ import {
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
+import { TargetTaskTracker } from "./target-task-tracker.js";
+
+const TARGET_TASK_DRAIN_TIMEOUT_MS = 1_000;
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -102,6 +105,7 @@ export class CDPService extends EventEmitter {
   private retryManager: RetryManager;
   private targetInstrumentationManager: TargetInstrumentationManager;
   private instrumentationLogger: BrowserLogger;
+  private targetTasks: TargetTaskTracker;
 
   private compiledUrlPatterns: RegExp[] = [];
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
@@ -178,6 +182,17 @@ export class CDPService extends EventEmitter {
       this.instrumentationLogger,
       this.logger,
     );
+    this.targetTasks = new TargetTaskTracker({
+      onError: (error) => {
+        this.logger.error({ err: error }, "[CDPService] Target setup task failed");
+      },
+      onTimeout: (pendingTasks) => {
+        this.logger.warn(
+          { pendingTasks },
+          "[CDPService] Timed out draining target setup tasks before browser shutdown",
+        );
+      },
+    });
     this.instrumentationLogger?.on?.(EmitEvent.Log, (event, context) => {
       this.emit(EmitEvent.Log, event);
     });
@@ -287,7 +302,11 @@ export class CDPService extends EventEmitter {
     return this.pluginManager.unregister(pluginName);
   }
 
-  private async handleTargetChange(target: Target) {
+  private async handleTargetChange(
+    target: Target,
+    isActive: () => boolean = () => !this.shuttingDown,
+  ) {
+    if (!isActive()) return;
     if (target.type() !== "page") return;
 
     const page = await target.page().catch((e) => {
@@ -295,8 +314,9 @@ export class CDPService extends EventEmitter {
       return null;
     });
 
-    if (page) {
-      this.pluginManager.onPageNavigate(page);
+    if (page && isActive()) {
+      await this.pluginManager.onPageNavigate(page);
+      if (!isActive()) return;
 
       //@ts-ignore
       const pageId = page.target()._targetId;
@@ -317,12 +337,18 @@ export class CDPService extends EventEmitter {
     }
   }
 
-  private async handleNewTarget(target: Target) {
+  private async handleNewTarget(
+    target: Target,
+    isActive: () => boolean = () => !this.shuttingDown,
+  ) {
+    if (!isActive()) return;
     try {
       await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
     } catch (error) {
       this.logger.error({ err: error }, `[CDPService] Error attaching target instrumentation`);
     }
+
+    if (!isActive()) return;
 
     if (target.type() === TargetType.PAGE) {
       const page = await target.page().catch((e) => {
@@ -331,6 +357,7 @@ export class CDPService extends EventEmitter {
       });
 
       if (page) {
+        if (!isActive()) return;
         try {
           const url = page.url();
           if (url && url.startsWith("http")) {
@@ -344,11 +371,14 @@ export class CDPService extends EventEmitter {
 
         // Notify plugins about the new page
         await this.pluginManager.onPageCreated(page);
+        if (!isActive()) return;
 
         // Only install mouse helper in headless mode
         if (this.launchConfig?.options?.headless) {
-          installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+          await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
         }
+
+        if (!isActive()) return;
 
         if (this.launchConfig?.customHeaders) {
           await page.setExtraHTTPHeaders({
@@ -358,8 +388,10 @@ export class CDPService extends EventEmitter {
         } else if (env.DEFAULT_HEADERS) {
           await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
         }
+        if (!isActive()) return;
 
         await this.applyDeviceMetricsOverride(page);
+        if (!isActive()) return;
 
         // Inject fingerprint only if it's not skipped
         if (!env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection) {
@@ -371,8 +403,10 @@ export class CDPService extends EventEmitter {
             "[CDPService] Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting",
           );
         }
+        if (!isActive()) return;
 
         await page.setRequestInterception(true);
+        if (!isActive()) return;
 
         page.on("request", (request) => this.handlePageRequest(request, page));
 
@@ -465,6 +499,8 @@ export class CDPService extends EventEmitter {
     this.logger.info(`[CDPService] Shutting down and cleaning up resources (reason: ${reason})`);
 
     try {
+      await this.targetTasks.stop(TARGET_TASK_DRAIN_TIMEOUT_MS);
+
       if (this.browserInstance) {
         await this.pluginManager.onBrowserClose(this.browserInstance);
       }
@@ -1017,8 +1053,17 @@ export class CDPService extends EventEmitter {
           "Failed to configure download behavior",
         );
 
-        this.browserInstance.on("targetcreated", this.handleNewTarget.bind(this));
-        this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
+        this.targetTasks.resume();
+        this.browserInstance.on("targetcreated", (target) => {
+          this.targetTasks.schedule(
+            async (isActive) => await this.handleNewTarget(target, isActive),
+          );
+        });
+        this.browserInstance.on("targetchanged", (target) => {
+          this.targetTasks.schedule(
+            async (isActive) => await this.handleTargetChange(target, isActive),
+          );
+        });
         this.browserInstance.on("targetdestroyed", (target) => {
           const targetId = (target as any)._targetId;
           this.targetInstrumentationManager.detach(targetId);
