@@ -3,7 +3,7 @@
 Deterministic, offline regression tests for the HTML → markdown pipeline
 (`getDefuddleContent`, `stripBase64Images`, `jsonToMarkdown`). They run the real
 conversion code against **frozen** HTML fixtures and assert on properties, so a
-silent quality regression — most importantly a bad `defuddle` version bump — fails CI.
+silent quality regression (most importantly a bad `defuddle` version bump) fails CI.
 
 This is the fast per-PR gate. It is intentionally separate from the competitive,
 LLM-judge benchmark (Steel vs Firecrawl/Jina), which is slow, costs money, needs a
@@ -25,9 +25,9 @@ npm run test:heavy -w api      # also runs the heavy SEC fixture (~11s); use in 
 | `article.html.gz` | long-form article (body extraction, footnotes, no chrome) |
 | `wikipedia.html.gz` | tables, many links, site-specific extractor |
 | `arxiv.html.gz` | math → LaTeX, modal/nav/TOC noise removal |
-| `sec.html.gz` | 10 MB filing — robustness / no crash (heavy lane) |
+| `sec.html.gz` | 10 MB filing - robustness / no crash (heavy lane) |
 | `synthetic.html` | hand-built: relative urls, srcset, base64 image, fenced code, table, nav/footer |
-| `fallback.html` | hand-built: main content inside a `role="dialog"` overlay that selector removal erases — exercises the full-page fallback |
+| `fallback.html` | hand-built: main content inside a `role="dialog"` overlay that selector removal erases - exercises the full-page fallback |
 | `api.json` | JSON-response fencing |
 
 The `.html.gz` files are gzipped raw HTML originally captured by the benchmark.
@@ -44,25 +44,25 @@ They are frozen on purpose: the suite tests the converter, not the live web.
 - defuddle makes no network requests of its own (`useAsync: false`), so extraction
   never bypasses the session proxy or leaks the server IP
 - when extraction strips a page to almost nothing, a full-page fallback conversion
-  recovers the content without leaking script/style text — and it stays off for
+  recovers the content without leaking script/style text, and it stays off for
   pages that extract normally
 
 ## Tier 1 invariant harness (`eval/`)
 
 The fixtures above assert *page-specific* facts (canary/noise phrases, word bands).
 The Tier 1 harness instead asserts **label-free invariants that must hold for the
-markdown of _any_ page** — so it keeps working as the corpus grows toward the long
+markdown of _any_ page** so it keeps working as the corpus grows toward the long
 tail of real traffic, which 6 hand-picked fixtures can't represent.
 
-- `eval/invariants.ts` — the invariants. `error` = hard contract (gates CI); `warn`
+- `eval/invariants.ts` - the invariants. `error` = hard contract (gates CI); `warn`
   = quality signal (reported only). Covers script/style leakage, relative/mangled/
   empty/fragment links, empty-on-contentful, secret leakage, leaked chrome tags,
   unbalanced code fences, html comments, and oversized output.
-- `eval/invariants.test.ts` — unit tests proving each invariant catches its failure
+- `eval/invariants.test.ts` - unit tests proving each invariant catches its failure
   mode (feeds crafted bad markdown) and passes clean markdown. No defuddle needed.
-- `eval/corpus.ts` — the corpus registry, tagged by category. **Grow this** — add a
+- `eval/corpus.ts` - the corpus registry, tagged by category. **Grow this** - add a
   row + a frozen fixture per new page class (docs, ecommerce PDP, forum, paywall…).
-- `eval/corpus.test.ts` — runs every corpus page through the real pipeline and fails
+- `eval/corpus.test.ts` - runs every corpus page through the real pipeline and fails
   CI if any `error` invariant is violated. Network is hard-stubbed to catch proxy bypass.
 
 ```bash

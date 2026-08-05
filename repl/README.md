@@ -10,6 +10,6 @@ The API exposes a WebSocket endpoint, allowing you to connect to the browser usi
 2. Run `npm start` to execute the script.
 3. Modify `src/script.ts` as needed and rerun `npm start` to see your changes.
 
-> Note: You might need to update the WebSocket endpoint in `src/script.ts` if your services isn't exposed on your network
+> Note: You might need to update the WebSocket endpoint in `src/script.ts` if your service isn't exposed on your network
 
 For more details, refer to [Steel Browser Documentation](https://docs.steel.dev/).

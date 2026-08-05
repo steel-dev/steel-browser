@@ -168,7 +168,7 @@ In these examples, we assume your custom Steel API endpoint is `http://localhost
 The full REST OpenAPI documentation can be found [on our site](https://docs.steel.dev/api-reference) and on your local Steel instance at `http://localhost:3000/documentation`.
 
 #### Using the SDKs
-If you prefer to use the our Python and Node SDKs, you can install the `steel-sdk` package for Node or Python.
+If you prefer to use our Python and Node SDKs, you can install the `steel-sdk` package for Node or Python.
 
 These SDKs are built on top of the REST API and provide a more convenient way to interact with the Steel browser API. They are fully typed, and are compatible with both Steel Cloud and self-hosted Steel instances (changeable using the `baseURL` option on Node and `base_url` on Python).
 

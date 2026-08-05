@@ -86,16 +86,16 @@ Steel Browser follows a plugin-based architecture:
    - Handles browser lifecycle and page management
    - Supports plugin system for extensibility
 
-2. **CDP Plugin System** (`api/src/services/cdp/plugins/`)
+3. **CDP Plugin System** (`api/src/services/cdp/plugins/`)
    - **BasePlugin**: Abstract base class for all plugins
    - **PluginManager**: Manages plugin lifecycle and events
    - Plugins can hook into browser events (launch, page creation, navigation, etc.)
 
-3. **Session Management** (`api/src/services/session.service.ts`)
+4. **Session Management** (`api/src/services/session.service.ts`)
    - Manages browser sessions and their state
    - Handles session persistence and cleanup
 
-4. **File Storage** (`api/src/services/file.service.ts`)
+5. **File Storage** (`api/src/services/file.service.ts`)
    - Manages file uploads, downloads, and storage
    - Supports session-scoped file management
 
