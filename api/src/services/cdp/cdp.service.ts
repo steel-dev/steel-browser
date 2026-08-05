@@ -372,9 +372,16 @@ export class CDPService extends EventEmitter {
           );
         }
 
-        await page.setRequestInterception(true);
+        // Request interception owns the CDP Fetch domain. Chrome dispatches a paused request to
+        // every session that enabled Fetch, and the first `continueRequest` wins, so holding it
+        // unconditionally silently breaks clients that drive their own interception over CDP
+        // (Playwright `route`, Puppeteer `setRequestInterception`). Only claim it when a blocking
+        // feature is actually configured for this session.
+        if (this.requiresRequestInterception()) {
+          await page.setRequestInterception(true);
 
-        page.on("request", (request) => this.handlePageRequest(request, page));
+          page.on("request", (request) => this.handlePageRequest(request, page));
+        }
 
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
@@ -389,6 +396,24 @@ export class CDPService extends EventEmitter {
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       this.logger.info(`[CDPService] Background page created: ${target.url()}`);
     }
+  }
+
+  private requiresRequestInterception(): boolean {
+    if (this.launchConfig?.blockAds) return true;
+    if (this.compiledUrlPatterns.length > 0) return true;
+
+    const optimize = this.launchConfig?.optimizeBandwidth;
+    if (typeof optimize === "object") {
+      return Boolean(
+        optimize.blockImages ||
+          optimize.blockMedia ||
+          optimize.blockStylesheets ||
+          optimize.blockHosts?.length ||
+          optimize.blockUrlPatterns?.length,
+      );
+    }
+
+    return Boolean(optimize);
   }
 
   private async handlePageRequest(request: HTTPRequest, page: Page) {
