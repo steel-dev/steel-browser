@@ -281,10 +281,8 @@ export class SessionService {
     this.activeSession.duration =
       new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
 
-    if (this.activeSession.proxyServer) {
-      this.activeSession.proxyTxBytes = this.activeSession.proxyServer.txBytes;
-      this.activeSession.proxyRxBytes = this.activeSession.proxyServer.rxBytes;
-    }
+    // Captured here because resetSessionInfo clears the reference on this same object
+    const proxyServer = this.activeSession.proxyServer;
 
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
@@ -299,6 +297,11 @@ export class SessionService {
       id: uuidv4(),
       status: "idle",
     });
+
+    // Byte counters only advance when a connection closes, so they are not final
+    // until resetSessionInfo has closed the proxy server above
+    releasedSession.proxyTxBytes = proxyServer?.txBytes ?? 0;
+    releasedSession.proxyRxBytes = proxyServer?.rxBytes ?? 0;
 
     this.pastSessions.push(releasedSession);
 
