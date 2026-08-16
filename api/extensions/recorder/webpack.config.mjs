@@ -10,6 +10,7 @@ export default {
   entry: {
     inject: path.resolve(__dirname, "src/inject.js"),
     background: path.resolve(__dirname, "src/background.js"),
+    "recorder-page": path.resolve(__dirname, "src/recorder-page.js"),
   },
   output: {
     filename: "[name].js",

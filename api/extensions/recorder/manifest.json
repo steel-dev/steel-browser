@@ -20,7 +20,18 @@
       ],
       "js": [
         "dist/inject.js"
-      ]
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "dist/recorder-page.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ]
 }

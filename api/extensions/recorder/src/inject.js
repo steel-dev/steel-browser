@@ -1,28 +1,29 @@
-import { record } from "rrweb";
-import { pack } from "@rrweb/packer";
+import { STEEL_RECORDER_SOURCE } from "./recorder-protocol.js";
 
-record({
-  emit: (event) => {
-    chrome.runtime.sendMessage(
-      {
-        type: "SAVE_EVENTS",
-        events: [event],
-      },
-      (response) => {
-        if (!response.success) {
-          console.error("[Recorder] Failed to save events:", response.error);
-        }
-      },
-    );
-  },
-  packFn: pack,
-  sampling: {
-    media: 800,
-  },
-  inlineImages: true,
-  collectFonts: true,
-  recordCrossOriginIframes: true,
-  recordCanvas: true,
+window.addEventListener("message", (event) => {
+  if (event.source !== window) {
+    return;
+  }
+  if (!event.data || event.data.source !== STEEL_RECORDER_SOURCE) {
+    return;
+  }
+
+  const events = event.data.events;
+  if (!Array.isArray(events) || events.length === 0) {
+    return;
+  }
+
+  chrome.runtime.sendMessage(
+    {
+      type: "SAVE_EVENTS",
+      events,
+    },
+    (response) => {
+      if (!response?.success) {
+        console.error("[Recorder] Failed to save events:", response?.error);
+      }
+    },
+  );
 });
 
 const enableWebRtcSites = ["meet.google.com", "zoom.us", "discord.com"];
