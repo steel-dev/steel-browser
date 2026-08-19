@@ -133,14 +133,15 @@ export class TargetInstrumentationManager {
           attachCDPEvents(session, this.logger);
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else if (isDedicatedWorker) {
+          const targetSessionPromise = this.onTargetSession?.({
+            target,
+            type,
+            session,
+            isDedicatedWorker,
+            isPuppeteerPaused: Boolean(existingSession),
+          });
+
           if (existingSession) {
-            const targetSessionPromise = this.onTargetSession?.({
-              target,
-              type,
-              session,
-              isDedicatedWorker,
-              isPuppeteerPaused: true,
-            });
             attachCDPEvents(session, this.logger);
             attachWorkerEvents(target, session, this.logger, type, this.workerEventsOptions());
 
@@ -169,7 +170,10 @@ export class TargetInstrumentationManager {
             break;
           }
 
-          await this.enableDomainsForTarget(session, type, false, isDedicatedWorker);
+          await Promise.all([
+            targetSessionPromise,
+            this.enableDomainsForTarget(session, type, false, isDedicatedWorker),
+          ]);
           attachCDPEvents(session, this.logger);
           attachWorkerEvents(target, session, this.logger, type, this.workerEventsOptions());
         } else {

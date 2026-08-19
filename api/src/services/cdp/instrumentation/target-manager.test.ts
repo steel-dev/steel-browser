@@ -29,15 +29,27 @@ describe("TargetInstrumentationManager", () => {
       getContext: vi.fn().mockReturnValue({}),
     };
     const appLogger = { error: vi.fn(), warn: vi.fn() } as any;
-    const manager = new TargetInstrumentationManager(logger, appLogger, {
-      captureWorkerNetwork: true,
-    });
+    const onTargetSession = vi.fn().mockResolvedValue(undefined);
+    const manager = new TargetInstrumentationManager(
+      logger,
+      appLogger,
+      { captureWorkerNetwork: true },
+      onTargetSession,
+    );
 
     await manager.attach(target, TargetType.OTHER);
 
     expect(send).toHaveBeenCalledWith("Network.enable");
     expect(appLogger.warn).toHaveBeenCalledWith(
       "[TargetManager] Puppeteer's paused dedicated-worker session was unavailable; falling back to createCDPSession(), which may miss initial worker activity",
+    );
+    expect(onTargetSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target,
+        session,
+        isDedicatedWorker: true,
+        isPuppeteerPaused: false,
+      }),
     );
 
     session.emit("Network.requestWillBeSent", {
