@@ -681,7 +681,7 @@ export class CDPService extends EventEmitter {
             ),
         );
 
-        const { options, userAgent, userDataDir, fingerprint } = this.launchConfig;
+        const { options, userDataDir, fingerprint } = this.launchConfig;
         this.fingerprintData = fingerprint ?? null;
 
         // Run launch mutators - plugin errors should be caught
@@ -700,6 +700,11 @@ export class CDPService extends EventEmitter {
               error,
             ),
         );
+
+        // Mutators may set userAgent after launchConfig is first read. Chrome's
+        // --user-agent flag must see the post-mutator value or the first
+        // document request keeps the default UA.
+        const userAgent = this.launchConfig.userAgent;
 
         // Fingerprint generation - can fail gracefully
         if (
