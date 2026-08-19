@@ -108,4 +108,46 @@ describe("TargetInstrumentationManager", () => {
     );
     expect(send.mock.calls[0]?.[0]).toBe("Network.enable");
   });
+
+  it("queues network capture before a target-session hook resolves", async () => {
+    const session = new EventEmitter() as EventEmitter & {
+      send: ReturnType<typeof vi.fn>;
+      id: () => string;
+    };
+    const send = vi.fn().mockResolvedValue({});
+    session.send = send;
+    session.id = () => "cdp-session";
+
+    const target = {
+      _targetId: "worker-target",
+      _getTargetInfo: () => ({ type: "worker" }),
+      _session: () => session,
+      url: () => "blob:https://example.com/worker",
+      createCDPSession: vi.fn(),
+    } as unknown as Target;
+    const logger = {
+      record: vi.fn(),
+      resetContext: vi.fn(),
+      setContext: vi.fn(),
+      getContext: vi.fn().mockReturnValue({}),
+    };
+    let resolveTargetSession!: () => void;
+    const onTargetSession = vi.fn(
+      () => new Promise<void>((resolve) => (resolveTargetSession = resolve)),
+    );
+    const manager = new TargetInstrumentationManager(
+      logger,
+      { error: vi.fn() } as any,
+      { captureWorkerNetwork: true },
+      onTargetSession,
+    );
+
+    const attachment = manager.attach(target, TargetType.OTHER);
+
+    expect(onTargetSession).toHaveBeenCalledOnce();
+    expect(send.mock.calls.some(([method]) => method === "Network.enable")).toBe(true);
+
+    resolveTargetSession();
+    await attachment;
+  });
 });

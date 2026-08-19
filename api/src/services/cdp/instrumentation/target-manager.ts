@@ -134,7 +134,7 @@ export class TargetInstrumentationManager {
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else if (isDedicatedWorker) {
           if (existingSession) {
-            await this.onTargetSession?.({
+            const targetSessionPromise = this.onTargetSession?.({
               target,
               type,
               session,
@@ -164,6 +164,7 @@ export class TargetInstrumentationManager {
                 isDedicatedWorker,
                 this.instrumentationOptions.captureWorkerNetwork === true,
               ),
+              targetSessionPromise,
             ]);
             break;
           }
