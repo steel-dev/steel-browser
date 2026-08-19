@@ -119,6 +119,11 @@ export class TargetInstrumentationManager {
         // them immediately after the event. Reuse that session so Network is enabled before
         // the worker can issue its first request instead of creating a second, late session.
         const existingSession = isDedicatedWorker ? (target as any)._session?.() : undefined;
+        if (isDedicatedWorker && !existingSession) {
+          this.appLogger.warn(
+            "[TargetManager] Puppeteer's paused dedicated-worker session was unavailable; falling back to createCDPSession(), which may miss initial worker activity",
+          );
+        }
         const session = existingSession ?? (await target.createCDPSession());
         this.cdpSessions.set(sessionId, session);
         if (existingSession) this.puppeteerOwnedSessions.add(sessionId);
