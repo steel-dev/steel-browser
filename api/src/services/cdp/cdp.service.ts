@@ -72,6 +72,7 @@ import {
 import { BasePlugin, ShutdownReason } from "./plugins/core/base-plugin.js";
 import { PluginManager } from "./plugins/core/plugin-manager.js";
 import { isSimilarConfig, validateLaunchConfig, validateTimezone } from "./utils/validation.js";
+import { resolveScreenMetrics } from "./utils/screen-metrics.js";
 import { TargetInstrumentationManager } from "./instrumentation/target-manager.js";
 import {
   createBrowserLogger as createInstrumentationLogger,
@@ -1500,15 +1501,22 @@ export class CDPService extends EventEmitter {
 
   @traceable
   private async applyDeviceMetricsOverride(page: Page): Promise<void> {
-    const screen = this.fingerprintData?.fingerprint?.screen;
+    const screen = resolveScreenMetrics({
+      dimensions: this.currentSessionConfig?.dimensions ?? this.launchConfig?.dimensions,
+      fingerprintScreen: this.fingerprintData?.fingerprint?.screen,
+    });
+
     if (!screen) {
       this.logger.warn(
-        "[CDPService] No fingerprint screen data available, skipping Page.setDeviceMetricsOverride",
+        "[CDPService] No session dimensions or fingerprint screen data available, skipping Page.setDeviceMetricsOverride",
       );
       return;
     }
 
     const userAgent = this.getUserAgent() ?? "";
+    const isMobile =
+      this.launchConfig?.deviceConfig?.device === "mobile" ||
+      /phone|android|mobile/i.test(userAgent);
     const session = await page.createCDPSession();
     try {
       await session.send("Page.setDeviceMetricsOverride", {
@@ -1517,7 +1525,7 @@ export class CDPService extends EventEmitter {
         width: screen.width,
         height: screen.height,
         viewport: { width: screen.availWidth, height: screen.availHeight, scale: 1, x: 0, y: 0 },
-        mobile: /phone|android|mobile/i.test(userAgent),
+        mobile: isMobile,
         screenOrientation:
           screen.height > screen.width
             ? { angle: 0, type: "portraitPrimary" }
