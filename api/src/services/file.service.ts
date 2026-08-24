@@ -13,6 +13,12 @@ interface File {
   lastModified: Date;
 }
 
+export interface FileServiceOptions {
+  baseFilesPath?: string;
+  prebuiltArchiveDir?: string;
+  watchFiles?: boolean;
+}
+
 export class FileService {
   private baseFilesPath: string;
   private fileWatcher: FSWatcher | null = null;
@@ -21,12 +27,15 @@ export class FileService {
   private prebuiltArchivePath: string;
   private isArchiving: boolean = false;
   private currentArchivePromise: Promise<string | null> | null = null;
+  private archiveDirty = true;
   private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
 
-  private constructor() {
-    this.baseFilesPath = env.NODE_ENV === "development" ? path.join(tmpdir(), "files") : "/files";
-    this.prebuiltArchiveDir = "/tmp/.steel";
+  public constructor(options: FileServiceOptions = {}) {
+    this.baseFilesPath =
+      options.baseFilesPath ??
+      (env.NODE_ENV === "development" ? path.join(tmpdir(), "files") : "/files");
+    this.prebuiltArchiveDir = options.prebuiltArchiveDir ?? "/tmp/.steel";
     this.prebuiltArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
 
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
@@ -34,7 +43,9 @@ export class FileService {
     const boundCreateArchive = this._createArchive.bind(this);
     this.debouncedCreateArchive = debounce(boundCreateArchive, this.archiveDebounceTime);
 
-    this.initFileWatcher();
+    if (options.watchFiles !== false) {
+      this.initFileWatcher();
+    }
   }
 
   public static getInstance() {
@@ -46,16 +57,21 @@ export class FileService {
 
   private async handleFileAdd(filePath: string) {
     console.log(`[FileService] File added detected: ${filePath}`);
-    this.debouncedCreateArchive();
+    this.scheduleArchiveCreation();
   }
 
   private handleFileDelete(filePath: string) {
     console.log(`[FileService] File deleted detected: ${filePath}`);
-    this.debouncedCreateArchive();
+    this.scheduleArchiveCreation();
   }
 
   private handleDirChange(filePath: string) {
     console.log(`[FileService] Directory change detected: ${filePath}`);
+    this.scheduleArchiveCreation();
+  }
+
+  private scheduleArchiveCreation() {
+    this.archiveDirty = true;
     this.debouncedCreateArchive();
   }
 
@@ -81,7 +97,7 @@ export class FileService {
       .on("error", (error) => console.error(`Watcher error: ${error}`))
       .on("ready", () => {
         console.log("[FileService] Initial scan complete. Ready for changes.");
-        this.debouncedCreateArchive();
+        this.scheduleArchiveCreation();
       });
   }
 
@@ -128,7 +144,7 @@ export class FileService {
         lastModified: stats.mtime,
       };
       console.log(`File saved: ${safeFilePath}, Size: ${file.size}`);
-      this.debouncedCreateArchive();
+      this.scheduleArchiveCreation();
       return { ...file, path: safeFilePath };
     } catch (error) {
       console.error(`[FileService] Error saving file ${safeFilePath}:`, error);
@@ -269,7 +285,7 @@ export class FileService {
       }
       await fs.promises.unlink(safeFilePath);
       console.log(`[FileService] File deleted: ${safeFilePath}`);
-      this.debouncedCreateArchive();
+      this.scheduleArchiveCreation();
     } catch (unlinkError) {
       console.error(`Error unlinking file ${safeFilePath}:`, unlinkError);
       throw unlinkError;
@@ -327,7 +343,7 @@ export class FileService {
       }
     }
     console.log(`[FileService cleanupFiles] Files cleaned. Creating empty archive.`);
-    this.debouncedCreateArchive();
+    this.scheduleArchiveCreation();
   }
 
   public getBaseFilesPath(): string {
@@ -335,6 +351,13 @@ export class FileService {
   }
 
   public async getPrebuiltArchivePath(): Promise<string> {
+    this.debouncedCreateArchive.cancel();
+
+    while (this.currentArchivePromise || this.archiveDirty) {
+      await (this.currentArchivePromise ?? this._createArchive());
+      this.debouncedCreateArchive.cancel();
+    }
+
     return this.prebuiltArchivePath;
   }
 
@@ -353,6 +376,7 @@ export class FileService {
       return this.currentArchivePromise;
     }
 
+    this.archiveDirty = false;
     const archivePromise = new Promise<string | null>(async (resolvePromise, rejectPromise) => {
       if (this.isArchiving) {
         console.warn(
@@ -486,9 +510,14 @@ export class FileService {
       }
     });
 
-    this.currentArchivePromise = archivePromise.finally(() => {
-      this.currentArchivePromise = null;
-    });
+    this.currentArchivePromise = archivePromise
+      .catch((error) => {
+        this.archiveDirty = true;
+        throw error;
+      })
+      .finally(() => {
+        this.currentArchivePromise = null;
+      });
 
     return this.currentArchivePromise;
   }
