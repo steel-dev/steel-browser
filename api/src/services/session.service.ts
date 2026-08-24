@@ -50,6 +50,33 @@ const defaultSession = {
   solveCaptcha: false,
 };
 
+/**
+ * Directory used for profiles the caller asked to persist but gave no path for.
+ * Resolved relative to this module so it points at the package root both when
+ * running from `src` (tsx) and from the compiled `build` output.
+ */
+export const PERSISTENT_USER_DATA_DIR = path.join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "user-data-dir",
+);
+
+/**
+ * Resolves the Chrome user data directory for a session, in priority order:
+ * an explicitly requested `userDataDir`, then the persistent profile directory
+ * when `persist` is set, then the configured or ephemeral default.
+ */
+export function resolveUserDataDir(options: { userDataDir?: string; persist?: boolean }): string {
+  if (options.userDataDir) {
+    return options.userDataDir;
+  }
+  if (options.persist === true) {
+    return PERSISTENT_USER_DATA_DIR;
+  }
+  return env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
+}
+
 export type ProxyFactory = (
   proxyUrl: string,
   options?: OptimizeBandwidthOptions,
@@ -177,10 +204,7 @@ export class SessionService {
       deviceConfig,
     });
 
-    const userDataDir =
-      options.userDataDir || options.persist === true
-        ? path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "user-data-dir")
-        : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
+    const userDataDir = resolveUserDataDir(options);
     await mkdir(userDataDir, { recursive: true });
 
     const defaultUserPreferences = {
