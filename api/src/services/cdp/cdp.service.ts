@@ -46,6 +46,7 @@ import {
 } from "../../utils/context.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { RetryManager, RetryOptions } from "../../utils/retry.js";
+import { isTargetClosedError } from "../../utils/target-closed.js";
 import { ChromeContextService } from "../context/chrome-context.service.js";
 import { SessionData } from "../context/types.js";
 import { FileService } from "../file.service.js";
@@ -321,16 +322,31 @@ export class CDPService extends EventEmitter {
     try {
       await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
     } catch (error) {
+      if (isTargetClosedError(error)) {
+        this.logger.debug(
+          { err: error },
+          "[CDPService] Target closed while attaching instrumentation",
+        );
+        return;
+      }
       this.logger.error({ err: error }, `[CDPService] Error attaching target instrumentation`);
     }
 
     if (target.type() === TargetType.PAGE) {
       const page = await target.page().catch((e) => {
+        if (isTargetClosedError(e)) {
+          this.logger.debug({ err: e }, "[CDPService] Target closed before page handle was ready");
+          return null;
+        }
         this.logger.error(`Error handling new target in CDPService: ${e}`);
         return null;
       });
 
-      if (page) {
+      if (!page || page.isClosed()) {
+        return;
+      }
+
+      try {
         try {
           const url = page.url();
           if (url && url.startsWith("http")) {
@@ -344,6 +360,10 @@ export class CDPService extends EventEmitter {
 
         // Notify plugins about the new page
         await this.pluginManager.onPageCreated(page);
+
+        if (page.isClosed()) {
+          return;
+        }
 
         // Only install mouse helper in headless mode
         if (this.launchConfig?.options?.headless) {
@@ -372,6 +392,10 @@ export class CDPService extends EventEmitter {
           );
         }
 
+        if (page.isClosed()) {
+          return;
+        }
+
         await page.setRequestInterception(true);
 
         page.on("request", (request) => this.handlePageRequest(request, page));
@@ -385,6 +409,15 @@ export class CDPService extends EventEmitter {
             this.endSession(ShutdownReason.SECURITY_VIOLATION);
           }
         });
+      } catch (error) {
+        if (isTargetClosedError(error) || page.isClosed()) {
+          this.logger.debug(
+            { err: error },
+            "[CDPService] Target closed while configuring a new page",
+          );
+          return;
+        }
+        this.logger.error({ err: error }, "[CDPService] Error configuring new page");
       }
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       this.logger.info(`[CDPService] Background page created: ${target.url()}`);
@@ -1017,7 +1050,18 @@ export class CDPService extends EventEmitter {
           "Failed to configure download behavior",
         );
 
-        this.browserInstance.on("targetcreated", this.handleNewTarget.bind(this));
+        this.browserInstance.on("targetcreated", (target) => {
+          void this.handleNewTarget(target).catch((error) => {
+            if (isTargetClosedError(error)) {
+              this.logger.debug(
+                { err: error },
+                "[CDPService] Target closed while handling targetcreated",
+              );
+              return;
+            }
+            this.logger.error({ err: error }, "[CDPService] Unhandled error in handleNewTarget");
+          });
+        });
         this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
         this.browserInstance.on("targetdestroyed", (target) => {
           const targetId = (target as any)._targetId;
@@ -1491,6 +1535,10 @@ export class CDPService extends EventEmitter {
         }),
       );
     } catch (error) {
+      if (isTargetClosedError(error) || page.isClosed()) {
+        this.logger.debug({ err: error }, "[Fingerprint] Skipping injection; target closed");
+        return;
+      }
       this.logger.error({ error }, `[Fingerprint] Error injecting fingerprint safely`);
       const fingerprintInjector = new FingerprintInjector();
       // @ts-ignore - Ignore type mismatch between puppeteer versions
