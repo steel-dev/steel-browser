@@ -19,6 +19,11 @@ import { DefuddleResponse } from "defuddle";
 import { buildHtmlLikeMetadataFromPdf, convertPdfWithMupdf } from "../../utils/scrape/pdfToHtml.js";
 import { safeGoto } from "../../utils/scrape/safeGoTo.js";
 
+async function closeEphemeralContext(context: BrowserContext | null): Promise<void> {
+  if (!context) return;
+  await context.close().catch(() => {});
+}
+
 export const handleScrape = async (
   sessionService: SessionService,
   browserService: CDPService,
@@ -43,7 +48,6 @@ export const handleScrape = async (
     let page: Page;
     let response: HTTPResponse | null = null;
     let pdfResponse: HTTPResponse | null = null;
-    let isPdfNavigation = false;
 
     if (!browserService.isRunning()) {
       await browserService.launch();
@@ -328,9 +332,7 @@ export const handleScrape = async (
     }
     return reply.code(500).send({ message: error });
   } finally {
-    if (context) {
-      await context.close().catch(() => {});
-    }
+    await closeEphemeralContext(context);
     if (proxy) {
       await proxy.close(true).catch(() => {});
     }
@@ -441,9 +443,7 @@ export const handleSearch = async (
 
     return reply.code(500).send({ message: error });
   } finally {
-    if (context) {
-      await context.close().catch(() => {});
-    }
+    await closeEphemeralContext(context);
     if (proxy) {
       await proxy.close(true).catch(() => {});
     }
@@ -521,9 +521,7 @@ export const handleScreenshot = async (
 
     return reply.code(500).send({ message: error });
   } finally {
-    if (context) {
-      await context.close().catch(() => {});
-    }
+    await closeEphemeralContext(context);
     if (proxy) {
       await proxy.close(true).catch(() => {});
     }
@@ -600,9 +598,7 @@ export const handlePDF = async (
 
     return reply.code(500).send({ message: error });
   } finally {
-    if (context) {
-      await context.close().catch(() => {});
-    }
+    await closeEphemeralContext(context);
     if (proxy) {
       await proxy.close(true).catch(() => {});
     }
