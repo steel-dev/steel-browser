@@ -63,6 +63,8 @@ export class SessionService {
   private timezoneFetcher: TimezoneFetcher;
   public proxyFactory: ProxyFactory = (proxyUrl) => new ProxyServer(proxyUrl);
 
+  private sessionTimeoutHandle?: NodeJS.Timeout;
+
   public pastSessions: Session[] = [];
   public activeSession: Session;
 
@@ -107,6 +109,7 @@ export class SessionService {
     optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
     extensions?: string[];
     timezone?: string;
+    timeout?: number;
     dimensions?: { width: number; height: number };
     extra?: BrowserLaunchExtra;
     credentials: CredentialsOptions;
@@ -126,6 +129,7 @@ export class SessionService {
       sessionContext,
       extensions,
       logSinkUrl,
+      timeout,
       dimensions,
       fingerprint,
       isSelenium,
@@ -175,6 +179,7 @@ export class SessionService {
       dimensions: finalDimensions,
       isSelenium,
       deviceConfig,
+      timeout: timeout ?? 0,
     });
 
     const userDataDir =
@@ -254,8 +259,6 @@ export class SessionService {
         dimensions: this.cdpService.getDimensions(),
         deviceConfig,
       });
-
-      return this.activeSession;
     } else {
       await this.cdpService.startNewSession(browserLauncherOptions);
 
@@ -271,6 +274,8 @@ export class SessionService {
         deviceConfig,
       });
     }
+
+    this.scheduleSessionTimeout(timeout);
 
     return this.activeSession;
   }
@@ -305,7 +310,47 @@ export class SessionService {
     return releasedSession;
   }
 
+  private scheduleSessionTimeout(timeout?: number): void {
+    this.clearSessionTimeout();
+
+    if (!timeout || timeout <= 0) {
+      return;
+    }
+
+    const sessionId = this.activeSession.id;
+
+    this.sessionTimeoutHandle = setTimeout(() => {
+      this.sessionTimeoutHandle = undefined;
+
+      // A newer session may have replaced this one before the timer fired.
+      if (this.activeSession.id !== sessionId || this.activeSession.status !== "live") {
+        return;
+      }
+
+      this.logger.info(`Session ${sessionId} hit its ${timeout}ms timeout, releasing it.`);
+
+      this.endSession().catch((error) => {
+        this.logger.error(
+          `Failed to release session ${sessionId} after timeout: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+    }, timeout);
+
+    // The timer should never be the reason the process stays alive.
+    this.sessionTimeoutHandle.unref();
+  }
+
+  private clearSessionTimeout(): void {
+    if (this.sessionTimeoutHandle) {
+      clearTimeout(this.sessionTimeoutHandle);
+      this.sessionTimeoutHandle = undefined;
+    }
+  }
+
   private async resetSessionInfo(overrides?: Partial<SessionDetails>): Promise<SessionDetails> {
+    this.clearSessionTimeout();
     this.activeSession.complete();
 
     await this.activeSession.proxyServer?.close(true);
@@ -315,8 +360,8 @@ export class SessionService {
     this.activeSession = {
       id: uuidv4(),
       ...defaultSession,
-      ...overrides,
       ...sessionStats,
+      ...overrides,
       userAgent: this.cdpService.getUserAgent() ?? "",
       createdAt: new Date().toISOString(),
       completion: promise,
