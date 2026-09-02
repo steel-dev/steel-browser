@@ -51,10 +51,12 @@ export interface LocalStorageRecord {
 
 export class LocalStoreDb {
   private db: Level<Buffer, Buffer>;
+  private tmpDir: string | null;
   public records: LocalStorageRecord[] = [];
 
-  private constructor(db: Level<Buffer, Buffer>) {
+  private constructor(db: Level<Buffer, Buffer>, tmpDir: string | null = null) {
     this.db = db;
+    this.tmpDir = tmpDir;
   }
 
   public static async open(dir: string): Promise<LocalStoreDb> {
@@ -68,16 +70,20 @@ export class LocalStoreDb {
       await db.open();
       return new LocalStoreDb(db);
     } catch (err) {
-      // Attempt fallback: copy to temp directory and open there
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "chrome-leveldb-"));
-      await copyDirectory(dir, tmpDir);
-      const db = new Level<Buffer, Buffer>(tmpDir, {
-        createIfMissing: false,
-        keyEncoding: "buffer",
-        valueEncoding: "buffer",
-      } as any);
-      await db.open();
-      return new LocalStoreDb(db);
+      try {
+        await copyDirectory(dir, tmpDir);
+        const db = new Level<Buffer, Buffer>(tmpDir, {
+          createIfMissing: false,
+          keyEncoding: "buffer",
+          valueEncoding: "buffer",
+        } as any);
+        await db.open();
+        return new LocalStoreDb(db, tmpDir);
+      } catch (copyErr) {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        throw copyErr;
+      }
     }
   }
 
@@ -118,9 +124,14 @@ export class LocalStoreDb {
     }
   }
 
-  public close(): void {
+  public async close(): Promise<void> {
     // @ts-ignore types mismatch but close exists
-    if (this.db.status === "open") this.db.close().catch(() => {});
+    if (this.db.status === "open") await this.db.close().catch(() => {});
+    if (this.tmpDir) {
+      const tmpDir = this.tmpDir;
+      this.tmpDir = null;
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 }
 
@@ -144,7 +155,7 @@ export class ChromeLocalStorageReader {
       }
       return result;
     } finally {
-      ldb.close();
+      await ldb.close();
     }
   }
 }

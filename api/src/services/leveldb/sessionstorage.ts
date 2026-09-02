@@ -34,8 +34,11 @@ export class SessionStoreDb {
   public records: SessionStorageRecord[] = [];
   private mapIdToOrigin: Map<number, string> = new Map();
 
-  private constructor(db: Level<Buffer, Buffer>) {
+  private tmpDir: string | null;
+
+  private constructor(db: Level<Buffer, Buffer>, tmpDir: string | null = null) {
     this.db = db;
+    this.tmpDir = tmpDir;
   }
 
   public static async open(dir: string): Promise<SessionStoreDb> {
@@ -49,16 +52,20 @@ export class SessionStoreDb {
       await db.open();
       return new SessionStoreDb(db);
     } catch (err) {
-      // Attempt fallback: copy to temp directory and open there
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "chrome-leveldb-"));
-      await copyDirectory(dir, tmpDir);
-      const db = new Level<Buffer, Buffer>(tmpDir, {
-        createIfMissing: false,
-        keyEncoding: "buffer",
-        valueEncoding: "buffer",
-      } as any);
-      await db.open();
-      return new SessionStoreDb(db);
+      try {
+        await copyDirectory(dir, tmpDir);
+        const db = new Level<Buffer, Buffer>(tmpDir, {
+          createIfMissing: false,
+          keyEncoding: "buffer",
+          valueEncoding: "buffer",
+        } as any);
+        await db.open();
+        return new SessionStoreDb(db, tmpDir);
+      } catch (copyErr) {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        throw copyErr;
+      }
     }
   }
 
@@ -132,9 +139,14 @@ export class SessionStoreDb {
     }
   }
 
-  public close(): void {
+  public async close(): Promise<void> {
     // @ts-ignore types mismatch but close exists
-    if (this.db.status === "open") this.db.close().catch(() => {});
+    if (this.db.status === "open") await this.db.close().catch(() => {});
+    if (this.tmpDir) {
+      const tmpDir = this.tmpDir;
+      this.tmpDir = null;
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 }
 
@@ -223,7 +235,7 @@ export class ChromeSessionStorageReader {
 
       return result;
     } finally {
-      sdb.close();
+      await sdb.close();
     }
   }
 }

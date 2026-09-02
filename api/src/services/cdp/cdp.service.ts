@@ -496,6 +496,7 @@ export class CDPService extends EventEmitter {
   public async shutdown(reason: ShutdownReason): Promise<void> {
     this.shuttingDown = true;
     this.logger.info(`[CDPService] Shutting down and cleaning up resources (reason: ${reason})`);
+    this.chromeSessionService.invalidate();
 
     try {
       if (this.browserInstance) {
