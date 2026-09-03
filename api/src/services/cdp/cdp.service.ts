@@ -211,6 +211,10 @@ export class CDPService extends EventEmitter {
     return this.browserInstance;
   }
 
+  public async getBrowserVersion(): Promise<string> {
+    return this.browserInstance ? this.browserInstance.version() : "";
+  }
+
   public getLaunchConfig(): BrowserLauncherOptions | undefined {
     return this.launchConfig;
   }
