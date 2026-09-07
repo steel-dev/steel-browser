@@ -211,6 +211,23 @@ export class CDPService extends EventEmitter {
     return this.browserInstance;
   }
 
+  /**
+   * Returns the browser version reported by the running browser instance,
+   * e.g. `Chrome/150.0.7871.124`. Returns an empty string when no browser is
+   * running or the version cannot be resolved.
+   */
+  public async getBrowserVersion(): Promise<string> {
+    if (!this.browserInstance) {
+      return "";
+    }
+    try {
+      return await this.browserInstance.version();
+    } catch (error) {
+      this.logger.warn(`[CDPService] Failed to resolve browser version: ${error}`);
+      return "";
+    }
+  }
+
   public getLaunchConfig(): BrowserLauncherOptions | undefined {
     return this.launchConfig;
   }
