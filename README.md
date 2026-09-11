@@ -88,6 +88,9 @@ The simplest way to deploy/run a Steel browser instance locally is to run the pr
 
 ```bash
 # Pull and run the Docker image
+
+[![Listed on TakoAPI](https://img.shields.io/badge/Listed%20on-TakoAPI-7c3aed)](https://takoapi.com/agents/steel-dev-steel-browser)
+
 docker run -p 3000:3000 -p 9223:9223 ghcr.io/steel-dev/steel-browser
 ```
 
