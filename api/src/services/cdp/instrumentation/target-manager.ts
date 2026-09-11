@@ -9,6 +9,7 @@ import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
 import type { AttachWorkerEventsOptions } from "./worker-events.js";
 import { BrowserLogger } from "./browser-logger.js";
+import type { TargetSessionContext } from "../plugins/core/base-plugin.js";
 
 const INTERNAL_EXTENSIONS = new Set<string>([
   // TODO: need secret manager, recorder, and capacha IDs
@@ -21,6 +22,7 @@ export interface TargetInstrumentationOptions extends AttachPageEventsOptions {
 export class TargetInstrumentationManager {
   private attachedSessions = new Set<string>();
   private cdpSessions = new Map<string, CDPSession>();
+  private puppeteerOwnedSessions = new Set<string>();
 
   private instrumentationOptions: TargetInstrumentationOptions;
 
@@ -28,6 +30,7 @@ export class TargetInstrumentationManager {
     private logger: BrowserLogger,
     private appLogger: FastifyBaseLogger,
     instrumentationOptions?: TargetInstrumentationOptions,
+    private onTargetSession?: (context: TargetSessionContext) => Promise<void>,
   ) {
     this.instrumentationOptions = instrumentationOptions ?? {};
   }
@@ -112,15 +115,70 @@ export class TargetInstrumentationManager {
       }
 
       case TargetType.OTHER: {
-        const session = await target.createCDPSession();
+        // Puppeteer pauses dedicated workers before publishing targetcreated, but resumes
+        // them immediately after the event. Reuse that session so Network is enabled before
+        // the worker can issue its first request instead of creating a second, late session.
+        const existingSession = isDedicatedWorker ? (target as any)._session?.() : undefined;
+        if (isDedicatedWorker && !existingSession) {
+          this.appLogger.warn(
+            "[TargetManager] Puppeteer's paused dedicated-worker session was unavailable; falling back to createCDPSession(), which may miss initial worker activity",
+          );
+        }
+        const session = existingSession ?? (await target.createCDPSession());
         this.cdpSessions.set(sessionId, session);
-        await this.enableDomainsForTarget(session, type, isExtensionTarget, isDedicatedWorker);
-        attachCDPEvents(session, this.logger);
+        if (existingSession) this.puppeteerOwnedSessions.add(sessionId);
 
         if (isExtensionTarget) {
+          await this.enableDomainsForTarget(session, type, isExtensionTarget, isDedicatedWorker);
+          attachCDPEvents(session, this.logger);
           await attachExtensionEvents(target, this.logger, INTERNAL_EXTENSIONS, this.appLogger);
         } else if (isDedicatedWorker) {
+          const targetSessionPromise = this.onTargetSession?.({
+            target,
+            type,
+            session,
+            isDedicatedWorker,
+            isPuppeteerPaused: Boolean(existingSession),
+          });
+
+          if (existingSession) {
+            attachCDPEvents(session, this.logger);
+            attachWorkerEvents(target, session, this.logger, type, this.workerEventsOptions());
+
+            // Queue network capture before yielding. Puppeteer's target
+            // manager sends Runtime.runIfWaitingForDebugger after targetcreated returns.
+            const networkEnabled =
+              this.instrumentationOptions.captureWorkerNetwork === true
+                ? session.send("Network.enable").catch((err) => {
+                    this.appLogger.error(
+                      { err },
+                      `[TargetManager] Failed to enable Network for ${type}:`,
+                    );
+                  })
+                : Promise.resolve();
+            await Promise.all([
+              networkEnabled,
+              this.enableDomainsForTarget(
+                session,
+                type,
+                false,
+                isDedicatedWorker,
+                this.instrumentationOptions.captureWorkerNetwork === true,
+              ),
+              targetSessionPromise,
+            ]);
+            break;
+          }
+
+          await Promise.all([
+            targetSessionPromise,
+            this.enableDomainsForTarget(session, type, false, isDedicatedWorker),
+          ]);
+          attachCDPEvents(session, this.logger);
           attachWorkerEvents(target, session, this.logger, type, this.workerEventsOptions());
+        } else {
+          await this.enableDomainsForTarget(session, type, false, isDedicatedWorker);
+          attachCDPEvents(session, this.logger);
         }
         break;
       }
@@ -145,6 +203,7 @@ export class TargetInstrumentationManager {
     const session = this.cdpSessions.get(targetId);
     if (session) {
       this.cdpSessions.delete(targetId);
+      if (this.puppeteerOwnedSessions.delete(targetId)) return;
       session.detach().catch(() => {
         // Session may already be closed if the target was destroyed
       });
@@ -156,6 +215,7 @@ export class TargetInstrumentationManager {
     type: TargetType,
     isExtension: boolean,
     isDedicatedWorker = false,
+    networkAlreadyEnabled = false,
   ): Promise<void> {
     const enabledDomains = new Set<string>();
 
@@ -182,7 +242,10 @@ export class TargetInstrumentationManager {
       case TargetType.SHARED_WORKER:
         await enable("Runtime");
         await enable("Log");
-        if (isExtension || this.instrumentationOptions.captureWorkerNetwork === true) {
+        if (
+          !networkAlreadyEnabled &&
+          (isExtension || this.instrumentationOptions.captureWorkerNetwork === true)
+        ) {
           await enable("Network");
         }
         break;
@@ -192,7 +255,10 @@ export class TargetInstrumentationManager {
         if (isExtension || isDedicatedWorker) {
           await enable("Runtime");
           await enable("Log");
-          if (isExtension || this.instrumentationOptions.captureWorkerNetwork === true) {
+          if (
+            !networkAlreadyEnabled &&
+            (isExtension || this.instrumentationOptions.captureWorkerNetwork === true)
+          ) {
             await enable("Network");
           }
         }
