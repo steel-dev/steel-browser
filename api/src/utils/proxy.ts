@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { env } from "../env.js";
 import { SessionService } from "../services/session.service.js";
 import { makePassthrough, PassthroughServer } from "./passthough-proxy.js";
@@ -65,5 +66,12 @@ export class ProxyServer extends Server implements IProxyServer {
   async listen(): Promise<void> {
     await super.listen();
     this.url = `http://127.0.0.1:${this.port}`;
+  }
+
+  async close(force = false): Promise<void> {
+    await super.close(force);
+    // `connectionClosed` fires as the sockets settle, a tick after close()
+    // resolves. Yield so those handlers have run by the time this resolves.
+    await setImmediate();
   }
 }

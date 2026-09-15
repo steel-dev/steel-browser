@@ -281,11 +281,6 @@ export class SessionService {
     this.activeSession.duration =
       new Date().getTime() - new Date(this.activeSession.createdAt).getTime();
 
-    if (this.activeSession.proxyServer) {
-      this.activeSession.proxyTxBytes = this.activeSession.proxyServer.txBytes;
-      this.activeSession.proxyRxBytes = this.activeSession.proxyServer.rxBytes;
-    }
-
     if (this.activeSession.isSelenium) {
       this.seleniumService.close();
       await this.cdpService.launch();
@@ -294,11 +289,22 @@ export class SessionService {
     }
 
     const releasedSession = this.activeSession;
+    // resetSessionInfo closes the proxy and clears the field, so hold the
+    // reference to read from afterwards.
+    const proxyServer = releasedSession.proxyServer;
 
     await this.resetSessionInfo({
       id: uuidv4(),
       status: "idle",
     });
+
+    // A connection is credited on `connectionClosed`, and long-lived tunnels stay
+    // open until the browser goes away, so take the counters once the proxy has
+    // closed to get the settled totals.
+    if (proxyServer) {
+      releasedSession.proxyTxBytes = proxyServer.txBytes;
+      releasedSession.proxyRxBytes = proxyServer.rxBytes;
+    }
 
     this.pastSessions.push(releasedSession);
 
