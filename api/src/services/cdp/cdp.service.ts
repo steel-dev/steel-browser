@@ -37,6 +37,7 @@ import {
   isImageRequest,
 } from "../../utils/requests.js";
 import { filterHeaders, getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
+import { captureMemorySnapshot } from "../../utils/memory-snapshot.js";
 import {
   deepMerge,
   extractStorageForPageWithTimeout,
@@ -1079,6 +1080,8 @@ export class CDPService extends EventEmitter {
         });
         this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
 
+        await this.subscribeToTargetCrashes();
+
         this.wsEndpoint = await executeCritical(
           async () => this.browserInstance!.wsEndpoint(),
           (error) =>
@@ -1288,6 +1291,43 @@ export class CDPService extends EventEmitter {
   /**
    * Extract all storage data (localStorage, sessionStorage, IndexedDB) for all open pages
    */
+  /**
+   * Record renderer crashes as a first-class event. Target.targetCrashed is the only
+   * source carrying Chrome's termination status and error code; the page "error" event
+   * says a crash happened but not why.
+   */
+  private async subscribeToTargetCrashes(): Promise<void> {
+    if (!this.browserInstance) return;
+
+    try {
+      const session = await this.browserInstance.target().createCDPSession();
+
+      session.on("Target.targetCrashed", (event: Protocol.Target.TargetCrashedEvent) => {
+        const memory = captureMemorySnapshot();
+        this.logger.error(
+          { targetId: event.targetId, status: event.status, errorCode: event.errorCode, memory },
+          "[CDPService] Renderer crashed",
+        );
+
+        this.instrumentationLogger?.record?.({
+          type: BrowserEventType.BrowserCrashed,
+          timestamp: new Date().toISOString(),
+          message: `Renderer crashed (status ${event.status}, error code ${event.errorCode})`,
+          targetId: event.targetId,
+          status: event.status,
+          errorCode: event.errorCode,
+          memory,
+        } as any);
+      });
+
+      await session.send("Target.setDiscoverTargets", { discover: true });
+      this.logger.debug("[CDPService] Subscribed to renderer crash events");
+    } catch (err) {
+      // Crash reporting is best-effort and must never block a launch.
+      this.logger.warn({ err }, "[CDPService] Could not subscribe to renderer crash events");
+    }
+  }
+
   private async getExistingPageSessionData(): Promise<SessionData> {
     if (!this.browserInstance || !this.primaryPage) {
       return {};

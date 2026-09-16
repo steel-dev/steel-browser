@@ -23,6 +23,7 @@ export enum BrowserEventType {
   CDPCommandResult = "CDPCommandResult",
   CDPEvent = "CDPEvent",
   ResponseBody = "ResponseBody",
+  BrowserCrashed = "BrowserCrashed",
 }
 
 export enum EmitEvent {
