@@ -10,6 +10,50 @@ import {
 import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../types/index.js";
 import path from "path";
+
+// Storage extraction talks to the renderer, which can stop answering without ever
+// rejecting, so bound each page rather than let one stall session teardown.
+export const STORAGE_EXTRACTION_TIMEOUT_MS = 10_000;
+
+export function safePageUrl(page: Page): string {
+  try {
+    return page.url();
+  } catch {
+    return "unknown";
+  }
+}
+
+function emptySessionData(): SessionData {
+  return { localStorage: {}, sessionStorage: {}, indexedDB: {} };
+}
+
+// Resolves to empty data if the renderer does not answer in time, and never rejects,
+// so a single unresponsive page cannot fail the whole release.
+export async function extractStorageForPageWithTimeout(
+  page: Page,
+  logger: FastifyBaseLogger,
+  timeoutMs: number = STORAGE_EXTRACTION_TIMEOUT_MS,
+): Promise<SessionData> {
+  let timer: NodeJS.Timeout | undefined;
+
+  try {
+    return await Promise.race([
+      extractStorageForPage(page, logger),
+      new Promise<SessionData>((resolve) => {
+        timer = setTimeout(() => {
+          logger.warn(
+            `[CDPService] Storage extraction timed out after ${timeoutMs}ms for ${safePageUrl(
+              page,
+            )}; skipping page`,
+          );
+          resolve(emptySessionData());
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 /**
  * Extract storage data for a single origin
  * @param client CDP session
