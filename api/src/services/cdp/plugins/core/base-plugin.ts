@@ -45,6 +45,7 @@ export abstract class BasePlugin {
   public onAfterSessionEnd(sessionConfig: BrowserLauncherOptions): void | Promise<void> {}
   public async onBrowserLaunch(browser: Browser): Promise<void> {}
   public onBrowserReady(context: BrowserLauncherOptions): void | Promise<void> {}
+  public onBeforeBrowserReuse(context: BrowserLauncherOptions): void | Promise<void> {}
   public async onPageCreated(page: Page): Promise<void> {}
   public async onPageNavigate(page: Page): Promise<void> {}
   public async onPageUnload(page: Page): Promise<void> {}
