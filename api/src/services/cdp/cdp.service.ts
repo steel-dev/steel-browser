@@ -908,7 +908,9 @@ export class CDPService extends EventEmitter {
           "--enable-crashpad",
           "--crash-dumps-dir=/tmp/chrome-dumps",
           "--noerrdialogs",
-          "--force-device-scale-factor=1",
+          ...(this.launchConfig?.deviceConfig?.device === "mobile"
+            ? []
+            : ["--force-device-scale-factor=1"]),
           "--disable-hang-monitor",
         ];
 
@@ -1509,14 +1511,15 @@ export class CDPService extends EventEmitter {
         await session.send("Emulation.setUserAgentOverride", {
           userAgent: userAgent,
           acceptLanguage: headers["accept-language"],
-          platform: fingerprint.navigator.platform || "Linux x86_64",
+          platform: userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
           userAgentMetadata: {
             brands:
               userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
             fullVersionList:
               userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
             fullVersion: userAgentMetadata.uaFullVersion,
-            platform: fingerprint.navigator.platform || "Linux x86_64",
+            platform:
+              userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
             platformVersion: userAgentMetadata.platformVersion || "",
             architecture: userAgentMetadata.architecture || "x86",
             model: userAgentMetadata.model || "",
@@ -1580,7 +1583,6 @@ export class CDPService extends EventEmitter {
         screenHeight: screen.height,
         width: screen.width,
         height: screen.height,
-        viewport: { width: screen.availWidth, height: screen.availHeight, scale: 1, x: 0, y: 0 },
         mobile: /phone|android|mobile/i.test(userAgent),
         screenOrientation:
           screen.height > screen.width
@@ -1588,6 +1590,16 @@ export class CDPService extends EventEmitter {
             : { angle: 90, type: "landscapePrimary" },
         deviceScaleFactor: screen.devicePixelRatio,
       });
+
+      if (/phone|android|mobile/i.test(userAgent)) {
+        const maxTouchPoints =
+          (this.fingerprintData?.fingerprint.navigator as { maxTouchPoints?: number })
+            .maxTouchPoints ?? 1;
+        await session.send("Emulation.setTouchEmulationEnabled", {
+          enabled: true,
+          maxTouchPoints,
+        });
+      }
     } finally {
       await session.detach().catch(() => {});
     }
