@@ -908,9 +908,7 @@ export class CDPService extends EventEmitter {
           "--enable-crashpad",
           "--crash-dumps-dir=/tmp/chrome-dumps",
           "--noerrdialogs",
-          ...(this.launchConfig?.deviceConfig?.device === "mobile"
-            ? []
-            : ["--force-device-scale-factor=1"]),
+          "--force-device-scale-factor=1",
           "--disable-hang-monitor",
         ];
 
