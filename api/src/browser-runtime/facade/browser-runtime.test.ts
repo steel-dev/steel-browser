@@ -182,6 +182,97 @@ describe("BrowserRuntime Facade", () => {
       expect(mockPlugin.onShutdown).toHaveBeenCalled();
     });
 
+    it("should preserve session lifecycle hooks", async () => {
+      const events: string[] = [];
+
+      const plugin = {
+        name: "session-lifecycle-plugin",
+
+        onBrowserReady: vi.fn(),
+
+        onSessionStart: vi.fn(() => {
+          events.push("session-start");
+        }),
+
+        onBeforeSessionEnd: vi.fn(() => {
+          events.push("before-session-end");
+        }),
+
+        onSessionEnd: vi.fn(() => {
+          events.push("session-end");
+        }),
+
+        onAfterSessionEnd: vi.fn(() => {
+          events.push("after-session-end");
+        }),
+      };
+
+      runtime.registerPlugin(plugin as any);
+
+      await runtime.startNewSession({
+        options: { headless: true },
+      } as any);
+
+      await runtime.endSession();
+
+      expect(plugin.onSessionStart).toHaveBeenCalled();
+      expect(plugin.onBeforeSessionEnd).toHaveBeenCalled();
+      expect(plugin.onSessionEnd).toHaveBeenCalled();
+      expect(plugin.onAfterSessionEnd).toHaveBeenCalled();
+
+      expect(events.indexOf("session-start")).toBeLessThan(events.indexOf("before-session-end"));
+      expect(events.indexOf("before-session-end")).toBeLessThan(events.indexOf("session-end"));
+      expect(events.indexOf("session-end")).toBeLessThan(events.indexOf("after-session-end"));
+    });
+
+    it("should preserve session lifecycle hooks when session launch fails", async () => {
+      const events: string[] = [];
+      const launchError = new Error("launch failed");
+
+      const plugin = {
+        name: "session-launch-failure-plugin",
+
+        onBrowserReady: vi.fn(),
+
+        onSessionStart: vi.fn(() => {
+          events.push("session-start");
+        }),
+
+        onBeforeSessionEnd: vi.fn(() => {
+          events.push("before-session-end");
+        }),
+
+        onSessionEnd: vi.fn(() => {
+          events.push("session-end");
+        }),
+
+        onAfterSessionEnd: vi.fn(() => {
+          events.push("after-session-end");
+        }),
+      };
+
+      runtime.registerPlugin(plugin as any);
+
+      const launchSpy = vi
+        .spyOn(runtime as any, "launchInternal")
+        .mockRejectedValueOnce(launchError);
+
+      await expect(
+        runtime.startNewSession({
+          options: { headless: true },
+        } as any),
+      ).rejects.toThrow("launch failed");
+
+      expect(events).toEqual([
+        "session-start",
+        "before-session-end",
+        "session-end",
+        "after-session-end",
+      ]);
+
+      launchSpy.mockRestore();
+    });
+
     it("should set service on BasePlugin registrations", async () => {
       let resolveReady!: () => void;
       const readyPromise = new Promise<void>((resolve) => {
