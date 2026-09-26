@@ -326,7 +326,16 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
 
   private async startNewSessionInternal(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
     await this.shutdownInternal();
-    return this.launchInternal(sessionConfig);
+    await this.runPluginSessionHook("onSessionStart", sessionConfig);
+
+    try {
+      return await this.launchInternal(sessionConfig);
+    } catch (error) {
+      await this.runPluginSessionHook("onBeforeSessionEnd", sessionConfig);
+      await this.runPluginSessionHook("onSessionEnd", sessionConfig);
+      await this.runPluginSessionHook("onAfterSessionEnd", sessionConfig);
+      throw error;
+    }
   }
 
   async endSession(): Promise<void> {
@@ -336,23 +345,35 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
   private async endSessionInternal(): Promise<void> {
     this.sessionContext = await this.getBrowserState().catch(() => null);
 
+    const sessionConfig = this.config;
     const wasIntentionalShutdown = this.intentionalShutdown;
     this.intentionalShutdown = true;
-    await this.runShutdownCleanupHooks(this.config || null);
 
-    const currentSnapshot = this.actor.getSnapshot();
-    if (currentSnapshot.matches({ ready: "active" })) {
-      this.actor.send({ type: "END_SESSION" });
-      await waitFor(this.actor, (s) => s.matches("idle"));
-    } else {
-      await this.stop();
+    if (sessionConfig) {
+      await this.runPluginSessionHook("onBeforeSessionEnd", sessionConfig);
     }
 
-    this.instrumentationLogger?.resetContext?.();
+    try {
+      await this.runShutdownCleanupHooks(this.config || null);
 
-    if (this.sessionSpan) {
-      this.sessionSpan.end();
-      this.sessionSpan = null;
+      const currentSnapshot = this.actor.getSnapshot();
+      if (currentSnapshot.matches({ ready: "active" })) {
+        this.actor.send({ type: "END_SESSION" });
+        await waitFor(this.actor, (s) => s.matches("idle"));
+      } else {
+        await this.stop();
+      }
+
+      this.instrumentationLogger?.resetContext?.();
+
+      if (this.sessionSpan) {
+        this.sessionSpan.end();
+        this.sessionSpan = null;
+      }
+    } finally {
+      if (sessionConfig) {
+        await this.runPluginSessionHook("onAfterSessionEnd", sessionConfig);
+      }
     }
 
     if (this.keepAlive) {
@@ -531,6 +552,19 @@ export class BrowserRuntime extends EventEmitter implements IBrowserRuntime {
     hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
   ): void {
     this.shutdownMutators.push(hook);
+  }
+
+  private async runPluginSessionHook(
+    hook: "onSessionStart" | "onBeforeSessionEnd" | "onSessionEnd" | "onAfterSessionEnd",
+    config: BrowserLauncherOptions,
+  ): Promise<void> {
+    for (const plugin of this.pluginRegistry.values()) {
+      try {
+        await Promise.resolve(plugin[hook]?.(config));
+      } catch (err) {
+        this.logger.error({ err, plugin: plugin.name }, `Error in plugin ${hook}`);
+      }
+    }
   }
 
   private async runShutdownHooks(
