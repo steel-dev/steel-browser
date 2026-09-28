@@ -1,6 +1,6 @@
 import { Browser, Page } from "puppeteer-core";
 import { CDPService } from "../../cdp.service.js";
-import { BasePlugin, ShutdownReason } from "./base-plugin.js";
+import { BasePlugin, ShutdownReason, TargetSessionContext } from "./base-plugin.js";
 import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../../../../types/browser.js";
 
@@ -126,6 +126,21 @@ export class PluginManager {
         await plugin.onPageCreated(page);
       } catch (error) {
         this.logger.error(`Error in plugin ${plugin.name}.onPageCreated: ${error}`);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  /**
+   * Notify plugins after instrumentation has claimed a target session but before
+   * Puppeteer resumes a paused dedicated worker.
+   */
+  public async onTargetSession(context: TargetSessionContext): Promise<void> {
+    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
+      try {
+        await plugin.onTargetSession(context);
+      } catch (error) {
+        this.logger.error(`Error in plugin ${plugin.name}.onTargetSession: ${error}`);
       }
     });
     await Promise.all(promises);

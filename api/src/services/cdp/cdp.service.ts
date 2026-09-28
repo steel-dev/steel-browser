@@ -180,6 +180,8 @@ export class CDPService extends EventEmitter {
     this.targetInstrumentationManager = new TargetInstrumentationManager(
       this.instrumentationLogger,
       this.logger,
+      undefined,
+      this.pluginManager.onTargetSession.bind(this.pluginManager),
     );
     this.instrumentationLogger?.on?.(EmitEvent.Log, (event, context) => {
       this.emit(EmitEvent.Log, event);
@@ -1373,6 +1375,7 @@ export class CDPService extends EventEmitter {
         dangerouslyLogRequestDetails: sessionConfig.dangerouslyLogRequestDetails,
         captureWorkerNetwork: sessionConfig.captureWorkerNetwork,
       },
+      this.pluginManager.onTargetSession.bind(this.pluginManager),
     );
 
     // Notify plugins that a session is starting, before any launch/reuse work begins.
@@ -1412,6 +1415,8 @@ export class CDPService extends EventEmitter {
       this.targetInstrumentationManager = new TargetInstrumentationManager(
         this.instrumentationLogger,
         this.logger,
+        undefined,
+        this.pluginManager.onTargetSession.bind(this.pluginManager),
       );
     } finally {
       await this.pluginManager.onAfterSessionEnd(sessionConfig);
