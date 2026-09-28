@@ -1193,6 +1193,7 @@ export class CDPService extends EventEmitter {
       head,
       {
         target: this.wsEndpoint,
+        changeOrigin: true,
       },
       (error) => {
         if (error) {
