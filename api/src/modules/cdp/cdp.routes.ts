@@ -19,11 +19,11 @@ async function routes(server: FastifyInstance) {
       request: FastifyRequest<{ Querystring: z.infer<typeof cdpSchemas.GetDevtoolsUrlSchema> }>,
       reply: FastifyReply,
     ) => {
-      return reply.redirect(
-        `${server.cdpService.getDebuggerUrl()}?ws=${server.cdpService
-          .getDebuggerWsUrl(request.query.pageId)
-          .replace("ws:", "")}`,
-      );
+      const debuggerWsUrl = new URL(server.cdpService.getDebuggerWsUrl(request.query.pageId));
+      const queryParam = debuggerWsUrl.protocol === "wss:" ? "wss" : "ws";
+      const endpoint = `${debuggerWsUrl.host}${debuggerWsUrl.pathname}${debuggerWsUrl.search}`;
+
+      return reply.redirect(`${server.cdpService.getDebuggerUrl()}?${queryParam}=${endpoint}`);
     },
   );
 }
