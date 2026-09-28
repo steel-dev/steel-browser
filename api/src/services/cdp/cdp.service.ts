@@ -82,6 +82,8 @@ import {
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
+const CHROME_DEFAULT_ACCEPT_LANGUAGE = "en-US,en;q=0.9";
+
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
@@ -1502,55 +1504,56 @@ export class CDPService extends EventEmitter {
       const userAgent = fingerprint.navigator.userAgent;
       const userAgentMetadata = fingerprint.navigator.userAgentData;
 
-      const uaPlatform =
-        userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64";
+      const navPlatform = fingerprint.navigator.platform || "Linux x86_64";
+      const uaPlatform = userAgentMetadata.platform || navPlatform;
       // Linux Chrome reports an empty platformVersion
       const platformVersion =
         userAgentMetadata.platformVersion ?? (uaPlatform.startsWith("Linux") ? "" : "15.0.0");
+      const metadata: Protocol.Emulation.UserAgentMetadata = {
+        brands:
+          userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
+        fullVersionList:
+          userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
+        fullVersion: userAgentMetadata.uaFullVersion,
+        platform: uaPlatform,
+        platformVersion,
+        architecture: userAgentMetadata.architecture || "x86",
+        model: userAgentMetadata.model || "",
+        mobile: userAgentMetadata.mobile as unknown as boolean,
+        bitness: userAgentMetadata.bitness || "64",
+        wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
+      };
+      const acceptLanguage = headers["accept-language"];
 
-      await page.setUserAgent(userAgent);
+      // Without metadata Chrome drops every sec-ch-ua header
+      await page.setUserAgent(userAgent, metadata);
 
-      const session = await page.createCDPSession();
-
-      try {
-        const injectedHeaders = filterHeaders(headers);
-        if (Object.keys(injectedHeaders).length > 0) {
-          await page.setExtraHTTPHeaders({ ...injectedHeaders, ...this.baseExtraHeaders() });
-        }
-
-        await session.send("Emulation.setUserAgentOverride", {
-          userAgent: userAgent,
-          acceptLanguage: headers["accept-language"],
-          platform: uaPlatform,
-          userAgentMetadata: {
-            brands:
-              userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
-            fullVersionList:
-              userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
-            fullVersion: userAgentMetadata.uaFullVersion,
-            platform: uaPlatform,
-            platformVersion,
-            architecture: userAgentMetadata.architecture || "x86",
-            model: userAgentMetadata.model || "",
-            mobile: userAgentMetadata.mobile as unknown as boolean,
-            bitness: userAgentMetadata.bitness || "64",
-            wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
-          },
-        });
-      } finally {
-        // Always detach the session when done
-        await session.detach().catch(() => {});
+      const injectedHeaders = filterHeaders(headers);
+      if (Object.keys(injectedHeaders).length > 0) {
+        await page.setExtraHTTPHeaders({ ...injectedHeaders, ...this.baseExtraHeaders() });
       }
+
+      // Left attached: detaching a session reverts its override
+      const session = await page.createCDPSession();
+      await session.send("Emulation.setUserAgentOverride", {
+        userAgent,
+        platform: navPlatform,
+        // Overriding accept-language moves it out of Chrome's native header order
+        ...(acceptLanguage && acceptLanguage !== CHROME_DEFAULT_ACCEPT_LANGUAGE
+          ? { acceptLanguage }
+          : {}),
+        userAgentMetadata: metadata,
+      });
 
       await page.evaluateOnNewDocument(
         loadFingerprintScript({
-          fixedPlatform: fingerprint.navigator.platform || "Linux x86_64",
+          fixedPlatform: navPlatform,
           fixedVendor: (fingerprint.videoCard as VideoCard | null)?.vendor,
           fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
           fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
           fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
-          fixedArchitecture: userAgentMetadata.architecture || "x86",
-          fixedBitness: userAgentMetadata.bitness || "64",
+          fixedArchitecture: metadata.architecture,
+          fixedBitness: metadata.bitness,
           fixedModel: userAgentMetadata.model || "",
           fixedPlatformVersion: platformVersion,
           fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",

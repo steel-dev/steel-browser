@@ -24,8 +24,10 @@ const poolHeaders = {
 
 function makePage() {
   const send = vi.fn().mockResolvedValue({});
+  const detach = vi.fn().mockResolvedValue(undefined);
   return {
     send,
+    detach,
     page: {
       setUserAgent: vi.fn().mockResolvedValue(undefined),
       setExtraHTTPHeaders: vi.fn().mockResolvedValue(undefined),
@@ -63,19 +65,37 @@ describe("filterHeaders", () => {
 });
 
 describe("CDPService.injectFingerprintSafely", () => {
-  test("leaves UA headers to setUserAgentOverride", async () => {
+  test("keeps a persistent UA override with metadata", async () => {
     const service = new CDPService({}, logger as any);
-    const { page, send } = makePage();
+    const { page, send, detach } = makePage();
 
     await (service as any).injectFingerprintSafely(page, fingerprintData(poolHeaders));
 
     expect(page.setExtraHTTPHeaders).not.toHaveBeenCalled();
+    expect(page.setUserAgent).toHaveBeenCalledWith(
+      poolHeaders["user-agent"],
+      expect.objectContaining({ platform: "Linux", platformVersion: "" }),
+    );
+    const [, override] = send.mock.calls.find(
+      ([method]) => method === "Emulation.setUserAgentOverride",
+    )!;
+    expect(override).toMatchObject({ platform: "Linux x86_64" });
+    expect(override).not.toHaveProperty("acceptLanguage");
+    expect(detach).not.toHaveBeenCalled();
+  });
+
+  test("overrides accept-language only when it differs from Chrome's default", async () => {
+    const service = new CDPService({}, logger as any);
+    const { page, send } = makePage();
+
+    await (service as any).injectFingerprintSafely(
+      page,
+      fingerprintData({ ...poolHeaders, "accept-language": "es-CL,es;q=0.9" }),
+    );
+
     expect(send).toHaveBeenCalledWith(
       "Emulation.setUserAgentOverride",
-      expect.objectContaining({
-        acceptLanguage: "en-US,en;q=0.9",
-        userAgentMetadata: expect.objectContaining({ platformVersion: "" }),
-      }),
+      expect.objectContaining({ acceptLanguage: "es-CL,es;q=0.9" }),
     );
   });
 
