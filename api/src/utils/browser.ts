@@ -145,21 +145,25 @@ export async function installMouseHelper(page: Page, device: string) {
   }, device);
 }
 
+const HEADERS_TO_REMOVE = new Set([
+  "accept-encoding",
+  "accept",
+  "cache-control",
+  "pragma",
+  "sec-fetch-dest",
+  "sec-fetch-mode",
+  "sec-fetch-site",
+  "sec-fetch-user",
+  "upgrade-insecure-requests",
+  // Emulation.setUserAgentOverride emits these in Chrome's native order
+  "user-agent",
+  "accept-language",
+]);
+
 export function filterHeaders(headers: Record<string, string>) {
-  const headersToRemove = [
-    "accept-encoding",
-    "accept",
-    "cache-control",
-    "pragma",
-    "sec-fetch-dest",
-    "sec-fetch-mode",
-    "sec-fetch-site",
-    "sec-fetch-user",
-    "upgrade-insecure-requests",
-  ];
-  const filteredHeaders = { ...headers };
-  headersToRemove.forEach((header) => {
-    delete filteredHeaders[header];
-  });
-  return filteredHeaders;
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([header]) => !HEADERS_TO_REMOVE.has(header) && !header.startsWith("sec-ch-ua"),
+    ),
+  );
 }

@@ -37,7 +37,7 @@ export const loadFingerprintScript = ({
   fixedArchitecture?: string;
   fixedBitness?: string;
   fixedModel?: string;
-  fixedPlatformVersion?: string;
+  fixedPlatformVersion: string;
   fixedUaFullVersion?: string;
   fixedBrands: Array<{ brand: string; version: string }>;
 }): string => {
@@ -64,7 +64,7 @@ export const loadFingerprintScript = ({
     const FIXED_ARCHITECTURE = ${safeStringValue(fixedArchitecture, "x86")};
     const FIXED_BITNESS = ${safeStringValue(fixedBitness, "64")};
     const FIXED_MODEL = ${safeStringValue(fixedModel, "")};
-    const FIXED_PLATFORM_VERSION = ${safeStringValue(fixedPlatformVersion, "15.0.0")};
+    const FIXED_PLATFORM_VERSION = ${JSON.stringify(fixedPlatformVersion)};
     const FIXED_UA_FULL_VERSION = ${safeStringValue(fixedUaFullVersion, "131.0.6778.86")};
     const FIXED_BRANDS = ${JSON.stringify(fixedBrands)};
     ${fingerprintScript}

@@ -381,13 +381,9 @@ export class CDPService extends EventEmitter {
           installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
         }
 
-        if (this.launchConfig?.customHeaders) {
-          await page.setExtraHTTPHeaders({
-            ...env.DEFAULT_HEADERS,
-            ...this.launchConfig.customHeaders,
-          });
-        } else if (env.DEFAULT_HEADERS) {
-          await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
+        const baseHeaders = this.baseExtraHeaders();
+        if (Object.keys(baseHeaders).length > 0) {
+          await page.setExtraHTTPHeaders(baseHeaders);
         }
 
         await this.applyDeviceMetricsOverride(page);
@@ -1489,6 +1485,10 @@ export class CDPService extends EventEmitter {
     this.logger.debug("[CDPService] Session context injection setup complete");
   }
 
+  private baseExtraHeaders(): Record<string, string> {
+    return { ...env.DEFAULT_HEADERS, ...this.launchConfig?.customHeaders };
+  }
+
   @traceable
   private async injectFingerprintSafely(
     page: Page,
@@ -1502,28 +1502,34 @@ export class CDPService extends EventEmitter {
       const userAgent = fingerprint.navigator.userAgent;
       const userAgentMetadata = fingerprint.navigator.userAgentData;
 
+      const uaPlatform =
+        userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64";
+      // Linux Chrome reports an empty platformVersion
+      const platformVersion =
+        userAgentMetadata.platformVersion ?? (uaPlatform.startsWith("Linux") ? "" : "15.0.0");
+
       await page.setUserAgent(userAgent);
 
       const session = await page.createCDPSession();
 
       try {
         const injectedHeaders = filterHeaders(headers);
-
-        await page.setExtraHTTPHeaders(injectedHeaders);
+        if (Object.keys(injectedHeaders).length > 0) {
+          await page.setExtraHTTPHeaders({ ...injectedHeaders, ...this.baseExtraHeaders() });
+        }
 
         await session.send("Emulation.setUserAgentOverride", {
           userAgent: userAgent,
           acceptLanguage: headers["accept-language"],
-          platform: userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
+          platform: uaPlatform,
           userAgentMetadata: {
             brands:
               userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
             fullVersionList:
               userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
             fullVersion: userAgentMetadata.uaFullVersion,
-            platform:
-              userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
-            platformVersion: userAgentMetadata.platformVersion || "",
+            platform: uaPlatform,
+            platformVersion,
             architecture: userAgentMetadata.architecture || "x86",
             model: userAgentMetadata.model || "",
             mobile: userAgentMetadata.mobile as unknown as boolean,
@@ -1546,7 +1552,7 @@ export class CDPService extends EventEmitter {
           fixedArchitecture: userAgentMetadata.architecture || "x86",
           fixedBitness: userAgentMetadata.bitness || "64",
           fixedModel: userAgentMetadata.model || "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion || "15.0.0",
+          fixedPlatformVersion: platformVersion,
           fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
           fixedBrands:
             userAgentMetadata.brands ||
