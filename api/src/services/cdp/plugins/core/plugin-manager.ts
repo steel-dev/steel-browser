@@ -117,6 +117,13 @@ export class PluginManager {
     await Promise.all(promises);
   }
 
+  /** Critical ownership configuration: errors must stop reuse before pages are created. */
+  public async onBeforeBrowserReuse(context: BrowserLauncherOptions): Promise<void> {
+    for (const plugin of this.plugins.values()) {
+      await plugin.onBeforeBrowserReuse(context);
+    }
+  }
+
   /**
    * Notify all plugins about a page creation
    */

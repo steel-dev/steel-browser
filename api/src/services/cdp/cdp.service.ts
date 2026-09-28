@@ -1,3 +1,5 @@
+import { confirmBrowserProcessExit } from "./confirm-process-exit.js";
+import { LaunchShutdownGate } from "./launch-shutdown-gate.js";
 import { EventEmitter } from "events";
 import { FastifyBaseLogger } from "fastify";
 import {
@@ -97,6 +99,7 @@ export class CDPService extends EventEmitter {
   private defaultLaunchConfig: BrowserLauncherOptions;
   private currentSessionConfig: BrowserLauncherOptions | null;
   private shuttingDown: boolean;
+  private readonly launchShutdownGate: LaunchShutdownGate;
   private defaultTimezone: string;
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
@@ -123,6 +126,10 @@ export class CDPService extends EventEmitter {
   ) {
     super();
     this.logger = logger.child({ component: "CDPService" });
+    this.launchShutdownGate = new LaunchShutdownGate(
+      (error) => this.logger.error({ error }, "Late browser launch cleanup failed during shutdown"),
+      (error) => this.emit("shutdownRequired", error),
+    );
     const { keepAlive = true } = config;
 
     this.keepAlive = keepAlive;
@@ -508,6 +515,9 @@ export class CDPService extends EventEmitter {
     this.shuttingDown = true;
     this.logger.info(`[CDPService] Shutting down and cleaning up resources (reason: ${reason})`);
     this.chromeSessionService.invalidate();
+    // Capture before plugins/close can disconnect or replace the exposed handle.
+    const closingBrowser = this.browserInstance;
+    const closingProcess = closingBrowser?.process();
 
     try {
       if (this.browserInstance) {
@@ -517,8 +527,8 @@ export class CDPService extends EventEmitter {
       await this.pluginManager.onShutdown(reason);
 
       this.removeAllHandlers();
-      await this.browserInstance?.close();
-      await this.browserInstance?.process()?.kill();
+      await closingBrowser?.close();
+      if (closingBrowser) await confirmBrowserProcessExit(closingProcess);
       await this.shutdownHook();
 
       this.logger.info("[CDPService] Cleaning up files during shutdown");
@@ -538,8 +548,8 @@ export class CDPService extends EventEmitter {
     } catch (error) {
       this.logger.error(`[CDPService] Error during shutdown: ${error}`);
       // Ensure we complete the shutdown even if plugins throw errors
-      await this.browserInstance?.close();
-      await this.browserInstance?.process()?.kill();
+      await closingBrowser?.close();
+      if (closingBrowser) await confirmBrowserProcessExit(closingProcess);
       await this.shutdownHook();
 
       try {
@@ -553,6 +563,11 @@ export class CDPService extends EventEmitter {
       this.browserInstance = null;
       this.shuttingDown = false;
     }
+  }
+
+  /** Irreversible for this service instance; normal session relaunches do not call this. */
+  public sealForShutdown(): void {
+    this.launchShutdownGate.seal();
   }
 
   public getBrowserProcess() {
@@ -571,7 +586,9 @@ export class CDPService extends EventEmitter {
     config?: BrowserLauncherOptions,
     retryOptions?: Partial<RetryOptions>,
   ): Promise<Browser> {
+    this.launchShutdownGate.assertOpen();
     const operation = async () => {
+      this.launchShutdownGate.assertOpen();
       try {
         return await this.launchInternal(config);
       } catch (error) {
@@ -594,14 +611,40 @@ export class CDPService extends EventEmitter {
       retryOptions,
     );
 
-    return result.result;
+    return this.launchShutdownGate.accept(result.result);
   }
 
   @traceable
   private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
+    this.launchShutdownGate.assertOpen();
+    const deadline = performance.now() + 60000;
+    let launchTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadlineError = new LaunchTimeoutError(60000, undefined, false);
+    let deadlineExpired = false;
+    const expireDeadline = () => {
+      if (deadlineExpired) return deadlineError;
+      deadlineExpired = true;
+      // Retire rather than retry alongside an asynchronous attempt still running.
+      this.launchShutdownGate.seal(deadlineError);
+      const browser = this.browserInstance;
+      if (browser) {
+        try {
+          this.launchShutdownGate.accept(browser);
+        } catch {
+          /* Sealed acceptance rejects. */
+        }
+      }
+      this.emit("shutdownRequired", deadlineError);
+      return deadlineError;
+    };
+    const assertLaunchActive = () => {
+      this.launchShutdownGate.assertOpen();
+      // Promise continuations can run before a delayed timer callback.
+      if (performance.now() >= deadline) throw expireDeadline();
+    };
     try {
       const launchTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new LaunchTimeoutError(60000)), 60000);
+        launchTimer = setTimeout(() => reject(expireDeadline()), 60000);
       });
 
       const launchProcess = (async () => {
@@ -609,11 +652,15 @@ export class CDPService extends EventEmitter {
           this.browserInstance &&
           (await isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig));
 
+        assertLaunchActive();
         if (shouldReuseInstance) {
           this.logger.info(
             "[CDPService] Reusing existing browser instance with default configuration.",
           );
           this.launchConfig = config || this.defaultLaunchConfig;
+
+          await this.pluginManager.onBeforeBrowserReuse(this.launchConfig);
+          assertLaunchActive();
 
           const reuseOptimize = this.launchConfig.optimizeBandwidth;
           const reusePatterns =
@@ -649,6 +696,7 @@ export class CDPService extends EventEmitter {
               },
             );
           }
+          assertLaunchActive();
           if (!this.shuttingDown && this.browserInstance) {
             await this.pluginManager.onBrowserReady(this.launchConfig);
           } else {
@@ -659,6 +707,7 @@ export class CDPService extends EventEmitter {
             );
           }
 
+          assertLaunchActive();
           return this.browserInstance!;
         } else if (this.browserInstance) {
           this.logger.info(
@@ -953,7 +1002,7 @@ export class CDPService extends EventEmitter {
           args: launchArgs,
           executablePath: this.chromeExecPath,
           ignoreDefaultArgs: ["--enable-automation"],
-          timeout: 0,
+          timeout: 60000,
           env: {
             HOME: os.userInfo().homedir,
             TZ: timezone,
@@ -976,18 +1025,21 @@ export class CDPService extends EventEmitter {
         }
 
         // Browser process launch - most critical step
-        this.browserInstance = await executeCritical(
+        assertLaunchActive();
+        const launchedBrowser = await this.launchShutdownGate.launch(
           async () =>
             (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
-              return await puppeteer.launch(finalLaunchOptions);
+              assertLaunchActive();
+              // The launcher can reject before its asynchronous process cleanup finishes.
+              return await puppeteer.launch({
+                ...finalLaunchOptions,
+                timeout: Math.max(1, Math.ceil(deadline - performance.now())),
+              });
             })) as unknown as Browser,
-          (error) =>
-            new BrowserProcessError(
-              error instanceof Error ? error.message : String(error),
-              BrowserProcessState.LAUNCH_FAILED,
-              error,
-            ),
         );
+
+        if (performance.now() >= deadline) expireDeadline();
+        this.browserInstance = this.launchShutdownGate.accept(launchedBrowser);
 
         // Plugin notifications - catch individual plugin errors
         await executeOptional(
@@ -1120,6 +1172,7 @@ export class CDPService extends EventEmitter {
           this.logger.error({ err: error }, `[CDPService] Error attaching to existing targets`);
         }
 
+        assertLaunchActive();
         if (!this.shuttingDown && this.browserInstance) {
           await this.pluginManager.onBrowserReady(this.launchConfig);
         } else {
@@ -1130,6 +1183,7 @@ export class CDPService extends EventEmitter {
           );
         }
 
+        assertLaunchActive();
         return this.browserInstance;
       })();
 
@@ -1150,6 +1204,8 @@ export class CDPService extends EventEmitter {
       );
 
       throw categorizedError;
+    } finally {
+      clearTimeout(launchTimer);
     }
   }
 
