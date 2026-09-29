@@ -48,7 +48,7 @@ export function normalizeUrl(url: string): string | null {
     return null;
   }
 
-  if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+  if (/^https?:\/\//i.test(trimmedUrl)) {
     return trimmedUrl;
   }
 
