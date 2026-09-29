@@ -12,6 +12,7 @@ import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
 import { FileService } from "../../services/file.service.js";
+import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
 
 export class FilesController {
@@ -205,7 +206,7 @@ export class FilesController {
       reply
         .header("Content-Type", mime.lookup(request.params["*"]) || "application/octet-stream")
         .header("Content-Length", size)
-        .header("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`)
+        .header("Content-Disposition", attachmentContentDisposition(name))
         .header("Last-Modified", lastModified.toISOString());
 
       return reply.send(stream);
@@ -230,7 +231,7 @@ export class FilesController {
       .header("Content-Length", size)
       .header("Last-Modified", lastModified.toISOString())
       .header("Content-Type", mime.lookup(request.params["*"]) || "application/octet-stream")
-      .header("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`);
+      .header("Content-Disposition", attachmentContentDisposition(name));
 
     return reply.code(200).send();
   }
