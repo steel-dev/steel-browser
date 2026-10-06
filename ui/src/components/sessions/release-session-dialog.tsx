@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 import { useSessionsContext } from "@/hooks/use-sessions-context";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export const ReleaseSessionDialog = ({
   children,
@@ -25,14 +25,7 @@ export const ReleaseSessionDialog = ({
   const {
     mutate: releaseSession,
     isLoading,
-    isSuccess,
   } = useReleaseSessionMutation();
-
-  useEffect(() => {
-    if (isSuccess) {
-      setOpen(false);
-    }
-  }, [isSuccess]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -62,7 +55,7 @@ export const ReleaseSessionDialog = ({
             className="text-[var(--red-11)] border-[var(--red-7)] hover:bg-[var(--red-3)]"
             disabled={isLoading}
             onClick={() => {
-              releaseSession(id);
+              releaseSession(id, { onSuccess: () => setOpen(false) });
             }}
           >
             {isLoading ? "Releasing Session..." : "Release Session"}
