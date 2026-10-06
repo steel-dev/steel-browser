@@ -41,7 +41,7 @@ export function SessionViewer({ id }: SessionViewerProps) {
               },
               "*",
             );
-          } catch (error) {
+          } catch {
             iframeRef.current.contentWindow?.postMessage(
               {
                 type: "clipboardReadResponse",
@@ -64,7 +64,7 @@ export function SessionViewer({ id }: SessionViewerProps) {
               },
               "*",
             );
-          } catch (error) {
+          } catch {
             iframeRef.current.contentWindow?.postMessage(
               {
                 type: "clipboardWriteResponse",

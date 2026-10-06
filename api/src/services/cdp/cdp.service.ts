@@ -445,7 +445,7 @@ export class CDPService extends EventEmitter {
     const blockedHosts = isOptimizeObject ? optimize.blockHosts : undefined;
 
     if (parsed && this.launchConfig?.blockAds && isAdRequest(parsed)) {
-      this.logger.info(`[CDPService] Blocked request to ad related resource: ${url}`);
+      this.logger.debug(`[CDPService] Blocked request to ad related resource: ${url}`);
       await request.abort();
       return;
     }
@@ -454,7 +454,7 @@ export class CDPService extends EventEmitter {
       (parsed && isHostBlocked(parsed, blockedHosts)) ||
       isUrlMatchingPatterns(url, this.compiledUrlPatterns)
     ) {
-      this.logger.info(`[CDPService] Blocked request to blocked host or pattern: ${url}`);
+      this.logger.debug(`[CDPService] Blocked request to blocked host or pattern: ${url}`);
       await request.abort();
       return;
     }
@@ -471,7 +471,7 @@ export class CDPService extends EventEmitter {
         (blockMedia && (resourceType === "media" || isHeavyMediaRequest(parsed))) ||
         (blockStylesheets && resourceType === "stylesheet")
       ) {
-        this.logger.info(
+        this.logger.debug(
           `[CDPService] Blocked ${resourceType} resource due to optimizeBandwidth (${
             blockImages ? "blockImages" : ""
           }${blockMedia ? "blockMedia" : ""}${blockStylesheets ? "blockStylesheets" : ""}): ${url}`,
