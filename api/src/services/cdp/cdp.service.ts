@@ -701,7 +701,7 @@ export class CDPService extends EventEmitter {
             ),
         );
 
-        const { options, userAgent, userDataDir, fingerprint } = this.launchConfig;
+        const { options, userDataDir, fingerprint } = this.launchConfig;
         this.fingerprintData = fingerprint ?? null;
 
         // Run launch mutators - plugin errors should be caught
@@ -724,7 +724,7 @@ export class CDPService extends EventEmitter {
         // Fingerprint generation - can fail gracefully
         if (
           !env.SKIP_FINGERPRINT_INJECTION &&
-          !userAgent &&
+          !this.launchConfig.userAgent &&
           !this.launchConfig.skipFingerprintInjection &&
           !this.fingerprintData
         ) {
@@ -796,12 +796,15 @@ export class CDPService extends EventEmitter {
         }
 
         const isHeadless = !!this.launchConfig?.options?.headless;
+        // Launch hooks can select a fingerprint and set the User-Agent after
+        // launchConfig is first read. Use that final identity for Chrome itself.
+        const launchUserAgent =
+          this.launchConfig.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent;
 
         this.currentSessionConfig = {
           ...this.launchConfig,
           dimensions: this.launchConfig.dimensions || this.fingerprintData?.fingerprint.screen,
-          userAgent:
-            this.launchConfig.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent,
+          userAgent: launchUserAgent,
         };
 
         const extensionPaths = await executeCritical(
@@ -929,7 +932,7 @@ export class CDPService extends EventEmitter {
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
             this.launchConfig.dimensions?.height ?? 1080
           }`,
-          userAgent ? `--user-agent=${userAgent}` : "",
+          launchUserAgent ? `--user-agent=${launchUserAgent}` : "",
           this.launchConfig.options.proxyUrl
             ? `--proxy-server=${this.launchConfig.options.proxyUrl}`
             : "",
@@ -1502,39 +1505,25 @@ export class CDPService extends EventEmitter {
       const userAgent = fingerprint.navigator.userAgent;
       const userAgentMetadata = fingerprint.navigator.userAgentData;
 
-      await page.setUserAgent(userAgent);
-
-      const session = await page.createCDPSession();
-
-      try {
-        const injectedHeaders = filterHeaders(headers);
-
-        await page.setExtraHTTPHeaders(injectedHeaders);
-
-        await session.send("Emulation.setUserAgentOverride", {
-          userAgent: userAgent,
-          acceptLanguage: headers["accept-language"],
-          platform: userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
-          userAgentMetadata: {
-            brands:
-              userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
-            fullVersionList:
-              userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
-            fullVersion: userAgentMetadata.uaFullVersion,
-            platform:
-              userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
-            platformVersion: userAgentMetadata.platformVersion || "",
-            architecture: userAgentMetadata.architecture || "x86",
-            model: userAgentMetadata.model || "",
-            mobile: userAgentMetadata.mobile as unknown as boolean,
-            bitness: userAgentMetadata.bitness || "64",
-            wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
-          },
+      if (userAgentMetadata) {
+        await page.setUserAgent(userAgent, {
+          brands: userAgentMetadata.brands as Protocol.Emulation.UserAgentMetadata["brands"],
+          fullVersionList:
+            userAgentMetadata.fullVersionList as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
+          fullVersion: userAgentMetadata.uaFullVersion,
+          platform: userAgentMetadata.platform || "Linux",
+          platformVersion: userAgentMetadata.platformVersion || "",
+          architecture: userAgentMetadata.architecture || "x86",
+          model: userAgentMetadata.model || "",
+          mobile: userAgentMetadata.mobile,
+          bitness: userAgentMetadata.bitness || "64",
+          wow64: false,
         });
-      } finally {
-        // Always detach the session when done
-        await session.detach().catch(() => {});
+      } else {
+        // Non-Chromium profiles do not expose UA Client Hints.
+        await page.setUserAgent(userAgent);
       }
+      await page.setExtraHTTPHeaders(filterHeaders(headers));
 
       await page.evaluateOnNewDocument(
         loadFingerprintScript({
@@ -1543,13 +1532,14 @@ export class CDPService extends EventEmitter {
           fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
           fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
           fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
-          fixedArchitecture: userAgentMetadata.architecture || "x86",
-          fixedBitness: userAgentMetadata.bitness || "64",
-          fixedModel: userAgentMetadata.model || "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion || "15.0.0",
-          fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
+          fixedArchitecture: userAgentMetadata?.architecture || "x86",
+          fixedMobile: userAgentMetadata?.mobile === true,
+          fixedBitness: userAgentMetadata?.bitness || "64",
+          fixedModel: userAgentMetadata?.model || "",
+          fixedPlatformVersion: userAgentMetadata?.platformVersion ?? "",
+          fixedUaFullVersion: userAgentMetadata?.uaFullVersion,
           fixedBrands:
-            userAgentMetadata.brands ||
+            userAgentMetadata?.brands ||
             ([] as unknown as Array<{
               brand: string;
               version: string;

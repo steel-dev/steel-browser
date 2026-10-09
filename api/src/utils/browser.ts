@@ -155,6 +155,15 @@ export function filterHeaders(headers: Record<string, string>) {
     "sec-fetch-mode",
     "sec-fetch-site",
     "sec-fetch-user",
+    // Chromium generates Client Hints from the page's UA metadata. Static
+    // profile headers would override those values on every request, including
+    // after a site negotiates hints with Accept-CH.
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+    // setUserAgent controls request UAs. A static extra header can override it
+    // on subresource requests after the page's UA changes during solving.
+    "user-agent",
     "upgrade-insecure-requests",
   ];
   const filteredHeaders = { ...headers };

@@ -18,6 +18,7 @@ export const loadFingerprintScript = ({
   fixedHardwareConcurrency,
   fixedDeviceMemory,
   fixedPlatform,
+  fixedMobile = false,
   fixedVersion = FIXED_VERSION,
   fixedShadingLanguageVersion = FIXED_SHADING_LANGUAGE_VERSION,
   fixedArchitecture,
@@ -34,6 +35,7 @@ export const loadFingerprintScript = ({
   fixedVersion?: string;
   fixedShadingLanguageVersion?: string;
   fixedPlatform?: string;
+  fixedMobile?: boolean;
   fixedArchitecture?: string;
   fixedBitness?: string;
   fixedModel?: string;
@@ -61,11 +63,12 @@ export const loadFingerprintScript = ({
     const FIXED_HARDWARE_CONCURRENCY = ${fixedHardwareConcurrency};
     const FIXED_DEVICE_MEMORY = ${fixedDeviceMemory};
     const FIXED_PLATFORM = ${safeStringValue(fixedPlatform, "Linux x86_64")};
+    const FIXED_MOBILE = ${fixedMobile};
     const FIXED_ARCHITECTURE = ${safeStringValue(fixedArchitecture, "x86")};
     const FIXED_BITNESS = ${safeStringValue(fixedBitness, "64")};
     const FIXED_MODEL = ${safeStringValue(fixedModel, "")};
-    const FIXED_PLATFORM_VERSION = ${safeStringValue(fixedPlatformVersion, "15.0.0")};
-    const FIXED_UA_FULL_VERSION = ${safeStringValue(fixedUaFullVersion, "131.0.6778.86")};
+    const FIXED_PLATFORM_VERSION = ${JSON.stringify(fixedPlatformVersion ?? "")};
+    const FIXED_UA_FULL_VERSION = ${JSON.stringify(fixedUaFullVersion ?? "")};
     const FIXED_BRANDS = ${JSON.stringify(fixedBrands)};
     ${fingerprintScript}
   `;
