@@ -59,7 +59,6 @@ import {
   CleanupType,
   FingerprintError,
   FingerprintStage,
-  LaunchTimeoutError,
   NetworkError,
   NetworkOperation,
   PluginError,
@@ -81,11 +80,13 @@ import {
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
+import { LaunchScope } from "./utils/launch-scope.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
 
+  private launchInFlight: Promise<void> | null = null;
   private browserInstance: Browser | null;
   private wsEndpoint: string | null;
   private fingerprintData: BrowserFingerprintWithHeaders | null;
@@ -571,45 +572,122 @@ export class CDPService extends EventEmitter {
     config?: BrowserLauncherOptions,
     retryOptions?: Partial<RetryOptions>,
   ): Promise<Browser> {
+    if (this.launchInFlight) {
+      throw new Error("Browser launch or cleanup is already in progress");
+    }
+    const scope = new LaunchScope(60_000, config?.signal);
     const operation = async () => {
       try {
-        return await this.launchInternal(config);
+        return await this.launchInternal(config, scope);
       } catch (error) {
+        scope.signal.throwIfAborted();
         try {
-          await this.pluginManager.onShutdown(ShutdownReason.LAUNCH_FAILURE);
-          await this.shutdownHook();
-        } catch (e) {
-          this.logger.warn(
-            `[CDPService] Error during retry cleanup (onShutdown/shutdownHook): ${e}`,
-          );
+          await scope.step(() => scope.closeResources());
+          this.shuttingDown = false;
+          await scope.step(() => this.pluginManager.onShutdown(ShutdownReason.LAUNCH_FAILURE));
+          await scope.step(() => this.shutdownHook());
+        } catch (cleanupError) {
+          scope.signal.throwIfAborted();
+          scope.failCleanup(cleanupError);
+          throw cleanupError;
         }
         throw error;
       }
     };
-
-    // Use retry mechanism for the launch process
-    const result = await this.retryManager.executeWithRetry(
-      operation,
-      "Browser Launch",
-      retryOptions,
+    const work = scope.step(() =>
+      this.retryManager.executeWithRetry(operation, "Browser Launch", retryOptions),
     );
+    const cleanup = work.then(
+      async () => {
+        await scope.drained();
+      },
+      async (error) => {
+        scope.abort(error);
+        await scope.drained();
+      },
+    );
+    this.launchInFlight = cleanup;
+    void cleanup.then(
+      () => {
+        scope.dispose();
+        this.shuttingDown = false;
+        this.launchInFlight = null;
+      },
+      (error) => {
+        scope.dispose();
+        // Do not admit a new launch when cleanup ownership is uncertain.
+        this.logger.error({ err: error }, "Browser launch cleanup is unconfirmed");
+      },
+    );
+    return (await work).result;
+  }
 
-    return result.result;
+  public async waitForLaunchCleanup(): Promise<void> {
+    await this.launchInFlight;
+  }
+
+  private async closeFailedLaunchBrowser(browser: Browser): Promise<void> {
+    if (this.browserInstance === browser) {
+      this.shuttingDown = true;
+      this.removeAllHandlers();
+      this.browserInstance = null;
+      this.primaryPage = null;
+      this.wsEndpoint = null;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        browser.close(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Owned browser close timed out")), 5_000);
+        }),
+      ]);
+    } catch (error) {
+      const process = browser.process();
+      if (
+        !process ||
+        (process.exitCode === null && process.signalCode === null && !process.kill("SIGKILL"))
+      ) {
+        throw error;
+      }
+      if (process.exitCode === null && process.signalCode === null) {
+        await new Promise<void>((resolve, reject) => {
+          const onExit = () => {
+            clearTimeout(exitTimer);
+            resolve();
+          };
+          const exitTimer = setTimeout(() => {
+            process.off("exit", onExit);
+            reject(new Error("Owned browser process exit is unconfirmed"));
+          }, 2_000);
+          process.once("exit", onExit);
+        });
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   @traceable
-  private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
+  private async launchInternal(
+    config: BrowserLauncherOptions | undefined,
+    scope: LaunchScope,
+  ): Promise<Browser> {
     try {
-      const launchTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new LaunchTimeoutError(60000)), 60000);
-      });
-
       const launchProcess = (async () => {
         const shouldReuseInstance =
           this.browserInstance &&
-          (await isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig));
+          (await scope.step(() =>
+            isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig),
+          ));
 
         if (shouldReuseInstance) {
+          await scope.step(() =>
+            scope.own(
+              () => Promise.resolve(this.browserInstance!),
+              (browser) => this.closeFailedLaunchBrowser(browser),
+            ),
+          );
           this.logger.info(
             "[CDPService] Reusing existing browser instance with default configuration.",
           );
@@ -620,14 +698,16 @@ export class CDPService extends EventEmitter {
             typeof reuseOptimize === "object" ? reuseOptimize.blockUrlPatterns : undefined;
           this.compiledUrlPatterns = reusePatterns?.length ? compileUrlPatterns(reusePatterns) : [];
 
-          await executeCritical(
-            async () => this.refreshPrimaryPage(),
-            (error) =>
-              new BrowserProcessError(
-                "Failed to refresh primary page when reusing browser instance",
-                BrowserProcessState.PAGE_REFRESH,
-                error,
-              ),
+          await scope.step(() =>
+            executeCritical(
+              async () => this.refreshPrimaryPage(),
+              (error) =>
+                new BrowserProcessError(
+                  "Failed to refresh primary page when reusing browser instance",
+                  BrowserProcessState.PAGE_REFRESH,
+                  error,
+                ),
+            ),
           );
 
           // Session context injection - should throw error if it fails
@@ -635,22 +715,24 @@ export class CDPService extends EventEmitter {
             this.logger.debug(
               `[CDPService] Session created with session context, injecting session context`,
             );
-            await executeCritical(
-              async () =>
-                this.injectSessionContext(this.primaryPage!, this.launchConfig!.sessionContext!),
-              (error) => {
-                const contextError = new SessionContextError(
-                  error instanceof Error ? error.message : String(error),
-                  SessionContextType.CONTEXT_INJECTION,
-                  error,
-                );
-                this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
-                return contextError;
-              },
+            await scope.step(() =>
+              executeCritical(
+                async () =>
+                  this.injectSessionContext(this.primaryPage!, this.launchConfig!.sessionContext!),
+                (error) => {
+                  const contextError = new SessionContextError(
+                    error instanceof Error ? error.message : String(error),
+                    SessionContextType.CONTEXT_INJECTION,
+                    error,
+                  );
+                  this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
+                  return contextError;
+                },
+              ),
             );
           }
           if (!this.shuttingDown && this.browserInstance) {
-            await this.pluginManager.onBrowserReady(this.launchConfig);
+            await scope.step(() => this.pluginManager.onBrowserReady(this.launchConfig!));
           } else {
             this.logger.warn(
               `[CDPService] Skipping onBrowserReady: shuttingDown=${
@@ -664,10 +746,12 @@ export class CDPService extends EventEmitter {
           this.logger.info(
             "[CDPService] Existing browser instance detected. Closing it before launching a new one.",
           );
-          await executeBestEffort(
-            this.logger,
-            async () => this.shutdown(ShutdownReason.RELAUNCH),
-            "Error during shutdown before launch",
+          await scope.step(() =>
+            executeBestEffort(
+              this.logger,
+              async () => this.shutdown(ShutdownReason.RELAUNCH),
+              "Error during shutdown before launch",
+            ),
           );
         }
 
@@ -680,45 +764,51 @@ export class CDPService extends EventEmitter {
         this.logger.info("[CDPService] Launching new browser instance.");
 
         // Validate configuration
-        await executeCritical(
-          async () => validateLaunchConfig(this.launchConfig!),
-          (error) => categorizeError(error, "configuration validation"),
+        await scope.step(() =>
+          executeCritical(
+            async () => validateLaunchConfig(this.launchConfig!),
+            (error) => categorizeError(error, "configuration validation"),
+          ),
         );
 
         // File cleanup - non-critical, log errors but continue
         this.logger.info("[CDPService] Cleaning up files before browser launch");
-        await executeOptional(
-          this.logger,
-          async () => {
-            await FileService.getInstance().cleanupFiles();
-            this.logger.info("[CDPService] Files cleaned successfully before launch");
-          },
-          (error) =>
-            new CleanupError(
-              error instanceof Error ? error.message : String(error),
-              CleanupType.PRE_LAUNCH_FILE_CLEANUP,
-              error,
-            ),
+        await scope.step(() =>
+          executeOptional(
+            this.logger,
+            async () => {
+              await scope.step(() => FileService.getInstance().cleanupFiles());
+              this.logger.info("[CDPService] Files cleaned successfully before launch");
+            },
+            (error) =>
+              new CleanupError(
+                error instanceof Error ? error.message : String(error),
+                CleanupType.PRE_LAUNCH_FILE_CLEANUP,
+                error,
+              ),
+          ),
         );
 
         const { options, userAgent, userDataDir, fingerprint } = this.launchConfig;
         this.fingerprintData = fingerprint ?? null;
 
         // Run launch mutators - plugin errors should be caught
-        await executeCritical(
-          async () => {
-            for (const mutator of this.launchMutators) {
-              await mutator(this.launchConfig!);
-            }
-          },
-          (error) =>
-            new PluginError(
-              error instanceof Error ? error.message : String(error),
-              PluginName.LAUNCH_MUTATOR,
-              PluginOperation.PRE_LAUNCH_HOOK,
-              true,
-              error,
-            ),
+        await scope.step(() =>
+          executeCritical(
+            async () => {
+              for (const mutator of this.launchMutators) {
+                await scope.step(() => mutator(this.launchConfig!));
+              }
+            },
+            (error) =>
+              new PluginError(
+                error instanceof Error ? error.message : String(error),
+                PluginName.LAUNCH_MUTATOR,
+                PluginOperation.PRE_LAUNCH_HOOK,
+                true,
+                error,
+              ),
+          ),
         );
 
         // Fingerprint generation - can fail gracefully
@@ -728,66 +818,68 @@ export class CDPService extends EventEmitter {
           !this.launchConfig.skipFingerprintInjection &&
           !this.fingerprintData
         ) {
-          await executeCritical(
-            async () => {
-              let fingerprintOptions: Partial<FingerprintGeneratorOptions> = {
-                devices: ["desktop"],
-                operatingSystems: ["linux"],
-                browsers: [{ name: "chrome", minVersion: 146 }],
-                locales: ["en-US", "en"],
-                screen: {
-                  minWidth: this.launchConfig!.dimensions?.width ?? 1920,
-                  minHeight: this.launchConfig!.dimensions?.height ?? 1080,
-                  maxWidth: this.launchConfig!.dimensions?.width ?? 1920,
-                  maxHeight: this.launchConfig!.dimensions?.height ?? 1080,
-                },
-              };
-
-              if (this.launchConfig!.deviceConfig?.device === "mobile") {
-                fingerprintOptions = {
-                  devices: ["mobile"],
+          await scope.step(() =>
+            executeCritical(
+              async () => {
+                let fingerprintOptions: Partial<FingerprintGeneratorOptions> = {
+                  devices: ["desktop"],
+                  operatingSystems: ["linux"],
+                  browsers: [{ name: "chrome", minVersion: 146 }],
                   locales: ["en-US", "en"],
+                  screen: {
+                    minWidth: this.launchConfig!.dimensions?.width ?? 1920,
+                    minHeight: this.launchConfig!.dimensions?.height ?? 1080,
+                    maxWidth: this.launchConfig!.dimensions?.width ?? 1920,
+                    maxHeight: this.launchConfig!.dimensions?.height ?? 1080,
+                  },
                 };
-              }
 
-              // fingerprint-generator's bundled dataset lags the latest Chrome
-              // release, so a hardcoded newest-Chrome `minVersion` (and/or the
-              // tight `screen` box) can leave zero matching samples and make
-              // getFingerprint() throw deterministically. Prefer the strict
-              // options for best stealth, but relax progressively rather than
-              // hard-fail when the dataset cannot satisfy them.
-              const fallbackOptions: Array<Partial<FingerprintGeneratorOptions>> = [
-                fingerprintOptions,
-                { ...fingerprintOptions, browsers: [{ name: "chrome" }] },
-                { ...fingerprintOptions, browsers: [{ name: "chrome" }], screen: undefined },
-              ];
-              let fingerprintErr: unknown;
-              for (const options of fallbackOptions) {
-                try {
-                  this.fingerprintData = new FingerprintGenerator(options).getFingerprint();
-                  if (options !== fingerprintOptions) {
-                    this.logger.warn(
-                      { requested: fingerprintOptions, used: options },
-                      "[CDPService] Strict fingerprint constraints unsatisfiable in the bundled dataset; generated with relaxed constraints",
-                    );
-                  }
-                  break;
-                } catch (err) {
-                  fingerprintErr = err;
+                if (this.launchConfig!.deviceConfig?.device === "mobile") {
+                  fingerprintOptions = {
+                    devices: ["mobile"],
+                    locales: ["en-US", "en"],
+                  };
                 }
-              }
-              if (!this.fingerprintData) {
-                throw fingerprintErr;
-              }
-            },
-            (error) => {
-              this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
-              return new FingerprintError(
-                error instanceof Error ? error.message : String(error),
-                FingerprintStage.GENERATION,
-                error,
-              );
-            },
+
+                // fingerprint-generator's bundled dataset lags the latest Chrome
+                // release, so a hardcoded newest-Chrome `minVersion` (and/or the
+                // tight `screen` box) can leave zero matching samples and make
+                // getFingerprint() throw deterministically. Prefer the strict
+                // options for best stealth, but relax progressively rather than
+                // hard-fail when the dataset cannot satisfy them.
+                const fallbackOptions: Array<Partial<FingerprintGeneratorOptions>> = [
+                  fingerprintOptions,
+                  { ...fingerprintOptions, browsers: [{ name: "chrome" }] },
+                  { ...fingerprintOptions, browsers: [{ name: "chrome" }], screen: undefined },
+                ];
+                let fingerprintErr: unknown;
+                for (const options of fallbackOptions) {
+                  try {
+                    this.fingerprintData = new FingerprintGenerator(options).getFingerprint();
+                    if (options !== fingerprintOptions) {
+                      this.logger.warn(
+                        { requested: fingerprintOptions, used: options },
+                        "[CDPService] Strict fingerprint constraints unsatisfiable in the bundled dataset; generated with relaxed constraints",
+                      );
+                    }
+                    break;
+                  } catch (err) {
+                    fingerprintErr = err;
+                  }
+                }
+                if (!this.fingerprintData) {
+                  throw fingerprintErr;
+                }
+              },
+              (error) => {
+                this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
+                return new FingerprintError(
+                  error instanceof Error ? error.message : String(error),
+                  FingerprintStage.GENERATION,
+                  error,
+                );
+              },
+            ),
           );
         } else if (this.fingerprintData) {
           this.logger.info(
@@ -804,53 +896,56 @@ export class CDPService extends EventEmitter {
             this.launchConfig.userAgent || this.fingerprintData?.fingerprint.navigator.userAgent,
         };
 
-        const extensionPaths = await executeCritical(
-          async () => {
-            const defaultExtensions = isHeadless ? ["recorder"] : [];
-            const customExtensions = this.launchConfig!.extensions
-              ? [...this.launchConfig!.extensions]
-              : [];
+        const extensionPaths = await scope.step(() =>
+          executeCritical(
+            async () => {
+              const defaultExtensions = isHeadless ? ["recorder"] : [];
+              const customExtensions = this.launchConfig!.extensions
+                ? [...this.launchConfig!.extensions]
+                : [];
 
-            // Get named extension paths
-            const namedExtensionPaths = await getExtensionPaths([
-              ...defaultExtensions,
-              ...customExtensions,
-            ]);
-
-            // Check for session extensions passed from the API
-            let sessionExtensionPaths: string[] = [];
-            if (this.launchConfig!.extra?.orgExtensions?.paths) {
-              sessionExtensionPaths = this.launchConfig!.extra.orgExtensions.paths;
-              this.logger.info(
-                `[CDPService] Found ${sessionExtensionPaths.length} session extension paths`,
+              // Get named extension paths
+              const namedExtensionPaths = await scope.step(() =>
+                getExtensionPaths([...defaultExtensions, ...customExtensions]),
               );
-            }
 
-            return [...namedExtensionPaths, ...sessionExtensionPaths];
-          },
-          (error) =>
-            new ResourceError(
-              `Failed to resolve extension paths: ${error}`,
-              ResourceType.EXTENSIONS,
-              false,
-              error,
-            ),
+              // Check for session extensions passed from the API
+              let sessionExtensionPaths: string[] = [];
+              if (this.launchConfig!.extra?.orgExtensions?.paths) {
+                sessionExtensionPaths = this.launchConfig!.extra.orgExtensions.paths;
+                this.logger.info(
+                  `[CDPService] Found ${sessionExtensionPaths.length} session extension paths`,
+                );
+              }
+
+              return [...namedExtensionPaths, ...sessionExtensionPaths];
+            },
+            (error) =>
+              new ResourceError(
+                `Failed to resolve extension paths: ${error}`,
+                ResourceType.EXTENSIONS,
+                false,
+                error,
+              ),
+          ),
         );
 
         let timezone = this.defaultTimezone;
         if (config?.timezone) {
-          const validatedTimezone = await executeOptional(
-            this.logger,
-            async () => {
-              const tz = await validateTimezone(this.logger, config.timezone!);
-              this.logger.info(`Resolved and validated timezone: ${tz}`);
-              return tz;
-            },
-            (error) => {
-              this.logger.warn(`Timezone validation failed, using fallback`);
-              return categorizeError(error, "timezone validation");
-            },
-            this.defaultTimezone,
+          const validatedTimezone = await scope.step(() =>
+            executeOptional(
+              this.logger,
+              async () => {
+                const tz = await scope.step(() => validateTimezone(this.logger, config.timezone!));
+                this.logger.info(`Resolved and validated timezone: ${tz}`);
+                return tz;
+              },
+              (error) => {
+                this.logger.warn(`Timezone validation failed, using fallback`);
+                return categorizeError(error, "timezone validation");
+              },
+              this.defaultTimezone,
+            ),
           );
           timezone = validatedTimezone ?? this.defaultTimezone;
         }
@@ -953,7 +1048,10 @@ export class CDPService extends EventEmitter {
           args: launchArgs,
           executablePath: this.chromeExecPath,
           ignoreDefaultArgs: ["--enable-automation"],
-          timeout: 0,
+          timeout: Math.min(
+            options.timeout && options.timeout > 0 ? options.timeout : 30_000,
+            scope.remaining(),
+          ),
           env: {
             HOME: os.userInfo().homedir,
             TZ: timezone,
@@ -968,39 +1066,57 @@ export class CDPService extends EventEmitter {
 
         if (userDataDir && this.launchConfig.userPreferences) {
           this.logger.info(`[CDPService] Setting up user preferences in ${userDataDir}`);
-          await executeBestEffort(
-            this.logger,
-            async () => this.setupUserPreferences(userDataDir, this.launchConfig!.userPreferences!),
-            "Failed to set up user preferences",
+          await scope.step(() =>
+            executeBestEffort(
+              this.logger,
+              async () =>
+                this.setupUserPreferences(userDataDir, this.launchConfig!.userPreferences!),
+              "Failed to set up user preferences",
+            ),
           );
         }
 
         // Browser process launch - most critical step
-        this.browserInstance = await executeCritical(
-          async () =>
-            (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
-              return await puppeteer.launch(finalLaunchOptions);
-            })) as unknown as Browser,
-          (error) =>
-            new BrowserProcessError(
-              error instanceof Error ? error.message : String(error),
-              BrowserProcessState.LAUNCH_FAILED,
-              error,
-            ),
+        this.browserInstance = await scope.step(() =>
+          executeCritical(
+            async () =>
+              (await scope.step(() =>
+                tracer.startActiveSpan("CDPService.launchBrowser", async () => {
+                  return await scope.step(() =>
+                    scope.own(
+                      () =>
+                        puppeteer.launch({
+                          ...finalLaunchOptions,
+                          timeout: Math.min(finalLaunchOptions.timeout, scope.remaining()),
+                        }),
+                      (browser) => this.closeFailedLaunchBrowser(browser),
+                    ),
+                  );
+                }),
+              )) as unknown as Browser,
+            (error) =>
+              new BrowserProcessError(
+                error instanceof Error ? error.message : String(error),
+                BrowserProcessState.LAUNCH_FAILED,
+                error,
+              ),
+          ),
         );
 
         // Plugin notifications - catch individual plugin errors
-        await executeOptional(
-          this.logger,
-          async () => this.pluginManager.onBrowserLaunch(this.browserInstance!),
-          (error) =>
-            new PluginError(
-              error instanceof Error ? error.message : String(error),
-              PluginName.PLUGIN_MANAGER,
-              PluginOperation.BROWSER_LAUNCH_NOTIFICATION,
-              true,
-              error,
-            ),
+        await scope.step(() =>
+          executeOptional(
+            this.logger,
+            async () => this.pluginManager.onBrowserLaunch(this.browserInstance!),
+            (error) =>
+              new PluginError(
+                error instanceof Error ? error.message : String(error),
+                PluginName.PLUGIN_MANAGER,
+                PluginOperation.BROWSER_LAUNCH_NOTIFICATION,
+                true,
+                error,
+              ),
+          ),
         );
 
         this.browserInstance.on("error", (err) => {
@@ -1013,14 +1129,16 @@ export class CDPService extends EventEmitter {
           });
         });
 
-        this.primaryPage = await executeCritical(
-          async () => (await this.browserInstance!.pages())[0],
-          (error) =>
-            new BrowserProcessError(
-              "Failed to get primary page from browser instance",
-              BrowserProcessState.PAGE_ACCESS,
-              error,
-            ),
+        this.primaryPage = await scope.step(() =>
+          executeCritical(
+            async () => (await scope.step(() => this.browserInstance!.pages()))[0],
+            (error) =>
+              new BrowserProcessError(
+                "Failed to get primary page from browser instance",
+                BrowserProcessState.PAGE_ACCESS,
+                error,
+              ),
+          ),
         );
 
         // Session context injection - should throw error if it fails
@@ -1028,38 +1146,46 @@ export class CDPService extends EventEmitter {
           this.logger.debug(
             `[CDPService] Session created with session context, injecting session context`,
           );
-          await executeCritical(
-            async () =>
-              this.injectSessionContext(this.primaryPage!, this.launchConfig!.sessionContext!),
-            (error) => {
-              const contextError = new SessionContextError(
-                error instanceof Error ? error.message : String(error),
-                SessionContextType.CONTEXT_INJECTION,
-                error,
-              );
-              this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
-              return contextError;
-            },
+          await scope.step(() =>
+            executeCritical(
+              async () =>
+                this.injectSessionContext(this.primaryPage!, this.launchConfig!.sessionContext!),
+              (error) => {
+                const contextError = new SessionContextError(
+                  error instanceof Error ? error.message : String(error),
+                  SessionContextType.CONTEXT_INJECTION,
+                  error,
+                );
+                this.logger.warn(`[CDPService] ${contextError.message} - throwing error`);
+                return contextError;
+              },
+            ),
           );
         }
 
         // Configure browser download behavior
-        await executeBestEffort(
-          this.logger,
-          async () => {
-            const downloadPath = FileService.getInstance().getBaseFilesPath();
-            const cdpSession = await this.browserInstance!.target().createCDPSession();
-            await cdpSession.send("Browser.setDownloadBehavior", {
-              behavior: "allow",
-              downloadPath: downloadPath,
-              eventsEnabled: true,
-            });
-            await cdpSession.detach();
-            this.logger.debug(
-              `[CDPService] Download behavior configured with path: ${downloadPath}`,
-            );
-          },
-          "Failed to configure download behavior",
+        await scope.step(() =>
+          executeBestEffort(
+            this.logger,
+            async () => {
+              const downloadPath = FileService.getInstance().getBaseFilesPath();
+              const cdpSession = await scope.step(() =>
+                this.browserInstance!.target().createCDPSession(),
+              );
+              await scope.step(() =>
+                cdpSession.send("Browser.setDownloadBehavior", {
+                  behavior: "allow",
+                  downloadPath: downloadPath,
+                  eventsEnabled: true,
+                }),
+              );
+              await scope.step(() => cdpSession.detach());
+              this.logger.debug(
+                `[CDPService] Download behavior configured with path: ${downloadPath}`,
+              );
+            },
+            "Failed to configure download behavior",
+          ),
         );
 
         this.browserInstance.on("targetcreated", (target) => {
@@ -1081,36 +1207,42 @@ export class CDPService extends EventEmitter {
         });
         this.browserInstance.on("disconnected", this.onDisconnect.bind(this));
 
-        this.wsEndpoint = await executeCritical(
-          async () => this.browserInstance!.wsEndpoint(),
-          (error) =>
-            new NetworkError(
-              "Failed to get WebSocket endpoint from browser",
-              NetworkOperation.WEBSOCKET_SETUP,
-              error,
-            ),
+        this.wsEndpoint = await scope.step(() =>
+          executeCritical(
+            async () => this.browserInstance!.wsEndpoint(),
+            (error) =>
+              new NetworkError(
+                "Failed to get WebSocket endpoint from browser",
+                NetworkOperation.WEBSOCKET_SETUP,
+                error,
+              ),
+          ),
         );
 
         // Final setup steps
-        await executeOptional(
-          this.logger,
-          async () => {
-            await this.handleNewTarget(this.primaryPage!.target());
-            await this.handleTargetChange(this.primaryPage!.target());
-          },
-          (error) =>
-            new BrowserProcessError(
-              error instanceof Error ? error.message : String(error),
-              BrowserProcessState.TARGET_SETUP,
-              error,
-            ),
+        await scope.step(() =>
+          executeOptional(
+            this.logger,
+            async () => {
+              await scope.step(() => this.handleNewTarget(this.primaryPage!.target()));
+              await scope.step(() => this.handleTargetChange(this.primaryPage!.target()));
+            },
+            (error) =>
+              new BrowserProcessError(
+                error instanceof Error ? error.message : String(error),
+                BrowserProcessState.TARGET_SETUP,
+                error,
+              ),
+          ),
         );
 
         try {
-          const existingTargets = await this.browserInstance.targets();
+          const existingTargets = await scope.step(() => this.browserInstance!.targets());
           for (const target of existingTargets) {
             if ((target as any)._targetId !== (this.primaryPage.target() as any)._targetId) {
-              await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
+              await scope.step(() =>
+                this.targetInstrumentationManager.attach(target, target.type() as TargetType),
+              );
             }
           }
           this.logger.info(
@@ -1121,7 +1253,7 @@ export class CDPService extends EventEmitter {
         }
 
         if (!this.shuttingDown && this.browserInstance) {
-          await this.pluginManager.onBrowserReady(this.launchConfig);
+          await scope.step(() => this.pluginManager.onBrowserReady(this.launchConfig!));
         } else {
           this.logger.warn(
             `[CDPService] Skipping onBrowserReady: shuttingDown=${
@@ -1133,11 +1265,15 @@ export class CDPService extends EventEmitter {
         return this.browserInstance;
       })();
 
-      return (await Promise.race([launchProcess, launchTimeout])) as Browser;
+      return await scope.step(() => launchProcess);
     } catch (error: unknown) {
-      const categorizedError =
-        error instanceof BaseLaunchError ? error : categorizeError(error, "browser launch");
+      const categorizedError = scope.signal.aborted
+        ? scope.signal.reason
+        : error instanceof BaseLaunchError
+        ? error
+        : categorizeError(error, "browser launch");
 
+      if (scope.signal.aborted) throw categorizedError;
       this.logger.error(
         {
           error: {

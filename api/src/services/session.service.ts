@@ -21,6 +21,7 @@ import { FileService } from "./file.service.js";
 import { SeleniumService } from "./selenium.service.js";
 import { TimezoneFetcher } from "./timezone-fetcher.service.js";
 import { deepMerge } from "../utils/context.js";
+import { LaunchScope } from "./cdp/utils/launch-scope.js";
 
 type Session = SessionDetails & {
   completion: Promise<void>;
@@ -63,6 +64,9 @@ export class SessionService {
   private timezoneFetcher: TimezoneFetcher;
   public proxyFactory: ProxyFactory = (proxyUrl) => new ProxyServer(proxyUrl);
 
+  private lifecycleBusy = false;
+  private startupCleanup: Promise<void> | null = null;
+
   public pastSessions: Session[] = [];
   public activeSession: Session;
 
@@ -90,35 +94,73 @@ export class SessionService {
     };
   }
 
-  public async startSession(options: {
-    sessionId?: string;
-    proxyUrl?: string;
-    userAgent?: string;
-    sessionContext?: {
-      cookies?: CookieData[];
-      localStorage?: Record<string, Record<string, any>>;
-    };
-    isSelenium?: boolean;
-    fingerprint?: BrowserFingerprintWithHeaders;
-    logSinkUrl?: string;
-    userDataDir?: string;
-    persist?: boolean;
-    blockAds?: boolean;
-    optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
-    extensions?: string[];
-    timezone?: string;
-    dimensions?: { width: number; height: number };
-    extra?: BrowserLaunchExtra;
-    credentials: CredentialsOptions;
-    skipFingerprintInjection?: boolean;
-    userPreferences?: Record<string, any>;
-    deviceConfig?: { device: "desktop" | "mobile" };
-    fullscreen?: boolean;
-    headless?: boolean;
-    dangerouslyLogRequestDetails?: boolean;
-    captureWorkerNetwork?: boolean;
-    caCertificates?: string[];
-  }): Promise<SessionDetails> {
+  public async startSession(
+    options: {
+      sessionId?: string;
+      proxyUrl?: string;
+      userAgent?: string;
+      sessionContext?: {
+        cookies?: CookieData[];
+        localStorage?: Record<string, Record<string, any>>;
+      };
+      isSelenium?: boolean;
+      fingerprint?: BrowserFingerprintWithHeaders;
+      logSinkUrl?: string;
+      userDataDir?: string;
+      persist?: boolean;
+      blockAds?: boolean;
+      optimizeBandwidth?: boolean | OptimizeBandwidthOptions;
+      extensions?: string[];
+      timezone?: string;
+      dimensions?: { width: number; height: number };
+      extra?: BrowserLaunchExtra;
+      credentials: CredentialsOptions;
+      skipFingerprintInjection?: boolean;
+      userPreferences?: Record<string, any>;
+      deviceConfig?: { device: "desktop" | "mobile" };
+      fullscreen?: boolean;
+      headless?: boolean;
+      dangerouslyLogRequestDetails?: boolean;
+      captureWorkerNetwork?: boolean;
+      caCertificates?: string[];
+    },
+    context: { signal?: AbortSignal } = {},
+  ): Promise<SessionDetails> {
+    if (this.lifecycleBusy || this.activeSession.status === "live") {
+      throw Object.assign(new Error("SESSION_ALREADY_ACTIVE_OR_STARTING"), { statusCode: 409 });
+    }
+    const scope = new LaunchScope(45_000, context.signal);
+    this.lifecycleBusy = true;
+    try {
+      const session = await scope.step(() => this.startSessionInternal(options, scope));
+      await scope.drained();
+      this.lifecycleBusy = false;
+      scope.dispose();
+      return session;
+    } catch (error) {
+      scope.abort(error);
+      // Return the bounded failure, but reserve the singleton until cleanup is confirmed.
+      this.startupCleanup = (async () => {
+        await scope.drained();
+        await this.cdpService.waitForLaunchCleanup();
+        if (this.activeSession.isSelenium) await this.seleniumService.close();
+        await this.cdpService.shutdown(ShutdownReason.LAUNCH_FAILURE);
+        await this.resetSessionInfo({ id: uuidv4(), status: "idle" });
+        this.lifecycleBusy = false;
+        scope.dispose();
+      })();
+      void this.startupCleanup.catch((cleanupError) => {
+        scope.dispose();
+        this.logger.error({ err: cleanupError }, "Session startup cleanup is unconfirmed");
+      });
+      throw error;
+    }
+  }
+
+  private async startSessionInternal(
+    options: Parameters<SessionService["startSession"]>[0],
+    scope: LaunchScope,
+  ): Promise<SessionDetails> {
     const {
       sessionId,
       proxyUrl,
@@ -167,21 +209,23 @@ export class SessionService {
           }
         : resolvedDimensions;
 
-    await this.resetSessionInfo({
-      id: sessionId || uuidv4(),
-      status: "live",
-      proxy: proxyUrl,
-      solveCaptcha: false,
-      dimensions: finalDimensions,
-      isSelenium,
-      deviceConfig,
-    });
+    await scope.step(() =>
+      this.resetSessionInfo({
+        id: sessionId || uuidv4(),
+        status: "live",
+        proxy: proxyUrl,
+        solveCaptcha: false,
+        dimensions: finalDimensions,
+        isSelenium,
+        deviceConfig,
+      }),
+    );
 
     const userDataDir =
       options.userDataDir || options.persist === true
         ? path.join(dirname(fileURLToPath(import.meta.url)), "..", "..", "user-data-dir")
         : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
-    await mkdir(userDataDir, { recursive: true });
+    await scope.step(() => mkdir(userDataDir, { recursive: true }));
 
     const defaultUserPreferences = {
       plugins: {
@@ -210,8 +254,14 @@ export class SessionService {
     const normalizedOptimize = normalizeOptimizeBandwidth(optimizeBandwidth);
 
     if (proxyUrl) {
-      this.activeSession.proxyServer = await this.proxyFactory(proxyUrl, normalizedOptimize);
-      await this.activeSession.proxyServer.listen();
+      this.activeSession.proxyServer = await scope.own(
+        () => Promise.resolve(this.proxyFactory(proxyUrl, normalizedOptimize)),
+        async (proxy) => {
+          await proxy.close(true);
+          if (this.activeSession.proxyServer === proxy) this.activeSession.proxyServer = undefined;
+        },
+      );
+      await scope.step(() => this.activeSession.proxyServer!.listen());
     }
 
     const browserLauncherOptions: BrowserLauncherOptions = {
@@ -238,11 +288,12 @@ export class SessionService {
       dangerouslyLogRequestDetails,
       captureWorkerNetwork,
       caCertificates,
+      signal: scope.signal,
     };
 
     if (isSelenium) {
-      await this.cdpService.shutdown(ShutdownReason.MODE_SWITCH);
-      await this.seleniumService.launch(browserLauncherOptions);
+      await scope.step(() => this.cdpService.shutdown(ShutdownReason.MODE_SWITCH));
+      await scope.step(() => this.seleniumService.launch(browserLauncherOptions));
 
       Object.assign(this.activeSession, {
         websocketUrl: "",
@@ -257,7 +308,7 @@ export class SessionService {
 
       return this.activeSession;
     } else {
-      await this.cdpService.startNewSession(browserLauncherOptions);
+      await scope.step(() => this.cdpService.startNewSession(browserLauncherOptions));
 
       Object.assign(this.activeSession, {
         websocketUrl: getBaseUrl("ws"),
@@ -275,7 +326,30 @@ export class SessionService {
     return this.activeSession;
   }
 
-  public async endSession(): Promise<SessionDetails> {
+  public async endSession(expectedId?: string): Promise<SessionDetails> {
+    if (expectedId && expectedId !== this.activeSession.id) {
+      throw Object.assign(new Error("Session is not the active singleton"), { statusCode: 404 });
+    }
+    if (this.lifecycleBusy) {
+      throw Object.assign(new Error("Session lifecycle operation is in progress"), {
+        statusCode: 409,
+      });
+    }
+    this.lifecycleBusy = true;
+    try {
+      const released = await this.endSessionInternal();
+      this.lifecycleBusy = false;
+      return released;
+    } catch (error) {
+      this.logger.error(
+        { err: error },
+        "Session release is unconfirmed; lifecycle remains reserved",
+      );
+      throw error;
+    }
+  }
+
+  private async endSessionInternal(): Promise<SessionDetails> {
     this.activeSession.complete();
     this.activeSession.status = "released";
     this.activeSession.duration =

@@ -1,15 +1,33 @@
-import { CDPService } from "../../services/cdp/cdp.service.js";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors.js";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
 import { CookieData } from "../../services/context/types.js";
 import { getUrl, getBaseUrl } from "../../utils/url.js";
+import { LaunchTimeoutError } from "../../services/cdp/errors/launch-errors.js";
+
+const errorStatus = (error: unknown) => {
+  if (error instanceof LaunchTimeoutError) return 504;
+  if (error instanceof Error && error.name === "AbortError") return 408;
+  return (error as { statusCode?: number } | null)?.statusCode || 500;
+};
+
+const isActiveSession = (server: FastifyInstance, id: string) =>
+  server.sessionService.activeSession.id === id;
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
   request: CreateSessionRequest,
   reply: FastifyReply,
 ) => {
+  const cancellation = new AbortController();
+  const onAbort = () =>
+    cancellation.abort(new DOMException("Session startup cancelled", "AbortError"));
+  const onClose = () => {
+    if (!reply.raw.writableFinished) onAbort();
+  };
+  request.raw.once("aborted", onAbort);
+  reply.raw.once("close", onClose);
+  if (request.raw.aborted || reply.raw.destroyed) onAbort();
   try {
     const {
       sessionId,
@@ -33,58 +51,79 @@ export const handleLaunchBrowserSession = async (
       headless,
     } = request.body;
 
-    return await server.sessionService.startSession({
-      sessionId,
-      proxyUrl,
-      userDataDir,
-      persist,
-      userAgent,
-      sessionContext: sessionContext as {
-        cookies?: CookieData[] | undefined;
-        localStorage?: Record<string, Record<string, any>> | undefined;
+    return await server.sessionService.startSession(
+      {
+        sessionId,
+        proxyUrl,
+        userDataDir,
+        persist,
+        userAgent,
+        sessionContext: sessionContext as {
+          cookies?: CookieData[] | undefined;
+          localStorage?: Record<string, Record<string, any>> | undefined;
+        },
+        extensions,
+        logSinkUrl,
+        timezone,
+        dimensions,
+        isSelenium,
+        blockAds,
+        optimizeBandwidth,
+        extra,
+        credentials,
+        skipFingerprintInjection,
+        userPreferences,
+        deviceConfig,
+        headless,
       },
-      extensions,
-      logSinkUrl,
-      timezone,
-      dimensions,
-      isSelenium,
-      blockAds,
-      optimizeBandwidth,
-      extra,
-      credentials,
-      skipFingerprintInjection,
-      userPreferences,
-      deviceConfig,
-      headless,
-    });
+      { signal: cancellation.signal },
+    );
   } catch (e: unknown) {
     server.log.error({ err: e }, "Failed lauching browser session");
     const error = getErrors(e);
-    return reply.code(500).send({ success: false, message: error });
+    return reply.code(errorStatus(e)).send({ success: false, message: error });
+  } finally {
+    request.raw.off("aborted", onAbort);
+    reply.raw.off("close", onClose);
   }
 };
 
 export const handleExitBrowserSession = async (
   server: FastifyInstance,
-  request: FastifyRequest,
+  request: FastifyRequest<{ Params: { sessionId?: string } }>,
   reply: FastifyReply,
 ) => {
   try {
-    const sessionDetails = await server.sessionService.endSession();
+    const expectedId = request.params.sessionId;
+    if (expectedId && !isActiveSession(server, expectedId)) {
+      return reply
+        .code(404)
+        .send({ success: false, message: "Session is not the active singleton" });
+    }
+    // The service checks again while reserving the lifecycle operation.
+    const sessionDetails = await server.sessionService.endSession(expectedId);
 
     reply.send({ success: true, ...sessionDetails });
   } catch (e: any) {
     const error = getErrors(e);
-    return reply.code(500).send({ success: false, message: error });
+    return reply.code(errorStatus(e)).send({ success: false, message: error });
   }
 };
 
 export const handleGetBrowserContext = async (
-  browserService: CDPService,
-  request: FastifyRequest,
+  server: FastifyInstance,
+  request: FastifyRequest<{ Params: { sessionId: string } }>,
   reply: FastifyReply,
 ) => {
-  const context = await browserService.getBrowserState();
+  if (!isActiveSession(server, request.params.sessionId)) {
+    return reply.code(404).send({ success: false, message: "Session is not the active singleton" });
+  }
+  const context = await server.cdpService.getBrowserState();
+  if (!isActiveSession(server, request.params.sessionId)) {
+    return reply
+      .code(404)
+      .send({ success: false, message: "Session changed while reading context" });
+  }
   return reply.send(context);
 };
 
@@ -172,6 +211,11 @@ export const handleGetSessionLiveDetails = async (
   reply: FastifyReply,
 ) => {
   try {
+    if (!isActiveSession(server, request.params.id)) {
+      return reply
+        .code(404)
+        .send({ success: false, message: "Session is not the active singleton" });
+    }
     const pages = await server.cdpService.getAllPages();
 
     const pagesInfo = await Promise.all(
@@ -226,6 +270,11 @@ export const handleGetSessionLiveDetails = async (
       pageCount: validPagesInfo.length,
     };
 
+    if (!isActiveSession(server, request.params.id)) {
+      return reply
+        .code(404)
+        .send({ success: false, message: "Session changed while reading live details" });
+    }
     return reply.send({
       pages: validPagesInfo,
       browserState,

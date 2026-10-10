@@ -103,8 +103,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
-      handleGetBrowserContext(server.cdpService, request, reply),
+    async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) =>
+      handleGetBrowserContext(server, request, reply),
   );
 
   server.post(
@@ -120,7 +120,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
+    async (request: FastifyRequest<{ Params: { sessionId?: string } }>, reply: FastifyReply) =>
       handleExitBrowserSession(server, request, reply),
   );
 
@@ -137,7 +137,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
+    async (request: FastifyRequest<{ Params: { sessionId?: string } }>, reply: FastifyReply) =>
       handleExitBrowserSession(server, request, reply),
   );
 
