@@ -27,6 +27,8 @@ export interface BrowserLaunchExtra {
 
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
+  /** Internal startup cancellation; never a client-controlled launch option. */
+  signal?: AbortSignal;
   req?: Request;
   stealth?: boolean;
   sessionContext?: {
