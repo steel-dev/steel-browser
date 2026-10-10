@@ -588,7 +588,7 @@ export class CDPService extends EventEmitter {
           await scope.step(() => this.shutdownHook());
         } catch (cleanupError) {
           scope.signal.throwIfAborted();
-          scope.abort(cleanupError);
+          scope.failCleanup(cleanupError);
           throw cleanupError;
         }
         throw error;

@@ -5,6 +5,25 @@ afterEach(() => vi.useRealTimers());
 const deferred = <T>() => Promise.withResolvers<T>();
 
 describe("LaunchScope", () => {
+  it("fails closed even when resource cleanup rejects without an Error value", async () => {
+    const scope = new LaunchScope(60_000);
+    await scope.own(
+      async () => ({}),
+      async () => {
+        throw undefined;
+      },
+    );
+    scope.abort(new Error("fixture cancellation"));
+    await scope.drained().then(
+      () => {
+        throw new Error("Unconfirmed cleanup was admitted");
+      },
+      (error) => {
+        expect(error).toBeUndefined();
+      },
+    );
+    scope.dispose();
+  });
   it("fences a late step and drains it without starting follow-up work", async () => {
     vi.useFakeTimers();
     const scope = new LaunchScope(60_000);

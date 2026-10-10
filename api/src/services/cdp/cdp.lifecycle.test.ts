@@ -55,6 +55,16 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers());
 describe("CDP launch deadline and owned cleanup", () => {
+  it("keeps launches quarantined when retry plugin cleanup fails", async () => {
+    const { service } = fixture();
+    (service as any).launchInternal = vi.fn().mockRejectedValue(new Error("launch failed"));
+    (service as any).pluginManager.onShutdown = vi
+      .fn()
+      .mockRejectedValue(new Error("plugin cleanup unknown"));
+    await expect(service.launch()).rejects.toThrow("plugin cleanup unknown");
+    await expect(service.waitForLaunchCleanup()).rejects.toThrow("plugin cleanup unknown");
+    await expect(service.launch()).rejects.toThrow("already in progress");
+  });
   it("uses a bounded native launch and closes its late browser without publishing it", async () => {
     const { service, browser, ready } = fixture();
     const launchResult = Promise.withResolvers<any>();

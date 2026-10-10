@@ -8,6 +8,7 @@ export class LaunchScope {
   private pending = new Set<Promise<unknown>>();
   private resources = new Map<unknown, () => Promise<void>>();
   private cleanupError: unknown;
+  private cleanupFailed = false;
   private cancelled: Promise<never>;
   private detach: () => void;
 
@@ -43,6 +44,12 @@ export class LaunchScope {
 
   abort(reason: unknown): void {
     if (!this.signal.aborted) this.controller.abort(reason);
+  }
+
+  failCleanup(reason: unknown): void {
+    this.cleanupFailed = true;
+    this.cleanupError = reason;
+    this.abort(reason);
   }
 
   private track<T>(task: Promise<T>): Promise<T> {
@@ -91,6 +98,7 @@ export class LaunchScope {
       Promise.resolve()
         .then(close)
         .catch((error) => {
+          this.cleanupFailed = true;
           this.cleanupError = error;
         }),
     );
@@ -98,13 +106,13 @@ export class LaunchScope {
 
   async closeResources(): Promise<void> {
     await Promise.all([...this.resources.keys()].map((resource) => this.closeResource(resource)));
-    if (this.cleanupError) throw this.cleanupError;
+    if (this.cleanupFailed) throw this.cleanupError;
   }
 
   /** Keep the singleton reserved until late work and owned-resource cleanup settle. */
   async drained(): Promise<void> {
     while (this.pending.size) await Promise.allSettled([...this.pending]);
-    if (this.cleanupError) throw this.cleanupError;
+    if (this.cleanupFailed) throw this.cleanupError;
   }
 
   dispose(): void {
