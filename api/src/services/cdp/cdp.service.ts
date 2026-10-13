@@ -1367,7 +1367,7 @@ export class CDPService extends EventEmitter {
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
     // Keep shutdown hooks bound to the outgoing browser. launchInternal assigns
     // the incoming config only after teardown (or when reusing the browser), so
-    // a profile writer cannot save idle browser data before restoring its profile.
+    // incoming metadata cannot affect cleanup of the previous browser instance.
     this.trackedOrigins.clear(); // Clear tracked origins when starting a new session
 
     // Recreate target instrumentation manager with session-specific options
