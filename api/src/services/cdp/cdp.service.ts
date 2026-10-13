@@ -614,6 +614,7 @@ export class CDPService extends EventEmitter {
             "[CDPService] Reusing existing browser instance with default configuration.",
           );
           this.launchConfig = config || this.defaultLaunchConfig;
+          this.currentSessionConfig = this.launchConfig;
 
           const reuseOptimize = this.launchConfig.optimizeBandwidth;
           const reusePatterns =
@@ -1364,7 +1365,9 @@ export class CDPService extends EventEmitter {
 
   @traceable
   public async startNewSession(sessionConfig: BrowserLauncherOptions): Promise<Browser> {
-    this.currentSessionConfig = sessionConfig;
+    // Keep shutdown hooks bound to the outgoing browser. launchInternal assigns
+    // the incoming config only after teardown (or when reusing the browser), so
+    // a profile writer cannot save idle browser data before restoring its profile.
     this.trackedOrigins.clear(); // Clear tracked origins when starting a new session
 
     // Recreate target instrumentation manager with session-specific options
