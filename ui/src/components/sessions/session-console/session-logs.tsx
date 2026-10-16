@@ -38,6 +38,35 @@ export default function SessionLogs({ id }: { id: string }) {
     return "var(--gray-11)";
   };
 
+  // Two record shapes reach this component:
+  //  - the CDP instrumentation nests the payload under a key named after the event type
+  //    (`console`, `request`, `response`, ... — see api/src/services/cdp/instrumentation/types.ts)
+  //  - selenium.service.ts still sends the payload as a JSON string on `text`
+  // Reading `text` unconditionally made `JSON.parse(undefined)` throw on every CDP record,
+  // which unmounted the whole tab. ExtensionEvent is flat, so falling back to the record
+  // itself keeps `message`/`logLevel` reachable.
+  const logToBody = (log: Record<string, any>): Record<string, any> => {
+    if (typeof log.text === "string") {
+      try {
+        return JSON.parse(log.text);
+      } catch {
+        return { message: log.text };
+      }
+    }
+    return (
+      log.console ??
+      log.request ??
+      log.response ??
+      log.responseBody ??
+      log.navigation ??
+      log.error ??
+      log.interaction ??
+      log.data ??
+      log.cdp ??
+      log
+    );
+  };
+
   const logTypeToFormat = (type: string, log: Record<string, any>) => {
     if (type === "Console") {
       if (log.message) {
@@ -63,7 +92,7 @@ export default function SessionLogs({ id }: { id: string }) {
       {logs.length === 0 && <p className="text-gray-400">No new logs...</p>}
       {logs &&
         logs.slice(-40).map((log) => {
-          const logBody = JSON.parse(log.text);
+          const logBody = logToBody(log);
           const cleanMessage = logTypeToFormat(log.type, logBody);
 
           return (
