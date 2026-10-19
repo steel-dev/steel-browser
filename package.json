@@ -36,6 +36,11 @@
   "overrides": {
     "tar-fs": ">=3.1.1",
     "handlebars": "^4.7.10",
-    "tar": "^7.5.22"
+    "tar": "^7.5.22",
+    "basic-ftp": "^6.2.3",
+    "compression": "^1.8.2",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^9.0.9"
+    }
   }
 }
