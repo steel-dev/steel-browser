@@ -56,7 +56,7 @@ const mobileFingerprint = {
         mobile: true,
       },
     },
-    screen: { width: 508, height: 1074, devicePixelRatio: 3 },
+    screen: { width: 508, height: 1074, innerWidth: 500, innerHeight: 983, devicePixelRatio: 3 },
   },
   headers: { "accept-language": "es-MX,es;q=0.9", "sec-ch-ua-mobile": "?1" },
 };
@@ -80,7 +80,7 @@ const desktopFingerprint = {
 };
 
 describe("CDPService mobile device emulation", () => {
-  test("uses the mobile layout viewport and enables matching touch input", async () => {
+  test("fits the layout viewport inside the window and enables matching touch input", async () => {
     const service = serviceWith(mobileFingerprint);
     const { page, send, detach } = fakePage();
 
@@ -89,8 +89,8 @@ describe("CDPService mobile device emulation", () => {
     expect(send).toHaveBeenNthCalledWith(1, "Page.setDeviceMetricsOverride", {
       screenWidth: 508,
       screenHeight: 1074,
-      width: 508,
-      height: 1074,
+      width: 500,
+      height: 983,
       mobile: true,
       screenOrientation: { angle: 0, type: "portraitPrimary" },
       deviceScaleFactor: 3,
@@ -219,6 +219,10 @@ describe("CDPService desktop device emulation", () => {
     expect(page.createCDPSession).toHaveBeenCalledTimes(2);
     expect(detach).toHaveBeenCalledTimes(2);
     expect(page.setUserAgent).toHaveBeenCalledWith(DESKTOP_UA);
+    expect(send).toHaveBeenCalledWith(
+      "Page.setDeviceMetricsOverride",
+      expect.objectContaining({ width: 1920, height: 1080, mobile: false }),
+    );
     expect(send).not.toHaveBeenCalledWith("Emulation.setTouchEmulationEnabled", expect.anything());
     expect(send).toHaveBeenCalledWith(
       "Emulation.setUserAgentOverride",

@@ -1642,7 +1642,13 @@ export class CDPService extends EventEmitter {
   }
 
   private buildDeviceMetrics(
-    screen: { width: number; height: number; devicePixelRatio: number },
+    screen: {
+      width: number;
+      height: number;
+      devicePixelRatio: number;
+      innerWidth?: number;
+      innerHeight?: number;
+    },
     isMobile: boolean,
   ): {
     metrics: Protocol.Page.SetDeviceMetricsOverrideRequest;
@@ -1655,8 +1661,8 @@ export class CDPService extends EventEmitter {
       metrics: {
         screenWidth: screen.width,
         screenHeight: screen.height,
-        width: screen.width,
-        height: screen.height,
+        width: screen.innerWidth || screen.width,
+        height: screen.innerHeight || screen.height,
         mobile: isMobile,
         screenOrientation:
           screen.height > screen.width
