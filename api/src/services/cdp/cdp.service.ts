@@ -101,6 +101,7 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private crashedPages: WeakSet<Page> = new WeakSet<Page>();
+  private emulationSessions: WeakMap<Page, CDPSession> = new WeakMap<Page, CDPSession>();
   private chromeSessionService: ChromeContextService;
   private retryManager: RetryManager;
   private targetInstrumentationManager: TargetInstrumentationManager;
@@ -323,6 +324,10 @@ export class CDPService extends EventEmitter {
   }
 
   private async handleNewTarget(target: Target) {
+    if (target.type() === TargetType.PAGE) {
+      this.queueMobileEmulation(target);
+    }
+
     try {
       await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
     } catch (error) {
@@ -1501,55 +1506,34 @@ export class CDPService extends EventEmitter {
 
     try {
       const { fingerprint, headers } = fingerprintData;
-      // TypeScript fix - access userAgent through navigator property
-      const userAgent = fingerprint.navigator.userAgent;
       const userAgentMetadata = fingerprint.navigator.userAgentData;
+      const { isMobile, navigatorPlatform, uaPlatform, override } =
+        this.buildUserAgentOverride(fingerprintData);
 
-      await page.setUserAgent(userAgent);
-
-      const session = await page.createCDPSession();
-
-      try {
-        const injectedHeaders = filterHeaders(headers);
-
-        await page.setExtraHTTPHeaders(injectedHeaders);
-
-        await session.send("Emulation.setUserAgentOverride", {
-          userAgent: userAgent,
-          acceptLanguage: headers["accept-language"],
-          platform: userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
-          userAgentMetadata: {
-            brands:
-              userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
-            fullVersionList:
-              userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
-            fullVersion: userAgentMetadata.uaFullVersion,
-            platform:
-              userAgentMetadata.platform || fingerprint.navigator.platform || "Linux x86_64",
-            platformVersion: userAgentMetadata.platformVersion || "",
-            architecture: userAgentMetadata.architecture || "x86",
-            model: userAgentMetadata.model || "",
-            mobile: userAgentMetadata.mobile as unknown as boolean,
-            bitness: userAgentMetadata.bitness || "64",
-            wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
-          },
-        });
-      } finally {
-        // Always detach the session when done
-        await session.detach().catch(() => {});
+      if (isMobile) {
+        await page.setUserAgent(override.userAgent, override.userAgentMetadata);
+      } else {
+        await page.setUserAgent(override.userAgent);
       }
+
+      await this.withEmulationSession(page, isMobile, async (session) => {
+        await page.setExtraHTTPHeaders(filterHeaders(headers));
+        await session.send("Emulation.setUserAgentOverride", override);
+      });
 
       await page.evaluateOnNewDocument(
         loadFingerprintScript({
-          fixedPlatform: fingerprint.navigator.platform || "Linux x86_64",
+          fixedPlatform: navigatorPlatform,
+          fixedUaPlatform: uaPlatform,
+          fixedMobile: Boolean(userAgentMetadata.mobile),
           fixedVendor: (fingerprint.videoCard as VideoCard | null)?.vendor,
           fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
           fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
           fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
-          fixedArchitecture: userAgentMetadata.architecture || "x86",
-          fixedBitness: userAgentMetadata.bitness || "64",
-          fixedModel: userAgentMetadata.model || "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion || "15.0.0",
+          fixedArchitecture: userAgentMetadata.architecture ?? "x86",
+          fixedBitness: userAgentMetadata.bitness ?? "64",
+          fixedModel: userAgentMetadata.model ?? "",
+          fixedPlatformVersion: userAgentMetadata.platformVersion ?? "15.0.0",
           fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
           fixedBrands:
             userAgentMetadata.brands ||
@@ -1581,34 +1565,138 @@ export class CDPService extends EventEmitter {
       return;
     }
 
-    const userAgent = this.getUserAgent() ?? "";
-    const session = await page.createCDPSession();
-    try {
-      await session.send("Page.setDeviceMetricsOverride", {
+    const isMobile = this.isMobileUserAgent(this.getUserAgent());
+    const { metrics, touch } = this.buildDeviceMetrics(screen, isMobile);
+    const persist = isMobile && this.isFingerprintInjectionEnabled();
+    await this.withEmulationSession(page, persist, async (session) => {
+      await session.send("Page.setDeviceMetricsOverride", metrics);
+      if (touch) {
+        await session.send("Emulation.setTouchEmulationEnabled", touch);
+      }
+    });
+  }
+
+  private queueMobileEmulation(target: Target): void {
+    const fingerprintData = this.fingerprintData;
+    const session = (target as any)._session?.() as CDPSession | undefined;
+    if (!fingerprintData || !session) return;
+    const { screen, navigator } = fingerprintData.fingerprint;
+    if (!screen || !this.isMobileUserAgent(navigator.userAgent)) return;
+    if (!this.isFingerprintInjectionEnabled()) return;
+
+    const { metrics, touch } = this.buildDeviceMetrics(screen, true);
+    const sent = [
+      session.send("Page.setDeviceMetricsOverride", metrics),
+      ...(touch ? [session.send("Emulation.setTouchEmulationEnabled", touch)] : []),
+      ...(navigator.userAgentData
+        ? [
+            session.send(
+              "Emulation.setUserAgentOverride",
+              this.buildUserAgentOverride(fingerprintData).override,
+            ),
+          ]
+        : []),
+    ];
+    void Promise.all(sent).catch((err) => {
+      this.logger.debug({ err }, "[CDPService] Early mobile emulation did not apply");
+    });
+  }
+
+  private buildUserAgentOverride(fingerprintData: BrowserFingerprintWithHeaders) {
+    const { fingerprint, headers } = fingerprintData;
+    const userAgent = fingerprint.navigator.userAgent;
+    const userAgentMetadata = fingerprint.navigator.userAgentData;
+    const isMobile = this.isMobileUserAgent(userAgent);
+    const navigatorPlatform = fingerprint.navigator.platform || "Linux x86_64";
+    const uaPlatform = userAgentMetadata.platform || navigatorPlatform;
+    const acceptLanguage = headers["accept-language"]
+      ?.split(",")
+      .map((language) => language.split(";")[0].trim())
+      .filter(Boolean)
+      .join(",");
+    const override: Protocol.Emulation.SetUserAgentOverrideRequest & {
+      userAgentMetadata: Protocol.Emulation.UserAgentMetadata;
+    } = {
+      userAgent,
+      acceptLanguage,
+      platform: isMobile ? navigatorPlatform : uaPlatform,
+      userAgentMetadata: {
+        brands:
+          userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
+        fullVersionList:
+          userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
+        fullVersion: userAgentMetadata.uaFullVersion,
+        platform: uaPlatform,
+        platformVersion: userAgentMetadata.platformVersion ?? "",
+        architecture: userAgentMetadata.architecture ?? "x86",
+        model: userAgentMetadata.model ?? "",
+        mobile: userAgentMetadata.mobile as unknown as boolean,
+        bitness: userAgentMetadata.bitness ?? "64",
+        wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
+        ...(isMobile
+          ? ({ formFactors: [userAgentMetadata.mobile ? "Mobile" : "Desktop"] } as object)
+          : {}),
+      },
+    };
+    return { isMobile, navigatorPlatform, uaPlatform, override };
+  }
+
+  private buildDeviceMetrics(
+    screen: { width: number; height: number; devicePixelRatio: number },
+    isMobile: boolean,
+  ): {
+    metrics: Protocol.Page.SetDeviceMetricsOverrideRequest;
+    touch: Protocol.Emulation.SetTouchEmulationEnabledRequest | null;
+  } {
+    const maxTouchPoints =
+      (this.fingerprintData?.fingerprint.navigator as { maxTouchPoints?: number } | undefined)
+        ?.maxTouchPoints ?? 1;
+    return {
+      metrics: {
         screenWidth: screen.width,
         screenHeight: screen.height,
         width: screen.width,
         height: screen.height,
-        mobile: /phone|android|mobile/i.test(userAgent),
+        mobile: isMobile,
         screenOrientation:
           screen.height > screen.width
             ? { angle: 0, type: "portraitPrimary" }
             : { angle: 90, type: "landscapePrimary" },
         deviceScaleFactor: screen.devicePixelRatio,
-      });
+      },
+      touch: isMobile ? { enabled: true, maxTouchPoints } : null,
+    };
+  }
 
-      if (/phone|android|mobile/i.test(userAgent)) {
-        const maxTouchPoints =
-          (this.fingerprintData?.fingerprint.navigator as { maxTouchPoints?: number })
-            .maxTouchPoints ?? 1;
-        await session.send("Emulation.setTouchEmulationEnabled", {
-          enabled: true,
-          maxTouchPoints,
-        });
+  private isFingerprintInjectionEnabled(): boolean {
+    return !env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection;
+  }
+
+  private isMobileUserAgent(userAgent: string | null | undefined): boolean {
+    return /phone|android|mobile/i.test(userAgent ?? "");
+  }
+
+  private async withEmulationSession(
+    page: Page,
+    persist: boolean,
+    apply: (session: CDPSession) => Promise<void>,
+  ): Promise<void> {
+    if (!persist) {
+      const session = await page.createCDPSession();
+      try {
+        await apply(session);
+      } finally {
+        await session.detach().catch(() => {});
       }
-    } finally {
-      await session.detach().catch(() => {});
+      return;
     }
+
+    let session = this.emulationSessions.get(page);
+    if (!session) {
+      session = await page.createCDPSession();
+      this.emulationSessions.set(page, session);
+    }
+    await apply(session);
   }
 
   @traceable
