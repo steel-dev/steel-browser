@@ -8,7 +8,11 @@ import { Page, HTTPResponse } from "puppeteer-core";
  * - isPdf: boolean indicating if the main-frame response was a PDF
  * - pdfResponse: the Response for the PDF (so you can buffer() it, if desired)
  */
-export async function safeGoto(page: Page, url: string, options = {}) {
+export async function safeGoto(
+  page: Page,
+  url: string,
+  options = {},
+): Promise<{ response: HTTPResponse | null; isPdf: boolean; pdfResponse: HTTPResponse | null }> {
   let pdfResponse: HTTPResponse | null = null;
 
   const onResponse = (res: HTTPResponse) => {

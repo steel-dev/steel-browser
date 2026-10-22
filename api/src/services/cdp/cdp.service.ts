@@ -107,6 +107,7 @@ export class CDPService extends EventEmitter {
   private instrumentationLogger: BrowserLogger;
 
   private compiledUrlPatterns: RegExp[] = [];
+  private pageSetups = new Map<string, Promise<void>>();
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
     [];
@@ -274,14 +275,20 @@ export class CDPService extends EventEmitter {
     }`;
   }
 
-  public async refreshPrimaryPage() {
+  public async refreshPrimaryPage(signal?: AbortSignal) {
+    const previous = this.primaryPage;
+    const isCurrent = () => !signal?.aborted && this.primaryPage === previous;
     const newPage = await this.createPage();
-    if (this.primaryPage) {
+    if (isCurrent() && previous) {
       // Notify plugins before page close
-      await this.pluginManager.onBeforePageClose(this.primaryPage);
-      await this.primaryPage.close();
+      await this.pluginManager.onBeforePageClose(previous);
+    }
+    if (!isCurrent()) {
+      await newPage.close().catch(() => {});
+      return;
     }
     this.primaryPage = newPage;
+    await previous?.close();
   }
 
   public registerPlugin(plugin: BasePlugin) {
@@ -320,6 +327,32 @@ export class CDPService extends EventEmitter {
 
       this.emit(EmitEvent.PageId, { pageId });
     }
+  }
+
+  private setUpTarget(target: Target): Promise<void> {
+    const targetId = (target as any)._targetId as string;
+    const setup: Promise<void> = this.handleNewTarget(target)
+      .catch((error) => {
+        if (isTargetClosedError(error)) {
+          this.logger.debug(
+            { err: error },
+            "[CDPService] Target closed while handling targetcreated",
+          );
+          return;
+        }
+        this.logger.error({ err: error }, "[CDPService] Unhandled error in handleNewTarget");
+      })
+      .finally(() => {
+        if (this.pageSetups.get(targetId) === setup) {
+          this.pageSetups.delete(targetId);
+        }
+      });
+    this.pageSetups.set(targetId, setup);
+    return setup;
+  }
+
+  public async waitForPageSetup(page: Page): Promise<void> {
+    await this.pageSetups.get(this.getTargetId(page));
   }
 
   private async handleNewTarget(target: Target) {
@@ -1064,16 +1097,7 @@ export class CDPService extends EventEmitter {
         );
 
         this.browserInstance.on("targetcreated", (target) => {
-          void this.handleNewTarget(target).catch((error) => {
-            if (isTargetClosedError(error)) {
-              this.logger.debug(
-                { err: error },
-                "[CDPService] Target closed while handling targetcreated",
-              );
-              return;
-            }
-            this.logger.error({ err: error }, "[CDPService] Unhandled error in handleNewTarget");
-          });
+          void this.setUpTarget(target);
         });
         this.browserInstance.on("targetchanged", this.handleTargetChange.bind(this));
         this.browserInstance.on("targetdestroyed", (target) => {
