@@ -1,6 +1,11 @@
 import * as mupdf from "mupdf";
 import { describe, expect, it } from "vitest";
-import { renderPdfFirstPageAsJpeg } from "../pdfToImage.js";
+import {
+  PDF_RENDER_MAX_PIXELS,
+  PDF_RENDER_MAX_SIDE,
+  pdfRenderScale,
+  renderPdfFirstPageAsJpeg,
+} from "../pdfToImage.js";
 
 function pdfWithPages(sizes: [number, number][]): Buffer {
   const doc = new mupdf.PDFDocument();
@@ -41,5 +46,39 @@ describe("renderPdfFirstPageAsJpeg", () => {
     );
 
     expect(imageSize(jpeg)).toEqual([600, 400]);
+  });
+
+  it("keeps a page that declares a huge size within the pixel budget", () => {
+    const pdf = pdfWithPages([[14400, 14400]]);
+
+    const [width, height] = imageSize(renderPdfFirstPageAsJpeg(pdf));
+
+    expect(pdf.length).toBeLessThan(1024);
+    expect(width * height).toBeLessThanOrEqual(PDF_RENDER_MAX_PIXELS * 1.01);
+    expect(width).toBeLessThan(28800);
+  });
+});
+
+describe("pdfRenderScale", () => {
+  it("renders ordinary pages at twice their size", () => {
+    expect(pdfRenderScale(612, 792)).toBe(2);
+  });
+
+  it("shrinks the scale so a large page stays within the pixel budget", () => {
+    const scale = pdfRenderScale(14400, 14400);
+
+    expect(scale).toBeLessThan(2);
+    expect(14400 * scale * 14400 * scale).toBeCloseTo(PDF_RENDER_MAX_PIXELS, -3);
+  });
+
+  it("keeps a long thin page under the side limit", () => {
+    const scale = pdfRenderScale(10, 1_000_000);
+
+    expect(1_000_000 * scale).toBeLessThanOrEqual(PDF_RENDER_MAX_SIDE);
+  });
+
+  it("refuses a page with no area", () => {
+    expect(() => pdfRenderScale(0, 792)).toThrow("PDF page has no printable area");
+    expect(() => pdfRenderScale(612, Number.NaN)).toThrow("PDF page has no printable area");
   });
 });
