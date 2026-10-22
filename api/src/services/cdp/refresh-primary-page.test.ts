@@ -56,6 +56,38 @@ describe("CDPService.refreshPrimaryPage", () => {
     expect(fresh.close).toHaveBeenCalledOnce();
   });
 
+  it("does not swap pages once the refresh is abandoned while the old page closes", async () => {
+    const previous = fakePage();
+    const fresh = fakePage();
+    const abandon = new AbortController();
+    previous.close.mockImplementation(async () => {
+      abandon.abort();
+    });
+    const state = serviceState(previous, async () => fresh);
+
+    await refreshPrimaryPage.call(state as never, abandon.signal);
+
+    expect(previous.close).toHaveBeenCalledOnce();
+    expect(state.primaryPage).toBe(previous);
+    expect(fresh.close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a primary page that was swapped in while the old page closed", async () => {
+    const previous = fakePage();
+    const replacement = fakePage();
+    const fresh = fakePage();
+    const state = serviceState(previous, async () => fresh);
+    previous.close.mockImplementation(async () => {
+      state.primaryPage = replacement;
+    });
+
+    await refreshPrimaryPage.call(state as never);
+
+    expect(state.primaryPage).toBe(replacement);
+    expect(replacement.close).not.toHaveBeenCalled();
+    expect(fresh.close).toHaveBeenCalledOnce();
+  });
+
   it("keeps a primary page that was replaced while the new one was created", async () => {
     const previous = fakePage();
     const replacement = fakePage();
