@@ -13,20 +13,42 @@ function fakePage() {
   return { close: vi.fn().mockResolvedValue(undefined) };
 }
 
-function browserWithSlowPageCreation(primaryPage: ReturnType<typeof fakePage>) {
-  const creation: { finish?: (page: unknown) => void } = {};
+function pending() {
+  const step: { finish: () => void; promise: Promise<void> } = {
+    finish: () => {},
+    promise: Promise.resolve(),
+  };
+  step.promise = new Promise<void>((resolve) => {
+    step.finish = resolve;
+  });
+  return step;
+}
+
+function browserWithPrimaryPage(
+  primaryPage: ReturnType<typeof fakePage>,
+  createPage: () => Promise<unknown>,
+) {
   const state = {
     primaryPage,
-    createPage: () =>
-      new Promise((resolve) => {
-        creation.finish = resolve;
-      }),
+    createPage,
     pluginManager: { onBeforePageClose: vi.fn().mockResolvedValue(undefined) },
   };
   const browserService = {
     refreshPrimaryPage: (signal?: AbortSignal) =>
       CDPService.prototype.refreshPrimaryPage.call(state as never, signal),
   };
+  return { state, browserService };
+}
+
+function browserWithSlowPageCreation(primaryPage: ReturnType<typeof fakePage>) {
+  const creation: { finish?: (page: unknown) => void } = {};
+  const { state, browserService } = browserWithPrimaryPage(
+    primaryPage,
+    () =>
+      new Promise((resolve) => {
+        creation.finish = resolve;
+      }),
+  );
   return { state, browserService, creation };
 }
 
@@ -82,6 +104,49 @@ describe("resetPrimaryPage", () => {
     expect(current.close).not.toHaveBeenCalled();
     expect(state.pluginManager.onBeforePageClose).not.toHaveBeenCalled();
     expect(late.close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the old page for the next action when plugin cleanup outlasts the reset", async () => {
+    vi.useFakeTimers();
+    const current = fakePage();
+    const fresh = fakePage();
+    const cleanup = pending();
+    const { state, browserService } = browserWithPrimaryPage(current, async () => fresh);
+    state.pluginManager.onBeforePageClose.mockImplementation(() => cleanup.promise);
+
+    const reset = resetPrimaryPage(browserService as never);
+    await vi.advanceTimersByTimeAsync(PRIMARY_PAGE_RESET_TIMEOUT_MS);
+    await reset;
+    const nextActionPage = state.primaryPage;
+
+    cleanup.finish();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(nextActionPage).toBe(current);
+    expect(state.primaryPage).toBe(current);
+    expect(current.close).not.toHaveBeenCalled();
+    expect(fresh.close).toHaveBeenCalledOnce();
+  });
+
+  it("gives the next action the new page when closing the old one outlasts the reset", async () => {
+    vi.useFakeTimers();
+    const current = fakePage();
+    const fresh = fakePage();
+    const closing = pending();
+    current.close.mockImplementation(() => closing.promise);
+    const { state, browserService } = browserWithPrimaryPage(current, async () => fresh);
+
+    const reset = resetPrimaryPage(browserService as never);
+    await vi.advanceTimersByTimeAsync(PRIMARY_PAGE_RESET_TIMEOUT_MS);
+    await reset;
+    const nextActionPage = state.primaryPage;
+
+    closing.finish();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(nextActionPage).toBe(fresh);
+    expect(state.primaryPage).toBe(fresh);
+    expect(fresh.close).not.toHaveBeenCalled();
   });
 });
 

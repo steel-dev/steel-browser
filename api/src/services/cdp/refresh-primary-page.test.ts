@@ -56,36 +56,39 @@ describe("CDPService.refreshPrimaryPage", () => {
     expect(fresh.close).toHaveBeenCalledOnce();
   });
 
-  it("does not swap pages once the refresh is abandoned while the old page closes", async () => {
+  it("leaves the primary page alone when abandoned while plugins let go of it", async () => {
     const previous = fakePage();
     const fresh = fakePage();
     const abandon = new AbortController();
-    previous.close.mockImplementation(async () => {
+    const state = serviceState(previous, async () => fresh);
+    state.pluginManager.onBeforePageClose.mockImplementation(async () => {
       abandon.abort();
     });
-    const state = serviceState(previous, async () => fresh);
 
     await refreshPrimaryPage.call(state as never, abandon.signal);
 
-    expect(previous.close).toHaveBeenCalledOnce();
     expect(state.primaryPage).toBe(previous);
+    expect(previous.close).not.toHaveBeenCalled();
     expect(fresh.close).toHaveBeenCalledOnce();
   });
 
-  it("keeps a primary page that was swapped in while the old page closed", async () => {
+  it("hands out the new page before the old one starts closing", async () => {
     const previous = fakePage();
-    const replacement = fakePage();
     const fresh = fakePage();
+    const abandon = new AbortController();
     const state = serviceState(previous, async () => fresh);
+    let primaryWhileClosing: unknown;
     previous.close.mockImplementation(async () => {
-      state.primaryPage = replacement;
+      primaryWhileClosing = state.primaryPage;
+      abandon.abort();
     });
 
-    await refreshPrimaryPage.call(state as never);
+    await refreshPrimaryPage.call(state as never, abandon.signal);
 
-    expect(state.primaryPage).toBe(replacement);
-    expect(replacement.close).not.toHaveBeenCalled();
-    expect(fresh.close).toHaveBeenCalledOnce();
+    expect(primaryWhileClosing).toBe(fresh);
+    expect(state.primaryPage).toBe(fresh);
+    expect(previous.close).toHaveBeenCalledOnce();
+    expect(fresh.close).not.toHaveBeenCalled();
   });
 
   it("keeps a primary page that was replaced while the new one was created", async () => {

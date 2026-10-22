@@ -282,13 +282,13 @@ export class CDPService extends EventEmitter {
     if (isCurrent() && previous) {
       // Notify plugins before page close
       await this.pluginManager.onBeforePageClose(previous);
-      await previous.close();
     }
     if (!isCurrent()) {
       await newPage.close().catch(() => {});
       return;
     }
     this.primaryPage = newPage;
+    await previous?.close();
   }
 
   public registerPlugin(plugin: BasePlugin) {
