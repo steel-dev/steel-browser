@@ -14,11 +14,17 @@ export interface FetchPdfOptions {
 
 export async function fetchPdf(page: Page, targetUrl: string, options: FetchPdfOptions = {}) {
   const { proxyUrl, timeoutMs = PDF_FETCH_TIMEOUT_MS, maxMegabytes = PDF_MAX_MEGABYTES } = options;
+  const signal = AbortSignal.timeout(timeoutMs);
 
-  const [cookies, userAgent] = await Promise.all([
-    page.cookies(targetUrl),
-    page.evaluate(() => navigator.userAgent).catch(() => page.browser().userAgent()),
-  ]);
+  const [cookies, userAgent] = await beforeDeadline(
+    Promise.all([
+      page.cookies(targetUrl),
+      page.evaluate(() => navigator.userAgent).catch(() => page.browser().userAgent()),
+    ]),
+    signal,
+  ).catch((error: unknown) => {
+    throw signal.aborted ? downloadTimedOut(timeoutMs) : error;
+  });
   const headers: Record<string, string> = {
     Referer: new URL(targetUrl).origin + "/",
     "User-Agent": userAgent,
@@ -27,7 +33,6 @@ export async function fetchPdf(page: Page, targetUrl: string, options: FetchPdfO
   if (cookieHeader) headers["Cookie"] = cookieHeader;
 
   const agent = proxyUrl ? proxyAgentFor(proxyUrl) : undefined;
-  const signal = AbortSignal.timeout(timeoutMs);
 
   const response = await axios
     .get<Buffer>(targetUrl, {
@@ -57,6 +62,22 @@ export async function fetchPdf(page: Page, targetUrl: string, options: FetchPdfO
   };
 }
 
+function beforeDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+function downloadTimedOut(timeoutMs: number): Error {
+  return new Error(`PDF download timed out after ${timeoutMs} ms`);
+}
+
 function proxyAgentFor(proxyUrl: string) {
   return proxyUrl.startsWith("socks")
     ? new SocksProxyAgent(proxyUrl)
@@ -69,7 +90,7 @@ function downloadError(
   timeoutMs: number,
   maxMegabytes: number,
 ): Error {
-  if (timedOut) return new Error(`PDF download timed out after ${timeoutMs} ms`);
+  if (timedOut) return downloadTimedOut(timeoutMs);
   if (axios.isAxiosError(error) && error.message.includes("maxContentLength")) {
     return new Error(`PDF is larger than ${maxMegabytes} MB`);
   }

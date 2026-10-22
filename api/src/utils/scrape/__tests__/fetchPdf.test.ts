@@ -131,6 +131,35 @@ describe("fetchPdf", () => {
     );
   });
 
+  it("counts a page that stalls before the download against the same deadline", async () => {
+    const target = await startTarget(pdf);
+    const stalledPage = {
+      cookies: () => new Promise(() => {}),
+      evaluate: async () => "PageAgent/1.0",
+      browser: () => ({ userAgent: async () => "BrowserAgent/1.0" }),
+    } as never;
+
+    await expect(
+      fetchPdf(stalledPage, `${target.origin}/paper.pdf`, { timeoutMs: 50 }),
+    ).rejects.toThrow("PDF download timed out after 50 ms");
+    expect(target.seen).toHaveLength(0);
+  });
+
+  it("passes on the error of a page that closed before the download", async () => {
+    const target = await startTarget(pdf);
+    const closedPage = {
+      cookies: async () => {
+        throw new Error("Protocol error (Network.getCookies): Target closed");
+      },
+      evaluate: async () => "PageAgent/1.0",
+      browser: () => ({ userAgent: async () => "BrowserAgent/1.0" }),
+    } as never;
+
+    await expect(fetchPdf(closedPage, `${target.origin}/paper.pdf`)).rejects.toThrow(
+      "Protocol error (Network.getCookies): Target closed",
+    );
+  });
+
   it("gives up on a download that takes too long", async () => {
     const target = await startTarget(() => {});
 
