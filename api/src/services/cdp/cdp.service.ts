@@ -274,12 +274,17 @@ export class CDPService extends EventEmitter {
     }`;
   }
 
-  public async refreshPrimaryPage() {
+  public async refreshPrimaryPage(signal?: AbortSignal) {
+    const previous = this.primaryPage;
     const newPage = await this.createPage();
-    if (this.primaryPage) {
+    if (signal?.aborted || this.primaryPage !== previous) {
+      await newPage.close().catch(() => {});
+      return;
+    }
+    if (previous) {
       // Notify plugins before page close
-      await this.pluginManager.onBeforePageClose(this.primaryPage);
-      await this.primaryPage.close();
+      await this.pluginManager.onBeforePageClose(previous);
+      await previous.close();
     }
     this.primaryPage = newPage;
   }

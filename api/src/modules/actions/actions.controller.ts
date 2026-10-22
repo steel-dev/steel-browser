@@ -28,12 +28,23 @@ async function closeEphemeralContext(context: BrowserContext | null): Promise<vo
   await context.close().catch(() => {});
 }
 
+function pageProxyUrl(
+  sessionService: SessionService,
+  proxy: IProxyServer | null,
+): string | undefined {
+  return proxy?.url ?? sessionService.activeSession?.proxyServer?.url;
+}
+
 export async function resetPrimaryPage(browserService: CDPService): Promise<void> {
+  const abandon = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, PRIMARY_PAGE_RESET_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      abandon.abort();
+      resolve();
+    }, PRIMARY_PAGE_RESET_TIMEOUT_MS);
   });
-  await Promise.race([browserService.refreshPrimaryPage().catch(() => {}), timeout]);
+  await Promise.race([browserService.refreshPrimaryPage(abandon.signal).catch(() => {}), timeout]);
   clearTimeout(timer);
 }
 
@@ -112,11 +123,10 @@ export const handleScrape = async (
 
     if (isPdf || contentType.includes("application/pdf")) {
       const targetUrl = normalizedUrl || url!;
-      const {
-        buffer: pdfBuffer,
-        response: nodeRes,
-        contentType: nodeCT,
-      } = await fetchPdf(page, targetUrl);
+      const download = await fetchPdf(page, targetUrl, {
+        proxyUrl: pageProxyUrl(sessionService, proxy),
+      });
+      const pdfBuffer = download.buffer;
 
       const convertStart = Date.now();
       const { html, links, meta } = convertPdfWithMupdf(pdfBuffer);
@@ -125,7 +135,7 @@ export const handleScrape = async (
 
       const htmlMeta = buildHtmlLikeMetadataFromPdf(meta, {
         urlSource: targetUrl,
-        statusCode: nodeRes.status,
+        statusCode: download.status,
         htmlForFallback: htmlContent,
       });
 
@@ -135,9 +145,9 @@ export const handleScrape = async (
         content: {},
         metadata: {
           ...htmlMeta,
-          statusCode: nodeRes.status,
-          headers: Object.fromEntries(nodeRes.headers.entries()),
-          originalContentType: nodeCT,
+          statusCode: download.status,
+          headers: download.headers,
+          originalContentType: download.contentType,
           pdfAcquisition: "node-fetch-with-cookies",
         },
         links: htmlLinks,
@@ -496,7 +506,10 @@ export const handleScreenshot = async (
         waitUntil: "domcontentloaded",
       });
       if (navigation.isPdf) {
-        pdfDocument = (await fetchPdf(page, normalizedUrl)).buffer;
+        const download = await fetchPdf(page, normalizedUrl, {
+          proxyUrl: pageProxyUrl(sessionService, proxy),
+        });
+        pdfDocument = download.buffer;
       }
       times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
     }
@@ -584,7 +597,10 @@ export const handlePDF = async (
         waitUntil: "domcontentloaded",
       });
       if (navigation.isPdf) {
-        pdfDocument = (await fetchPdf(page, normalizedUrl)).buffer;
+        const download = await fetchPdf(page, normalizedUrl, {
+          proxyUrl: pageProxyUrl(sessionService, proxy),
+        });
+        pdfDocument = download.buffer;
       }
       times.pageLoadTime = Date.now() - times.pageTime - times.proxyTime - startTime;
     }
