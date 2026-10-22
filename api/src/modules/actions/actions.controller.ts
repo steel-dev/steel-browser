@@ -148,7 +148,7 @@ export const handleScrape = async (
 
     if (isPdf || contentType.includes("application/pdf")) {
       const targetUrl = normalizedUrl || url!;
-      const download = await fetchPdf(page, targetUrl, {
+      const download = await fetchPdf(page, (pdfResponse ?? response)?.url() || targetUrl, {
         proxyUrl: pageProxyUrl(sessionService, proxy),
         timeoutMs: pageLoadTimeLeft(navigationMs),
       });
@@ -534,7 +534,7 @@ export const handleScreenshot = async (
         waitUntil: "domcontentloaded",
       });
       if (navigation.isPdf) {
-        const download = await fetchPdf(page, normalizedUrl, {
+        const download = await fetchPdf(page, navigation.pdfResponse?.url() || normalizedUrl, {
           proxyUrl: pageProxyUrl(sessionService, proxy),
           timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
@@ -628,7 +628,7 @@ export const handlePDF = async (
         waitUntil: "domcontentloaded",
       });
       if (navigation.isPdf) {
-        const download = await fetchPdf(page, normalizedUrl, {
+        const download = await fetchPdf(page, navigation.pdfResponse?.url() || normalizedUrl, {
           proxyUrl: pageProxyUrl(sessionService, proxy),
           timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
