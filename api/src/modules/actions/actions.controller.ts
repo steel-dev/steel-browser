@@ -22,6 +22,8 @@ import { fetchPdf } from "../../utils/scrape/fetchPdf.js";
 import { safeGoto } from "../../utils/scrape/safeGoTo.js";
 
 export const PRIMARY_PAGE_RESET_TIMEOUT_MS = 5_000;
+export const PAGE_SETUP_TIMEOUT_MS = 3_000;
+export const PAGE_LOAD_TIMEOUT_MS = 30_000;
 
 async function closeEphemeralContext(context: BrowserContext | null): Promise<void> {
   if (!context) return;
@@ -35,17 +37,39 @@ function pageProxyUrl(
   return proxy?.url ?? sessionService.activeSession?.proxyServer?.url;
 }
 
-export async function resetPrimaryPage(browserService: CDPService): Promise<void> {
-  const abandon = new AbortController();
+export function pageLoadTimeLeft(navigationMs: number): number {
+  return Math.max(1, PAGE_LOAD_TIMEOUT_MS - navigationMs);
+}
+
+async function settleWithin(
+  work: Promise<unknown>,
+  timeoutMs: number,
+  onTimeout?: () => void,
+): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<void>((resolve) => {
     timer = setTimeout(() => {
-      abandon.abort();
+      onTimeout?.();
       resolve();
-    }, PRIMARY_PAGE_RESET_TIMEOUT_MS);
+    }, timeoutMs);
   });
-  await Promise.race([browserService.refreshPrimaryPage(abandon.signal).catch(() => {}), timeout]);
+  await Promise.race([work.then(noop, noop), timeout]);
   clearTimeout(timer);
+}
+
+function noop() {}
+
+export async function resetPrimaryPage(browserService: CDPService): Promise<void> {
+  const abandon = new AbortController();
+  await settleWithin(
+    browserService.refreshPrimaryPage(abandon.signal),
+    PRIMARY_PAGE_RESET_TIMEOUT_MS,
+    () => abandon.abort(),
+  );
+}
+
+export async function waitForPageSetup(browserService: CDPService, page: Page): Promise<void> {
+  await settleWithin(browserService.waitForPageSetup(page), PAGE_SETUP_TIMEOUT_MS);
 }
 
 export const handleScrape = async (
@@ -78,8 +102,6 @@ export const handleScrape = async (
     }
 
     if (proxy) {
-      // If a proxy is used, we proceed with browser navigation; implementing proxy-aware Node fetch
-      // would require an HTTP agent and is outside current scope.
       context = await browserService.createBrowserContext(proxy.url);
       page = await context.newPage();
       times.proxyPageTime = Date.now() - startTime - times.proxyTime;
@@ -87,6 +109,7 @@ export const handleScrape = async (
       page = await browserService.getPrimaryPage();
       times.pageTime = Date.now() - startTime - times.proxyTime;
     }
+    await waitForPageSetup(browserService, page);
 
     // PDF retrieval will use node fetch with session cookies; removed CDP tracking
 
@@ -98,12 +121,14 @@ export const handleScrape = async (
       }
     }
 
+    const navigationStart = Date.now();
     const safeResponse = normalizedUrl
       ? await safeGoto(page, normalizedUrl, {
-          timeout: 30000,
+          timeout: PAGE_LOAD_TIMEOUT_MS,
           waitUntil: "domcontentloaded",
         })
       : { response: null, isPdf: false, pdfResponse: null };
+    const navigationMs = Date.now() - navigationStart;
 
     response = safeResponse.response !== null ? safeResponse.response : safeResponse.pdfResponse;
     pdfResponse = safeResponse.pdfResponse;
@@ -125,6 +150,7 @@ export const handleScrape = async (
       const targetUrl = normalizedUrl || url!;
       const download = await fetchPdf(page, targetUrl, {
         proxyUrl: pageProxyUrl(sessionService, proxy),
+        timeoutMs: pageLoadTimeLeft(navigationMs),
       });
       const pdfBuffer = download.buffer;
 
@@ -493,6 +519,7 @@ export const handleScreenshot = async (
       page = await browserService.getPrimaryPage();
       times.pageTime = Date.now() - startTime;
     }
+    await waitForPageSetup(browserService, page);
 
     let pdfDocument: Buffer | null = null;
 
@@ -501,13 +528,15 @@ export const handleScreenshot = async (
       if (!normalizedUrl) {
         throw new Error(`Invalid URL: ${url}`);
       }
+      const navigationStart = Date.now();
       const navigation = await safeGoto(page, normalizedUrl, {
-        timeout: 30000,
+        timeout: PAGE_LOAD_TIMEOUT_MS,
         waitUntil: "domcontentloaded",
       });
       if (navigation.isPdf) {
         const download = await fetchPdf(page, normalizedUrl, {
           proxyUrl: pageProxyUrl(sessionService, proxy),
+          timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
         pdfDocument = download.buffer;
       }
@@ -584,6 +613,7 @@ export const handlePDF = async (
       page = await browserService.getPrimaryPage();
       times.pageTime = Date.now() - startTime;
     }
+    await waitForPageSetup(browserService, page);
 
     let pdfDocument: Buffer | null = null;
 
@@ -592,13 +622,15 @@ export const handlePDF = async (
       if (!normalizedUrl) {
         throw new Error(`Invalid URL: ${url}`);
       }
+      const navigationStart = Date.now();
       const navigation = await safeGoto(page, normalizedUrl, {
-        timeout: 30000,
+        timeout: PAGE_LOAD_TIMEOUT_MS,
         waitUntil: "domcontentloaded",
       });
       if (navigation.isPdf) {
         const download = await fetchPdf(page, normalizedUrl, {
           proxyUrl: pageProxyUrl(sessionService, proxy),
+          timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
         pdfDocument = download.buffer;
       }

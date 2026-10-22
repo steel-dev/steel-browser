@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CDPService } from "../../services/cdp/cdp.service.js";
-import { PRIMARY_PAGE_RESET_TIMEOUT_MS, resetPrimaryPage } from "./actions.controller.js";
+import {
+  PAGE_LOAD_TIMEOUT_MS,
+  PAGE_SETUP_TIMEOUT_MS,
+  PRIMARY_PAGE_RESET_TIMEOUT_MS,
+  pageLoadTimeLeft,
+  resetPrimaryPage,
+  waitForPageSetup,
+} from "./actions.controller.js";
 
 function fakePage() {
   return { close: vi.fn().mockResolvedValue(undefined) };
@@ -75,5 +82,58 @@ describe("resetPrimaryPage", () => {
     expect(current.close).not.toHaveBeenCalled();
     expect(state.pluginManager.onBeforePageClose).not.toHaveBeenCalled();
     expect(late.close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("waitForPageSetup", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("waits for the page to finish its setup", async () => {
+    let finish: () => void = () => {};
+    const browserService = {
+      waitForPageSetup: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    };
+    const page = {};
+    let ready = false;
+
+    const waiting = waitForPageSetup(browserService as never, page as never).then(() => {
+      ready = true;
+    });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+
+    finish();
+    await waiting;
+
+    expect(ready).toBe(true);
+    expect(browserService.waitForPageSetup).toHaveBeenCalledWith(page);
+  });
+
+  it("stops waiting on a setup that never finishes", async () => {
+    vi.useFakeTimers();
+    const browserService = { waitForPageSetup: vi.fn(() => new Promise<void>(() => {})) };
+
+    const waiting = waitForPageSetup(browserService as never, {} as never);
+    await vi.advanceTimersByTimeAsync(PAGE_SETUP_TIMEOUT_MS);
+
+    await expect(waiting).resolves.toBeUndefined();
+  });
+});
+
+describe("pageLoadTimeLeft", () => {
+  it("leaves the PDF download whatever the navigation did not use", () => {
+    expect(pageLoadTimeLeft(1_200)).toBe(PAGE_LOAD_TIMEOUT_MS - 1_200);
+  });
+
+  it("never hands out a non-positive timeout", () => {
+    expect(pageLoadTimeLeft(PAGE_LOAD_TIMEOUT_MS)).toBe(1);
+    expect(pageLoadTimeLeft(PAGE_LOAD_TIMEOUT_MS + 5_000)).toBe(1);
   });
 });
