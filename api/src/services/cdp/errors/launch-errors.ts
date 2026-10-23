@@ -104,11 +104,11 @@ export abstract class BaseLaunchError extends Error {
  * This is typically retryable as it may be a temporary resource issue
  */
 export class LaunchTimeoutError extends BaseLaunchError {
-  constructor(timeoutMs: number = 30000, cause?: unknown) {
+  constructor(timeoutMs: number = 30000, cause?: unknown, isRetryable = true) {
     super(
       LaunchErrorType.TIMEOUT,
       `Browser launch timeout after ${timeoutMs}ms`,
-      true,
+      isRetryable,
       {
         timeoutMs,
       },
@@ -270,11 +270,12 @@ export class BrowserProcessError extends BaseLaunchError {
     processState: BrowserProcessState,
     cause?: unknown,
     exitCode?: number,
+    isRetryable = true,
   ) {
     super(
       LaunchErrorType.BROWSER_PROCESS,
       `Browser process error (${processState}): ${message}`,
-      true,
+      isRetryable,
       {
         processState,
         exitCode,
