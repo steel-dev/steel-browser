@@ -120,7 +120,8 @@ const fixtures: Record<string, (other: string) => string> = {
   "/armed": () => `<!doctype html><title>Armed</title><p>Text</p>
     <script>window.arm = (ms) => setTimeout(() => (window.answer = confirm("During?")), ms);</script>`,
   "/key-confirm": () => `<!doctype html><title>Key confirm</title>
-    <button onkeydown="if (event.key === ' ') confirm('Sure?')" onkeyup="window.keyUp = true" onclick="document.title = 'clicked'">Go</button>`,
+    <button onkeydown="seen.push('down'); if (event.key === ' ') confirm('Sure?')" onkeyup="seen.push('up ' + this.matches(':active')); window.keyUp = true" onclick="seen.push('click'); document.title = 'clicked'" onfocus="seen.push('focus')" onblur="seen.push('blur')">Go</button>
+    <script>window.seen = []; addEventListener("blur", () => seen.push("window blur")); addEventListener("focus", () => seen.push("window focus"));</script>`,
   "/stream-link": () => `<!doctype html><title>Link</title><a href="/stream">Stream</a>`,
   "/fieldset": () => `<!doctype html><title>Fieldset</title>
     <fieldset disabled>
@@ -2293,9 +2294,15 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/basic");
       const cdp = await page.createCDPSession();
       void cdp.send("Page.crash").catch(() => undefined);
-      await sleep(500);
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const probe = await run({ command: "snapshot" });
+        if (probe.results[0].error?.code === "tab_crashed") {
+          break;
+        }
+        await sleep(100);
+      }
       const back = await run({ command: "navigate", url: `${base}/slow?ms=1500` });
-      expect(back.results[0]).toMatchObject({ ok: true });
+      expect(back.results[0], JSON.stringify(back.results[0])).toMatchObject({ ok: true });
       expect((await run({ command: "get", what: "title" })).results[0]).toMatchObject({
         value: "Slow",
       });
@@ -2621,8 +2628,9 @@ describe.skipIf(!chrome)("command engine", () => {
       for (let attempt = 0; attempt < 20 && (await page.title()) !== "clicked"; attempt++) {
         await sleep(100);
       }
-      expect(await page.title()).toBe("clicked");
-      expect(await held()).toMatchObject({ keyUp: true });
+      const seen = await page.evaluate(() => (window as unknown as { seen: string[] }).seen);
+      expect(await held(), JSON.stringify(seen)).toMatchObject({ keyUp: true });
+      expect(await page.title(), JSON.stringify(seen)).toBe("clicked");
     });
 
     test("counts a dialog answer as a change", async () => {
