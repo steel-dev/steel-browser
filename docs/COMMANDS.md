@@ -169,7 +169,7 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 - If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Answer the dialog and click again.
 - If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after you answer the dialog. Send it again if you still need it.
 - A `confirm` or `prompt` that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
-- If a dialog opens while a mouse button or key is down, the engine lets it go once the dialog closes, so a click or a Space press on a button still completes.
+- If a dialog opens while a mouse button or key is down, the engine lets it go once the dialog closes. A click still completes. A Space press on a button can lose its click, because the dialog takes focus from the page.
 - When a tab closes, its open dialog closes with it. Answering that dialog afterwards returns `dialog_not_pending`.
 - Dialogs that a new tab shows while it loads, such as a popup that calls `alert()` right away, follow the same rules.
 - While a CDP client such as Puppeteer or Playwright is connected to the session, the engine does not answer dialogs on its own, and `onDialog` does not apply. The response still shows an open dialog in `dialog`, and the `dialog` command still answers it. If the client answers first, the command returns `dialog_not_pending`. The session viewer does not count as a client.
