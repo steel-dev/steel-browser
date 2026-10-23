@@ -68,7 +68,7 @@ export class DuckDBStorage implements LogStorage {
   private writeBufferSize: number;
   private writeBufferFlushInterval: number;
   private flushTimer: NodeJS.Timeout | null = null;
-  private isFlushing = false;
+  private flushPromise: Promise<void> | null = null;
 
   constructor(options: DuckDBStorageOptions = {}) {
     this.dbPath = options.dbPath || ":memory:";
@@ -143,22 +143,32 @@ export class DuckDBStorage implements LogStorage {
   }
 
   private async flushWriteBuffer(): Promise<void> {
-    if (this.isFlushing || this.writeBuffer.length === 0 || !this.db) return;
+    if (!this.db) return;
 
-    this.isFlushing = true;
-    const toFlush = this.writeBuffer.splice(0, this.writeBuffer.length);
+    // Join an active flush, then loop to drain events appended while it ran.
+    // This makes flush() a real durability barrier for session finalization.
+    while (true) {
+      if (this.flushPromise) {
+        await this.flushPromise;
+        continue;
+      }
+      if (this.writeBuffer.length === 0) return;
 
-    try {
-      await this.writeBatchInternal(toFlush);
-    } catch (err) {
-      // Put events back on failure (at the front). Use concat rather than
-      // `unshift(...toFlush)`: spreading a large array as call arguments throws
-      // "Maximum call stack size exceeded" once the buffer is big enough, which
-      // would mask the original failure and lose the buffered events.
-      this.writeBuffer = toFlush.concat(this.writeBuffer);
-      throw err;
-    } finally {
-      this.isFlushing = false;
+      const toFlush = this.writeBuffer.splice(0, this.writeBuffer.length);
+      const flush = this.writeBatchInternal(toFlush).catch((err) => {
+        // Put events back on failure (at the front). Use concat rather than
+        // `unshift(...toFlush)`: spreading a large array as call arguments
+        // throws once the buffer is large enough and would lose the root cause.
+        this.writeBuffer = toFlush.concat(this.writeBuffer);
+        throw err;
+      });
+      this.flushPromise = flush;
+
+      try {
+        await flush;
+      } finally {
+        if (this.flushPromise === flush) this.flushPromise = null;
+      }
     }
   }
 
