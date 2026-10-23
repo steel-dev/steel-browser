@@ -62,9 +62,18 @@ export function tryParseUrl(url: string): URL | null {
   }
 }
 
+// Hostnames are case-insensitive and may carry a trailing root dot ("example.com.").
+function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/\.$/, "");
+}
+
+function hostMatches(hostname: string, host: string): boolean {
+  return hostname === host || hostname.endsWith(`.${host}`);
+}
+
 export function isAdRequest(parsed: URL): boolean {
-  const { hostname } = parsed;
-  return AD_HOSTS.some((adHost) => hostname === adHost || hostname.endsWith(`.${adHost}`));
+  const hostname = normalizeHost(parsed.hostname);
+  return AD_HOSTS.some((adHost) => hostMatches(hostname, adHost));
 }
 
 export function isImageRequest(parsed: URL): boolean {
@@ -80,8 +89,8 @@ export function isHeavyMediaRequest(parsed: URL): boolean {
 
 export function isHostBlocked(parsed: URL, blockedHosts?: string[]): boolean {
   if (!blockedHosts?.length) return false;
-  const { hostname } = parsed;
-  return blockedHosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  const hostname = normalizeHost(parsed.hostname);
+  return blockedHosts.some((h) => hostMatches(hostname, normalizeHost(h)));
 }
 
 export function compileUrlPatterns(patterns: string[]): RegExp[] {
