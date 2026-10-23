@@ -2,7 +2,7 @@
 
 The commands API drives the session's browser with high-level actions. It is built for AI agents: take a snapshot of the page, pick an element by its ref, and act on it. The engine runs inside steel-browser next to Chrome, so one HTTP request can run several commands and return the new page state.
 
-The API is off by default. Start the server with `ENABLE_COMMANDS_API=true` to turn it on. When it is off, the routes below do not exist and the server behaves as if the engine were not there.
+The API is experimental and off by default. Start the server with `ENABLE_COMMANDS_API=true` to turn it on. When it is off, the routes below do not exist and the server behaves as if the engine were not there.
 
 ## Endpoints
 
