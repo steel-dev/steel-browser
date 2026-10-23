@@ -3,13 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { GlowingGreenDot } from "@/components/icons/GlowingGreenDot";
 import { useSessionsContext } from "@/hooks/use-sessions-context";
 import { SteelIcon } from "../icons/SessionIcon";
+import { useMatch } from "react-router-dom";
 
 export const Header = () => {
-  const { pathname } = window.location;
-  const currentSessionId =
-    pathname.includes("sessions") && pathname.split("/").pop() !== "sessions"
-      ? pathname.split("/").pop()
-      : null;
+  // Read the same route the viewer renders from. Parsing window.location by
+  // hand also never re-read on client-side navigation.
+  const match = useMatch("/sessions/:id");
+  const currentSessionId = match?.params.id ?? null;
 
   const { useSession } = useSessionsContext();
   const { data: session, isLoading } = useSession(currentSessionId!);
