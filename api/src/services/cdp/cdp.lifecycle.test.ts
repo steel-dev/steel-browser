@@ -355,23 +355,27 @@ describe("CDPService client count", () => {
 });
 
 describe("CDPService cookies", () => {
-  test("reads cookies from another open page when the primary page is closed", async () => {
+  test("reads the default context cookies from the browser, not from a page", async () => {
     const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
-    const session = { send: vi.fn().mockResolvedValue({ cookies: [{ name: "a" }] }) };
-    const other = { send: vi.fn().mockResolvedValue({ cookies: [{ name: "other" }] }) };
+    const browser = {
+      send: vi.fn().mockResolvedValue({ cookies: [{ name: "own" }] }),
+      detach: vi.fn().mockResolvedValue(undefined),
+    };
+    const foreign = { send: vi.fn().mockResolvedValue({ cookies: [{ name: "foreign" }] }) };
     const main = {};
     Object.assign(service as unknown as Record<string, unknown>, {
       primaryPage: { isClosed: () => true },
       browserInstance: {
         defaultBrowserContext: () => main,
+        target: () => ({ createCDPSession: async () => browser }),
         targets: () => [
-          { type: () => "page", browserContext: () => ({}), _session: () => other },
-          { type: () => "page", browserContext: () => main, _session: () => session },
+          { type: () => "page", browserContext: () => main, _session: () => foreign },
         ],
       },
     });
-    expect(await service.getCookies()).toEqual([{ name: "a" }]);
-    expect(session.send).toHaveBeenCalledWith("Network.getAllCookies");
-    expect(other.send).not.toHaveBeenCalled();
+    expect(await service.getCookies()).toEqual([{ name: "own" }]);
+    expect(browser.send).toHaveBeenCalledWith("Storage.getCookies");
+    expect(browser.detach).toHaveBeenCalled();
+    expect(foreign.send).not.toHaveBeenCalled();
   });
 });

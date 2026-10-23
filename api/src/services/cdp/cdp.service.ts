@@ -1282,22 +1282,16 @@ export class CDPService extends EventEmitter {
   }
 
   public async getCookies(): Promise<Protocol.Network.Cookie[]> {
-    const target =
-      this.primaryPage && !this.primaryPage.isClosed()
-        ? this.primaryPage.target()
-        : this.browserInstance
-            ?.targets()
-            .find(
-              (candidate) =>
-                candidate.type() === "page" &&
-                candidate.browserContext() === this.browserInstance!.defaultBrowserContext(),
-            );
-    const session = (target as any)?._session?.();
-    if (!session) {
-      throw new Error("No open page to read cookies from");
+    if (!this.browserInstance) {
+      throw new Error("Browser not initialized");
     }
-    const { cookies } = await session.send("Network.getAllCookies");
-    return cookies;
+    const session = await this.browserInstance.target().createCDPSession();
+    try {
+      const { cookies } = await session.send("Storage.getCookies");
+      return cookies;
+    } finally {
+      await session.detach().catch(() => undefined);
+    }
   }
 
   public async getBrowserState(): Promise<SessionData> {
