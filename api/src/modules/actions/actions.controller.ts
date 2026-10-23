@@ -361,7 +361,7 @@ export const handleScrape = async (
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
 
-    if (url) {
+    if (url && !proxyUrl) {
       await resetPrimaryPage(browserService);
     }
     return reply.code(500).send({ message: error });
@@ -565,7 +565,7 @@ export const handleScreenshot = async (
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
 
-    if (url) {
+    if (url && !proxyUrl) {
       await resetPrimaryPage(browserService);
     }
 
@@ -656,7 +656,7 @@ export const handlePDF = async (
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
 
-    if (url) {
+    if (url && !proxyUrl) {
       await resetPrimaryPage(browserService);
     }
 

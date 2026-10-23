@@ -1,6 +1,11 @@
+import type { FastifyReply } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CDPService } from "../../services/cdp/cdp.service.js";
+import type { SessionService } from "../../services/session.service.js";
 import {
+  handlePDF,
+  handleScrape,
+  handleScreenshot,
   PAGE_LOAD_TIMEOUT_MS,
   PAGE_SETUP_TIMEOUT_MS,
   PRIMARY_PAGE_RESET_TIMEOUT_MS,
@@ -200,5 +205,55 @@ describe("pageLoadTimeLeft", () => {
   it("never hands out a non-positive timeout", () => {
     expect(pageLoadTimeLeft(PAGE_LOAD_TIMEOUT_MS)).toBe(1);
     expect(pageLoadTimeLeft(PAGE_LOAD_TIMEOUT_MS + 5_000)).toBe(1);
+  });
+});
+
+function fixture() {
+  const browserService = {
+    isRunning: () => true,
+    getPrimaryPage: vi.fn().mockRejectedValue(new Error("Primary page failed")),
+    refreshPrimaryPage: vi.fn().mockResolvedValue(undefined),
+  };
+  const proxy = {
+    listen: vi.fn().mockRejectedValue(new Error("Proxy failed")),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  const sessionService = { proxyFactory: vi.fn().mockResolvedValue(proxy) };
+  const reply = { code: vi.fn(), send: vi.fn() };
+  reply.code.mockReturnValue(reply);
+  return {
+    browserService: browserService as unknown as CDPService,
+    refresh: browserService.refreshPrimaryPage,
+    sessionService: sessionService as unknown as SessionService,
+    reply: reply as unknown as FastifyReply,
+    status: reply.code,
+  };
+}
+
+const handlers = [
+  ["scrape", handleScrape],
+  ["screenshot", handleScreenshot],
+  ["pdf", handlePDF],
+] as const;
+
+describe("quick action failures", () => {
+  it.each(handlers)("%s keeps the primary page when it ran with a proxy", async (_, handle) => {
+    const { browserService, refresh, sessionService, reply, status } = fixture();
+    const request = { body: { url: "https://example.com", proxyUrl: "http://proxy.test:8080" } };
+
+    await handle(sessionService, browserService, request as never, reply);
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each(handlers)("%s replaces the primary page that failed", async (_, handle) => {
+    const { browserService, refresh, sessionService, reply, status } = fixture();
+    const request = { body: { url: "https://example.com" } };
+
+    await handle(sessionService, browserService, request as never, reply);
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(refresh).toHaveBeenCalledOnce();
   });
 });

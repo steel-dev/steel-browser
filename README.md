@@ -159,9 +159,10 @@ For more details on where this is checked look at [`api/src/utils/browser.ts`](.
 >
 > Alternatively you can play with the [REPL package](./repl/README.md) too `cd repl` and `npm run start`
 
-There are two main ways to interact with the Steel browser API:
+There are three main ways to interact with the Steel browser API:
 1. [Using Sessions](#sessions)
 2. [Using the Quick Actions Endpoints](#quick-actions-api)
+3. [Using the Commands API](#commands-api)
 
 In these examples, we assume your custom Steel API endpoint is `http://localhost:3000`.
 
@@ -332,6 +333,24 @@ curl -X POST http://0.0.0.0:3000/v1/pdf \
   }' --output output.pdf
 ```
 </details>
+
+### Commands API
+The `/sessions/{sessionId}/commands` endpoint drives the session's browser with high-level commands. It is built for AI agents: take a snapshot of the page, then act on elements by the refs in the snapshot. One request can run several commands and return the new page state.
+
+The commands API is off by default. Start the server with `ENABLE_COMMANDS_API=true` to turn it on.
+
+```bash
+curl -X POST http://localhost:3000/v1/sessions/$SESSION_ID/commands \
+  -H "Content-Type: application/json" \
+  -d '{
+    "commands": [
+      { "command": "navigate", "url": "https://example.com" },
+      { "command": "snapshot", "interactive": true }
+    ]
+  }'
+```
+
+The response holds the snapshot, for example `- link "Learn more" [ref=e1]`. Send `{ "command": "click", "target": "e1" }` to click the link. See the [Commands API docs](./docs/COMMANDS.md) for every command, the response format, and error codes.
 
 ## Get involved
 Steel browser is an open-source project, and we welcome contributions!

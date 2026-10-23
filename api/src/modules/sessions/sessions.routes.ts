@@ -19,6 +19,7 @@ import {
   SessionsPDFRequest,
 } from "./sessions.schema.js";
 import { BrowserEventType, EmitEvent } from "../../types/enums.js";
+import { quickAction } from "../commands/commands.guard.js";
 
 async function routes(server: FastifyInstance) {
   server.get(
@@ -215,7 +216,9 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: SessionsScrapeRequest, reply: FastifyReply) =>
-      handleScrape(server.sessionService, server.cdpService, request, reply),
+      quickAction(server, request, reply, () =>
+        handleScrape(server.sessionService, server.cdpService, request, reply),
+      ),
   );
 
   server.post(
@@ -233,7 +236,9 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: SessionsScreenshotRequest, reply: FastifyReply) =>
-      handleScreenshot(server.sessionService, server.cdpService, request, reply),
+      quickAction(server, request, reply, () =>
+        handleScreenshot(server.sessionService, server.cdpService, request, reply),
+      ),
   );
 
   server.post(
@@ -251,7 +256,9 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: SessionsPDFRequest, reply: FastifyReply) =>
-      handlePDF(server.sessionService, server.cdpService, request, reply),
+      quickAction(server, request, reply, () =>
+        handlePDF(server.sessionService, server.cdpService, request, reply),
+      ),
   );
 }
 

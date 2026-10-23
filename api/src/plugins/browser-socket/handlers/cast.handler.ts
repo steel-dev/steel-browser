@@ -19,6 +19,7 @@ export const castHandler: WebSocketHandler = {
       context.wss,
       context.fastify.sessionService,
       context.params,
+      context.fastify.cdpService.internalConnectionHeaders(),
     );
   },
 };

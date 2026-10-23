@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import type { FastifyBaseLogger } from "fastify";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -6,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BrowserLauncherOptions } from "../../types/browser.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { CDPService } from "./cdp.service.js";
-import { ShutdownReason } from "./plugins/core/base-plugin.js";
+import { BasePlugin, ShutdownReason } from "./plugins/core/base-plugin.js";
+import type { CommandEngine } from "../commands/engine.js";
+import { CommandsPlugin } from "../commands/plugin.js";
 
 vi.mock("puppeteer-core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("puppeteer-core")>();
@@ -245,6 +249,108 @@ describe("CDPService lifecycle hook ownership", () => {
     expect(events[0].config?.extra).toBeUndefined();
     expect(events[1].config).toBe(incoming);
     expect(events[2].config).toBeNull();
+  });
+
+  function commandEngineCalls() {
+    const browsers: Browser[] = [];
+    vi.mocked(puppeteer.launch).mockImplementation(async () => {
+      const browser = fakeBrowser();
+      browsers.push(browser);
+      return browser;
+    });
+    const { service } = lifecycleFixture();
+    const calls: string[] = [];
+    const engine = {
+      prepare: (id: string) => calls.push(`prepare ${id}`),
+      browserLaunched: (browser: Browser) => calls.push(`launched ${browsers.indexOf(browser)}`),
+      browserReady: () => calls.push("ready"),
+      browserClosed: (browser: Browser) => calls.push(`closed ${browsers.indexOf(browser)}`),
+      sessionEnded: () => calls.push("ended"),
+    };
+    const session = { id: "first" };
+    service.registerPlugin(
+      new CommandsPlugin(engine as unknown as CommandEngine, { id: () => session.id }),
+    );
+    return { service, browsers, calls, session };
+  }
+
+  test("ends the command session before the browser closes", async () => {
+    const { service, calls, session } = commandEngineCalls();
+
+    await service.launch();
+    await service.startNewSession(sessionConfig("first", "first-metadata"));
+    await service.endSession(ShutdownReason.SECURITY_VIOLATION);
+    session.id = "second";
+    await service.startNewSession(sessionConfig("second", "second-metadata"));
+    await service.endSession();
+
+    expect(calls).toEqual([
+      "launched 0",
+      "ready",
+      "prepare first",
+      "closed 0",
+      "launched 1",
+      "ready",
+      "ended",
+      "closed 1",
+      "launched 2",
+      "ready",
+      "prepare second",
+      "closed 2",
+      "launched 3",
+      "ready",
+      "ended",
+      "closed 3",
+      "launched 4",
+      "ready",
+    ]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("ends the command session when the browser crashes", async () => {
+    const { service, browsers, calls } = commandEngineCalls();
+
+    await service.launch();
+    await service.startNewSession(sessionConfig("first", "first-metadata"));
+    (browsers[1] as unknown as EventEmitter).emit("disconnected");
+    await vi.waitFor(() => expect(calls).toContain("launched 2"));
+
+    expect(calls.slice(0, 9)).toEqual([
+      "launched 0",
+      "ready",
+      "prepare first",
+      "closed 0",
+      "launched 1",
+      "ready",
+      "ended",
+      "closed 1",
+      "launched 2",
+    ]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+});
+
+describe("CDPService client count", () => {
+  test("counts clients that go through a custom proxy handler", async () => {
+    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
+    service.setProxyWebSocketHandler(async () => undefined);
+    const socket = new EventEmitter() as unknown as Duplex;
+    await service.proxyWebSocket({ headers: {} } as IncomingMessage, socket, Buffer.alloc(0));
+    expect(service.getCdpClientCount()).toBe(1);
+    socket.emit("close");
+    expect(service.getCdpClientCount()).toBe(0);
+  });
+
+  test("does not count the server's own connections", async () => {
+    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
+    service.setProxyWebSocketHandler(async () => undefined);
+    const socket = new EventEmitter() as unknown as Duplex;
+    await service.proxyWebSocket(
+      { headers: service.internalConnectionHeaders() } as unknown as IncomingMessage,
+      socket,
+      Buffer.alloc(0),
+    );
+    expect(service.getCdpClientCount()).toBe(0);
   });
 });
 
