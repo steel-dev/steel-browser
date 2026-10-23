@@ -10,7 +10,7 @@ import {
 } from "./actions.controller.js";
 
 function fakePage() {
-  return { close: vi.fn().mockResolvedValue(undefined) };
+  return { close: vi.fn().mockResolvedValue(undefined), isClosed: () => false };
 }
 
 function pending() {
