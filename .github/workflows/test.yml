@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Show the Chrome version
+        run: /usr/bin/google-chrome --version
+
       - name: Run the API tests
         run: npm test -w api
         env:
