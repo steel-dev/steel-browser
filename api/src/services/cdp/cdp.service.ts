@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { randomUUID } from "node:crypto";
 import { FastifyBaseLogger } from "fastify";
 import {
   BrowserFingerprintWithHeaders,
@@ -82,6 +83,8 @@ import {
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
+const INTERNAL_CONNECTION_HEADER = "x-steel-internal";
+
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
@@ -112,6 +115,8 @@ export class CDPService extends EventEmitter {
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
     [];
+  private cdpClients = 0;
+  private readonly internalToken = randomUUID();
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
@@ -280,7 +285,7 @@ export class CDPService extends EventEmitter {
     const previous = this.primaryPage;
     const isCurrent = () => !signal?.aborted && this.primaryPage === previous;
     const newPage = await this.createPage();
-    if (isCurrent() && previous) {
+    if (isCurrent() && previous && !previous.isClosed()) {
       // Notify plugins before page close
       await this.pluginManager.onBeforePageClose(previous);
     }
@@ -289,7 +294,9 @@ export class CDPService extends EventEmitter {
       return;
     }
     this.primaryPage = newPage;
-    await previous?.close();
+    if (previous && !previous.isClosed()) {
+      await previous.close();
+    }
   }
 
   public registerPlugin(plugin: BasePlugin) {
@@ -416,7 +423,7 @@ export class CDPService extends EventEmitter {
 
         // Only install mouse helper in headless mode
         if (this.launchConfig?.options?.headless) {
-          installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+          await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
         }
 
         if (this.launchConfig?.customHeaders) {
@@ -1183,8 +1190,23 @@ export class CDPService extends EventEmitter {
     }
   }
 
+  public getCdpClientCount(): number {
+    return this.cdpClients;
+  }
+
+  public internalConnectionHeaders(): Record<string, string> {
+    return { [INTERNAL_CONNECTION_HEADER]: this.internalToken };
+  }
+
   @traceable
   public async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    if (req.headers[INTERNAL_CONNECTION_HEADER] !== this.internalToken) {
+      this.cdpClients++;
+      socket.once("close", () => {
+        this.cdpClients--;
+      });
+    }
+
     if (this.proxyWebSocketHandler) {
       this.logger.info("[CDPService] Using custom WebSocket proxy handler");
       await this.proxyWebSocketHandler(req, socket, head);
@@ -1260,13 +1282,16 @@ export class CDPService extends EventEmitter {
   }
 
   public async getCookies(): Promise<Protocol.Network.Cookie[]> {
-    if (!this.primaryPage) {
-      throw new Error("Primary page not initialized");
+    if (!this.browserInstance) {
+      throw new Error("Browser not initialized");
     }
-    const client = await this.primaryPage.createCDPSession();
-    const { cookies } = await client.send("Network.getAllCookies");
-    await client.detach();
-    return cookies;
+    const session = await this.browserInstance.target().createCDPSession();
+    try {
+      const { cookies } = await session.send("Storage.getCookies");
+      return cookies;
+    } finally {
+      await session.detach().catch(() => undefined);
+    }
   }
 
   public async getBrowserState(): Promise<SessionData> {

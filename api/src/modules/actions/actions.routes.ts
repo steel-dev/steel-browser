@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyReply } from "fastify";
 import { handlePDF, handleScrape, handleScreenshot, handleSearch } from "./actions.controller.js";
 import { $ref } from "../../plugins/schemas.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
+import { quickAction } from "../commands/commands.guard.js";
 
 async function routes(server: FastifyInstance) {
   server.post(
@@ -19,7 +20,9 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: ScrapeRequest, reply: FastifyReply) =>
-      handleScrape(server.sessionService, server.cdpService, request, reply),
+      quickAction(server, request, reply, () =>
+        handleScrape(server.sessionService, server.cdpService, request, reply),
+      ),
   );
 
   server.post(
@@ -37,7 +40,9 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: ScreenshotRequest, reply: FastifyReply) =>
-      handleScreenshot(server.sessionService, server.cdpService, request, reply),
+      quickAction(server, request, reply, () =>
+        handleScreenshot(server.sessionService, server.cdpService, request, reply),
+      ),
   );
 
   server.post(
@@ -55,7 +60,9 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: PDFRequest, reply: FastifyReply) =>
-      handlePDF(server.sessionService, server.cdpService, request, reply),
+      quickAction(server, request, reply, () =>
+        handlePDF(server.sessionService, server.cdpService, request, reply),
+      ),
   );
 
   server.post(
@@ -73,7 +80,9 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: SearchRequest, reply: FastifyReply) =>
-      handleSearch(server.sessionService, server.cdpService, request, reply),
+      quickAction(server, request, reply, () =>
+        handleSearch(server.sessionService, server.cdpService, request, reply),
+      ),
   );
 }
 

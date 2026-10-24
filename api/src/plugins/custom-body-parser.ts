@@ -18,7 +18,7 @@ const customBodyParser: FastifyPluginAsync = async (fastify: FastifyInstance) =>
             done(null, JSON.parse(body.toString()));
         }
       } catch (error) {
-        done(error as Error, undefined);
+        done(Object.assign(error as Error, { statusCode: 400 }), undefined);
       }
     },
   );
