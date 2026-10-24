@@ -2324,7 +2324,11 @@ describe.skipIf(!chrome)("command engine", () => {
     });
 
     test("reports itself busy while a request waits for quick actions", async () => {
-      const quick = create({ limits: { responseDeadlineMs: 300 } });
+      const started = Date.now();
+      const quick = create({
+        limits: { responseDeadlineMs: 300 },
+        now: () => started + (Date.now() - started) * 0.9,
+      });
       quickActions = new Promise(() => {});
       expect(quick.busy()).toBe(false);
       const pending = send({ commands: { command: "tab", action: "list" } }, undefined, quick);

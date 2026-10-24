@@ -517,9 +517,19 @@ export class CommandEngine {
     active.pumping = true;
     try {
       while (this.active === active && this.ready && active.queue.length > 0) {
-        await within(this.host.quickActionsDone(), active.queue[0].expiresAt - this.now());
+        const head = active.queue[0];
+        const drained = await within(
+          this.host.quickActionsDone().then(() => true),
+          head.expiresAt - this.now(),
+        );
         if (this.active !== active || !this.ready || active.queue.length === 0) {
           break;
+        }
+        if (!drained) {
+          if (active.queue.includes(head)) {
+            this.expire(active, head.execution);
+          }
+          continue;
         }
         const job = active.queue.shift()!;
         if (this.now() >= job.expiresAt) {
