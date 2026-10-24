@@ -197,7 +197,7 @@ export class CommandEngine {
     if (!active || active.id !== request.sessionId) {
       return ended(request.sessionId);
     }
-    if (this.host.released()) {
+    if (this.host.released(active.id)) {
       this.sessionEnded();
       return ended(request.sessionId);
     }
@@ -606,7 +606,7 @@ export class CommandEngine {
   }
 
   private async stopped(active: ActiveSession, job: Job): Promise<boolean> {
-    if (this.host.released()) {
+    if (this.host.released(active.id)) {
       this.sessionEnded();
     }
     if (active.ended || isFinal(job.execution.state)) {
@@ -752,7 +752,7 @@ export class CommandEngine {
   }
 
   private endFor(active: ActiveSession) {
-    if (this.active !== active || active.ended || active.ending || this.host.released()) {
+    if (this.active !== active || active.ended || active.ending || this.host.released(active.id)) {
       return undefined;
     }
     active.ending = true;

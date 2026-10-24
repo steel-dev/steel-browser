@@ -18,7 +18,10 @@ export function createCommandEngine(server: FastifyInstance): CommandEngine {
       }
     },
     filesRoot: () => FileService.getInstance().getBaseFilesPath(),
-    released: () => server.sessionService.activeSession.status !== "live",
+    released: (id) => {
+      const session = server.sessionService.activeSession;
+      return session.id !== id || session.status !== "live";
+    },
     quickActionsDone: () => quickActionsDone(engine),
   });
   server.cdpService.registerPlugin(

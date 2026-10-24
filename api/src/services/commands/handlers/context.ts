@@ -308,7 +308,7 @@ export function halted(job: Job): boolean {
 }
 
 export function ending(ctx: Context): boolean {
-  return ctx.abandoned === true || halted(ctx.job) || ctx.host.released();
+  return ctx.abandoned === true || halted(ctx.job) || ctx.host.released(ctx.active.id);
 }
 
 export async function sleep(ctx: Context, ms: number, done?: () => boolean) {

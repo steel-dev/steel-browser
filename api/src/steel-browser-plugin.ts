@@ -14,7 +14,6 @@ import seleniumPlugin from "./plugins/selenium.js";
 import {
   actionsRoutes,
   cdpRoutes,
-  commandsRoutes,
   filesRoutes,
   logsRoutes,
   seleniumRoutes,
@@ -24,7 +23,6 @@ import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import type { CDPService } from "./services/cdp/cdp.service.js";
 import type { CommandEngine } from "./services/commands/engine.js";
-import { createCommandEngine } from "./modules/commands/commands.routes.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
@@ -82,14 +80,17 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(browserSessionPlugin);
 
   // Routes
-  fastify.decorate("commandEngine", env.ENABLE_COMMANDS_API ? createCommandEngine(fastify) : null);
+  const commands = env.ENABLE_COMMANDS_API
+    ? await import("./modules/commands/commands.routes.js")
+    : null;
+  fastify.decorate("commandEngine", commands ? commands.createCommandEngine(fastify) : null);
   await fastify.register(actionsRoutes, { prefix: "/v1" });
   await fastify.register(sessionsRoutes, { prefix: "/v1" });
   await fastify.register(cdpRoutes, { prefix: "/v1" });
   await fastify.register(seleniumRoutes);
   await fastify.register(filesRoutes, { prefix: "/v1" });
-  if (env.ENABLE_COMMANDS_API) {
-    await fastify.register(commandsRoutes, { prefix: "/v1" });
+  if (commands) {
+    await fastify.register(commands.default, { prefix: "/v1" });
   }
 
   const enableLogsRoutes = opts.logging?.enableLogsRoutes ?? true;

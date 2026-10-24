@@ -214,4 +214,17 @@ describe("commands host", () => {
     await host.endSession("live");
     expect(endSession).toHaveBeenCalledTimes(1);
   });
+
+  test("treats a session as released once another session is live", () => {
+    const activeSession = { id: "new", status: "live" };
+    const server = {
+      cdpService: { registerPlugin: () => undefined },
+      sessionService: { activeSession },
+    } as unknown as FastifyInstance;
+    const host = (createCommandEngine(server) as unknown as { host: EngineHost }).host;
+    expect(host.released("old")).toBe(true);
+    expect(host.released("new")).toBe(false);
+    activeSession.status = "released";
+    expect(host.released("new")).toBe(true);
+  });
 });

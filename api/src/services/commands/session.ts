@@ -9,7 +9,7 @@ export interface EngineHost extends BrowserHost {
   cdpClients(): number;
   endSession(id: string): Promise<void>;
   filesRoot(): string;
-  released(): boolean;
+  released(id: string): boolean;
   quickActionsDone(): Promise<void>;
 }
 
