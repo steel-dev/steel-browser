@@ -1,11 +1,13 @@
 import type { Page } from "puppeteer-core";
 import { SECRET_FIELD, SECRET_MASK } from "./secrets.js";
 
+export const MOUSE_HELPERS = "#__cursor__, puppeteer-mouse-pointer";
+
 export const TEXT = `function () {
   if ((${SECRET_FIELD})(this)) {
     return ${JSON.stringify(SECRET_MASK)};
   }
-  return this.innerText || this.textContent || "";
+  return typeof this.innerText === "string" ? this.innerText : this.textContent || "";
 }`;
 
 export const HTML = `function () {
@@ -27,6 +29,9 @@ export const HTML = `function () {
       copies[index].setAttribute("value", mask);
     }
   });
+  for (const helper of copy.querySelectorAll(${JSON.stringify(MOUSE_HELPERS)})) {
+    helper.remove();
+  }
   return copy.innerHTML;
 }`;
 

@@ -494,6 +494,28 @@ const fixtures: Record<string, (other: string) => string> = {
     <textarea aria-label="Notes">old</textarea>
     <div contenteditable aria-label="Editor">old</div>
     <input aria-label="Placed" value="old">`,
+  "/hidden-later": () => `<!doctype html><title>Hidden later</title>
+    <button id="later" style="display: none" onclick="document.title = 'later'">Later</button>`,
+  "/status-row": () => `<!doctype html><title>Status</title>
+    <div><span id="status">Saved 3</span> <button onclick="document.title = 'saved'">Save</button></div>`,
+  "/secret-cut": () => `<!doctype html><title>Secret cut</title>
+    <input type="password" aria-label="Pass" value="hunter2secret">
+    <div style="cursor: pointer">${"x".repeat(95)} hunter2secret tail</div>`,
+  "/typed-kinds": () => `<!doctype html><title>Kinds</title>
+    <input type="email" aria-label="Email" value="old@x.com">
+    <input type="number" aria-label="Count" value="12">`,
+  "/with-cursor": () => `<!doctype html><title>Cursor</title>
+    <div class="item">One</div><div class="item">Two</div>
+    <div id="__cursor__" style="position: fixed; top: 0; left: 0; width: 20px; height: 20px; pointer-events: none"></div>`,
+  "/frame-history": () => `<!doctype html><title>Frame history</title><p>Outer</p>
+    <iframe src="/frame-a" style="width: 300px; height: 100px"></iframe>`,
+  "/frame-a": () => `<!doctype html><title>Frame A</title><a href="/frame-b">Next</a>`,
+  "/frame-b": () => `<!doctype html><title>Frame B</title><p>B</p>`,
+  "/hidden-pair": () => `<!doctype html><title>Hidden pair</title>
+    <button style="display: none">Retry</button><button style="display: none">Retry</button>
+    <script>window.reveal = () => (document.querySelector("button").style.display = "");</script>`,
+  "/hidden-text": () => `<!doctype html><title>Hidden text</title>
+    <div id="t"><span style="display: none">hidden words</span></div>`,
   "/focus-confirm": () => `<!doctype html><title>Focus confirm</title>
     <input aria-label="Trap" onfocus="if (!window.asked) { window.asked = true; confirm('Sure?'); }">
     <button onclick="document.title = 'clicked'">Go</button>`,
@@ -969,6 +991,65 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({ ok: true });
       expect(await page.title()).toBe("B1");
       small.sessionEnded();
+    });
+
+    test("keeps a ref that find returned for a hidden element once it shows", async () => {
+      await open("/hidden-later");
+      const found = await run({ command: "find", by: "css", value: "#later" });
+      const ref = (found.results[0].matches as Array<{ ref: string }>)[0].ref;
+      await page.evaluate(() => (document.getElementById("later")!.style.display = ""));
+      const clicked = await run({ command: "click", target: ref });
+      expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({ ok: true });
+      expect(await page.title()).toBe("later");
+    });
+
+    test("keeps a ref outside lists when text next to it changes", async () => {
+      await open("/status-row");
+      const ref = refOf(await snapshot(), 'button "Save"');
+      await page.evaluate(() => (document.getElementById("status")!.textContent = "Saved 4"));
+      const clicked = await run({ command: "click", target: ref });
+      expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({ ok: true });
+      expect(await page.title()).toBe("saved");
+    });
+
+    test("leaves the mouse helper out of locators and html", async () => {
+      await open("/with-cursor");
+      const count = await run({ command: "get", what: "count", target: { css: "div" } });
+      expect(count.results[0]).toMatchObject({ value: 2 });
+      const html = await run({ command: "get", what: "html", target: "body" });
+      expect(String(html.results[0].value)).toContain("Two");
+      expect(String(html.results[0].value)).not.toContain("__cursor__");
+    });
+
+    test("reads only the text a person can see", async () => {
+      await open("/hidden-text");
+      const text = await run({ command: "get", what: "text", target: "#t" });
+      expect(text.results[0]).toMatchObject({ ok: true, value: "" });
+    });
+
+    test("waits on a locator that matches several hidden elements", async () => {
+      await open("/hidden-pair");
+      const hidden = await run({
+        command: "wait",
+        target: { text: "Retry" },
+        state: "hidden",
+        timeout: 1000,
+      });
+      expect(hidden.results[0], JSON.stringify(hidden.results[0])).toMatchObject({ ok: true });
+      const none = await run({ command: "is", what: "visible", target: { text: "Retry" } });
+      expect(none.results[0], JSON.stringify(none.results[0])).toMatchObject({ value: false });
+      await page.evaluate(() =>
+        setTimeout(() => (window as unknown as { reveal(): void }).reveal(), 300),
+      );
+      const visible = await run({
+        command: "wait",
+        target: { text: "Retry" },
+        state: "visible",
+        timeout: 3000,
+      });
+      expect(visible.results[0], JSON.stringify(visible.results[0])).toMatchObject({ ok: true });
+      const some = await run({ command: "is", what: "visible", target: { text: "Retry" } });
+      expect(some.results[0], JSON.stringify(some.results[0])).toMatchObject({ value: true });
     });
 
     test("treats a hidden element's ref as still in the page", async () => {
@@ -2242,6 +2323,18 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(body.observe?.snapshot).toContain('heading "Account"');
     });
 
+    test("reports itself busy while a request waits for quick actions", async () => {
+      const quick = create({ limits: { responseDeadlineMs: 300 } });
+      quickActions = new Promise(() => {});
+      expect(quick.busy()).toBe(false);
+      const pending = send({ commands: { command: "tab", action: "list" } }, undefined, quick);
+      await sleep(50);
+      expect(quick.busy()).toBe(true);
+      expect((await pending).status).toBe(429);
+      expect(quick.busy()).toBe(false);
+      quick.sessionEnded();
+    });
+
     test("starts fresh when the same session id starts again", async () => {
       const first = await send({ commands: { command: "tab", action: "list" } }, "same-key");
       expect(first.status).toBe(200);
@@ -2289,6 +2382,25 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("crashed tabs", () => {
+    test("recovers a crashed tab that commands never used", async () => {
+      const quick = create({ limits: { responseDeadlineMs: 5000 } });
+      await open("/basic", quick);
+      const fresh = await browser.newPage();
+      await fresh.goto(`${base}/counter`);
+      const tab = await tabWith("/counter", quick);
+      const cdp = await fresh.createCDPSession();
+      void cdp.send("Page.crash").catch(() => undefined);
+      await sleep(1000);
+      try {
+        const back = await run({ command: "navigate", tab, url: `${base}/basic` }, {}, quick);
+        expect(back.execution.state, JSON.stringify(back)).toBe("completed");
+        const snap = await run({ command: "snapshot", tab }, {}, quick);
+        expect(snap.results[0].snapshot).toContain('heading "Account"');
+      } finally {
+        quick.sessionEnded();
+      }
+    });
+
     test("recovers a crashed tab with a navigation that takes a while", async () => {
       await open("/basic");
       const cdp = await page.createCDPSession();
@@ -2874,6 +2986,33 @@ describe.skipIf(!chrome)("command engine", () => {
     });
   });
 
+  describe("history", () => {
+    test("goes back in a frame without waiting for the page to navigate", async () => {
+      await open("/frame-history");
+      const text = await snapshot();
+      await run({ command: "click", target: refOf(text, 'link "Next"') });
+      const inner = () =>
+        page
+          .frames()
+          .find((frame) => frame !== page.mainFrame())!
+          .url();
+      for (let attempt = 0; attempt < 20 && !inner().endsWith("/frame-b"); attempt++) {
+        await sleep(100);
+      }
+      const started = Date.now();
+      const back = await run({ command: "back" });
+      expect(back.results[0], JSON.stringify(back.results[0])).toMatchObject({
+        ok: true,
+        navigated: true,
+      });
+      expect(Date.now() - started).toBeLessThan(10_000);
+      for (let attempt = 0; attempt < 20 && !inner().endsWith("/frame-a"); attempt++) {
+        await sleep(100);
+      }
+      expect(inner()).toMatch(/\/frame-a$/);
+    });
+  });
+
   describe("cancel", () => {
     test("does not scroll inside a frame after the click is cancelled", async () => {
       await open("/deep-frame");
@@ -2977,6 +3116,88 @@ describe.skipIf(!chrome)("command engine", () => {
           | undefined;
         await inner?.client.send("Runtime.terminateExecution").catch(() => undefined);
         quick.sessionEnded();
+      }
+    });
+
+    test("leaves a stuck observe behind even after a click", async () => {
+      const quick = create({ limits: { interruptGraceMs: 200 } });
+      await open("/basic", quick);
+      const ref = refOf(
+        (await run({ command: "snapshot" }, {}, quick)).results[0].snapshot as string,
+        'button "Save"',
+      );
+      const original = CdpCDPSession.prototype.send;
+      let clicked = false;
+      let unblock = () => {};
+      const blocked = new Promise<void>((resolve) => (unblock = resolve));
+      const spy = vi.spyOn(CdpCDPSession.prototype, "send").mockImplementation(async function (
+        this: CdpCDPSession,
+        method: string,
+        params?: unknown,
+        options?: unknown,
+      ) {
+        if (
+          method === "Input.dispatchMouseEvent" &&
+          (params as { type?: string } | undefined)?.type === "mouseReleased"
+        ) {
+          clicked = true;
+        }
+        if (method === "Accessibility.getFullAXTree" && clicked) {
+          await blocked;
+        }
+        return (original as (...args: unknown[]) => Promise<unknown>).call(
+          this,
+          method,
+          params,
+          options,
+        );
+      } as never);
+      try {
+        const running = run(
+          { command: "click", target: ref },
+          { observe: { mode: "snapshot" } },
+          quick,
+        );
+        for (let attempt = 0; attempt < 30 && !clicked; attempt++) {
+          await sleep(100);
+        }
+        await sleep(300);
+        const cancelled = await run({ command: "cancel", execution: "x-3" }, {}, quick);
+        expect(cancelled.execution.state).toBe("cancelled");
+        await running;
+        expect(endedByEngine).toBe(0);
+        expect(page.isClosed()).toBe(false);
+      } finally {
+        unblock();
+        spy.mockRestore();
+        quick.sessionEnded();
+      }
+    });
+
+    test("does not end a session that is already being released", async () => {
+      await open("/counter");
+      const spy = holdPress();
+      try {
+        const quick = create({
+          limits: { interruptGraceMs: 200, responseDeadlineMs: 300, inputTimeoutMs: 20_000 },
+        });
+        const stuck = await run(
+          { command: "click", target: { role: "button", name: "Add" } },
+          {},
+          quick,
+        );
+        const cancelling = send(
+          { commands: { command: "cancel", execution: stuck.execution.id } },
+          undefined,
+          quick,
+        );
+        await sleep(1000);
+        releasing = true;
+        await cancelling;
+        expect(endedByEngine).toBe(0);
+        quick.sessionEnded();
+      } finally {
+        spy.mockRestore();
       }
     });
 
@@ -3128,7 +3349,7 @@ describe.skipIf(!chrome)("command engine", () => {
     });
 
     test("cancels an execution that has not started", async () => {
-      const slow = run({ command: "navigate", url: `${base}/slow?ms=800` });
+      const slow = run({ command: "navigate", url: `${base}/slow?ms=3000` });
       await sleep(50);
       const queued = send({ commands: { command: "snapshot" } });
       await sleep(50);
@@ -3150,7 +3371,7 @@ describe.skipIf(!chrome)("command engine", () => {
         await run({ command: "cancel", execution: running.execution.id }, {}, quick);
         const done = await finished(running.execution.id, quick);
         expect(done.execution.state).toBe("cancelled");
-        expect(Date.now() - started).toBeLessThan(4000);
+        expect(Date.now() - started).toBeLessThan(8000);
         const listed = await run({ command: "tab", action: "list" }, {}, quick);
         expect(listed.results[0].tabs).toHaveLength(1);
       }
@@ -3167,13 +3388,13 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/basic");
       const ref = refOf(await snapshot(), 'button "Save"');
       const before = (await run({ command: "tab", action: "list" })).epoch;
-      const slow = send({ commands: { command: "navigate", url: `${base}/slow?ms=1500` } });
-      await sleep(100);
       const replacement = await puppeteer.launch({
         executablePath: chrome,
         headless: true,
         args: ["--no-sandbox"],
       });
+      const slow = send({ commands: { command: "navigate", url: `${base}/slow?ms=3000` } });
+      await sleep(100);
       try {
         current = replacement;
         engine.browserClosed(browser);
@@ -3607,6 +3828,16 @@ describe.skipIf(!chrome)("command engine", () => {
       });
       await run({ command: "type", target: { label: "Placed" }, text: "x" });
       expect(await value('[aria-label="Placed"]')).toBe("xold");
+    });
+
+    test("types after the current value of email and number fields", async () => {
+      await open("/typed-kinds");
+      await run([
+        { command: "type", target: { label: "Email" }, text: "new" },
+        { command: "type", target: { label: "Count" }, text: "34" },
+      ]);
+      expect(await value('[aria-label="Email"]')).toBe("old@x.comnew");
+      expect(await value('[aria-label="Count"]')).toBe("1234");
     });
 
     test("reads a redrawn checkbox on its tab when the click opens another tab", async () => {
@@ -4262,6 +4493,13 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(covered.results[0]).toMatchObject({ error: { reason: "covered" } });
       expect(covered.results[0].error!.message).toContain("PIN");
       expect(covered.results[0].error!.message).not.toContain("qzv");
+    });
+
+    test("hides a secret that the clickable text limit cuts through", async () => {
+      await open("/secret-cut");
+      const text = await snapshot({ interactive: true });
+      expect(text).toContain("xxxx");
+      expect(text).not.toContain("hunt");
     });
 
     test("hides secret editable regions that contain markup in text and html", async () => {

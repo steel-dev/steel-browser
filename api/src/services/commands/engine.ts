@@ -171,6 +171,11 @@ export class CommandEngine {
     return this.active?.claimed === true;
   }
 
+  busy(): boolean {
+    const active = this.active;
+    return !!active && (active.running !== null || active.queue.length > 0);
+  }
+
   sessionEnded() {
     if (this.active) {
       this.end(this.active);
@@ -512,7 +517,7 @@ export class CommandEngine {
     active.pumping = true;
     try {
       while (this.active === active && this.ready && active.queue.length > 0) {
-        await this.host.quickActionsDone();
+        await within(this.host.quickActionsDone(), active.queue[0].expiresAt - this.now());
         if (this.active !== active || !this.ready || active.queue.length === 0) {
           break;
         }
@@ -570,6 +575,7 @@ export class CommandEngine {
       if (await this.stopped(active, job)) {
         return;
       }
+      job.touched = false;
       const ctx = this.context(active, job);
       const observed = await this.track(active, job, null, ctx, observe(ctx, job.observe));
       if (!observed) {
@@ -728,7 +734,7 @@ export class CommandEngine {
         ? [
             () => tab?.release(),
             () => (tab && !tab.closed ? this.closeTab(active, tab) : undefined),
-            () => (this.active === active && !active.ended ? this.host.endSession() : undefined),
+            () => this.endFor(active),
           ]
         : []),
     ];
@@ -743,6 +749,14 @@ export class CommandEngine {
       }
     }
     return false;
+  }
+
+  private endFor(active: ActiveSession) {
+    if (this.active !== active || active.ended || active.ending || this.host.released()) {
+      return undefined;
+    }
+    active.ending = true;
+    return this.host.endSession(active.id);
   }
 
   private async closeTab(active: ActiveSession, tab: Tab) {

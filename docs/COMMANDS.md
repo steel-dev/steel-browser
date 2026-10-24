@@ -121,7 +121,7 @@ Password fields, and fields and editable regions that the browser hides with `-w
 | Command | Arguments | Notes |
 |---|---|---|
 | `navigate` | `url`, `tab` | Only `http`, `https`, and `about:blank`. A URL without a scheme gets `https://`. |
-| `back`, `forward`, `reload` | `tab` | `navigated: false` when there is no history entry. |
+| `back`, `forward`, `reload` | `tab` | `navigated: false` when there is no history entry. A history step that only moves a frame does not wait for the page to load. |
 | `snapshot` | `tab`, `interactive`, `compact`, `depth` | Returns `snapshotId` and `snapshot`. |
 | `find` | `by`, `value`, `name`, `exact`, `tab`, `frame` | Returns `count` and refs for up to 50 matches. `by` is a locator kind. `name` works only with `by: role`. |
 | `click`, `dblclick`, `hover` | `target` | Uses the mouse. See [Clicking](#clicking). A disabled element fails with `not_actionable` (`disabled`). |
@@ -134,9 +134,9 @@ Password fields, and fields and editable regions that the browser hides with `-w
 | `scroll` | `direction`, `amount`, `target` | Scrolls the page or an element. Returns `x`, `y`, and `moved`. When nothing moved, `moved` is false and `effect` is `none`; pages that scroll an inner container need that container as `target`. |
 | `upload` | `target`, `files` | File names from the session's files. Upload them first with `POST /v1/sessions/{sessionId}/files`. A disabled file input fails with `not_actionable` (`disabled`). |
 | `drag` | `source`, `target` | Drags with the mouse. HTML5 drag and drop works. |
-| `get` | `what`, `target`, `attribute` | `text`, `html`, `value`, `attr`, `title`, `url`, `count`, or `box`. `box` is in CSS pixels of the visible part of the page, also for elements inside frames. |
-| `is` | `what`, `target` | `visible`, `enabled`, or `checked`. |
-| `wait` | one of `target` (with `state`), `text`, `url`, `load`, `ms`; `timeout` | `url` takes `*` patterns. `load` is `load`, `domcontentloaded`, or `networkidle`, and waits for a navigation in progress first. `networkidle` first waits for the `load` event, then for a quiet network. It also counts requests that started before the wait. `text` also looks inside open shadow roots. The default timeout is 10 seconds and the most is 50 seconds. `ms` can be at most 30000. A wait keeps watching the tab it started on, even if another tab opens, and fails with `tab_not_found` if that tab closes. With `ms`, that is the tab you pass, or the only open tab. |
+| `get` | `what`, `target`, `attribute` | `text`, `html`, `value`, `attr`, `title`, `url`, `count`, or `box`. `text` is the text a person can see. `box` is in CSS pixels of the visible part of the page, also for elements inside frames. |
+| `is` | `what`, `target` | `visible`, `enabled`, or `checked`. For `visible`, a locator that matches several elements is visible when any of them is. |
+| `wait` | one of `target` (with `state`), `text`, `url`, `load`, `ms`; `timeout` | `url` takes `*` patterns. `load` is `load`, `domcontentloaded`, or `networkidle`, and waits for a navigation in progress first. `networkidle` first waits for the `load` event, then for a quiet network. It also counts requests that started before the wait. `text` also looks inside open shadow roots. The default timeout is 10 seconds and the most is 50 seconds. `ms` can be at most 30000. A locator that matches several elements is visible when any of them is, and hidden when none is. A wait keeps watching the tab it started on, even if another tab opens, and fails with `tab_not_found` if that tab closes. With `ms`, that is the tab you pass, or the only open tab. |
 | `screenshot` | `target`, `fullPage`, `format`, `quality` | Returns base64 `data`. With `target`, it scrolls the element into view first; when that scrolls the page, `effect` is `applied`. |
 | `pdf` | `tab`, `landscape`, `printBackground` | Returns base64 `data`. Needs headless Chrome. |
 | `tab` | `action` (`list`, `new`, `close`), `tab`, `url` | The last tab cannot be closed. |
@@ -172,11 +172,11 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 - If a dialog opens while a mouse button or key is down, the engine lets it go once the dialog closes. A click still completes. A Space press on a button can lose its click, because the dialog takes focus from the page.
 - When a tab closes, its open dialog closes with it. Answering that dialog afterwards returns `dialog_not_pending`.
 - Dialogs that a new tab shows while it loads, such as a popup that calls `alert()` right away, follow the same rules.
-- While a CDP client such as Puppeteer or Playwright is connected to the session, the engine does not answer dialogs on its own, and `onDialog` does not apply. The response still shows an open dialog in `dialog`, and the `dialog` command still answers it. If the client answers first, the command returns `dialog_not_pending`. The session viewer does not count as a client.
+- While a CDP client such as Puppeteer or Playwright is connected to the session, the engine does not answer dialogs on its own, and `onDialog` does not apply. Only clients connected through the session's WebSocket URL count. A client connected straight to Chrome's debugging port does not. The response still shows an open dialog in `dialog`, and the `dialog` command still answers it. If the client answers first, the command returns `dialog_not_pending`. The session viewer does not count as a client.
 
 ## Quick actions
 
-`/v1/scrape`, `/v1/screenshot`, `/v1/pdf`, `/v1/search`, `/v1/sessions/scrape`, `/v1/sessions/screenshot`, and `/v1/sessions/pdf` use the same tabs. Once a session has run commands, those endpoints return `409` for it. A commands request that arrives while one of them is still running waits until it finishes. Pass `proxyUrl` to run them in a separate browser context, or send `"claim": false` with commands that should not take over the session.
+`/v1/scrape`, `/v1/screenshot`, `/v1/pdf`, `/v1/search`, `/v1/sessions/scrape`, `/v1/sessions/screenshot`, and `/v1/sessions/pdf` use the same tabs. Once a session has run commands, those endpoints return `409` for it. They also return `409` while commands are running or waiting to run, even with `"claim": false`. A commands request that arrives while one of them is still running waits until it finishes. Pass `proxyUrl` to run them in a separate browser context, or send `"claim": false` with commands that should not take over the session.
 
 ## Errors
 

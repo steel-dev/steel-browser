@@ -218,7 +218,7 @@ export async function load(ctx: Context, tab: Tab, loading: Promise<unknown>) {
 }
 
 export async function goto(ctx: Context, tab: Tab, url: string): Promise<Page> {
-  const page = await tab.ready();
+  const page = tab.crashed ? await tab.page() : await tab.ready();
   touch(ctx);
   try {
     await load(

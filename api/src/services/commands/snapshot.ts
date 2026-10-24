@@ -201,7 +201,7 @@ export async function refsFor(
       name: hideSecrets(hideSecrets(node?.name ?? "", secrets), within.get(backendNodeId) ?? [], 1),
       axName:
         index === undefined
-          ? ""
+          ? null
           : valueInside(index)
           ? null
           : normalizeName(axString(axNodes[index].name)),
@@ -630,9 +630,6 @@ function itemSignature(
     if (text.length > CONTEXT_LIMIT) {
       return null;
     }
-    if (distinct) {
-      return { backendNodeId, text };
-    }
     current = parents[current];
   }
   return null;
@@ -740,7 +737,8 @@ function readDom(capture: DomCapture | null, frameId: string): DomFacts {
   for (let node = body + 1; node < dom.end(body); node++) {
     if (!hidden[node]) {
       const backendNodeId = dom.backendNodeId(node);
-      const affordance = backendNodeId === undefined ? null : affordanceOf(dom, node);
+      const affordance =
+        backendNodeId === undefined ? null : affordanceOf(dom, node, facts.secretValues);
       if (affordance) {
         facts.affordances.set(backendNodeId!, affordance);
       }
@@ -749,7 +747,7 @@ function readDom(capture: DomCapture | null, frameId: string): DomFacts {
   return facts;
 }
 
-function affordanceOf(dom: DomView, node: number): Affordance | null {
+function affordanceOf(dom: DomView, node: number, secrets: string[]): Affordance | null {
   if (!dom.isElement(node) || NATIVE_CONTROLS.has(dom.tag(node))) {
     return null;
   }
@@ -782,7 +780,7 @@ function affordanceOf(dom: DomView, node: number): Affordance | null {
   const affordance: Affordance = {
     kind: pointer || onclick ? "clickable" : editable ? "editable" : "focusable",
     hints,
-    text: dom.textWithin(node, AFFORDANCE_TEXT),
+    text: hideSecrets(dom.textWithin(node, AFFORDANCE_TEXT), secrets).slice(0, AFFORDANCE_TEXT),
   };
   const toggle = dom.concealedToggle(node);
   if (toggle) {
@@ -903,7 +901,7 @@ class DomView {
         text += SECRET_MASK;
       }
     }
-    return text.trim().slice(0, limit);
+    return text.trim();
   }
 
   concealedToggle(node: number): Affordance["toggle"] | null {

@@ -7,7 +7,7 @@ import { TabRegistry, type BrowserHost, type TabEvents } from "./tabs.js";
 
 export interface EngineHost extends BrowserHost {
   cdpClients(): number;
-  endSession(): Promise<void>;
+  endSession(id: string): Promise<void>;
   filesRoot(): string;
   released(): boolean;
   quickActionsDone(): Promise<void>;
@@ -91,6 +91,7 @@ export class ActiveSession {
   browser: Browser | null = null;
   pumping = false;
   ended = false;
+  ending = false;
   claimed = false;
   snapshots = 0;
   eventSequence = 0;

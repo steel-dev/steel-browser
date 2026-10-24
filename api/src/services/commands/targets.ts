@@ -9,7 +9,7 @@ import {
   type AXNode,
 } from "./ax.js";
 import { CommandError } from "./errors.js";
-import { VISIBLE } from "./reads.js";
+import { MOUSE_HELPERS, VISIBLE } from "./reads.js";
 import { parseRef, type RefEntry, type RefTable } from "./refs.js";
 import { hideSecrets, SECRET_VALUES, secretsWithin } from "./secrets.js";
 import { bounded } from "./pointer.js";
@@ -38,10 +38,12 @@ const LOCATE = `function (kind, value, exact) {
     if (!candidate) return false;
     return exact ? candidate === wanted : candidate.toLowerCase().includes(lower);
   };
-  if (kind === "css") return Array.from(document.querySelectorAll(value));
+  const helper = (element) => element.matches(${JSON.stringify(MOUSE_HELPERS)});
+  if (kind === "css") return Array.from(document.querySelectorAll(value)).filter((element) => !helper(element));
   const elements = [];
   const collect = (root) => {
     for (const element of root.querySelectorAll("*")) {
+      if (helper(element)) continue;
       elements.push(element);
       if (element.shadowRoot) collect(element.shadowRoot);
     }

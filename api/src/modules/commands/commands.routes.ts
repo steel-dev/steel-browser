@@ -11,8 +11,11 @@ export function createCommandEngine(server: FastifyInstance): CommandEngine {
     browser: () => server.cdpService.getBrowserInstance(),
     waitForPageSetup: (page) => server.cdpService.waitForPageSetup(page),
     cdpClients: () => server.cdpService.getCdpClientCount(),
-    endSession: async () => {
-      await server.sessionService.endSession();
+    endSession: async (id) => {
+      const session = server.sessionService.activeSession;
+      if (session.id === id && session.status === "live") {
+        await server.sessionService.endSession();
+      }
     },
     filesRoot: () => FileService.getInstance().getBaseFilesPath(),
     released: () => server.sessionService.activeSession.status !== "live",

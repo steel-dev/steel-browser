@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { quickAction, quickActionsDone } from "./commands.guard.js";
 
 function fixture() {
-  const engine = { claimed: () => false };
+  const engine = { claimed: () => false, busy: () => false };
   const server = { commandEngine: engine } as unknown as FastifyInstance;
   return { engine, server, reply: {} as FastifyReply };
 }

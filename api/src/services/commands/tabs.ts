@@ -18,6 +18,8 @@ const STALE_NAVIGATION_MS = 30_000;
 
 const CLOSE_WAIT_MS = 5_000;
 
+const OPEN_MS = 10_000;
+
 type Hook = (session: CDPSession) => void;
 
 export interface BrowserHost {
@@ -406,10 +408,19 @@ export class Tab {
     const page = await this.page();
     await this.host.waitForPageSetup(page);
     const session = await page.createCDPSession();
-    await this.prepare(session);
-    if (this.closed) {
+    const prepared = await within(
+      this.prepare(session).then(() => true),
+      OPEN_MS,
+    );
+    if (!prepared || this.closed) {
       void session.detach().catch(() => undefined);
-      throw new CommandError("tab_not_found", `Tab ${this.id} is closed.`);
+      throw this.closed
+        ? new CommandError("tab_not_found", `Tab ${this.id} is closed.`)
+        : new CommandError(
+            "timeout",
+            `Tab ${this.id} did not answer. Reload it or try again.`,
+            "tab_setup",
+          );
     }
     this.main = session;
     return session;

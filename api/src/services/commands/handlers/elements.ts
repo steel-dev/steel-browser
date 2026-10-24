@@ -91,11 +91,12 @@ export async function write(
   const text = fill ? command.value : command.text;
   const replace = fill || command.clear === true;
   context.touch();
-  const prepared = await callOn<{ refused?: string; picker?: boolean; empty?: boolean }>(
-    target,
-    PREPARE_EDIT,
-    [replace],
-  );
+  const prepared = await callOn<{
+    refused?: string;
+    picker?: boolean;
+    empty?: boolean;
+    end?: boolean;
+  }>(target, PREPARE_EDIT, [replace]);
   if (prepared.refused === "not_focused" || prepared.refused === "detached") {
     throw await focusFailure(target);
   }
@@ -121,6 +122,14 @@ export async function write(
     return { ok: true, effect: "applied" };
   }
   if (!replace) {
+    if (prepared.end && (await pressKey(context, session, "End"))) {
+      throw new CommandError(
+        "dialog_pending",
+        "A dialog opened before typing started. Answer it, then type again.",
+        "during_type",
+        "applied",
+      );
+    }
     await typeText(context, session, text, command.delay);
     return { ok: true, effect: "applied", ...dialogNote(ctx.active, target.tab) };
   }

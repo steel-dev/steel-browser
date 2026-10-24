@@ -21,14 +21,25 @@ export function heldByCommands(
   request: { body?: { proxyUrl?: string | null } },
   reply: FastifyReply,
 ): boolean {
-  if (!server.commandEngine?.claimed() || request.body?.proxyUrl) {
+  const engine = server.commandEngine;
+  if (!engine || request.body?.proxyUrl) {
     return false;
   }
-  reply.code(409).send({
-    message:
-      "This session is driven through /v1/sessions/:sessionId/commands, which owns its tabs. Use the commands API, or pass proxyUrl to work in a separate browser context.",
-  });
-  return true;
+  if (engine.claimed()) {
+    reply.code(409).send({
+      message:
+        "This session is driven through /v1/sessions/:sessionId/commands, which owns its tabs. Use the commands API, or pass proxyUrl to work in a separate browser context.",
+    });
+    return true;
+  }
+  if (engine.busy()) {
+    reply.code(409).send({
+      message:
+        "Commands are running in this session. Try again when they finish, or pass proxyUrl to work in a separate browser context.",
+    });
+    return true;
+  }
+  return false;
 }
 
 export async function quickAction(

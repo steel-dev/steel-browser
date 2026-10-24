@@ -45,6 +45,7 @@ export const PREPARE_EDIT = `function (replace) {
     return { picker: true };
   }
   const placed = (${FOCUSED})(this);
+  let end = false;
   this.focus();
   if (!this.isConnected) {
     return { refused: "detached" };
@@ -54,7 +55,9 @@ export const PREPARE_EDIT = `function (replace) {
   } else if (field && !placed) {
     try {
       this.setSelectionRange(this.value.length, this.value.length);
-    } catch {}
+    } catch {
+      end = true;
+    }
   } else if (this.isContentEditable && (replace || !placed)) {
     const range = this.ownerDocument.createRange();
     range.selectNodeContents(this);
@@ -68,7 +71,7 @@ export const PREPARE_EDIT = `function (replace) {
   if (!(${FOCUSED})(this)) {
     return { refused: "not_focused" };
   }
-  return { empty: field ? this.value === "" : this.textContent === "" };
+  return { empty: field ? this.value === "" : this.textContent === "", end };
 }`;
 
 export const SET_PICKER = `function (value) {

@@ -1,8 +1,9 @@
 import fastifySwagger from "@fastify/swagger";
 import Fastify, { type FastifyInstance } from "fastify";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { CDPService } from "../../services/cdp/cdp.service.js";
+import type { EngineHost } from "../../services/commands/engine.js";
 import { ShutdownReason, type BasePlugin } from "../../services/cdp/plugins/core/base-plugin.js";
 import type { SessionService } from "../../services/session.service.js";
 import type { BrowserLauncherOptions } from "../../types/browser.js";
@@ -159,6 +160,26 @@ describe.skipIf(!chrome)("commands route", () => {
     }
   });
 
+  test("refuses quick actions while commands run, even without a claim", async () => {
+    await plugin.onSessionStart(config);
+    await plugin.onBrowserReady(config);
+    const running = post("live", { claim: false, commands: { command: "wait", ms: 1000 } });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const during = await app.inject({
+      method: "POST",
+      url: "/v1/scrape",
+      payload: { url: "https://example.com" },
+    });
+    expect(during.statusCode).toBe(409);
+    expect((await running).statusCode).toBe(200);
+    const after = await app.inject({
+      method: "POST",
+      url: "/v1/scrape",
+      payload: { url: "https://example.com" },
+    });
+    expect(after.statusCode).not.toBe(409);
+  });
+
   test("ends before the session ends", async () => {
     expect((await post("live", { commands: { command: "snapshot" } })).statusCode).toBe(200);
     await plugin.onBeforeSessionEnd(config);
@@ -172,5 +193,25 @@ describe.skipIf(!chrome)("commands route", () => {
     expect((await post("live", list)).statusCode).toBe(200);
     await plugin.onShutdown(ShutdownReason.MODE_SWITCH);
     expect((await post("live", list)).statusCode).toBe(410);
+  });
+});
+
+describe("commands host", () => {
+  test("ends only the live session the engine runs", async () => {
+    const endSession = vi.fn().mockResolvedValue(undefined);
+    const activeSession = { id: "live", status: "live" };
+    const server = {
+      cdpService: { registerPlugin: () => undefined },
+      sessionService: { activeSession, endSession },
+    } as unknown as FastifyInstance;
+    const host = (createCommandEngine(server) as unknown as { host: EngineHost }).host;
+    await host.endSession("old");
+    expect(endSession).not.toHaveBeenCalled();
+    activeSession.status = "released";
+    await host.endSession("live");
+    expect(endSession).not.toHaveBeenCalled();
+    activeSession.status = "live";
+    await host.endSession("live");
+    expect(endSession).toHaveBeenCalledTimes(1);
   });
 });

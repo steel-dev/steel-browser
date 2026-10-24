@@ -23,6 +23,8 @@ const TICK = `function () {
 
 const TICK_MS = 1_000;
 
+const FRAME_HISTORY_MS = 1_000;
+
 export async function navigate(
   ctx: Context,
   command: Extract<Command, { command: "navigate" }>,
@@ -46,6 +48,7 @@ export async function history(
     return { ok: true, effect: "none", navigated: false };
   }
   checkUrl(entry.url);
+  const inFrame = entry.url === entries[currentIndex]?.url;
   const page = await tab.page();
   touch(ctx);
   try {
@@ -53,7 +56,16 @@ export async function history(
       ctx,
       tab,
       Promise.all([
-        page.waitForNavigation({ waitUntil: "load", timeout: ctx.limits.navigationTimeoutMs }),
+        page
+          .waitForNavigation({
+            waitUntil: "load",
+            timeout: inFrame ? FRAME_HISTORY_MS : ctx.limits.navigationTimeoutMs,
+          })
+          .catch((error: unknown) => {
+            if (!inFrame) {
+              throw error;
+            }
+          }),
         session.send("Page.navigateToHistoryEntry", { entryId: entry.id }),
       ]),
     );
@@ -65,7 +77,7 @@ export async function history(
 
 export async function reload(ctx: Context, tabId: string | undefined): Promise<CommandResult> {
   const tab = tabFor(ctx, tabId, true);
-  const page = await tab.ready();
+  const page = tab.crashed ? await tab.page() : await tab.ready();
   const frame = tab.crashed
     ? null
     : (await (await tab.session()).send("Page.getFrameTree")).frameTree.frame;

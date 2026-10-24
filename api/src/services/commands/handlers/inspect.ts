@@ -135,15 +135,21 @@ export async function is(
   command: Extract<Command, { command: "is" }>,
 ): Promise<CommandResult> {
   const target = await element(ctx, command).catch((error) => {
-    if (
-      command.what === "visible" &&
-      error instanceof CommandError &&
-      error.code === "element_not_found"
-    ) {
-      return null;
+    if (command.what === "visible" && error instanceof CommandError) {
+      if (error.code === "element_not_found") {
+        return null;
+      }
+      if (error.reason === "ambiguous") {
+        return "several" as const;
+      }
     }
     throw error;
   });
+  if (target === "several") {
+    const scope = await scopeFor(ctx, tabFor(ctx, command.tab), command.frame);
+    const matches = await locate(scope, asLocator(command.target)!);
+    return { ok: true, effect: "none", value: matches.some((match) => match.visible) };
+  }
   if (!target) {
     return { ok: true, effect: "none", value: false };
   }
@@ -216,8 +222,18 @@ export async function wait(
         ) {
           return null;
         }
+        if (error instanceof CommandError && error.reason === "ambiguous") {
+          return "several" as const;
+        }
         throw error;
       });
+      if (target === "several") {
+        const scope = await scopeFor(ctx, tab!, command.frame);
+        const shown = (await locate(scope, asLocator(command.target)!)).some(
+          (match) => match.visible,
+        );
+        return state === "attached" || (state === "visible" ? shown : state === "hidden" && !shown);
+      }
       if (state === "detached") {
         return target === null;
       }
