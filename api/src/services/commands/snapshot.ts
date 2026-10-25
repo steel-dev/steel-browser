@@ -602,6 +602,38 @@ function itemSignature(
   itemText: (index: number) => string | null,
   repeated: (index: number) => boolean,
 ): ItemSignature | null {
+  return (
+    listItem(axNodes, parents, index, itemText, repeated) ?? ownSignature(axNodes, index, itemText)
+  );
+}
+
+function ownSignature(
+  axNodes: AXNode[],
+  index: number,
+  itemText: (index: number) => string | null,
+): ItemSignature | null {
+  const node = axNodes[index];
+  const role = axString(node.role);
+  if (
+    node.backendDOMNodeId === undefined ||
+    normalizeName(axString(node.name)) !== "" ||
+    CONTROL_ROLES.has(role) ||
+    role === "Iframe" ||
+    role === "IframePresentational"
+  ) {
+    return null;
+  }
+  const text = itemText(index);
+  return text ? { backendNodeId: node.backendDOMNodeId, text } : null;
+}
+
+function listItem(
+  axNodes: AXNode[],
+  parents: Int32Array,
+  index: number,
+  itemText: (index: number) => string | null,
+  repeated: (index: number) => boolean,
+): ItemSignature | null {
   for (let current = index; current >= 0; current = parents[current]) {
     const backendNodeId = axNodes[current].backendDOMNodeId;
     if (ITEM_ROLES.has(axString(axNodes[current].role)) && backendNodeId !== undefined) {

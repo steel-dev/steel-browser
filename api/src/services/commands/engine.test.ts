@@ -312,6 +312,42 @@ const fixtures: Record<string, (other: string) => string> = {
       };
       draw();
     </script>`,
+  "/mail-cards": () => `<!doctype html><title>Inbox</title>
+    <h1>Inbox</h1>
+    <div id="cards"></div>
+    <section><div id="notes"></div></section>
+    <script>
+      let first = 0;
+      const cards = document.getElementById("cards");
+      const notes = document.getElementById("notes");
+      for (let i = 0; i < 3; i++) {
+        const card = document.createElement("div");
+        card.style.cursor = "pointer";
+        card.innerHTML = "<b></b> <span></span>";
+        card.onclick = () => (document.title = "open " + card.dataset.id);
+        cards.append(card);
+        const note = document.createElement("div");
+        note.style.cursor = "pointer";
+        note.onclick = () => (document.title = "note " + note.dataset.id);
+        notes.append(note);
+      }
+      const render = () => {
+        cards.querySelectorAll(":scope > div").forEach((card, i) => {
+          card.dataset.id = String(first + i);
+          card.querySelector("b").textContent = "Email " + (first + i);
+          card.querySelector("span").textContent = "from sender " + (first + i);
+        });
+        notes.querySelectorAll(":scope > div").forEach((note, i) => {
+          note.dataset.id = String(first + i);
+          note.textContent = "Note " + (first + i);
+        });
+      };
+      render();
+      window.shift = () => {
+        first++;
+        render();
+      };
+    </script>`,
   "/rows": () => `<!doctype html>
     <div id="list"></div>
     <script>
@@ -1209,6 +1245,24 @@ describe.skipIf(!chrome)("command engine", () => {
         ok: false,
         error: { code: "stale_ref", reason: "content_changed" },
       });
+    });
+
+    test("notices a reused card when the card itself is the ref", async () => {
+      await open("/mail-cards");
+      const lines = (await snapshot()).split("\n");
+      const above = (fragment: string) =>
+        lines[lines.findIndex((line) => line.includes(fragment)) - 1].match(/ref=(e\d+)/)![1];
+      const card = above("Email 0");
+      const note = above("Note 0");
+      await page.evaluate(() => (window as unknown as { shift: () => void }).shift());
+      for (const ref of [card, note]) {
+        const result = await click(ref);
+        expect(result, `${ref} ${JSON.stringify(result)}`).toMatchObject({
+          ok: false,
+          error: { code: "stale_ref", reason: "content_changed" },
+        });
+      }
+      expect(await page.title()).toBe("Inbox");
     });
 
     test("notices a reused row in a list without roles", async () => {
