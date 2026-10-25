@@ -4,6 +4,10 @@ export const SECRET_MASK = "••••••••";
 
 const SPREAD_SECRET_LENGTH = 4;
 
+const SECRET_CHARS = 100_000;
+
+const CODES = 65_536;
+
 export const SECRET_FIELD = `(element) =>
   (element instanceof HTMLInputElement && element.type === "password") ||
   ((element instanceof HTMLInputElement ||
@@ -64,16 +68,98 @@ export function hideSecrets(
   secrets: string[],
   minimum = SPREAD_SECRET_LENGTH,
 ): string {
+  return secretMask(secrets, minimum)(text);
+}
+
+export function secretMask(
+  secrets: string[],
+  minimum = SPREAD_SECRET_LENGTH,
+): (text: string) => string {
+  const edges = new Map<number, number>();
+  const parent = [0];
+  const via = [0];
+  const depth = [0];
+  const longest = [0];
+  let budget = SECRET_CHARS;
   const variants = new Set(
     secrets.flatMap((secret) => [secret, secret.replace(/\s+/g, " ").trim()]),
   );
-  let hidden = text;
-  for (const variant of [...variants].sort((a, b) => b.length - a.length)) {
-    if (variant.length >= minimum && hidden.includes(variant)) {
-      hidden = hidden.split(variant).join(SECRET_MASK);
+  for (const variant of variants) {
+    if (variant.length < minimum || variant.length > budget) {
+      continue;
     }
+    budget -= variant.length;
+    let state = 0;
+    for (let index = 0; index < variant.length; index++) {
+      const code = variant.charCodeAt(index);
+      let next = edges.get(state * CODES + code);
+      if (next === undefined) {
+        next = parent.length;
+        edges.set(state * CODES + code, next);
+        parent.push(state);
+        via.push(code);
+        depth.push(depth[state] + 1);
+        longest.push(0);
+      }
+      state = next;
+    }
+    longest[state] = variant.length;
   }
-  return hidden;
+  if (parent.length === 1) {
+    return (text) => text;
+  }
+  const fail = new Int32Array(parent.length);
+  const order = Array.from({ length: parent.length - 1 }, (_, index) => index + 1).sort(
+    (a, b) => depth[a] - depth[b],
+  );
+  for (const state of order) {
+    if (depth[state] > 1) {
+      let candidate = fail[parent[state]];
+      let target = edges.get(candidate * CODES + via[state]);
+      while (target === undefined && candidate !== 0) {
+        candidate = fail[candidate];
+        target = edges.get(candidate * CODES + via[state]);
+      }
+      fail[state] = target ?? 0;
+    }
+    longest[state] = Math.max(longest[state], longest[fail[state]]);
+  }
+  return (text) => {
+    let cover: Int32Array | null = null;
+    let state = 0;
+    for (let index = 0; index < text.length; index++) {
+      const code = text.charCodeAt(index);
+      let next = edges.get(state * CODES + code);
+      while (next === undefined && state !== 0) {
+        state = fail[state];
+        next = edges.get(state * CODES + code);
+      }
+      state = next ?? 0;
+      if (longest[state] > 0) {
+        cover ??= new Int32Array(text.length);
+        const start = index + 1 - longest[state];
+        cover[start] = Math.max(cover[start], index + 1);
+      }
+    }
+    if (!cover) {
+      return text;
+    }
+    let hidden = "";
+    let until = 0;
+    for (let index = 0; index < text.length; index++) {
+      const end = cover[index];
+      if (end === 0) {
+        continue;
+      }
+      if (index >= until) {
+        hidden += text.slice(until, index) + SECRET_MASK;
+        until = end;
+      } else if (end > until) {
+        until = end;
+      }
+    }
+    return hidden + text.slice(until);
+  };
 }
 
 export function htmlForms(secrets: string[]): string[] {

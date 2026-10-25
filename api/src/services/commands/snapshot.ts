@@ -9,7 +9,7 @@ import {
 } from "./ax.js";
 import type { ItemSignature, RefEntry, RefTable } from "./refs.js";
 import { within } from "./results.js";
-import { hideSecrets, SECRET_MASK } from "./secrets.js";
+import { hideSecrets, SECRET_MASK, secretMask } from "./secrets.js";
 
 type DomCapture = Protocol.DOMSnapshot.CaptureSnapshotResponse;
 type DomDocument = Protocol.DOMSnapshot.DocumentSnapshot;
@@ -113,7 +113,7 @@ interface Affordance {
 interface DomFacts {
   affordances: Map<number, Affordance>;
   secrets: Set<number>;
-  secretValues: string[];
+  hide: (text: string) => string;
 }
 
 interface Outline {
@@ -182,6 +182,7 @@ export async function refsFor(
   const itemText = itemTextReader(axNodes);
   const repeated = repeatReader(axNodes, built.parents);
   const valueInside = valueReader(axNodes);
+  const hide = secretMask(secrets);
   const indexOf = new Map<number, number>();
   axNodes.forEach((node, index) => {
     if (node.backendDOMNodeId !== undefined && !indexOf.has(node.backendDOMNodeId)) {
@@ -198,7 +199,7 @@ export async function refsFor(
       loaderId,
       backendNodeId,
       role: node?.role || "generic",
-      name: hideSecrets(hideSecrets(node?.name ?? "", secrets), within.get(backendNodeId) ?? [], 1),
+      name: hideSecrets(hide(node?.name ?? ""), within.get(backendNodeId) ?? [], 1),
       axName:
         index === undefined
           ? null
@@ -255,12 +256,12 @@ async function readFrame(
   hideSecretsAbove(axNodes, built, facts);
   for (const node of built.byIndex) {
     if (node) {
-      node.name = hideSecrets(node.name, facts.secretValues);
+      node.name = facts.hide(node.name);
       if (node.value && node.value !== SECRET_MASK) {
-        node.value = hideSecrets(node.value, facts.secretValues);
+        node.value = facts.hide(node.value);
       }
       if (node.affordance) {
-        node.affordance.text = hideSecrets(node.affordance.text, facts.secretValues);
+        node.affordance.text = facts.hide(node.affordance.text);
       }
     }
   }
@@ -730,13 +731,14 @@ export async function secretsIn(session: CDPSession): Promise<string[]> {
 }
 
 function readDom(capture: DomCapture | null, frameId: string): DomFacts {
-  const facts: DomFacts = { affordances: new Map(), secrets: new Set(), secretValues: [] };
+  const facts: DomFacts = { affordances: new Map(), secrets: new Set(), hide: (text) => text };
   const document = capture?.documents.find((doc) => capture.strings[doc.frameId] === frameId);
   if (!capture || !document) {
     return facts;
   }
   const dom = new DomView(document, capture.strings);
   const hidden = new Uint8Array(dom.size);
+  const values: string[] = [];
   let body = -1;
   for (let node = 0; node < dom.size; node++) {
     const parent = dom.parent(node);
@@ -759,18 +761,18 @@ function readDom(capture: DomCapture | null, frameId: string): DomFacts {
       facts.secrets.add(backendNodeId);
       const value = secretValue(dom, node);
       if (value) {
-        facts.secretValues.push(value);
+        values.push(value);
       }
     }
   }
+  facts.hide = secretMask(values);
   if (body < 0) {
     return facts;
   }
   for (let node = body + 1; node < dom.end(body); node++) {
     if (!hidden[node]) {
       const backendNodeId = dom.backendNodeId(node);
-      const affordance =
-        backendNodeId === undefined ? null : affordanceOf(dom, node, facts.secretValues);
+      const affordance = backendNodeId === undefined ? null : affordanceOf(dom, node, facts.hide);
       if (affordance) {
         facts.affordances.set(backendNodeId!, affordance);
       }
@@ -779,7 +781,11 @@ function readDom(capture: DomCapture | null, frameId: string): DomFacts {
   return facts;
 }
 
-function affordanceOf(dom: DomView, node: number, secrets: string[]): Affordance | null {
+function affordanceOf(
+  dom: DomView,
+  node: number,
+  hide: (text: string) => string,
+): Affordance | null {
   if (!dom.isElement(node) || NATIVE_CONTROLS.has(dom.tag(node))) {
     return null;
   }
@@ -812,7 +818,7 @@ function affordanceOf(dom: DomView, node: number, secrets: string[]): Affordance
   const affordance: Affordance = {
     kind: pointer || onclick ? "clickable" : editable ? "editable" : "focusable",
     hints,
-    text: hideSecrets(dom.textWithin(node, AFFORDANCE_TEXT), secrets).slice(0, AFFORDANCE_TEXT),
+    text: hide(dom.textWithin(node, AFFORDANCE_TEXT)).slice(0, AFFORDANCE_TEXT),
   };
   const toggle = dom.concealedToggle(node);
   if (toggle) {
