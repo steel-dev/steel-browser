@@ -616,7 +616,7 @@ export class CommandEngine {
   }
 
   private async stopped(active: ActiveSession, job: Job): Promise<boolean> {
-    if (this.host.released(active.id)) {
+    if (this.active === active && this.host.released(active.id)) {
       this.sessionEnded();
     }
     if (active.ended || isFinal(job.execution.state)) {
@@ -728,7 +728,7 @@ export class CommandEngine {
     if (!pending) {
       return true;
     }
-    const tab = job.execution.tab ? active.tabs.get(job.execution.tab) : undefined;
+    const tab = job.tab ? active.tabs.get(job.tab) : undefined;
     const settles = async (ms: number) =>
       (await within(
         pending.then(() => true),

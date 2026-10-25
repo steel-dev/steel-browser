@@ -3205,6 +3205,31 @@ describe.skipIf(!chrome)("command engine", () => {
       }
     });
 
+    test("does not touch the tab of an earlier command when tab new gets stuck", async () => {
+      const quick = create({ limits: { interruptGraceMs: 200 } });
+      await open("/basic", quick);
+      await run({ command: "tab", action: "new", url: `${base}/counter` }, {}, quick);
+      const stuck = vi.spyOn(browser, "newPage").mockReturnValue(new Promise(() => {}));
+      try {
+        const running = run(
+          [
+            { command: "snapshot", tab: "t1" },
+            { command: "tab", action: "new" },
+          ],
+          {},
+          quick,
+        );
+        await sleep(500);
+        const cancelled = await run({ command: "cancel", execution: "x-3" }, {}, quick);
+        expect(cancelled.execution.state).toBe("cancelled");
+        await running;
+        expect(page.isClosed()).toBe(false);
+      } finally {
+        stuck.mockRestore();
+        quick.sessionEnded();
+      }
+    });
+
     test("leaves a stuck read behind instead of closing the tab", async () => {
       const quick = create({ limits: { interruptGraceMs: 200 } });
       await open("/basic", quick);
