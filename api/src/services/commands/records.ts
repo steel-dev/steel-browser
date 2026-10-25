@@ -103,7 +103,6 @@ export function isFinal(state: ExecutionState): boolean {
 
 export class Records {
   epoch = 0;
-  private sequence = 0;
   private watermark = 0;
   private readonly executions = new Map<string, Execution>();
   private readonly keys = new Map<string, string>();
@@ -113,7 +112,12 @@ export class Records {
   constructor(
     private readonly limits: RecordLimits,
     private readonly now: () => number,
+    private sequence = 0,
   ) {}
+
+  get issued(): number {
+    return this.sequence;
+  }
 
   create(input: {
     key: string | null;

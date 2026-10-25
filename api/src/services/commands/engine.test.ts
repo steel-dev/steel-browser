@@ -3222,8 +3222,10 @@ describe.skipIf(!chrome)("command engine", () => {
         await sleep(500);
         const cancelled = await run({ command: "cancel", execution: "x-3" }, {}, quick);
         expect(cancelled.execution.state).toBe("cancelled");
+        expect(cancelled.page).toMatchObject({ tab: "t1", title: "Basic" });
         await running;
         expect(page.isClosed()).toBe(false);
+        expect(endedByEngine).toBe(0);
       } finally {
         stuck.mockRestore();
         quick.sessionEnded();
@@ -4377,6 +4379,57 @@ describe.skipIf(!chrome)("command engine", () => {
       );
       expect(observed.observe).toMatchObject({ base });
       short.sessionEnded();
+    });
+
+    test("reports the first navigation of a popup", async () => {
+      await open("/opener");
+      const start = await run({ command: "tab", action: "list" }, { eventsAfter: "c-0" });
+      const cursor = (start as unknown as { events: { cursor: string } }).events.cursor;
+      await run({ command: "click", target: refOf(await snapshot(), 'button "Open"') });
+      const popup = await tabWith("/basic");
+      await sleep(300);
+      const later = (await run(
+        { command: "tab", action: "list" },
+        { eventsAfter: cursor },
+      )) as unknown as { events: { items: Array<Record<string, unknown>> } };
+      expect(later.events.items, JSON.stringify(later.events.items)).toContainEqual(
+        expect.objectContaining({ type: "navigation", tab: popup, url: `${base}/basic` }),
+      );
+    });
+
+    test("keeps the event cursor going when the same session starts again", async () => {
+      await open("/basic");
+      await run({ command: "navigate", url: `${base}/counter` });
+      const before = await run({ command: "tab", action: "list" }, { eventsAfter: "c-0" });
+      const old = (before as unknown as { events: { cursor: string } }).events.cursor;
+      engine.prepare(SESSION);
+      engine.browserReady();
+      await run({ command: "navigate", url: `${base}/basic` });
+      const later = (await run(
+        { command: "tab", action: "list" },
+        { eventsAfter: old },
+      )) as unknown as { events: { cursor: string; items: Array<Record<string, unknown>> } };
+      expect(later.events.items, JSON.stringify(later.events)).toContainEqual(
+        expect.objectContaining({ type: "navigation", url: `${base}/basic` }),
+      );
+      expect(later.events.cursor).not.toBe(old);
+    });
+
+    test("refuses old refs and execution ids after the same session starts again", async () => {
+      await open("/basic");
+      const ref = refOf(await snapshot(), 'button "Save"');
+      engine.prepare(SESSION);
+      engine.browserReady();
+      await open("/counter");
+      await snapshot();
+      const clicked = await run({ command: "click", target: ref });
+      expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({
+        ok: false,
+        error: { code: "stale_ref" },
+      });
+      expect(await count()).toBeUndefined();
+      const status = await send({ commands: { command: "status", execution: "x-2" } });
+      expect(status.status, JSON.stringify(status.body)).toBe(422);
     });
 
     test("reports navigations, tabs, dialogs, and downloads after a cursor", async () => {

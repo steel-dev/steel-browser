@@ -58,7 +58,7 @@ Then act on the ref:
 
 Fields that are not listed here, or that a command does not take, are refused with `400 invalid_request`. A typo in `after` would otherwise turn off duplicate protection without notice.
 
-Send a random `Idempotency-Key` header to make retries safe. A request with a key that was already used returns the stored result (`replayed: true`) for at least an hour, even after its `after` expires. The same key with different commands gets `422 key_conflict`. Large result bodies, such as snapshot text and screenshot data, are kept for 10 minutes. A replay after that returns the rest of the result with `bodyExpired: true`. Starting a session again, even with the same id, starts with no stored results.
+Send a random `Idempotency-Key` header to make retries safe. A request with a key that was already used returns the stored result (`replayed: true`) for at least an hour, even after its `after` expires. The same key with different commands gets `422 key_conflict`. Large result bodies, such as snapshot text and screenshot data, are kept for 10 minutes. A replay after that returns the rest of the result with `bodyExpired: true`. Starting a session again, even with the same id, starts with no stored results. When the same id starts again, ids keep counting, so refs, execution ids, and dialog ids from before do not point at anything new.
 
 ## Response
 

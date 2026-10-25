@@ -84,6 +84,7 @@ export class Tab {
   private main: CDPSession | null = null;
   private client: CDPSession | null = null;
   private navigation: Navigation | null = null;
+  private navigations = 0;
   private dialogType: string | null = null;
   private readonly onDialogOpening = (event: Protocol.Page.JavascriptDialogOpeningEvent) => {
     this.dialogType = event.type;
@@ -112,6 +113,7 @@ export class Tab {
   };
   private readonly onFrameNavigated = (event: Protocol.Page.FrameNavigatedEvent) => {
     if (!event.frame.parentId) {
+      this.navigations++;
       this.crashed = false;
       if (this.navigation) {
         this.navigation.committed = true;
@@ -165,19 +167,35 @@ export class Tab {
     private readonly events: TabEvents,
   ) {}
 
-  watch(client?: CDPSession, opened?: Protocol.Page.JavascriptDialogOpeningEvent) {
+  watch(client?: CDPSession, opened?: Protocol.Page.JavascriptDialogOpeningEvent, fresh = false) {
     if (client) {
       this.listen(client);
       if (opened) {
         this.onDialogOpening(opened);
       }
+      if (fresh) {
+        void this.catchUp(client);
+      }
       return;
     }
     void this.pending.then((page) => {
       if (page && !this.closed) {
-        this.listen((page as unknown as { _client(): CDPSession })._client());
+        const client = (page as unknown as { _client(): CDPSession })._client();
+        this.listen(client);
+        if (fresh) {
+          void this.catchUp(client);
+        }
       }
     });
+  }
+
+  private async catchUp(client: CDPSession) {
+    const seen = this.navigations;
+    const history = await client.send("Page.getNavigationHistory").catch(() => null);
+    const url = history?.entries[history.currentIndex]?.url;
+    if (!this.closed && this.navigations === seen && url && url !== "about:blank") {
+      this.events.navigated(this, url, false);
+    }
   }
 
   get navigating(): boolean {
@@ -688,7 +706,7 @@ export class TabRegistry {
       this.events.opened(tab, opener ? this.byTarget.get(targetIdOf(opener)) : undefined);
     }
     const client = sessionOf(target);
-    tab.watch(client, client ? this.openDialogs.get(client.id()) : undefined);
+    tab.watch(client, client ? this.openDialogs.get(client.id()) : undefined, announce);
     return tab;
   }
 

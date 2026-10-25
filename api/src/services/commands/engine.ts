@@ -65,6 +65,7 @@ export interface EngineResponse {
 
 export class CommandEngine {
   private active: ActiveSession | null = null;
+  private last: ActiveSession | null = null;
   private browser: Browser | null = null;
   private ready = false;
   private readonly limits: EngineLimits;
@@ -82,50 +83,57 @@ export class CommandEngine {
     if (this.active) {
       this.end(this.active);
     }
-    const active: ActiveSession = new ActiveSession(sessionId, this.host, this.limits, this.now, {
-      dialogOpened: (tab, event) => this.dialogOpened(active, tab, event),
-      dialogClosed: (tab, event) => this.dialogClosed(active, tab, event),
-      downloadStarted: (tab, event) => {
-        active.downloads.set(event.guid, { file: event.suggestedFilename, url: event.url });
-        this.record(active, "download", tab.id, {
-          file: event.suggestedFilename,
-          url: event.url,
-          state: "started",
-        });
+    const active: ActiveSession = new ActiveSession(
+      sessionId,
+      this.host,
+      this.limits,
+      this.now,
+      {
+        dialogOpened: (tab, event) => this.dialogOpened(active, tab, event),
+        dialogClosed: (tab, event) => this.dialogClosed(active, tab, event),
+        downloadStarted: (tab, event) => {
+          active.downloads.set(event.guid, { file: event.suggestedFilename, url: event.url });
+          this.record(active, "download", tab.id, {
+            file: event.suggestedFilename,
+            url: event.url,
+            state: "started",
+          });
+        },
+        downloadProgress: (tab, event) => {
+          const download = active.downloads.get(event.guid);
+          if (event.state === "inProgress" || !download) {
+            return;
+          }
+          active.downloads.delete(event.guid);
+          this.record(active, "download", tab.id, {
+            file: download.file,
+            url: download.url,
+            state: event.state,
+            bytes: event.receivedBytes,
+          });
+        },
+        navigated: (tab, url, sameDocument) =>
+          this.record(active, "navigation", tab.id, {
+            url,
+            ...(sameDocument ? { sameDocument } : {}),
+          }),
+        opened: (tab, opener) => {
+          const job = active.running;
+          if (job && !isFinal(job.execution.state)) {
+            job.tabs.add(tab.id);
+          }
+          this.record(active, "tab_opened", tab.id, opener ? { opener: opener.id } : {});
+        },
+        closed: (tab) => {
+          const dialog = openDialogOn(active, tab.id);
+          if (dialog) {
+            this.finishDialog(active, dialog, false, undefined, dialog.by ?? "closed");
+          }
+          this.record(active, "tab_closed", tab.id, {});
+        },
       },
-      downloadProgress: (tab, event) => {
-        const download = active.downloads.get(event.guid);
-        if (event.state === "inProgress" || !download) {
-          return;
-        }
-        active.downloads.delete(event.guid);
-        this.record(active, "download", tab.id, {
-          file: download.file,
-          url: download.url,
-          state: event.state,
-          bytes: event.receivedBytes,
-        });
-      },
-      navigated: (tab, url, sameDocument) =>
-        this.record(active, "navigation", tab.id, {
-          url,
-          ...(sameDocument ? { sameDocument } : {}),
-        }),
-      opened: (tab, opener) => {
-        const job = active.running;
-        if (job && !isFinal(job.execution.state)) {
-          job.tabs.add(tab.id);
-        }
-        this.record(active, "tab_opened", tab.id, opener ? { opener: opener.id } : {});
-      },
-      closed: (tab) => {
-        const dialog = openDialogOn(active, tab.id);
-        if (dialog) {
-          this.finishDialog(active, dialog, false, undefined, dialog.by ?? "closed");
-        }
-        this.record(active, "tab_closed", tab.id, {});
-      },
-    });
+      this.last?.id === sessionId ? this.last : undefined,
+    );
     this.active = active;
     this.ready = false;
   }
@@ -450,6 +458,9 @@ export class CommandEngine {
     replayed: boolean,
     eventsAfter?: string,
   ): Promise<Record<string, unknown>> {
+    if (isFinal(execution.state) && execution.page === undefined) {
+      execution.page = (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
+    }
     const page = isFinal(execution.state)
       ? execution.page ?? null
       : (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
@@ -476,7 +487,9 @@ export class CommandEngine {
   }
 
   private eventsSince(active: ActiveSession, cursor: string) {
-    const after = Number(cursor.slice(2));
+    const requested = Number(cursor.slice(2));
+    const stale = requested > active.eventSequence;
+    const after = stale ? 0 : requested;
     const pending = active.events.filter((event) => event.id > after);
     const items = pending.slice(0, EVENTS_PER_RESPONSE);
     const oldest = active.events[0]?.id ?? active.eventSequence + 1;
@@ -484,7 +497,7 @@ export class CommandEngine {
     return {
       cursor: `c-${Math.max(last, after)}`,
       items: items.map(({ id, ...event }) => ({ id: `c-${id}`, ...event })),
-      ...(after < oldest - 1 && after < active.eventSequence ? { truncated: true } : {}),
+      ...(stale || (after < oldest - 1 && after < active.eventSequence) ? { truncated: true } : {}),
       ...(pending.length > items.length ? { more: true } : {}),
     };
   }
@@ -740,7 +753,7 @@ export class CommandEngine {
     const steps: Array<() => Promise<unknown> | undefined> = [
       () => tab?.stopLoading(),
       () => tab?.terminate(),
-      ...(job.touched
+      ...(job.touched && tab
         ? [
             () => tab?.release(),
             () => (tab && !tab.closed ? this.closeTab(active, tab) : undefined),
@@ -824,6 +837,7 @@ export class CommandEngine {
 
   private end(active: ActiveSession) {
     active.ended = true;
+    this.last = active;
     const error = { code: "session_ended", message: "The session ended." };
     for (const job of active.queue.splice(0)) {
       this.finish(active, job.execution, "failed", error);

@@ -24,12 +24,22 @@ interface DocumentRefs {
 }
 
 export class RefTable {
-  private next = 1;
-  private retiredBelow = 1;
+  private next: number;
+  private retiredBelow: number;
   private readonly entries = new Map<string, RefEntry>();
   private readonly documents = new Map<string, DocumentRefs>();
 
-  constructor(private readonly limit = 50_000) {}
+  constructor(
+    private readonly limit = 50_000,
+    start = 1,
+  ) {
+    this.next = start;
+    this.retiredBelow = start;
+  }
+
+  get upcoming(): number {
+    return this.next;
+  }
 
   observe(
     tabId: string,

@@ -103,9 +103,13 @@ export class ActiveSession {
     limits: EngineLimits,
     now: () => number,
     events: TabEvents,
+    previous?: ActiveSession,
   ) {
-    this.records = new Records(limits, now);
-    this.refs = new RefTable(limits.maxRefs);
+    this.records = new Records(limits, now, previous?.records.issued);
+    this.refs = new RefTable(limits.maxRefs, previous?.refs.upcoming);
     this.tabs = new TabRegistry(host, events);
+    this.snapshots = previous?.snapshots ?? 0;
+    this.eventSequence = previous?.eventSequence ?? 0;
+    this.dialogSequence = previous?.dialogSequence ?? 0;
   }
 }
