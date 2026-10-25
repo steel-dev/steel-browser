@@ -1,3 +1,4 @@
+import type { Page, Protocol } from "puppeteer-core";
 import type { Command } from "../commands.js";
 import { checkUrl } from "../policy.js";
 import type { CommandResult } from "../records.js";
@@ -6,10 +7,12 @@ import { clientOf, type Tab } from "../tabs.js";
 import {
   crashedTab,
   dialogNote,
+  ending,
   goto,
   halted,
   load,
   navigationDone,
+  sleep,
   tabFor,
   touch,
   waitWithin,
@@ -24,6 +27,10 @@ const TICK = `function () {
 const TICK_MS = 1_000;
 
 const FRAME_HISTORY_MS = 1_000;
+
+const SWITCH_WAIT_MS = 2_000;
+
+const SWITCH_RETRY_MS = 20;
 
 export async function navigate(
   ctx: Context,
@@ -43,7 +50,7 @@ export async function history(
   const tab = tabFor(ctx, tabId);
   const page = await tab.navigable();
   const session = clientOf(page);
-  const { currentIndex, entries } = await session.send("Page.getNavigationHistory");
+  const { currentIndex, entries } = await historyOf(ctx, page);
   const entry = entries[currentIndex + delta];
   if (!entry) {
     return { ok: true, effect: "none", navigated: false };
@@ -78,7 +85,7 @@ export async function history(
 export async function reload(ctx: Context, tabId: string | undefined): Promise<CommandResult> {
   const tab = tabFor(ctx, tabId, true);
   const page = await tab.navigable();
-  const { currentIndex, entries } = await clientOf(page).send("Page.getNavigationHistory");
+  const { currentIndex, entries } = await historyOf(ctx, page);
   const url = entries[currentIndex]?.url || page.url();
   checkUrl(url);
   touch(ctx);
@@ -92,6 +99,23 @@ export async function reload(ctx: Context, tabId: string | undefined): Promise<C
     throw navigationError(error, url, ctx.limits.navigationTimeoutMs);
   }
   return { ok: true, effect: "applied", url: page.url() };
+}
+
+async function historyOf(
+  ctx: Context,
+  page: Page,
+): Promise<Protocol.Page.GetNavigationHistoryResponse> {
+  const until = ctx.now() + SWITCH_WAIT_MS;
+  for (;;) {
+    try {
+      return await clientOf(page).send("Page.getNavigationHistory");
+    } catch (error) {
+      if (page.isClosed() || ending(ctx) || ctx.now() >= until) {
+        throw error;
+      }
+      await sleep(ctx, SWITCH_RETRY_MS);
+    }
+  }
 }
 
 export async function settle(ctx: Context, result: CommandResult): Promise<CommandResult> {

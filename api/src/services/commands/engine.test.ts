@@ -2501,6 +2501,49 @@ describe.skipIf(!chrome)("command engine", () => {
         await new Promise((resolve) => server.close(resolve));
       }
     });
+
+    test("reads the history again while the tab is still switching pages", async () => {
+      await open("/basic");
+      await open("/counter");
+      const original = CdpCDPSession.prototype.send;
+      let refused = 0;
+      const spy = vi.spyOn(CdpCDPSession.prototype, "send").mockImplementation(function (
+        this: CdpCDPSession,
+        method: string,
+        params?: unknown,
+        options?: unknown,
+      ) {
+        if (method === "Page.getNavigationHistory" && refused % 4 < 3) {
+          refused++;
+          return Promise.reject(
+            new Error("Protocol error (Page.getNavigationHistory): Not attached to an active page"),
+          );
+        }
+        refused++;
+        return (original as (...args: unknown[]) => Promise<unknown>).call(
+          this,
+          method,
+          params,
+          options,
+        );
+      } as never);
+      try {
+        const reloaded = await run({ command: "reload" });
+        expect(reloaded.results[0], JSON.stringify(reloaded.results[0])).toMatchObject({
+          ok: true,
+          url: `${base}/counter`,
+        });
+        refused = 0;
+        const back = await run({ command: "back" });
+        expect(back.results[0], JSON.stringify(back.results[0])).toMatchObject({
+          ok: true,
+          navigated: true,
+          url: `${base}/basic`,
+        });
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 
   describe("crashed tabs", () => {
