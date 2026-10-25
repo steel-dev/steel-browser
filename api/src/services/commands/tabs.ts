@@ -62,6 +62,16 @@ function sessionOf(target: Target): CDPSession | undefined {
   return (target as unknown as { _session?(): CDPSession | undefined })._session?.();
 }
 
+function connectionOf(browser: Browser): Connection | null {
+  for (const target of browser.targets()) {
+    const connection = sessionOf(target)?.connection();
+    if (connection) {
+      return connection;
+    }
+  }
+  return null;
+}
+
 interface Navigation {
   since: number;
   committed: boolean;
@@ -180,7 +190,7 @@ export class Tab {
     }
     void this.pending.then((page) => {
       if (page && !this.closed) {
-        const client = (page as unknown as { _client(): CDPSession })._client();
+        const client = clientOf(page);
         this.listen(client);
         if (fresh) {
           void this.catchUp(client);
@@ -208,6 +218,12 @@ export class Tab {
 
   navigated(): Promise<void> {
     return this.navigation?.done ?? Promise.resolve();
+  }
+
+  async navigable(): Promise<Page> {
+    const page = await this.page();
+    await this.host.waitForPageSetup(page);
+    return page;
   }
 
   markBlocking() {
@@ -386,10 +402,6 @@ export class Tab {
     void main?.detach().catch(() => undefined);
   }
 
-  sessionId(): string | undefined {
-    return this.client?.id();
-  }
-
   private listen(client: CDPSession) {
     client.on("Page.javascriptDialogOpening", this.onDialogOpening);
     client.on("Page.javascriptDialogClosed", this.onDialogClosed);
@@ -444,6 +456,15 @@ export class Tab {
     return session;
   }
 
+  private forget(sessionId: string) {
+    this.links.delete(sessionId);
+    for (const [frameId, child] of this.frames) {
+      if (child.id() === sessionId) {
+        this.frames.delete(frameId);
+      }
+    }
+  }
+
   private async prepare(session: CDPSession) {
     session.on("Target.attachedToTarget", (event: Protocol.Target.AttachedToTargetEvent) => {
       const child = session.connection()?.session(event.sessionId);
@@ -452,15 +473,14 @@ export class Tab {
       }
       this.frames.set(event.targetInfo.targetId, child);
       this.links.set(child.id(), { parent: session, frameId: event.targetInfo.targetId });
+      child.on("Inspector.targetCrashed", () => {
+        this.forget(child.id());
+        void child.detach().catch(() => undefined);
+      });
       void this.prepare(child).catch(() => undefined);
     });
     session.on("Target.detachedFromTarget", (event: Protocol.Target.DetachedFromTargetEvent) => {
-      this.links.delete(event.sessionId);
-      for (const [frameId, child] of this.frames) {
-        if (child.id() === event.sessionId) {
-          this.frames.delete(frameId);
-        }
-      }
+      this.forget(event.sessionId);
     });
     await Promise.all([session.send("DOM.enable"), session.send("Accessibility.enable")]);
     await session.send("Target.setAutoAttach", {
@@ -472,34 +492,73 @@ export class Tab {
   }
 }
 
+export class OpenDialogs {
+  private browser: Browser | null = null;
+  private connection: Connection | null = null;
+  private readonly open = new Map<string, Protocol.Page.JavascriptDialogOpeningEvent>();
+  private readonly onAttached: Hook = (session) => {
+    this.watch(session);
+    void session.send("Page.enable").catch(() => undefined);
+  };
+  private readonly onDetached: Hook = (session) => {
+    this.open.delete(session.id());
+  };
+
+  attach(browser: Browser) {
+    if (this.browser === browser) {
+      return;
+    }
+    this.detach();
+    this.browser = browser;
+    for (const target of browser.targets()) {
+      const session = sessionOf(target);
+      if (session) {
+        this.watch(session);
+      }
+    }
+    this.connection = connectionOf(browser);
+    this.connection?.on(CDPSessionEvent.SessionAttached, this.onAttached);
+    this.connection?.on(CDPSessionEvent.SessionDetached, this.onDetached);
+  }
+
+  detach() {
+    this.connection?.off(CDPSessionEvent.SessionAttached, this.onAttached);
+    this.connection?.off(CDPSessionEvent.SessionDetached, this.onDetached);
+    this.connection = null;
+    this.browser = null;
+    this.open.clear();
+  }
+
+  get(sessionId: string): Protocol.Page.JavascriptDialogOpeningEvent | undefined {
+    return this.open.get(sessionId);
+  }
+
+  private watch(session: CDPSession) {
+    const id = session.id();
+    session.on("Page.javascriptDialogOpening", (event) => this.open.set(id, event));
+    session.on("Page.javascriptDialogClosed", () => this.open.delete(id));
+  }
+}
+
 export class TabRegistry {
-  private sequence = 0;
   private browser: Browser | null = null;
   private control: Promise<CDPSession> | null = null;
   private defaultContextId: string | null = null;
   private connection: Connection | null = null;
   private readonly tabs = new Map<string, Tab>();
   private readonly byTarget = new Map<string, Tab>();
-  private readonly openDialogs = new Map<string, Protocol.Page.JavascriptDialogOpeningEvent>();
   private readonly onCreated = (target: Target) => {
     this.track(target, true);
   };
   private readonly onDestroyed = (target: Target) => {
     this.untrack(targetIdOf(target));
   };
-  private readonly onAttached: Hook = (session) => {
-    const id = session.id();
-    session.on("Page.javascriptDialogOpening", (event) => this.openDialogs.set(id, event));
-    session.on("Page.javascriptDialogClosed", () => this.openDialogs.delete(id));
-    void session.send("Page.enable").catch(() => undefined);
-  };
-  private readonly onDetached: Hook = (session) => {
-    this.openDialogs.delete(session.id());
-  };
 
   constructor(
     private readonly host: BrowserHost,
     private readonly events: TabEvents,
+    private readonly counters: { tabs: number },
+    private readonly dialogs: OpenDialogs,
   ) {}
 
   attach(browser: Browser) {
@@ -513,15 +572,7 @@ export class TabRegistry {
     for (const target of browser.targets()) {
       this.track(target);
     }
-    const connection = browser
-      .targets()
-      .map((target) => sessionOf(target)?.connection())
-      .find((candidate) => candidate !== undefined);
-    if (connection) {
-      this.connection = connection;
-      connection.on(CDPSessionEvent.SessionAttached, this.onAttached);
-      connection.on(CDPSessionEvent.SessionDetached, this.onDetached);
-    }
+    this.connection = connectionOf(browser);
     void this.learnDefaultContext(browser);
   }
 
@@ -530,10 +581,7 @@ export class TabRegistry {
       this.browser.off("targetcreated", this.onCreated);
       this.browser.off("targetdestroyed", this.onDestroyed);
     }
-    this.connection?.off(CDPSessionEvent.SessionAttached, this.onAttached);
-    this.connection?.off(CDPSessionEvent.SessionDetached, this.onDetached);
     this.connection = null;
-    this.openDialogs.clear();
     for (const tab of this.tabs.values()) {
       tab.close();
     }
@@ -693,7 +741,7 @@ export class TabRegistry {
       return existing;
     }
     const tab = new Tab(
-      `t${++this.sequence}`,
+      `t${++this.counters.tabs}`,
       targetId,
       target.page().catch(() => null),
       this.host,
@@ -706,7 +754,7 @@ export class TabRegistry {
       this.events.opened(tab, opener ? this.byTarget.get(targetIdOf(opener)) : undefined);
     }
     const client = sessionOf(target);
-    tab.watch(client, client ? this.openDialogs.get(client.id()) : undefined, announce);
+    tab.watch(client, client ? this.dialogs.get(client.id()) : undefined, announce);
     return tab;
   }
 
@@ -715,13 +763,13 @@ export class TabRegistry {
     if (!tab) {
       return;
     }
-    const sessionId = tab.sessionId();
-    if (sessionId) {
-      this.openDialogs.delete(sessionId);
-    }
     tab.close();
     this.byTarget.delete(targetId);
     this.tabs.delete(tab.id);
     this.events.closed(tab);
   }
+}
+
+export function clientOf(page: Page): CDPSession {
+  return (page as unknown as { _client(): CDPSession })._client();
 }

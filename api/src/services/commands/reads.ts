@@ -1,10 +1,10 @@
 import type { Page } from "puppeteer-core";
-import { SECRET_FIELD, SECRET_MASK } from "./secrets.js";
+import { IN_SECRET, SECRET_FIELD, SECRET_MASK } from "./secrets.js";
 
 export const MOUSE_HELPERS = "#__cursor__, puppeteer-mouse-pointer";
 
 export const TEXT = `function () {
-  if ((${SECRET_FIELD})(this)) {
+  if ((${IN_SECRET})(this)) {
     return ${JSON.stringify(SECRET_MASK)};
   }
   return typeof this.innerText === "string" ? this.innerText : this.textContent || "";
@@ -15,6 +15,9 @@ export const HTML = `function () {
   const mask = ${JSON.stringify(SECRET_MASK)};
   if (secret(this)) {
     return this instanceof HTMLTextAreaElement ? mask : "";
+  }
+  if ((${IN_SECRET})(this.parentElement)) {
+    return mask;
   }
   const fields = Array.from(this.querySelectorAll("*"));
   const copy = this.cloneNode(true);

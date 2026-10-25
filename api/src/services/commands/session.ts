@@ -3,7 +3,7 @@ import type { Command, CommandRequest } from "./commands.js";
 import type { Dialog, DialogAction } from "./dialogs.js";
 import { DEFAULT_RECORD_LIMITS, Records, type Execution, type RecordLimits } from "./records.js";
 import { RefTable } from "./refs.js";
-import { TabRegistry, type BrowserHost, type TabEvents } from "./tabs.js";
+import { TabRegistry, type BrowserHost, type OpenDialogs, type TabEvents } from "./tabs.js";
 
 export interface EngineHost extends BrowserHost {
   cdpClients(): number;
@@ -77,6 +77,15 @@ interface KeptSnapshot {
   text: string;
 }
 
+export class Counters {
+  executions = 0;
+  refs = 1;
+  tabs = 0;
+  snapshots = 0;
+  events = 0;
+  dialogs = 0;
+}
+
 export class ActiveSession {
   readonly records: Records;
   readonly refs: RefTable;
@@ -93,9 +102,6 @@ export class ActiveSession {
   ended = false;
   ending = false;
   claimed = false;
-  snapshots = 0;
-  eventSequence = 0;
-  dialogSequence = 0;
 
   constructor(
     readonly id: string,
@@ -103,13 +109,35 @@ export class ActiveSession {
     limits: EngineLimits,
     now: () => number,
     events: TabEvents,
-    previous?: ActiveSession,
+    private readonly counters: Counters,
+    dialogs: OpenDialogs,
   ) {
-    this.records = new Records(limits, now, previous?.records.issued);
-    this.refs = new RefTable(limits.maxRefs, previous?.refs.upcoming);
-    this.tabs = new TabRegistry(host, events);
-    this.snapshots = previous?.snapshots ?? 0;
-    this.eventSequence = previous?.eventSequence ?? 0;
-    this.dialogSequence = previous?.dialogSequence ?? 0;
+    this.records = new Records(limits, now, counters);
+    this.refs = new RefTable(limits.maxRefs, counters);
+    this.tabs = new TabRegistry(host, events, counters, dialogs);
+  }
+
+  get snapshots(): number {
+    return this.counters.snapshots;
+  }
+
+  set snapshots(value: number) {
+    this.counters.snapshots = value;
+  }
+
+  get eventSequence(): number {
+    return this.counters.events;
+  }
+
+  set eventSequence(value: number) {
+    this.counters.events = value;
+  }
+
+  get dialogSequence(): number {
+    return this.counters.dialogs;
+  }
+
+  set dialogSequence(value: number) {
+    this.counters.dialogs = value;
   }
 }

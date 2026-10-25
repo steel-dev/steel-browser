@@ -112,12 +112,8 @@ export class Records {
   constructor(
     private readonly limits: RecordLimits,
     private readonly now: () => number,
-    private sequence = 0,
+    private readonly counters: { executions: number } = { executions: 0 },
   ) {}
-
-  get issued(): number {
-    return this.sequence;
-  }
 
   create(input: {
     key: string | null;
@@ -128,7 +124,7 @@ export class Records {
     after?: string;
   }): Execution {
     const execution: Execution = {
-      id: `x-${++this.sequence}`,
+      id: `x-${++this.counters.executions}`,
       key: input.key,
       afterKey: input.afterKey ?? null,
       aliases: [],

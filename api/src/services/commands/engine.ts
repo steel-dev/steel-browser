@@ -24,6 +24,7 @@ import { isFinal, type ErrorInfo, type Execution, type ExecutionState } from "./
 import { combine, errorInfo, within } from "./results.js";
 import {
   ActiveSession,
+  Counters,
   DEFAULT_ENGINE_LIMITS,
   KEPT_EVENTS,
   STEP_MS,
@@ -32,7 +33,7 @@ import {
   type Job,
 } from "./session.js";
 import { handleGroup } from "./targets.js";
-import type { Tab } from "./tabs.js";
+import { OpenDialogs, type Tab } from "./tabs.js";
 
 export type { EngineHost, EngineLimits } from "./session.js";
 
@@ -65,7 +66,8 @@ export interface EngineResponse {
 
 export class CommandEngine {
   private active: ActiveSession | null = null;
-  private last: ActiveSession | null = null;
+  private readonly counters = new Counters();
+  private readonly openDialogs = new OpenDialogs();
   private browser: Browser | null = null;
   private ready = false;
   private readonly limits: EngineLimits;
@@ -132,7 +134,8 @@ export class CommandEngine {
           this.record(active, "tab_closed", tab.id, {});
         },
       },
-      this.last?.id === sessionId ? this.last : undefined,
+      this.counters,
+      this.openDialogs,
     );
     this.active = active;
     this.ready = false;
@@ -144,6 +147,7 @@ export class CommandEngine {
     }
     this.browser = browser;
     this.ready = false;
+    this.openDialogs.attach(browser);
     this.active?.tabs.detach();
   }
 
@@ -154,6 +158,7 @@ export class CommandEngine {
     }
     this.browser = browser;
     this.ready = true;
+    this.openDialogs.attach(browser);
     const active = this.active;
     if (active) {
       active.browser = browser;
@@ -168,6 +173,7 @@ export class CommandEngine {
     }
     this.browser = null;
     this.ready = false;
+    this.openDialogs.detach();
     const active = this.active;
     if (active?.browser === browser) {
       this.restart(active);
@@ -837,7 +843,6 @@ export class CommandEngine {
 
   private end(active: ActiveSession) {
     active.ended = true;
-    this.last = active;
     const error = { code: "session_ended", message: "The session ended." };
     for (const job of active.queue.splice(0)) {
       this.finish(active, job.execution, "failed", error);

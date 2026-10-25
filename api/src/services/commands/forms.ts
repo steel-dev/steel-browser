@@ -13,6 +13,17 @@ const NOT_TYPED = [
 
 const PICKERS = ["date", "datetime-local", "month", "time", "week"];
 
+const OTHER_CONTROLS = [
+  "a[href]",
+  "button",
+  "select",
+  "textarea",
+  'input:not([type="checkbox"]):not([type="radio"])',
+  ...["button", "link", "checkbox", "radio", "switch", "menuitem", "option", "tab", "textbox"].map(
+    (role) => `[role="${role}"]`,
+  ),
+].join(", ");
+
 const FOCUSED = `(element) => {
   if (!element.isConnected) {
     return false;
@@ -98,11 +109,15 @@ export const TOGGLE_INPUT = `function () {
     return toggle(this.control);
   }
   const inside = this.querySelectorAll('input[type="checkbox"], input[type="radio"]');
-  if (inside.length === 1) {
+  if (inside.length === 1 && (inside[0].parentElement === this || inside[0].parentElement?.parentElement === this)) {
     return inside[0];
   }
   const label = this.closest("label");
   return label ? toggle(label.control) : null;
+}`;
+
+export const ONLY_TOGGLE = `function () {
+  return this instanceof HTMLLabelElement || !this.querySelector(${JSON.stringify(OTHER_CONTROLS)});
 }`;
 
 export const INPUT_STATE = `function () {

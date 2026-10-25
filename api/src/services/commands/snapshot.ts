@@ -905,21 +905,51 @@ class DomView {
   }
 
   concealedToggle(node: number): Affordance["toggle"] | null {
+    const label = this.tag(node) === "label";
+    let found = -1;
     for (let inner = node + 1; inner < this.ends[node]; inner++) {
-      if (!this.isElement(inner) || this.tag(inner) !== "input") {
+      if (!this.isElement(inner)) {
         continue;
       }
-      const type = this.attribute(inner, "type")?.toLowerCase();
-      if (type !== "radio" && type !== "checkbox") {
-        continue;
+      const tag = this.tag(inner);
+      const type = tag === "input" ? this.attribute(inner, "type")?.toLowerCase() : undefined;
+      if (type === "radio" || type === "checkbox") {
+        if (label) {
+          found = inner;
+          break;
+        }
+        if (found >= 0) {
+          return null;
+        }
+        found = inner;
+      } else if (!label && this.control(inner)) {
+        return null;
       }
-      const concealed =
-        this.layoutOf[inner] < 0 ||
-        this.style(inner, VISIBILITY) === "hidden" ||
-        this.attribute(inner, "hidden") !== null;
-      return concealed ? { role: type, checked: this.checked.has(inner) ? "true" : "false" } : null;
     }
-    return null;
+    if (
+      found < 0 ||
+      (!label && this.parent(found) !== node && this.parent(this.parent(found)) !== node)
+    ) {
+      return null;
+    }
+    const concealed =
+      this.layoutOf[found] < 0 ||
+      this.style(found, VISIBILITY) === "hidden" ||
+      this.attribute(found, "hidden") !== null;
+    const role = this.attribute(found, "type")!.toLowerCase() as "radio" | "checkbox";
+    return concealed ? { role, checked: this.checked.has(found) ? "true" : "false" } : null;
+  }
+
+  private control(node: number): boolean {
+    const tag = this.tag(node);
+    if (tag === "button" || tag === "select" || tag === "textarea" || tag === "input") {
+      return true;
+    }
+    if (tag === "a" && this.attribute(node, "href") !== null) {
+      return true;
+    }
+    const role = this.attribute(node, "role")?.toLowerCase();
+    return !!role && CONTROL_ROLES.has(role);
   }
 
   private string(index: number | undefined): string {

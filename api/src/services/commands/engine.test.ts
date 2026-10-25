@@ -516,6 +516,36 @@ const fixtures: Record<string, (other: string) => string> = {
     <script>window.reveal = () => (document.querySelector("button").style.display = "");</script>`,
   "/hidden-text": () => `<!doctype html><title>Hidden text</title>
     <div id="t"><span style="display: none">hidden words</span></div>`,
+  "/card-check": () => `<!doctype html><title>Card check</title>
+    <div id="deep" style="cursor: pointer; padding: 8px" onclick="document.title = 'opened'">
+      <h3>Card</h3><p>Details</p>
+      <div><div><input type="checkbox" style="display: none"></div></div>
+      <button onclick="event.stopPropagation()">More</button>
+    </div>
+    <div id="shallow" style="cursor: pointer; padding: 8px" onclick="document.title = 'opened'">
+      <input type="checkbox" style="display: none">
+      <h3>Other card</h3>
+      <button onclick="event.stopPropagation()">Other</button>
+    </div>`,
+  "/shadow-label": () => `<!doctype html><title>Shadow label</title>
+    <span id="field-label">Phone</span>
+    <input aria-labelledby="field-label" oninput="document.title = 'phone ' + this.value">
+    <div id="host"></div>
+    <script>
+      document.getElementById("host").attachShadow({ mode: "open" }).innerHTML =
+        '<span id="field-label">Email</span><input aria-labelledby="field-label" oninput="document.title = \\'email \\' + this.value">';
+    </script>`,
+  "/secret-inner": () => `<!doctype html><title>Secret inner</title>
+    <div contenteditable style="-webkit-text-security: disc">alpha<b id="inner">bravo</b>charlie</div>`,
+  "/busy-later": () => `<!doctype html><title>Busy later</title><p>Busy</p>
+    <script>setTimeout(() => { const end = Date.now() + 6000; while (Date.now() < end) {} }, 300);</script>`,
+  "/confirm-now": () =>
+    `<!doctype html><title>Confirm now</title><script>confirm("Ready?")</script>`,
+  "/danger": () => `<!doctype html><title>Danger</title>
+    <h1>Danger</h1>
+    <label>Name <input id="name"></label>
+    <button onclick="document.title = 'deleted'">Delete account</button>
+    <a href="/next">Next page</a>`,
   "/focus-confirm": () => `<!doctype html><title>Focus confirm</title>
     <input aria-label="Trap" onfocus="if (!window.asked) { window.asked = true; confirm('Sure?'); }">
     <button onclick="document.title = 'clicked'">Go</button>`,
@@ -946,6 +976,33 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.title()).toBe("send");
       const count = await run({ command: "get", what: "count", target: { text: "Save" } });
       expect(count.results[0]).toMatchObject({ value: 2 });
+    });
+
+    test("reads labels inside the shadow root of the field", async () => {
+      await open("/shadow-label");
+      await run({ command: "fill", target: { label: "Email" }, value: "a@b.c" });
+      expect(await page.title()).toBe("email a@b.c");
+      await run({ command: "fill", target: { label: "Phone" }, value: "123" });
+      expect(await page.title()).toBe("phone 123");
+    });
+
+    test("does not treat a card with a hidden checkbox inside as a checkbox", async () => {
+      await open("/card-check");
+      const text = await snapshot({ interactive: true });
+      expect(text).not.toContain("checkbox");
+      const checked = await run({ command: "check", target: { css: "#deep" } });
+      expect(checked.results[0], JSON.stringify(checked.results[0])).toMatchObject({
+        ok: false,
+        effect: "none",
+        error: { code: "not_actionable", reason: "not_checkable" },
+      });
+      const shallow = await run({ command: "check", target: { css: "#shallow" } });
+      expect(shallow.results[0], JSON.stringify(shallow.results[0])).toMatchObject({
+        ok: false,
+        effect: "none",
+        error: { code: "not_actionable" },
+      });
+      expect(await page.title()).toBe("Card check");
     });
 
     test("refuses disabled controls instead of reporting a click", async () => {
@@ -2069,14 +2126,21 @@ describe.skipIf(!chrome)("command engine", () => {
     });
 
     test("starts over when a new session is prepared", async () => {
-      await open("/basic");
+      const before = await open("/basic");
       engine.prepare("s3");
       engine.browserReady();
       const response = await engine.handle({
         sessionId: "s3",
         body: { commands: { command: "tab", action: "list" } },
       });
-      expect(response.body).toMatchObject({ epoch: 0, results: [{ tabs: [{ tab: "t1" }] }] });
+      expect(response.body).toMatchObject({
+        epoch: 0,
+        results: [{ tabs: [{ url: `${base}/basic` }] }],
+      });
+      const listed = (response.body as unknown as Envelope).results[0].tabs as Array<{
+        tab: string;
+      }>;
+      expect(listed[0].tab).not.toBe(before.page!.tab);
       expect((await send({ commands: { command: "snapshot" } })).status).toBe(410);
     });
   });
@@ -2386,6 +2450,68 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("crashed tabs", () => {
+    test("knows about a dialog that opened before the session started", async () => {
+      const fresh = create({ limits: { responseDeadlineMs: 4000 } });
+      fresh.sessionEnded();
+      const blocked = await browser.newPage();
+      void blocked.goto(`${base}/confirm-now`).catch(() => undefined);
+      await sleep(500);
+      fresh.prepare(SESSION);
+      fresh.browserReady();
+      const tab = await tabWith("/confirm-now", fresh);
+      const body = await run({ command: "snapshot", tab }, {}, fresh);
+      expect(body.results[0], JSON.stringify(body)).toMatchObject({
+        ok: false,
+        error: { code: "dialog_pending" },
+      });
+      const answered = await run(
+        { command: "dialog", dialog: body.dialog!.id, action: "accept" },
+        {},
+        fresh,
+      );
+      expect(answered.answered).toMatchObject({ accepted: true });
+      fresh.sessionEnded();
+    });
+
+    test("navigates away from a busy tab that commands never used", async () => {
+      const quick = create({ limits: { responseDeadlineMs: 4000 } });
+      await open("/basic", quick);
+      const busy = await browser.newPage();
+      await busy.goto(`http://busy.test:${port}/busy-later`);
+      const tab = await tabWith("/busy-later", quick);
+      await sleep(600);
+      try {
+        const started = Date.now();
+        const moved = await run({ command: "navigate", tab, url: `${base}/counter` }, {}, quick);
+        expect(moved.results[0], JSON.stringify(moved)).toMatchObject({ ok: true });
+        expect(Date.now() - started).toBeLessThan(3500);
+      } finally {
+        quick.sessionEnded();
+        await sleep(6000);
+      }
+    }, 30_000);
+
+    test("fails fast on a ref in a frame whose renderer crashed", async () => {
+      const quick = create({ limits: { responseDeadlineMs: 4000 } });
+      await open("/deep-frame", quick);
+      const text = (await run({ command: "snapshot" }, {}, quick)).results[0].snapshot as string;
+      const ref = refOf(text, 'button "Deep"');
+      const inner = page
+        .frames()
+        .find((frame) => frame.url().includes("/deep-inner")) as unknown as {
+        client: { send(method: string): Promise<unknown> };
+      };
+      void inner.client.send("Page.crash").catch(() => undefined);
+      await sleep(1000);
+      try {
+        const clicked = await run({ command: "click", target: ref }, {}, quick);
+        expect(clicked.execution.state, JSON.stringify(clicked)).toBe("failed");
+        expect(clicked.results[0]).toMatchObject({ ok: false, error: { code: "stale_ref" } });
+      } finally {
+        quick.sessionEnded();
+      }
+    });
+
     test("recovers a crashed tab that commands never used", async () => {
       const quick = create({ limits: { responseDeadlineMs: 5000 } });
       await open("/basic", quick);
@@ -4397,6 +4523,28 @@ describe.skipIf(!chrome)("command engine", () => {
       );
     });
 
+    test("refuses old refs and tabs after other sessions ran in between", async () => {
+      await open("/basic");
+      const ref = refOf(await snapshot(), 'button "Save"');
+      engine.prepare("s2");
+      engine.browserReady();
+      engine.prepare(SESSION);
+      engine.browserReady();
+      await open("/danger");
+      await snapshot();
+      const clicked = await run({ command: "click", target: ref });
+      expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({
+        ok: false,
+        error: { code: "stale_ref", reason: "unknown" },
+      });
+      expect(await page.title()).toBe("Danger");
+      const old = await run({ command: "snapshot", tab: "t1" });
+      expect(old.results[0], JSON.stringify(old.results[0])).toMatchObject({
+        ok: false,
+        error: { code: "tab_not_found" },
+      });
+    });
+
     test("keeps the event cursor going when the same session starts again", async () => {
       await open("/basic");
       await run({ command: "navigate", url: `${base}/counter` });
@@ -4575,6 +4723,17 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(covered.results[0]).toMatchObject({ error: { reason: "covered" } });
       expect(covered.results[0].error!.message).toContain("PIN");
       expect(covered.results[0].error!.message).not.toContain("qzv");
+    });
+
+    test("hides the part of a secret region that a read targets", async () => {
+      await open("/secret-inner");
+      const reads = await run([
+        { command: "get", what: "text", target: "#inner" },
+        { command: "get", what: "html", target: "#inner" },
+      ]);
+      for (const result of reads.results) {
+        expect(String(result.value), String(result.value)).not.toContain("bravo");
+      }
     });
 
     test("hides a secret that the clickable text limit cuts through", async () => {

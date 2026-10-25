@@ -2,7 +2,7 @@ import type { Command } from "../commands.js";
 import { checkUrl } from "../policy.js";
 import type { CommandResult } from "../records.js";
 import { errorInfo, navigationError } from "../results.js";
-import type { Tab } from "../tabs.js";
+import { clientOf, type Tab } from "../tabs.js";
 import {
   crashedTab,
   dialogNote,
@@ -41,7 +41,8 @@ export async function history(
   delta: -1 | 1,
 ): Promise<CommandResult> {
   const tab = tabFor(ctx, tabId);
-  const session = await tab.session();
+  const page = await tab.navigable();
+  const session = clientOf(page);
   const { currentIndex, entries } = await session.send("Page.getNavigationHistory");
   const entry = entries[currentIndex + delta];
   if (!entry) {
@@ -49,7 +50,6 @@ export async function history(
   }
   checkUrl(entry.url);
   const inFrame = entry.url === entries[currentIndex]?.url;
-  const page = await tab.page();
   touch(ctx);
   try {
     await load(
@@ -77,11 +77,9 @@ export async function history(
 
 export async function reload(ctx: Context, tabId: string | undefined): Promise<CommandResult> {
   const tab = tabFor(ctx, tabId, true);
-  const page = tab.crashed ? await tab.page() : await tab.ready();
-  const frame = tab.crashed
-    ? null
-    : (await (await tab.session()).send("Page.getFrameTree")).frameTree.frame;
-  const url = frame ? frame.unreachableUrl || frame.url : page.url();
+  const page = await tab.navigable();
+  const { currentIndex, entries } = await clientOf(page).send("Page.getNavigationHistory");
+  const url = entries[currentIndex]?.url || page.url();
   checkUrl(url);
   touch(ctx);
   try {

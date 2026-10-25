@@ -50,8 +50,9 @@ const LOCATE = `function (kind, value, exact) {
   };
   collect(document);
   const skipped = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "TITLE"]);
-  const textOf = (id) => {
-    const element = document.getElementById(id);
+  const textOf = (from, id) => {
+    const root = from.getRootNode();
+    const element = root.getElementById ? root.getElementById(id) : null;
     return element ? element.textContent : "";
   };
   switch (kind) {
@@ -71,7 +72,13 @@ const LOCATE = `function (kind, value, exact) {
           found.push(element);
         } else if (
           element.hasAttribute("aria-labelledby") &&
-          matches(element.getAttribute("aria-labelledby").split(/\\s+/).map(textOf).join(" "))
+          matches(
+            element
+              .getAttribute("aria-labelledby")
+              .split(/\\s+/)
+              .map((id) => textOf(element, id))
+              .join(" "),
+          )
         ) {
           found.push(element);
         }

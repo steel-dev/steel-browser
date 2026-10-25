@@ -6,6 +6,7 @@ import { axString } from "../ax.js";
 import {
   FOCUS,
   INPUT_STATE,
+  ONLY_TOGGLE,
   PREPARE_EDIT,
   SCROLL_ELEMENT,
   SCROLL_WINDOW,
@@ -330,7 +331,11 @@ export async function check(
     const { pressed, point } = await actionPoint(state.control, () => touch(ctx))
       .then((point) => ({ pressed: state.control, point }))
       .catch(async (error) => {
-        if (state.control === target || !(error instanceof CommandError)) {
+        if (
+          state.control === target ||
+          !(error instanceof CommandError) ||
+          !(await callOn<boolean>(target, ONLY_TOGGLE))
+        ) {
           throw error;
         }
         return { pressed: target, point: await actionPoint(target, () => touch(ctx)) };

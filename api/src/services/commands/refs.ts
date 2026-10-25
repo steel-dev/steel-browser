@@ -24,21 +24,17 @@ interface DocumentRefs {
 }
 
 export class RefTable {
-  private next: number;
+  private readonly first: number;
   private retiredBelow: number;
   private readonly entries = new Map<string, RefEntry>();
   private readonly documents = new Map<string, DocumentRefs>();
 
   constructor(
     private readonly limit = 50_000,
-    start = 1,
+    private readonly counters: { refs: number } = { refs: 1 },
   ) {
-    this.next = start;
-    this.retiredBelow = start;
-  }
-
-  get upcoming(): number {
-    return this.next;
+    this.first = counters.refs;
+    this.retiredBelow = counters.refs;
   }
 
   observe(
@@ -74,7 +70,7 @@ export class RefTable {
         : undefined;
     let ref = durable?.refs.get(entry.backendNodeId);
     if (!ref) {
-      ref = `e${this.next++}`;
+      ref = `e${this.counters.refs++}`;
       durable?.refs.set(entry.backendNodeId, ref);
     }
     return ref;
@@ -94,7 +90,7 @@ export class RefTable {
 
   missing(ref: string): "browser_restarted" | "evicted" | "unknown" {
     const number = Number(ref.slice(1));
-    if (!Number.isInteger(number) || number <= 0 || number >= this.next) {
+    if (!Number.isInteger(number) || number < this.first || number >= this.counters.refs) {
       return "unknown";
     }
     return number < this.retiredBelow ? "browser_restarted" : "evicted";
@@ -103,7 +99,7 @@ export class RefTable {
   retire() {
     this.entries.clear();
     this.documents.clear();
-    this.retiredBelow = this.next;
+    this.retiredBelow = this.counters.refs;
   }
 
   private evict(kept: Set<string>) {

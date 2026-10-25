@@ -11,6 +11,16 @@ export const SECRET_FIELD = `(element) =>
     (element.isContentEditable && element.hasAttribute("contenteditable"))) &&
     !["", "none"].includes(window.getComputedStyle(element).webkitTextSecurity || ""))`;
 
+export const IN_SECRET = `(element) => {
+  const secret = ${SECRET_FIELD};
+  for (let node = element; node; node = node.parentElement) {
+    if (secret(node)) {
+      return true;
+    }
+  }
+  return false;
+}`;
+
 const COLLECT_SECRETS = `(root, values) => {
   const secret = ${SECRET_FIELD};
   const add = (element) => {
