@@ -40,7 +40,7 @@ const MODIFIER_BITS = new Map([
 
 const SHIFT = 8;
 
-interface KeyStroke {
+export interface KeyStroke {
   key: string;
   code: string;
   keyCode: number;
@@ -94,9 +94,36 @@ function keyStroke(name: string, modifiers: number): KeyStroke {
   };
 }
 
-export function chordStroke(chord: string): { stroke: KeyStroke; modifiers: number } {
-  const { key, modifiers } = parseChord(chord);
-  return { stroke: keyStroke(key, modifiers), modifiers };
+export function chordStroke(chord: string, held = 0): { stroke: KeyStroke; modifiers: number } {
+  const parsed = parseChord(chord);
+  const modifiers = parsed.modifiers | held;
+  return { stroke: keyStroke(parsed.key, modifiers), modifiers };
+}
+
+export function modifierBit(key: string): number {
+  return MODIFIER_BITS.get(key.toLowerCase()) ?? 0;
+}
+
+export function strokeEvent(
+  stroke: KeyStroke,
+  modifiers: number,
+): Omit<Protocol.Input.DispatchKeyEventRequest, "type"> {
+  return {
+    key: stroke.key,
+    code: stroke.code,
+    windowsVirtualKeyCode: stroke.keyCode,
+    ...(stroke.location ? { location: stroke.location, isKeypad: stroke.location === 3 } : {}),
+    ...(modifiers ? { modifiers } : {}),
+  };
+}
+
+export function sendKey(
+  context: InputContext,
+  session: CDPSession,
+  params: Protocol.Input.DispatchKeyEventRequest,
+): Promise<boolean> {
+  context.touch();
+  return send(context, session, "Input.dispatchKeyEvent", { ...params });
 }
 
 export async function press(
@@ -104,14 +131,8 @@ export async function press(
   session: CDPSession,
   chord: string,
 ): Promise<boolean> {
-  const { stroke, modifiers } = chordStroke(chord);
-  const common = {
-    key: stroke.key,
-    code: stroke.code,
-    windowsVirtualKeyCode: stroke.keyCode,
-    ...(stroke.location ? { location: stroke.location, isKeypad: stroke.location === 3 } : {}),
-    ...(modifiers ? { modifiers } : {}),
-  };
+  const { stroke, modifiers } = chordStroke(chord, context.modifiers());
+  const common = strokeEvent(stroke, modifiers);
   const up: Protocol.Input.DispatchKeyEventRequest = { ...common, type: "keyUp" };
   context.touch();
   const down = await send(context, session, "Input.dispatchKeyEvent", {

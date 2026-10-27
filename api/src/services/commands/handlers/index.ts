@@ -7,6 +7,8 @@ import { check, drag, focus, pointer, press, scroll, select, upload, write } fro
 import { get, is, pdf, screenshot, wait } from "./inspect.js";
 import { history, navigate, reload, settle } from "./navigation.js";
 import { find, snapshot, tab } from "./pages.js";
+import { key, mouse } from "./raw.js";
+import { evaluate } from "./script.js";
 
 export {
   crashedTab,
@@ -29,6 +31,10 @@ const SETTLES = new Set([
   "uncheck",
   "upload",
   "drag",
+  "keydown",
+  "keyup",
+  "mouse",
+  "eval",
 ]);
 
 export async function execute(ctx: Context, command: Command): Promise<CommandResult> {
@@ -74,6 +80,13 @@ async function dispatch(ctx: Context, command: Command): Promise<CommandResult> 
       return await write(ctx, command);
     case "press":
       return await press(ctx, command);
+    case "keydown":
+    case "keyup":
+      return await key(ctx, command);
+    case "mouse":
+      return await mouse(ctx, command);
+    case "eval":
+      return await evaluate(ctx, command);
     case "select":
       return await select(ctx, command);
     case "check":

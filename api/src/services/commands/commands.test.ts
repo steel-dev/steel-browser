@@ -21,7 +21,7 @@ describe("published request schema", () => {
         const response = await app.inject({ method: "POST", url, payload: { commands } });
         expect(response.statusCode, `${url} ${response.body}`).toBe(200);
       }
-      for (const commands of [[], { command: "eval" }]) {
+      for (const commands of [[], { command: "teleport" }]) {
         const response = await app.inject({ method: "POST", url, payload: { commands } });
         expect(response.statusCode, `${url} ${JSON.stringify(commands)}`).toBe(400);
       }

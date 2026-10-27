@@ -47,6 +47,7 @@ export interface PressedButton {
   session: CDPSession;
   x: number;
   y: number;
+  button?: "left" | "right" | "middle";
 }
 
 export interface HeldKey {
@@ -86,6 +87,9 @@ export class Tab {
   crashed = false;
   pressed: PressedButton | null = null;
   key: HeldKey | null = null;
+  pointer: { x: number; y: number } | null = null;
+  modifiers = 0;
+  readonly held = new Map<string, HeldKey>();
   private readonly blockingListeners = new Set<() => void>();
   private readonly frames = new Map<string, CDPSession>();
   private readonly links = new Map<string, { parent: CDPSession; frameId: string }>();
@@ -267,20 +271,28 @@ export class Tab {
     await this.client?.send("Page.stopLoading");
   }
 
+  holding(): boolean {
+    return this.pressed !== null || this.key !== null || this.held.size > 0;
+  }
+
   async release() {
     const pressed = this.pressed;
-    const key = this.key;
+    const keys = [this.key, ...this.held.values()];
     this.pressed = null;
     this.key = null;
+    this.held.clear();
+    this.modifiers = 0;
     await pressed?.session.send("Input.dispatchMouseEvent", {
       type: "mouseReleased",
       x: pressed.x,
       y: pressed.y,
-      button: "left",
+      button: pressed.button ?? "left",
       buttons: 0,
       clickCount: 1,
     });
-    await key?.session.send("Input.dispatchKeyEvent", key.keyUp);
+    for (const key of keys) {
+      await key?.session.send("Input.dispatchKeyEvent", key.keyUp);
+    }
   }
 
   async page(): Promise<Page> {

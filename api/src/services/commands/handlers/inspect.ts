@@ -1,4 +1,6 @@
+import { Defuddle } from "defuddle/node";
 import { ProtocolError } from "puppeteer-core";
+import { getDefuddleContent, stripBase64Images } from "../../../utils/scrape/index.js";
 import type { Command } from "../commands.js";
 import { CommandError } from "../errors.js";
 import type { CommandResult } from "../records.js";
@@ -44,6 +46,27 @@ const NETWORK_QUIET_MS = 500;
 
 const MAX_SCREENSHOT_HEIGHT = 16_384;
 
+const MARKDOWN_SOURCE = `function () {
+  const element = this && this.nodeType === 1 ? this : null;
+  const root = element || document.documentElement;
+  const inner = (${HTML}).call(root);
+  return {
+    html: element ? "<" + element.localName + ">" + inner + "</" + element.localName + ">" : inner,
+    url: root.ownerDocument.location.href,
+  };
+}`;
+
+const WHOLE_CONTENT = {
+  debug: false,
+  separateMarkdown: true,
+  useAsync: false,
+  contentSelector: "body",
+  removeExactSelectors: false,
+  removePartialSelectors: false,
+  removeLowScoring: false,
+  removeContentPatterns: false,
+};
+
 export async function get(
   ctx: Context,
   command: Extract<Command, { command: "get" }>,
@@ -54,6 +77,9 @@ export async function get(
     useTab(ctx, tab.id);
     const info = await active.tabs.info(tab);
     return { ok: true, effect: "none", value: command.what === "url" ? info.url : info.title };
+  }
+  if (command.what === "markdown") {
+    return markdown(ctx, command);
   }
   if (command.target === undefined) {
     throw new CommandError("invalid_argument", `get ${command.what} needs a target.`);
@@ -130,6 +156,39 @@ export async function get(
   }
 }
 
+async function markdown(
+  ctx: Context,
+  command: Extract<Command, { command: "get" }>,
+): Promise<CommandResult> {
+  let source: { html: string; url: string };
+  let secrets: string[];
+  if (command.target !== undefined) {
+    const target = await element(ctx, { ...command, target: command.target });
+    source = await callOn(target, MARKDOWN_SOURCE);
+    secrets = [
+      ...(await callOn<string[]>(target, SECRET_VALUES).catch(() => [])),
+      ...(await secretsIn(target.session)),
+    ];
+  } else {
+    const scope = await scopeFor(ctx, tabFor(ctx, command.tab), command.frame);
+    source = await callIn(scope, MARKDOWN_SOURCE);
+    secrets = [
+      ...(await callIn<string[]>(scope, SECRET_VALUES).catch(() => [])),
+      ...(await secretsIn(scope.session)),
+    ];
+  }
+  const masked = hideSecrets(source.html, htmlForms(secrets));
+  const content =
+    command.target === undefined
+      ? await getDefuddleContent(`<html>${masked}</html>`, source.url)
+      : await Defuddle(`<html><body>${masked}</body></html>`, source.url, WHOLE_CONTENT);
+  return {
+    ok: true,
+    effect: "none",
+    value: hideSecrets(stripBase64Images(content.contentMarkdown ?? ""), secrets),
+  };
+}
+
 export async function is(
   ctx: Context,
   command: Extract<Command, { command: "is" }>,
@@ -165,13 +224,18 @@ export async function wait(
   command: Extract<Command, { command: "wait" }>,
 ): Promise<CommandResult> {
   const { active, job } = ctx;
-  const modes = [command.target, command.text, command.url, command.load, command.ms].filter(
-    (mode) => mode !== undefined,
-  );
+  const modes = [
+    command.target,
+    command.text,
+    command.url,
+    command.load,
+    command.ms,
+    command.download,
+  ].filter((mode) => mode !== undefined);
   if (modes.length !== 1) {
     throw new CommandError(
       "invalid_argument",
-      "wait needs exactly one of target, text, url, load, or ms.",
+      "wait needs exactly one of target, text, url, load, ms, or download.",
     );
   }
   if (command.state !== undefined && command.target === undefined) {
@@ -195,6 +259,9 @@ export async function wait(
     return { ok: true, effect: "none", waited: "ms" };
   }
   const timeout = command.timeout ?? WAIT_TIMEOUT_MS;
+  if (command.download) {
+    return waitDownload(ctx, timeout);
+  }
   const until = ctx.now() + timeout;
   const ref = typeof command.target === "string" ? parseRef(command.target) : null;
   const tab = ref
@@ -306,6 +373,33 @@ export async function wait(
         ? "url"
         : "load",
   };
+}
+
+async function waitDownload(ctx: Context, timeout: number): Promise<CommandResult> {
+  const until = ctx.now() + timeout;
+  for (;;) {
+    const download = [...ctx.active.downloads.values()].find((item) => !item.taken);
+    if (download?.state) {
+      download.taken = true;
+      if (download.state !== "completed") {
+        throw new CommandError(
+          "download_failed",
+          `The download of ${download.file} did not finish.`,
+        );
+      }
+      return {
+        ok: true,
+        effect: "none",
+        waited: "download",
+        file: download.file,
+        bytes: download.bytes,
+      };
+    }
+    if (ctx.now() >= until || ending(ctx)) {
+      throw waitTimeout(ctx.job, timeout, "a download to finish");
+    }
+    await sleep(ctx, WAIT_POLL_MS);
+  }
 }
 
 function closedDuringWait(tab: Tab): CommandError {

@@ -138,6 +138,10 @@ export function inputs(ctx: Context, tab: Tab): InputContext {
     inputTimeoutMs: ctx.limits.inputTimeoutMs,
     blocked: () => watchBlocking(tab),
     touch: () => touch(ctx),
+    modifiers: () => tab.modifiers,
+    moved: (point) => {
+      tab.pointer = point;
+    },
     press: (button) => {
       tab.pressed = button;
     },

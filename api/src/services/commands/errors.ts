@@ -11,6 +11,8 @@ export type CommandErrorCode =
   | "forbidden_url"
   | "forbidden_file"
   | "navigation_failed"
+  | "download_failed"
+  | "script_error"
   | "timeout"
   | "cancelled"
   | "session_ended"

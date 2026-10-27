@@ -77,7 +77,7 @@ describe.skipIf(!chrome)("commands route", () => {
   });
 
   test("rejects an invalid body", async () => {
-    const response = await post("live", { commands: { command: "eval", script: "1" } });
+    const response = await post("live", { commands: { command: "teleport", to: "moon" } });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: { code: "invalid_request" } });
   });

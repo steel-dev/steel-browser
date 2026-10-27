@@ -79,6 +79,19 @@ export const commandSchema = z.discriminatedUnion("command", [
     target: target.optional(),
     ...scoped,
   }),
+  strict({ command: z.literal("keydown"), key: z.string().min(1), tab }),
+  strict({ command: z.literal("keyup"), key: z.string().min(1), tab }),
+  strict({
+    command: z.literal("mouse"),
+    action: z.enum(["move", "down", "up", "click", "wheel"]),
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    button: z.enum(["left", "right", "middle"]).optional(),
+    clicks: z.number().int().min(1).max(3).optional(),
+    deltaX: z.number().finite().optional(),
+    deltaY: z.number().finite().optional(),
+    tab,
+  }),
   strict({
     command: z.literal("select"),
     ...element,
@@ -100,7 +113,7 @@ export const commandSchema = z.discriminatedUnion("command", [
   strict({ command: z.literal("uncheck"), ...element }),
   strict({
     command: z.literal("get"),
-    what: z.enum(["text", "html", "value", "attr", "title", "url", "count", "box"]),
+    what: z.enum(["text", "html", "markdown", "value", "attr", "title", "url", "count", "box"]),
     target: target.optional(),
     attribute: z.string().min(1).optional(),
     ...scoped,
@@ -118,6 +131,7 @@ export const commandSchema = z.discriminatedUnion("command", [
     url: z.string().min(1).optional(),
     load: z.enum(["load", "domcontentloaded", "networkidle"]).optional(),
     ms: z.number().int().min(0).max(30_000).optional(),
+    download: z.literal(true).optional(),
     timeout: z.number().int().min(0).max(50_000).optional(),
     ...scoped,
   }),
@@ -128,6 +142,12 @@ export const commandSchema = z.discriminatedUnion("command", [
     format: z.enum(["png", "jpeg", "webp"]).optional(),
     quality: z.number().int().min(0).max(100).optional(),
     ...scoped,
+  }),
+  strict({
+    command: z.literal("eval"),
+    script: z.string().min(1),
+    timeout: z.number().int().min(0).max(50_000).optional(),
+    tab,
   }),
   strict({
     command: z.literal("pdf"),
@@ -228,6 +248,10 @@ const MUTATING = new Set([
   "screenshot",
   "upload",
   "drag",
+  "keydown",
+  "keyup",
+  "mouse",
+  "eval",
 ]);
 
 const CONTROL = new Set(["status", "cancel", "dialog"]);

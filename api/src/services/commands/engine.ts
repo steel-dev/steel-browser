@@ -26,6 +26,7 @@ import {
   ActiveSession,
   Counters,
   DEFAULT_ENGINE_LIMITS,
+  KEPT_DOWNLOADS,
   KEPT_EVENTS,
   STEP_MS,
   type EngineHost,
@@ -94,7 +95,18 @@ export class CommandEngine {
         dialogOpened: (tab, event) => this.dialogOpened(active, tab, event),
         dialogClosed: (tab, event) => this.dialogClosed(active, tab, event),
         downloadStarted: (tab, event) => {
-          active.downloads.set(event.guid, { file: event.suggestedFilename, url: event.url });
+          active.downloads.set(event.guid, {
+            file: event.suggestedFilename,
+            url: event.url,
+            startedAt: Date.now(),
+            taken: false,
+          });
+          for (const guid of active.downloads.keys()) {
+            if (active.downloads.size <= KEPT_DOWNLOADS) {
+              break;
+            }
+            active.downloads.delete(guid);
+          }
           this.record(active, "download", tab.id, {
             file: event.suggestedFilename,
             url: event.url,
@@ -103,10 +115,11 @@ export class CommandEngine {
         },
         downloadProgress: (tab, event) => {
           const download = active.downloads.get(event.guid);
-          if (event.state === "inProgress" || !download) {
+          if (event.state === "inProgress" || !download || download.state) {
             return;
           }
-          active.downloads.delete(event.guid);
+          download.state = event.state;
+          download.bytes = event.receivedBytes;
           this.record(active, "download", tab.id, {
             file: download.file,
             url: download.url,
@@ -870,7 +883,7 @@ export class CommandEngine {
       event.userInput || undefined,
       dialog.by ?? "client",
     );
-    if (tab.pressed || tab.key) {
+    if (tab.holding()) {
       void tab.release().catch(() => undefined);
     }
   }

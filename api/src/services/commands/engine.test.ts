@@ -1,4 +1,4 @@
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -347,6 +347,34 @@ const fixtures: Record<string, (other: string) => string> = {
         first++;
         render();
       };
+    </script>`,
+  "/article": () => `<!doctype html><title>Article</title>
+    <main>
+      <article>
+        <h1>Release notes</h1>
+        <p>The engine now reads a page as Markdown, so an agent can read long text without a snapshot. It keeps links such as <a href="/docs">the docs</a> and lists.</p>
+        <ul><li>First point</li><li>Second point</li></ul>
+        <p>Sign in with <input type="password" value="hunter2-secret"> and the words hunter2-secret stay hidden.</p>
+        <img src="data:image/png;base64,iVBORw0KGgo=" alt="pixel">
+      </article>
+    </main>`,
+  "/pad": () => `<!doctype html><title>Pad</title>
+    <div id="pad" style="position: absolute; left: 0; top: 0; width: 400px; height: 300px"></div>
+    <input id="field" aria-label="Field" style="position: absolute; left: 0; top: 320px">
+    <script>
+      window.log = [];
+      const pad = document.getElementById("pad");
+      for (const type of ["mousedown", "mousemove", "mouseup", "click", "dblclick", "contextmenu", "wheel"]) {
+        pad.addEventListener(type, (event) => {
+          if (type === "mousemove" && !event.buttons) {
+            return;
+          }
+          window.log.push([type, event.clientX, event.clientY, event.button, event.buttons, event.shiftKey, event.deltaY || 0].join(" "));
+          if (type === "contextmenu" || type === "wheel") {
+            event.preventDefault();
+          }
+        }, { passive: false });
+      }
     </script>`,
   "/rows": () => `<!doctype html>
     <div id="list"></div>
@@ -4202,6 +4230,22 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("reads", () => {
+    test("reads the page or an element as Markdown without secrets", async () => {
+      await open("/article");
+      const page = (await run({ command: "get", what: "markdown" })).results[0];
+      expect(page, JSON.stringify(page)).toMatchObject({ ok: true, effect: "none" });
+      const text = page.value as string;
+      expect(text).toContain("Release notes");
+      expect(text).toContain(`[the docs](${base}/docs)`);
+      expect(text).toContain("Second point");
+      expect(text).not.toContain("hunter2-secret");
+      expect(text).not.toContain("base64,");
+      const list = (await run({ command: "get", what: "markdown", target: { css: "ul" } }))
+        .results[0];
+      expect(list.value).toContain("First point");
+      expect(list.value).not.toContain("Release notes");
+    });
+
     async function get(what: string, extra: Record<string, unknown> = {}) {
       const result = (await run({ command: "get", what, ...extra })).results[0];
       expect(result, JSON.stringify(result)).toMatchObject({ ok: true, effect: "none" });
@@ -4394,6 +4438,119 @@ describe.skipIf(!chrome)("command engine", () => {
       const pdf = (await run({ command: "pdf" })).results[0];
       expect(pdf).toMatchObject({ ok: true, format: "pdf" });
       expect(pdf.data as string).toMatch(/^JVBER/);
+    });
+  });
+
+  describe("coordinates and scripts", () => {
+    async function log(): Promise<string[]> {
+      return page.evaluate(() => (window as unknown as { log: string[] }).log);
+    }
+
+    test("drives the mouse at coordinates", async () => {
+      await open("/pad");
+      const body = await run([
+        { command: "mouse", action: "move", x: 50, y: 60 },
+        { command: "mouse", action: "down" },
+        { command: "mouse", action: "move", x: 120, y: 90 },
+        { command: "mouse", action: "up" },
+        { command: "mouse", action: "click", x: 200, y: 100, clicks: 2 },
+        { command: "mouse", action: "click", x: 10, y: 10, button: "right" },
+        { command: "mouse", action: "wheel", x: 100, y: 100, deltaY: 120 },
+      ]);
+      expect(body.execution.state, JSON.stringify(body.results)).toBe("completed");
+      const events = await log();
+      expect(events).toContain("mousedown 50 60 0 1 false 0");
+      expect(events).toContain("mousemove 120 90 0 1 false 0");
+      expect(events).toContain("mouseup 120 90 0 0 false 0");
+      expect(events).toContain("dblclick 200 100 0 0 false 0");
+      expect(events).toContain("mousedown 10 10 2 2 false 0");
+      expect(events.some((event) => event.startsWith("contextmenu 10 10"))).toBe(true);
+      expect(events).toContain("wheel 100 100 0 0 false 120");
+    });
+
+    test("needs a point for mouse input", async () => {
+      await open("/pad");
+      const fresh = await run({ command: "mouse", action: "click", x: 5 });
+      expect(fresh.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+      const nowhere = await run({ command: "mouse", action: "wheel", deltaY: 10 });
+      expect(nowhere.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+    });
+
+    test("holds keys down until keyup and applies held modifiers", async () => {
+      await open("/pad");
+      const body = await run([
+        { command: "focus", target: "#field" },
+        { command: "keydown", key: "a" },
+        { command: "keyup", key: "a" },
+        { command: "keydown", key: "Shift" },
+        { command: "keydown", key: "b" },
+        { command: "keyup", key: "b" },
+        { command: "mouse", action: "click", x: 30, y: 30 },
+        { command: "keyup", key: "Shift" },
+        { command: "mouse", action: "click", x: 40, y: 40 },
+      ]);
+      expect(body.execution.state, JSON.stringify(body.results)).toBe("completed");
+      expect(await page.$eval("#field", (field) => (field as HTMLInputElement).value)).toBe("aB");
+      const events = await log();
+      expect(events).toContain("click 30 30 0 0 true 0");
+      expect(events).toContain("click 40 40 0 0 false 0");
+      const chord = await run({ command: "keydown", key: "Shift+a" });
+      expect(chord.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+    });
+
+    test("runs a script in the page and returns its value", async () => {
+      await open("/pad");
+      await run({ command: "mouse", action: "click", x: 20, y: 20 });
+      const length = await run({ command: "eval", script: "window.log.length" });
+      expect(length.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(length.results[0].value).toBeGreaterThan(0);
+      const later = await run({
+        command: "eval",
+        script: "new Promise((resolve) => setTimeout(() => resolve({ a: [1, 'x'] }), 50))",
+      });
+      expect(later.results[0].value).toEqual({ a: [1, "x"] });
+      const nothing = await run({ command: "eval", script: "void 0" });
+      expect(nothing.results[0]).toEqual({ ok: true, effect: "applied" });
+      const thrown = await run({ command: "eval", script: "throw new Error('boom')" });
+      expect(thrown.results[0]).toMatchObject({ ok: false, error: { code: "script_error" } });
+      expect(thrown.results[0].error!.message).toContain("boom");
+      const big = await run({ command: "eval", script: "'x'.repeat(200000)" });
+      expect(big.results[0]).toMatchObject({
+        ok: false,
+        error: { code: "invalid_argument", reason: "too_large" },
+      });
+    });
+
+    test("hides secrets in script results", async () => {
+      await open("/article");
+      const body = await run({
+        command: "eval",
+        script: "({ value: document.querySelector('input[type=password]').value })",
+      });
+      expect(body.results[0].value).toEqual({ value: "••••••••" });
+    });
+
+    test("stops a script that runs too long and keeps the page usable", async () => {
+      await open("/pad");
+      const pending = await run({ command: "eval", script: "new Promise(() => {})", timeout: 300 });
+      expect(pending.results[0]).toMatchObject({ ok: false, error: { code: "timeout" } });
+      const looping = await run({ command: "eval", script: "while (true) {}", timeout: 300 });
+      expect(looping.results[0]).toMatchObject({ ok: false, error: { code: "timeout" } });
+      const after = await run({ command: "eval", script: "1 + 1" });
+      expect(after.results[0]).toMatchObject({ ok: true, value: 2 });
+    });
+
+    test("reports a dialog that a script opens", async () => {
+      await open("/pad");
+      const body = await run({ command: "eval", script: "alert('from script')" });
+      expect(body.results[0]).toMatchObject({
+        ok: false,
+        effect: "applied",
+        error: { code: "dialog_pending", reason: "during_script" },
+      });
+      expect(body.dialog).toMatchObject({ type: "alert", message: "from script" });
+      await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      expect((await run({ command: "eval", script: "1" })).results[0]).toMatchObject({ value: 1 });
     });
   });
 
@@ -4598,6 +4755,37 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await count()).toBeUndefined();
       const status = await send({ commands: { command: "status", execution: "x-2" } });
       expect(status.status, JSON.stringify(status.body)).toBe(422);
+    });
+
+    test("waits for the downloads that clicks started, one at a time", async () => {
+      const setup = await browser.target().createCDPSession();
+      onTestFinished(() => setup.detach());
+      await setup.send("Browser.setDownloadBehavior", {
+        behavior: "allow",
+        downloadPath: downloads,
+        eventsEnabled: true,
+      });
+      await open("/download");
+      const body = await run([
+        { command: "click", target: { text: "Get report" } },
+        { command: "wait", download: true },
+      ]);
+      expect(body.results[1], JSON.stringify(body.results[1])).toMatchObject({
+        ok: true,
+        waited: "download",
+        file: "report.txt",
+        bytes: 5,
+      });
+      expect(await readFile(join(downloads, "report.txt"), "utf8")).toBe("hello");
+      const none = await run({ command: "wait", download: true, timeout: 300 });
+      expect(none.results[0]).toMatchObject({ ok: false, error: { code: "timeout" } });
+      await run({ command: "click", target: { text: "Get report" } });
+      await sleep(500);
+      const later = await run({ command: "wait", download: true });
+      expect(later.results[0], JSON.stringify(later.results[0])).toMatchObject({
+        ok: true,
+        file: "report.txt",
+      });
     });
 
     test("reports navigations, tabs, dialogs, and downloads after a cursor", async () => {

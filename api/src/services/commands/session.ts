@@ -43,6 +43,8 @@ export const KEPT_SNAPSHOTS = 32;
 
 export const KEPT_EVENTS = 500;
 
+export const KEPT_DOWNLOADS = 50;
+
 export type Observe = NonNullable<CommandRequest["observe"]>;
 
 export interface Job {
@@ -65,6 +67,15 @@ export interface SessionEvent {
   tab: string;
   at: string;
   [field: string]: unknown;
+}
+
+export interface Download {
+  file: string;
+  url: string;
+  startedAt: number;
+  state?: "completed" | "canceled";
+  bytes?: number;
+  taken: boolean;
 }
 
 interface KeptSnapshot {
@@ -91,7 +102,7 @@ export class ActiveSession {
   readonly kept = new Map<string, KeptSnapshot>();
   readonly latest = new Map<string, string>();
   readonly events: SessionEvent[] = [];
-  readonly downloads = new Map<string, { file: string; url: string }>();
+  readonly downloads = new Map<string, Download>();
   running: Job | null = null;
   browser: Browser | null = null;
   pumping = false;

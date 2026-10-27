@@ -99,6 +99,8 @@ export interface InputContext {
   inputTimeoutMs: number;
   blocked(): Watch;
   touch(): void;
+  modifiers(): number;
+  moved(point: Point): void;
   press(button: PressedButton | null): void;
   holdKey(key: HeldKey | null): void;
   release(): Promise<void>;
@@ -118,13 +120,17 @@ interface FrameBox {
   down: Point;
 }
 
-type MouseParams = {
-  type: "mouseMoved" | "mousePressed" | "mouseReleased";
+export type MouseButton = "left" | "right" | "middle";
+
+export type MouseParams = {
+  type: "mouseMoved" | "mousePressed" | "mouseReleased" | "mouseWheel";
   x: number;
   y: number;
-  button?: "left";
+  button?: MouseButton;
   buttons?: number;
   clickCount?: number;
+  deltaX?: number;
+  deltaY?: number;
 };
 
 export async function actionPoint(
@@ -681,7 +687,7 @@ function letGo(context: InputContext) {
   void context.release().catch(() => undefined);
 }
 
-async function input(
+export async function input(
   context: InputContext,
   session: CDPSession,
   params: MouseParams,
@@ -698,12 +704,14 @@ async function input(
       effectOnFailure,
     );
   } else if (params.buttons) {
-    context.press({ session, x: params.x, y: params.y });
+    context.press({ session, x: params.x, y: params.y, button: params.button });
   }
+  context.moved({ x: params.x, y: params.y });
+  const modifiers = context.modifiers();
   try {
     return await sendOrDialog(
       context,
-      session.send("Input.dispatchMouseEvent", params),
+      session.send("Input.dispatchMouseEvent", modifiers ? { ...params, modifiers } : params),
       () =>
         new CommandError(
           "timeout",
