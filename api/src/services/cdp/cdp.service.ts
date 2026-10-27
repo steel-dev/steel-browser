@@ -43,6 +43,7 @@ import {
   getProfilePath,
   groupSessionStorageByOrigin,
   handleFrameNavigated,
+  injectStorageOnNewDocument,
   safePageUrl,
 } from "../../utils/context.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
@@ -1539,6 +1540,7 @@ export class CDPService extends EventEmitter {
       `[CDPService] Registered frame navigation handler for ${storageByOrigin.size} origins`,
     );
     page.on("framenavigated", (frame) => handleFrameNavigated(frame, storageByOrigin, this.logger));
+    await injectStorageOnNewDocument(page, storageByOrigin);
 
     page.browser().on("targetcreated", async (target) => {
       if (target.type() === "page") {
@@ -1548,6 +1550,7 @@ export class CDPService extends EventEmitter {
             newPage.on("framenavigated", (frame) =>
               handleFrameNavigated(frame, storageByOrigin, this.logger),
             );
+            await injectStorageOnNewDocument(newPage, storageByOrigin);
           }
         } catch (err) {
           this.logger.error(`[CDPService] Error adding framenavigated handler to new page: ${err}`);
