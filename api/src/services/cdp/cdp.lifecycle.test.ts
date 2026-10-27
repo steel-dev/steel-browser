@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BrowserLauncherOptions } from "../../types/browser.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { CDPService } from "./cdp.service.js";
-import { ShutdownReason } from "./plugins/core/base-plugin.js";
+import { BasePlugin, ShutdownReason } from "./plugins/core/base-plugin.js";
+import type { CommandEngine } from "../commands/engine.js";
+import { CommandsPlugin } from "../commands/plugin.js";
 
 vi.mock("puppeteer-core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("puppeteer-core")>();
@@ -65,7 +67,11 @@ function fakeBrowser(): Browser {
     type: () => "browser",
     createCDPSession: vi.fn().mockResolvedValue(cdp),
   };
-  const page = { target: () => target, close: vi.fn().mockResolvedValue(undefined) };
+  const page = {
+    target: () => target,
+    close: vi.fn().mockResolvedValue(undefined),
+    isClosed: () => false,
+  };
   return Object.assign(new EventEmitter(), {
     close: vi.fn().mockResolvedValue(undefined),
     process: () => ({ kill: vi.fn() }),
@@ -159,6 +165,49 @@ describe("CDPService lifecycle hook ownership", () => {
     expect(events[0].config).toBe(second);
   });
 
+  test("reuses the browser when the primary page is already closed", async () => {
+    const { service } = lifecycleFixture();
+    await service.startNewSession(sessionConfig("first", "shared-metadata"));
+    const closed = {
+      isClosed: () => true,
+      close: vi.fn().mockRejectedValue(new Error("Protocol error: Connection closed.")),
+    };
+    Object.assign(service as unknown as Record<string, unknown>, { primaryPage: closed });
+
+    await service.startNewSession(sessionConfig("second", "shared-metadata"));
+
+    expect(closed.close).not.toHaveBeenCalled();
+    expect(await service.getPrimaryPage()).not.toBe(closed);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("leaves no rejection behind when a page closes during setup", async () => {
+    const { service } = lifecycleFixture();
+    await service.startNewSession({
+      ...sessionConfig("first", "first-metadata"),
+      options: { headless: true },
+    });
+    let closed = false;
+    const page = {
+      isClosed: () => closed,
+      url: () => "about:blank",
+      on: vi.fn(),
+      evaluateOnNewDocument: vi.fn(async () => {
+        closed = true;
+        throw new Error("Protocol error (Page.addScriptToEvaluateOnNewDocument): Target closed");
+      }),
+    };
+    const target = { _targetId: "closing", type: () => "page", page: async () => page };
+
+    await (
+      service as unknown as { handleNewTarget: (target: unknown) => Promise<void> }
+    ).handleNewTarget(target);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(page.evaluateOnNewDocument).toHaveBeenCalledOnce();
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
   test("retains hook ownership across session end and the next idle-browser relaunch", async () => {
     const { service, events } = lifecycleFixture();
     const first = sessionConfig("first", "first-metadata");
@@ -198,5 +247,134 @@ describe("CDPService lifecycle hook ownership", () => {
     expect(events[0].config?.extra).toBeUndefined();
     expect(events[1].config).toBe(incoming);
     expect(events[2].config).toBeNull();
+  });
+
+  function commandEngineCalls() {
+    const browsers: Browser[] = [];
+    vi.mocked(puppeteer.launch).mockImplementation(async () => {
+      const browser = fakeBrowser();
+      browsers.push(browser);
+      return browser;
+    });
+    const { service } = lifecycleFixture();
+    const calls: string[] = [];
+    const engine = {
+      prepare: (id: string) => calls.push(`prepare ${id}`),
+      browserLaunched: (browser: Browser) => calls.push(`launched ${browsers.indexOf(browser)}`),
+      browserReady: () => calls.push("ready"),
+      browserClosed: (browser: Browser) => calls.push(`closed ${browsers.indexOf(browser)}`),
+      sessionEnded: () => calls.push("ended"),
+    };
+    const session = { id: "first" };
+    service.registerPlugin(
+      new CommandsPlugin(engine as unknown as CommandEngine, { id: () => session.id }),
+    );
+    return { service, browsers, calls, session };
+  }
+
+  test("ends the command session before the browser closes", async () => {
+    const { service, calls, session } = commandEngineCalls();
+
+    await service.launch();
+    await service.startNewSession(sessionConfig("first", "first-metadata"));
+    await service.endSession(ShutdownReason.SECURITY_VIOLATION);
+    session.id = "second";
+    await service.startNewSession(sessionConfig("second", "second-metadata"));
+    await service.endSession();
+
+    expect(calls).toEqual([
+      "launched 0",
+      "ready",
+      "prepare first",
+      "closed 0",
+      "launched 1",
+      "ready",
+      "ended",
+      "closed 1",
+      "launched 2",
+      "ready",
+      "prepare second",
+      "closed 2",
+      "launched 3",
+      "ready",
+      "ended",
+      "closed 3",
+      "launched 4",
+      "ready",
+    ]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("ends the command session when the browser crashes", async () => {
+    const { service, browsers, calls } = commandEngineCalls();
+
+    await service.launch();
+    await service.startNewSession(sessionConfig("first", "first-metadata"));
+    (browsers[1] as unknown as EventEmitter).emit("disconnected");
+    await vi.waitFor(() => expect(calls).toContain("launched 2"));
+
+    expect(calls.slice(0, 9)).toEqual([
+      "launched 0",
+      "ready",
+      "prepare first",
+      "closed 0",
+      "launched 1",
+      "ready",
+      "ended",
+      "closed 1",
+      "launched 2",
+    ]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+});
+
+describe("CDPService downloads", () => {
+  beforeEach(() => {
+    vi.mocked(getExtensionPaths).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  test("keeps the session that set the download folder open", async () => {
+    const browser = fakeBrowser();
+    vi.mocked(puppeteer.launch).mockImplementation(async () => browser);
+    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
+    await service.launch();
+    const session = await browser.target().createCDPSession();
+    expect(session.send).toHaveBeenCalledWith(
+      "Browser.setDownloadBehavior",
+      expect.objectContaining({ behavior: "allow", eventsEnabled: true }),
+    );
+    expect(session.detach).not.toHaveBeenCalled();
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+});
+
+describe("CDPService cookies", () => {
+  test("reads the default context cookies from the browser, not from a page", async () => {
+    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
+    const browser = {
+      send: vi.fn().mockResolvedValue({ cookies: [{ name: "own" }] }),
+      detach: vi.fn().mockResolvedValue(undefined),
+    };
+    const foreign = { send: vi.fn().mockResolvedValue({ cookies: [{ name: "foreign" }] }) };
+    const main = {};
+    Object.assign(service as unknown as Record<string, unknown>, {
+      primaryPage: { isClosed: () => true },
+      browserInstance: {
+        defaultBrowserContext: () => main,
+        target: () => ({ createCDPSession: async () => browser }),
+        targets: () => [
+          { type: () => "page", browserContext: () => main, _session: () => foreign },
+        ],
+      },
+    });
+    expect(await service.getCookies()).toEqual([{ name: "own" }]);
+    expect(browser.send).toHaveBeenCalledWith("Storage.getCookies");
+    expect(browser.detach).toHaveBeenCalled();
+    expect(foreign.send).not.toHaveBeenCalled();
   });
 });

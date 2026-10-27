@@ -93,6 +93,7 @@ export class CDPService extends EventEmitter {
   private chromeExecPath: string;
   private wsProxyServer: httpProxy;
   private primaryPage: Page | null;
+  private downloadSettings: CDPSession | null = null;
   private launchConfig?: BrowserLauncherOptions;
   private defaultLaunchConfig: BrowserLauncherOptions;
   private currentSessionConfig: BrowserLauncherOptions | null;
@@ -280,7 +281,7 @@ export class CDPService extends EventEmitter {
     const previous = this.primaryPage;
     const isCurrent = () => !signal?.aborted && this.primaryPage === previous;
     const newPage = await this.createPage();
-    if (isCurrent() && previous) {
+    if (isCurrent() && previous && !previous.isClosed()) {
       // Notify plugins before page close
       await this.pluginManager.onBeforePageClose(previous);
     }
@@ -289,7 +290,9 @@ export class CDPService extends EventEmitter {
       return;
     }
     this.primaryPage = newPage;
-    await previous?.close();
+    if (previous && !previous.isClosed()) {
+      await previous.close();
+    }
   }
 
   public registerPlugin(plugin: BasePlugin) {
@@ -416,7 +419,7 @@ export class CDPService extends EventEmitter {
 
         // Only install mouse helper in headless mode
         if (this.launchConfig?.options?.headless) {
-          installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+          await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
         }
 
         if (this.launchConfig?.customHeaders) {
@@ -1093,7 +1096,7 @@ export class CDPService extends EventEmitter {
               downloadPath: downloadPath,
               eventsEnabled: true,
             });
-            await cdpSession.detach();
+            this.downloadSettings = cdpSession;
             this.logger.debug(
               `[CDPService] Download behavior configured with path: ${downloadPath}`,
             );
@@ -1260,13 +1263,16 @@ export class CDPService extends EventEmitter {
   }
 
   public async getCookies(): Promise<Protocol.Network.Cookie[]> {
-    if (!this.primaryPage) {
-      throw new Error("Primary page not initialized");
+    if (!this.browserInstance) {
+      throw new Error("Browser not initialized");
     }
-    const client = await this.primaryPage.createCDPSession();
-    const { cookies } = await client.send("Network.getAllCookies");
-    await client.detach();
-    return cookies;
+    const session = await this.browserInstance.target().createCDPSession();
+    try {
+      const { cookies } = await session.send("Storage.getCookies");
+      return cookies;
+    } finally {
+      await session.detach().catch(() => undefined);
+    }
   }
 
   public async getBrowserState(): Promise<SessionData> {

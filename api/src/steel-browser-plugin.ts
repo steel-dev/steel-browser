@@ -2,6 +2,7 @@ import fastifyView from "@fastify/view";
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import path, { dirname } from "node:path";
+import { env } from "./env.js";
 import browserInstancePlugin from "./plugins/browser.js";
 import browserSessionPlugin from "./plugins/browser-session.js";
 import browserWebSocket from "./plugins/browser-socket/browser-socket.js";
@@ -21,6 +22,7 @@ import {
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import type { CDPService } from "./services/cdp/cdp.service.js";
+import type { CommandEngine } from "./services/commands/engine.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
@@ -34,6 +36,7 @@ declare module "fastify" {
     cdpService: CDPService;
     sessionService: SessionService;
     webSocketRegistry: WebSocketRegistryService;
+    commandEngine: CommandEngine | null;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
     registerCDPShutdownHook: (
       hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
@@ -77,11 +80,18 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(browserSessionPlugin);
 
   // Routes
+  const commands = env.ENABLE_COMMANDS_API
+    ? await import("./modules/commands/commands.routes.js")
+    : null;
+  fastify.decorate("commandEngine", commands ? commands.createCommandEngine(fastify) : null);
   await fastify.register(actionsRoutes, { prefix: "/v1" });
   await fastify.register(sessionsRoutes, { prefix: "/v1" });
   await fastify.register(cdpRoutes, { prefix: "/v1" });
   await fastify.register(seleniumRoutes);
   await fastify.register(filesRoutes, { prefix: "/v1" });
+  if (commands) {
+    await fastify.register(commands.default, { prefix: "/v1" });
+  }
 
   const enableLogsRoutes = opts.logging?.enableLogsRoutes ?? true;
   if (enableLogsRoutes) {
