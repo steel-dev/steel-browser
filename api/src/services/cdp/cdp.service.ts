@@ -448,6 +448,8 @@ export class CDPService extends EventEmitter {
         if (this.requiresRequestInterception()) {
           await page.setRequestInterception(true);
           page.on("request", (request) => this.handlePageRequest(request, page));
+        } else {
+          await this.blockFileRequests(page);
         }
 
         page.on("response", (response) => {
@@ -472,6 +474,21 @@ export class CDPService extends EventEmitter {
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       this.logger.info(`[CDPService] Background page created: ${target.url()}`);
     }
+  }
+
+  private async blockFileRequests(page: Page) {
+    const session = await page.createCDPSession();
+    session.on("Fetch.requestPaused", (event: Protocol.Fetch.RequestPausedEvent) => {
+      this.logger.error(`[CDPService] Blocked request to file protocol: ${event.request.url}`);
+      session
+        .send("Fetch.failRequest", { requestId: event.requestId, errorReason: "AccessDenied" })
+        .catch(() => {});
+      page.close().catch(() => {});
+      this.endSession(ShutdownReason.SECURITY_VIOLATION);
+    });
+    await session.send("Fetch.enable", {
+      patterns: [{ urlPattern: "file://*", requestStage: "Request" }],
+    });
   }
 
   private requiresRequestInterception(): boolean {
