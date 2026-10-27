@@ -228,6 +228,49 @@ export async function extractStorageForPage(
   return result;
 }
 
+export const injectStorageOnNewDocument = async (
+  page: Page,
+  storageByOrigin: Map<
+    string,
+    {
+      localStorage?: LocalStorageData;
+      sessionStorage?: SessionStorageData;
+      indexedDB?: IndexedDBDatabase[];
+    }
+  >,
+) => {
+  const storage: Record<
+    string,
+    { localStorage?: LocalStorageData; sessionStorage?: SessionStorageData }
+  > = {};
+  for (const [origin, { localStorage, sessionStorage }] of storageByOrigin) {
+    if (localStorage || sessionStorage) {
+      storage[origin] = { localStorage, sessionStorage };
+    }
+  }
+  if (Object.keys(storage).length === 0) return;
+
+  await page.evaluateOnNewDocument((storage) => {
+    if (window.top !== window) return;
+    const items = storage[location.origin];
+    if (!items) return;
+    for (const [area, values] of [
+      ["localStorage", items.localStorage],
+      ["sessionStorage", items.sessionStorage],
+    ] as const) {
+      for (const [key, value] of Object.entries(values ?? {})) {
+        try {
+          if (typeof value === "string") {
+            window[area].setItem(key, value);
+          }
+        } catch (e) {
+          console.error(`Error setting ${area}: ${e}`);
+        }
+      }
+    }
+  }, storage);
+};
+
 // Create our frameNavigated handler
 export const handleFrameNavigated = async (
   frame: any,
@@ -256,36 +299,6 @@ export const handleFrameNavigated = async (
     if (!storage) return;
 
     logger.debug(`[CDPService] Injecting storage for navigated origin: ${origin}`);
-
-    // Set localStorage if available
-    if (storage.localStorage) {
-      await frame.evaluate((items) => {
-        for (const [key, value] of Object.entries(items)) {
-          try {
-            if (typeof value === "string") {
-              localStorage.setItem(key, value);
-            }
-          } catch (e) {
-            console.error(`Error setting localStorage: ${e}`);
-          }
-        }
-      }, storage.localStorage);
-    }
-
-    // Set sessionStorage if available
-    if (storage.sessionStorage) {
-      await frame.evaluate((items) => {
-        for (const [key, value] of Object.entries(items)) {
-          try {
-            if (typeof value === "string") {
-              sessionStorage.setItem(key, value);
-            }
-          } catch (e) {
-            console.error(`Error setting sessionStorage: ${e}`);
-          }
-        }
-      }, storage.sessionStorage);
-    }
 
     // Set IndexedDB if available
     if (storage.indexedDB && storage.indexedDB.length > 0) {

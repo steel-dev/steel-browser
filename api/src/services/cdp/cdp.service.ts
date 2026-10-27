@@ -43,6 +43,7 @@ import {
   getProfilePath,
   groupSessionStorageByOrigin,
   handleFrameNavigated,
+  injectStorageOnNewDocument,
   safePageUrl,
 } from "../../utils/context.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
@@ -448,9 +449,12 @@ export class CDPService extends EventEmitter {
           return;
         }
 
-        await page.setRequestInterception(true);
-
-        page.on("request", (request) => this.handlePageRequest(request, page));
+        if (this.requiresRequestInterception()) {
+          await page.setRequestInterception(true);
+          page.on("request", (request) => this.handlePageRequest(request, page));
+        } else {
+          await this.blockFileRequests(page);
+        }
 
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
@@ -474,6 +478,40 @@ export class CDPService extends EventEmitter {
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       this.logger.info(`[CDPService] Background page created: ${target.url()}`);
     }
+  }
+
+  private async blockFileRequests(page: Page) {
+    const session = await page.createCDPSession();
+    session.on("Fetch.requestPaused", (event: Protocol.Fetch.RequestPausedEvent) => {
+      this.logger.error(`[CDPService] Blocked request to file protocol: ${event.request.url}`);
+      session
+        .send("Fetch.failRequest", { requestId: event.requestId, errorReason: "AccessDenied" })
+        .catch(() => {});
+      page.close().catch(() => {});
+      this.endSession(ShutdownReason.SECURITY_VIOLATION);
+    });
+    await session.send("Fetch.enable", {
+      patterns: [{ urlPattern: "file://*", requestStage: "Request" }],
+    });
+  }
+
+  private requiresRequestInterception(): boolean {
+    if (this.launchConfig?.blockAds || this.compiledUrlPatterns.length > 0) {
+      return true;
+    }
+
+    const optimize = this.launchConfig?.optimizeBandwidth;
+    if (!optimize || typeof optimize === "boolean") {
+      return optimize === true;
+    }
+
+    return Boolean(
+      optimize.blockImages ||
+        optimize.blockMedia ||
+        optimize.blockStylesheets ||
+        optimize.blockHosts?.length ||
+        optimize.blockUrlPatterns?.length,
+    );
   }
 
   private async handlePageRequest(request: HTTPRequest, page: Page) {
@@ -1508,6 +1546,7 @@ export class CDPService extends EventEmitter {
       `[CDPService] Registered frame navigation handler for ${storageByOrigin.size} origins`,
     );
     page.on("framenavigated", (frame) => handleFrameNavigated(frame, storageByOrigin, this.logger));
+    await injectStorageOnNewDocument(page, storageByOrigin);
 
     page.browser().on("targetcreated", async (target) => {
       if (target.type() === "page") {
@@ -1517,6 +1556,7 @@ export class CDPService extends EventEmitter {
             newPage.on("framenavigated", (frame) =>
               handleFrameNavigated(frame, storageByOrigin, this.logger),
             );
+            await injectStorageOnNewDocument(newPage, storageByOrigin);
           }
         } catch (err) {
           this.logger.error(`[CDPService] Error adding framenavigated handler to new page: ${err}`);
