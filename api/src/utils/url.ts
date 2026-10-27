@@ -21,6 +21,27 @@ export function getBaseUrl(protocolType: "http" | "ws" = "http"): string {
 }
 
 /**
+ * Builds the DevTools frontend URL for a debugger websocket endpoint.
+ *
+ * The frontend expects a scheme-less host/path and prepends the scheme itself,
+ * choosing it from which query parameter carries the value: `ws` becomes
+ * `ws://`, `wss` becomes `wss://`. A secure endpoint therefore has to be passed
+ * as `wss`, otherwise the frontend opens an insecure socket that an
+ * HTTPS-served frontend then blocks as mixed content.
+ *
+ * @param debuggerUrl Absolute URL of the DevTools frontend
+ * @param debuggerWsUrl Absolute ws:// or wss:// debugger endpoint
+ * @returns The frontend URL carrying the endpoint in the matching parameter
+ */
+export function buildDevtoolsFrontendUrl(debuggerUrl: string, debuggerWsUrl: string): string {
+  const isSecure = debuggerWsUrl.startsWith("wss:");
+  const parameter = isSecure ? "wss" : "ws";
+  const schemeless = debuggerWsUrl.replace(/^wss?:/, "");
+
+  return `${debuggerUrl}?${parameter}=${schemeless}`;
+}
+
+/**
  * Returns a fully qualified URL with the given path
  * @param path The path to append to the base URL
  * @param protocolType 'http' or 'ws' - determines the protocol prefix
