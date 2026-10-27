@@ -3,14 +3,20 @@ import { describe, expect, test } from "vitest";
 import { quickAction, quickActionsDone } from "./commands.guard.js";
 
 function fixture() {
-  const engine = { claimed: () => false, busy: () => false };
+  let changes = 0;
+  const engine = {
+    busy: () => false,
+    pageChanged: () => {
+      changes++;
+    },
+  };
   const server = { commandEngine: engine } as unknown as FastifyInstance;
-  return { engine, server, reply: {} as FastifyReply };
+  return { engine, server, reply: {} as FastifyReply, changes: () => changes };
 }
 
 describe("quick action tracking", () => {
   test("holds commands until a quick action on the primary page finishes", async () => {
-    const { engine, server, reply } = fixture();
+    const { engine, server, reply, changes } = fixture();
     let finish = () => {};
     const running = quickAction(
       server,
@@ -24,10 +30,12 @@ describe("quick action tracking", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(done).toBe(false);
+    expect(changes()).toBe(0);
     finish();
     await running;
     await waiting;
     expect(done).toBe(true);
+    expect(changes()).toBe(1);
   });
 
   test("runs quick actions as before when the commands API is off", async () => {
@@ -37,7 +45,7 @@ describe("quick action tracking", () => {
   });
 
   test("does not hold commands for a quick action in its own context", async () => {
-    const { engine, server, reply } = fixture();
+    const { engine, server, reply, changes } = fixture();
     let finish = () => {};
     const running = quickAction(
       server,
@@ -48,5 +56,6 @@ describe("quick action tracking", () => {
     await quickActionsDone(engine);
     finish();
     await running;
+    expect(changes()).toBe(0);
   });
 });

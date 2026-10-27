@@ -22,7 +22,6 @@ export async function handleCastSession(
   wss: Server,
   sessionService: SessionService,
   params: Record<string, string> | undefined,
-  connectHeaders?: Record<string, string>,
 ): Promise<void> {
   const id = request.url?.split("/sessions/")[1].split("/cast")[0];
 
@@ -176,7 +175,6 @@ export async function handleCastSession(
     try {
       browser = await puppeteer.connect({
         browserWSEndpoint: `ws://${env.HOST}:${env.PORT}`,
-        headers: connectHeaders,
       });
 
       if (!browser) {

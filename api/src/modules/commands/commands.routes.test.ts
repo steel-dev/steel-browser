@@ -35,7 +35,6 @@ describe.skipIf(!chrome)("commands route", () => {
     app.decorate("cdpService", {
       getBrowserInstance: () => browser,
       waitForPageSetup: async () => undefined,
-      getCdpClientCount: () => 0,
       registerPlugin: (registered: BasePlugin) => {
         plugin = registered;
       },
@@ -142,28 +141,27 @@ describe.skipIf(!chrome)("commands route", () => {
     expect(JSON.stringify(body.schema)).toContain('"eventsAfter"');
   });
 
-  test("keeps quick actions off the tabs that commands own", async () => {
-    await post("live", { commands: { command: "tab", action: "list" } });
-    const scrape = await app.inject({
-      method: "POST",
-      url: "/v1/scrape",
-      payload: { url: "https://example.com" },
-    });
-    expect(scrape.statusCode).toBe(409);
-    for (const action of ["scrape", "screenshot", "pdf"]) {
+  test("lets quick actions run between commands and reports them as a change", async () => {
+    const listed = await post("live", { commands: { command: "tab", action: "list" } });
+    for (const action of ["scrape", "sessions/scrape", "sessions/screenshot", "sessions/pdf"]) {
       const response = await app.inject({
         method: "POST",
-        url: `/v1/sessions/${action}`,
+        url: `/v1/${action}`,
         payload: { url: "https://example.com" },
       });
-      expect(response.statusCode, action).toBe(409);
+      expect(response.statusCode, action).not.toBe(409);
     }
+    const later = await post("live", {
+      commands: { command: "tab", action: "list" },
+      after: listed.json().next,
+    });
+    expect(later.json()).toMatchObject({ epochChanged: true });
   });
 
-  test("refuses quick actions while commands run, even without a claim", async () => {
+  test("refuses quick actions while commands run", async () => {
     await plugin.onSessionStart(config);
     await plugin.onBrowserReady(config);
-    const running = post("live", { claim: false, commands: { command: "wait", ms: 1000 } });
+    const running = post("live", { commands: { command: "wait", ms: 1000 } });
     await new Promise((resolve) => setTimeout(resolve, 200));
     const during = await app.inject({
       method: "POST",

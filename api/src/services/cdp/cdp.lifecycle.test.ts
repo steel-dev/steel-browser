@@ -1,6 +1,4 @@
 import { EventEmitter } from "node:events";
-import type { IncomingMessage } from "node:http";
-import type { Duplex } from "node:stream";
 import type { FastifyBaseLogger } from "fastify";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -327,30 +325,6 @@ describe("CDPService lifecycle hook ownership", () => {
       "launched 2",
     ]);
     await service.shutdown(ShutdownReason.SESSION_END);
-  });
-});
-
-describe("CDPService client count", () => {
-  test("counts clients that go through a custom proxy handler", async () => {
-    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
-    service.setProxyWebSocketHandler(async () => undefined);
-    const socket = new EventEmitter() as unknown as Duplex;
-    await service.proxyWebSocket({ headers: {} } as IncomingMessage, socket, Buffer.alloc(0));
-    expect(service.getCdpClientCount()).toBe(1);
-    socket.emit("close");
-    expect(service.getCdpClientCount()).toBe(0);
-  });
-
-  test("does not count the server's own connections", async () => {
-    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
-    service.setProxyWebSocketHandler(async () => undefined);
-    const socket = new EventEmitter() as unknown as Duplex;
-    await service.proxyWebSocket(
-      { headers: service.internalConnectionHeaders() } as unknown as IncomingMessage,
-      socket,
-      Buffer.alloc(0),
-    );
-    expect(service.getCdpClientCount()).toBe(0);
   });
 });
 

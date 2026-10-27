@@ -178,7 +178,6 @@ export const requestSchema = z
       (value) => (value === undefined || Array.isArray(value) ? value : [value]),
       commandList,
     ),
-    onDialog: z.enum(["accept", "dismiss"]).optional(),
     eventsAfter: z
       .string()
       .regex(/^c-\d+$/)
@@ -192,7 +191,6 @@ export const requestSchema = z
       })
       .strict()
       .optional(),
-    claim: z.boolean().optional(),
   })
   .strict();
 
@@ -245,8 +243,8 @@ export function isControl(command: Command): boolean {
   return CONTROL.has(command.command);
 }
 
-export function commandHash(commands: Command[], onDialog?: string): string {
-  return createHash("sha256").update(JSON.stringify({ commands, onDialog })).digest("hex");
+export function commandHash(commands: Command[]): string {
+  return createHash("sha256").update(JSON.stringify({ commands })).digest("hex");
 }
 
 export function scopedKey(...parts: string[]): string {

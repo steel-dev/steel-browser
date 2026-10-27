@@ -1,5 +1,4 @@
 import { EventEmitter } from "events";
-import { randomUUID } from "node:crypto";
 import { FastifyBaseLogger } from "fastify";
 import {
   BrowserFingerprintWithHeaders,
@@ -83,8 +82,6 @@ import {
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
-const INTERNAL_CONNECTION_HEADER = "x-steel-internal";
-
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
@@ -115,8 +112,6 @@ export class CDPService extends EventEmitter {
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
     [];
-  private cdpClients = 0;
-  private readonly internalToken = randomUUID();
   private proxyWebSocketHandler:
     | ((req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>)
     | null = null;
@@ -1190,23 +1185,8 @@ export class CDPService extends EventEmitter {
     }
   }
 
-  public getCdpClientCount(): number {
-    return this.cdpClients;
-  }
-
-  public internalConnectionHeaders(): Record<string, string> {
-    return { [INTERNAL_CONNECTION_HEADER]: this.internalToken };
-  }
-
   @traceable
   public async proxyWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
-    if (req.headers[INTERNAL_CONNECTION_HEADER] !== this.internalToken) {
-      this.cdpClients++;
-      socket.once("close", () => {
-        this.cdpClients--;
-      });
-    }
-
     if (this.proxyWebSocketHandler) {
       this.logger.info("[CDPService] Using custom WebSocket proxy handler");
       await this.proxyWebSocketHandler(req, socket, head);

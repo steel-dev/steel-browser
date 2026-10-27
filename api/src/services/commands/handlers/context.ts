@@ -68,7 +68,6 @@ export function usable(ctx: Context, tab: Tab, crashed = false): Tab {
 export function useTab(ctx: Context, tabId: string) {
   ctx.job.execution.tab = tabId;
   ctx.job.tab = tabId;
-  ctx.job.tabs.add(tabId);
 }
 
 export function tabFor(ctx: Context, tabId?: string, crashed = false): Tab {

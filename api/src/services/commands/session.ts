@@ -1,12 +1,11 @@
 import type { Browser } from "puppeteer-core";
 import type { Command, CommandRequest } from "./commands.js";
-import type { Dialog, DialogAction } from "./dialogs.js";
+import type { Dialog } from "./dialogs.js";
 import { DEFAULT_RECORD_LIMITS, Records, type Execution, type RecordLimits } from "./records.js";
 import { RefTable } from "./refs.js";
 import { TabRegistry, type BrowserHost, type OpenDialogs, type TabEvents } from "./tabs.js";
 
 export interface EngineHost extends BrowserHost {
-  cdpClients(): number;
   endSession(id: string): Promise<void>;
   filesRoot(): string;
   released(id: string): boolean;
@@ -49,13 +48,10 @@ export type Observe = NonNullable<CommandRequest["observe"]>;
 export interface Job {
   execution: Execution;
   commands: Command[];
-  onDialog?: DialogAction;
   observe?: Observe;
   expiresAt: number;
   limitAt: number;
   tab?: string;
-  tabs: Set<string>;
-  claim: boolean;
   interrupting?: Promise<boolean>;
   current: Command | null;
   inflight: Promise<unknown> | null;
@@ -101,7 +97,6 @@ export class ActiveSession {
   pumping = false;
   ended = false;
   ending = false;
-  claimed = false;
 
   constructor(
     readonly id: string,

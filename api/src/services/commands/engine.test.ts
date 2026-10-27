@@ -767,7 +767,6 @@ describe.skipIf(!chrome)("command engine", () => {
   let engine: CommandEngine;
   let host: EngineHost;
   let current: Browser;
-  let clients = 0;
   let releasing = false;
   let quickActions: Promise<void> = Promise.resolve();
   let endedByEngine = 0;
@@ -833,7 +832,6 @@ describe.skipIf(!chrome)("command engine", () => {
     host = {
       browser: () => current,
       waitForPageSetup: async () => undefined,
-      cdpClients: () => clients,
       endSession: async () => {
         endedByEngine++;
       },
@@ -862,7 +860,6 @@ describe.skipIf(!chrome)("command engine", () => {
 
   afterEach(() => {
     engine.sessionEnded();
-    clients = 0;
     endedByEngine = 0;
     releasing = false;
     quickActions = Promise.resolve();
@@ -2033,11 +2030,7 @@ describe.skipIf(!chrome)("command engine", () => {
           undefined,
           quick,
         );
-        const next = await run(
-          { command: "navigate", url: `${base}/slow?ms=800` },
-          { onDialog: "accept" },
-          quick,
-        );
+        const next = await run({ command: "navigate", url: `${base}/slow?ms=800` }, {}, quick);
         await clicking;
         await cancelling;
         expect(next.results[0]).toMatchObject({ ok: true });
@@ -2053,13 +2046,17 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/down-alert");
       const body = await press("Down");
       expect(body.results[0]).toMatchObject({ ok: true });
+      expect(body.dialog).toMatchObject({ type: "alert", message: "down" });
+      await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      for (let attempt = 0; attempt < 20 && (await page.title()) !== "clicked"; attempt++) {
+        await sleep(100);
+      }
       expect(await page.evaluate(() => (window as unknown as { ups?: number }).ups)).toBe(1);
       expect(await page.title()).toBe("clicked");
     });
 
     test("keeps waiting when a client closes a dialog right away", async () => {
       await open("/basic");
-      clients = 1;
       const cdp = await page.createCDPSession();
       await cdp.send("Page.enable");
       cdp.on("Page.javascriptDialogOpening", () => {
@@ -2460,10 +2457,8 @@ describe.skipIf(!chrome)("command engine", () => {
     test("starts fresh when the same session id starts again", async () => {
       const first = await send({ commands: { command: "tab", action: "list" } }, "same-key");
       expect(first.status).toBe(200);
-      expect(engine.claimed()).toBe(true);
       engine.prepare(SESSION);
       engine.browserReady();
-      expect(engine.claimed()).toBe(false);
       const again = await send({ commands: { command: "tab", action: "list" } }, "same-key");
       expect(again.status).toBe(200);
       expect(again.body).toMatchObject({ execution: { replayed: false } });
@@ -2828,14 +2823,17 @@ describe.skipIf(!chrome)("command engine", () => {
       ).toBe("");
     });
 
-    test("accepts an alert during a click", async () => {
+    test("leaves an alert open until the dialog command answers it", async () => {
       await open("/dialogs");
       const body = await press("Alert");
       expect(body).toMatchObject({
         execution: { state: "completed", effect: "applied" },
-        dialogs: [{ type: "alert", message: "Hello", accepted: true, by: "auto" }],
+        dialog: { type: "alert", message: "Hello" },
       });
-      expect(body.dialog).toBeUndefined();
+      const blocked = await run({ command: "snapshot" });
+      expect(blocked.results[0]).toMatchObject({ error: { code: "dialog_pending" } });
+      const answered = await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      expect(answered).toMatchObject({ answered: { accepted: true, by: "command" } });
       expect(await page.title()).toBe("alerted");
     });
 
@@ -2904,17 +2902,6 @@ describe.skipIf(!chrome)("command engine", () => {
       const answered = await run({ command: "dialog", dialog: id, action: "accept" });
       expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
       expect(await page.title()).toBe("confirm true");
-    });
-
-    test("follows onDialog from the request", async () => {
-      await open("/dialogs");
-      const body = await press("Confirm", { onDialog: "dismiss" });
-      expect(body).toMatchObject({
-        execution: { state: "completed" },
-        dialogs: [{ type: "confirm", accepted: false, by: "request" }],
-      });
-      expect(body.dialog).toBeUndefined();
-      expect(await page.title()).toBe("confirm false");
     });
 
     test("keeps loading a page after a dialog that opened during navigate", async () => {
@@ -3031,47 +3018,17 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.title()).toBe("clicked after true");
     });
 
-    test("leaves dialogs to a connected CDP client", async () => {
+    test("lets a CDP client answer a dialog", async () => {
       await open("/dialogs");
-      clients = 1;
-      const clicked = await press("Alert", { onDialog: "accept" });
+      const clicked = await press("Alert");
       expect(clicked.dialog).toMatchObject({ type: "alert" });
       await client().send("Page.handleJavaScriptDialog", { accept: true });
       await sleep(100);
       expect(await page.title()).toBe("alerted");
-      clients = 0;
       expect((await run({ command: "snapshot" })).results[0]).toMatchObject({ ok: true });
     });
 
-    test("takes a dialog command while a CDP client is connected", async () => {
-      await open("/dialogs");
-      clients = 1;
-      const clicked = await press("Confirm", { onDialog: "accept" });
-      expect(clicked.dialog).toMatchObject({ type: "confirm" });
-      const id = clicked.dialog!.id;
-      const answered = await run({ command: "dialog", dialog: id, action: "accept" });
-      expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-      expect(await page.title()).toBe("confirm true");
-    });
-
-    test("does not take over the session with a request that expires in the queue", async () => {
-      const quick = create({ limits: { responseDeadlineMs: 300 } });
-      const first = send(
-        { commands: { command: "wait", ms: 1500 }, claim: false },
-        undefined,
-        quick,
-      );
-      await sleep(50);
-      const second = await send({ commands: { command: "tab", action: "list" } }, undefined, quick);
-      expect(second.status).toBe(429);
-      expect(second.body).toMatchObject({ error: { code: "expired" } });
-      await first;
-      await sleep(1600);
-      expect(quick.claimed()).toBe(false);
-      quick.sessionEnded();
-    });
-
-    test("does not take over the session with a request it refuses", async () => {
+    test("refuses bad requests without running them", async () => {
       const mixed = await send({
         commands: [{ command: "status", execution: "x-1" }, { command: "snapshot" }],
       });
@@ -3080,14 +3037,11 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(stale.status).toBe(422);
       const unknown = await send({ commands: { command: "status", execution: "x-9" } });
       expect(unknown.status).toBe(422);
-      expect(engine.claimed()).toBe(false);
-      await run({ command: "tab", action: "list" });
-      expect(engine.claimed()).toBe(true);
     });
 
-    test("does not touch dialogs in a session that did not use commands", async () => {
+    test("never answers a dialog on its own", async () => {
       await page.goto(`${base}/dialogs`);
-      await send({ commands: { command: "tab", action: "list" }, claim: false });
+      await run({ command: "tab", action: "list" });
       void page.evaluate(() => setTimeout(() => alert("Untouched"), 50)).catch(() => undefined);
       await sleep(400);
       await expect(
@@ -3102,11 +3056,15 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(response.status).toBe(422);
       expect(response.body).toMatchObject({ error: { code: "dialog_not_pending" } });
     });
-    test("answers or reports dialogs that open as a tab starts", async () => {
+    test("reports dialogs that open as a tab starts", async () => {
       await open("/popups");
       const text = await snapshot();
       await run({ command: "click", target: refOf(text, 'button "Alert popup"') });
       const alerted = await tabWith("popup-alert");
+      const alerting = await run({ command: "snapshot", tab: alerted });
+      expect(alerting.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
+      expect(alerting.dialog).toMatchObject({ tab: alerted, type: "alert" });
+      await run({ command: "dialog", dialog: alerting.dialog!.id, action: "accept" });
       const after = await run({ command: "wait", text: "after alert", tab: alerted });
       expect(after.results[0]).toMatchObject({ ok: true });
       await run({ command: "click", target: refOf(text, 'button "Confirm popup"') });
@@ -3118,47 +3076,9 @@ describe.skipIf(!chrome)("command engine", () => {
       const answered = await run({ command: "wait", text: "confirm true", tab: confirming });
       expect(answered.results[0]).toMatchObject({ ok: true });
     });
-    test("follows onDialog for a dialog that opens after the command that caused it", async () => {
-      await open("/dialogs");
-      await run({ command: "tab", action: "new", url: `${base}/basic` });
-      const text = (await run({ command: "snapshot", tab: "t1" })).results[0].snapshot as string;
-      const body = await run(
-        [
-          { command: "click", target: refOf(text, 'button "Later"') },
-          { command: "wait", ms: 1000 },
-        ],
-        { onDialog: "accept" },
-      );
-      expect(body).toMatchObject({
-        execution: { state: "completed" },
-        dialogs: [{ type: "confirm", accepted: true, by: "request" }],
-      });
-      expect(await page.title()).toBe("later true");
-    });
-
-    test("follows onDialog in a tab the execution opened", async () => {
-      await open("/popups");
-      const text = await snapshot();
-      const body = await run(
-        [
-          { command: "click", target: refOf(text, 'button "Confirm popup"') },
-          { command: "wait", ms: 1500 },
-        ],
-        { onDialog: "accept" },
-      );
-      expect(body).toMatchObject({
-        execution: { state: "completed" },
-        dialogs: [{ type: "confirm", accepted: true, by: "request" }],
-      });
-      expect(body.dialog).toBeUndefined();
-      const confirming = await tabWith("popup-confirm");
-      const answered = await run({ command: "wait", text: "confirm true", tab: confirming });
-      expect(answered.results[0]).toMatchObject({ ok: true });
-    });
     test("stops waiting for a navigation that beforeunload cancelled", async () => {
       await open("/leave-link");
       await run({ command: "click", target: { role: "button", name: "Touch" } });
-      clients = 1;
       const clicked = await run({ command: "click", target: { role: "link", name: "Away" } });
       expect(clicked.dialog).toMatchObject({ type: "beforeunload" });
       await run({ command: "dialog", dialog: clicked.dialog!.id, action: "dismiss" });
@@ -3169,15 +3089,18 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.title()).toBe("Leave link");
     });
 
-    test("keeps beforeunload out of onDialog", async () => {
+    test("leaves a beforeunload dialog for the agent", async () => {
       await open("/leave");
       await run({ command: "click", target: { role: "button", name: "Touch" } });
-      const left = await run(
-        { command: "navigate", url: `${base}/basic` },
-        { onDialog: "dismiss" },
-      );
-      expect(left.results[0]).toMatchObject({ ok: true });
-      expect(await page.title()).toBe("Basic");
+      const left = await run({ command: "navigate", url: `${base}/basic` });
+      expect(left.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
+      expect(left.dialog).toMatchObject({ type: "beforeunload" });
+      await run({ command: "dialog", dialog: left.dialog!.id, action: "accept" });
+      const title = () => page.title().catch(() => "");
+      for (let attempt = 0; attempt < 20 && (await title()) !== "Basic"; attempt++) {
+        await sleep(100);
+      }
+      expect(await title()).toBe("Basic");
     });
 
     test("reports a dialog that opens before the click", async () => {
@@ -4692,7 +4615,11 @@ describe.skipIf(!chrome)("command engine", () => {
       await sleep(300);
       await run({ command: "tab", action: "close", tab: "t2" });
       await open("/dialogs");
-      await run({ command: "click", target: refOf(await snapshot(), 'button "Alert"') });
+      const alerted = await run({
+        command: "click",
+        target: refOf(await snapshot(), 'button "Alert"'),
+      });
+      await run({ command: "dialog", dialog: alerted.dialog!.id, action: "accept" });
       await open("/download");
       await run({ command: "click", target: { text: "Get report" } });
       await sleep(500);

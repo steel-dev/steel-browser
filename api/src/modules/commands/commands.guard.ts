@@ -25,13 +25,6 @@ export function heldByCommands(
   if (!engine || request.body?.proxyUrl) {
     return false;
   }
-  if (engine.claimed()) {
-    reply.code(409).send({
-      message:
-        "This session is driven through /v1/sessions/:sessionId/commands, which owns its tabs. Use the commands API, or pass proxyUrl to work in a separate browser context.",
-    });
-    return true;
-  }
   if (engine.busy()) {
     reply.code(409).send({
       message:
@@ -59,6 +52,7 @@ export async function quickAction(
   try {
     return await run();
   } finally {
+    server.commandEngine.pageChanged();
     state.running--;
     if (state.running === 0) {
       for (const resolve of state.idle.splice(0)) {

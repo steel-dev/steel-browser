@@ -61,7 +61,6 @@ export interface Execution {
   bodySize?: number;
   tab?: string;
   page?: TabInfo | null;
-  dialogs?: Record<string, unknown>[];
   observe?: Record<string, unknown>;
   bodyExpired: boolean;
 }

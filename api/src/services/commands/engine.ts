@@ -119,13 +119,8 @@ export class CommandEngine {
             url,
             ...(sameDocument ? { sameDocument } : {}),
           }),
-        opened: (tab, opener) => {
-          const job = active.running;
-          if (job && !isFinal(job.execution.state)) {
-            job.tabs.add(tab.id);
-          }
-          this.record(active, "tab_opened", tab.id, opener ? { opener: opener.id } : {});
-        },
+        opened: (tab, opener) =>
+          this.record(active, "tab_opened", tab.id, opener ? { opener: opener.id } : {}),
         closed: (tab) => {
           const dialog = openDialogOn(active, tab.id);
           if (dialog) {
@@ -181,8 +176,8 @@ export class CommandEngine {
     active?.tabs.detach();
   }
 
-  claimed(): boolean {
-    return this.active?.claimed === true;
+  pageChanged() {
+    this.active?.records.bump();
   }
 
   busy(): boolean {
@@ -249,7 +244,7 @@ export class CommandEngine {
     deadline: number,
   ): Promise<EngineResponse> {
     const records = active.records;
-    const hash = commandHash(body.commands, body.onDialog);
+    const hash = commandHash(body.commands);
     const headerKey = idempotencyKey ? scopedKey(active.id, "key", idempotencyKey) : null;
     const afterKey = body.after ? scopedKey(active.id, "after", body.after, hash) : null;
     const live = (execution: Execution | undefined) =>
@@ -296,12 +291,9 @@ export class CommandEngine {
     active.queue.push({
       execution,
       commands: body.commands,
-      onDialog: body.onDialog,
       observe: body.observe,
       expiresAt: deadline,
       limitAt: Infinity,
-      tabs: new Set(),
-      claim: body.claim !== false,
       current: null,
       inflight: null,
       touched: false,
@@ -485,7 +477,6 @@ export class CommandEngine {
       },
       results: execution.results,
       ...dialogNote(active, execution.tab ? active.tabs.get(execution.tab) : undefined),
-      ...(execution.dialogs?.length ? { dialogs: execution.dialogs } : {}),
       ...(execution.observe ? { observe: execution.observe } : {}),
       ...(execution.bodyExpired ? { bodyExpired: true } : {}),
       ...(eventsAfter !== undefined ? { events: this.eventsSince(active, eventsAfter) } : {}),
@@ -574,9 +565,6 @@ export class CommandEngine {
     const { execution } = job;
     execution.state = "running";
     execution.startedAt = this.now();
-    if (job.claim) {
-      active.claimed = true;
-    }
     job.limitAt = execution.startedAt + this.limits.executionLimitMs;
     if (execution.after) {
       execution.epochChanged = active.records.epochChangedSince(execution);
@@ -862,20 +850,8 @@ export class CommandEngine {
     if (this.active !== active) {
       return;
     }
-    const dialog = openDialog(`d-${++active.dialogSequence}`, tab.id, event);
-    this.remember(active, dialog);
-    const job = active.running;
-    const owner = job && !isFinal(job.execution.state) && job.tabs.has(tab.id) ? job : undefined;
-    dialog.execution = owner?.execution.id;
-    if (!active.claimed || this.host.cdpClients() > 0) {
-      tab.markBlocking();
-    } else if (dialog.type === "alert" || dialog.type === "beforeunload") {
-      void this.answer(active, dialog, true, undefined, "auto");
-    } else if (owner?.onDialog) {
-      void this.answer(active, dialog, owner.onDialog === "accept", undefined, "request");
-    } else {
-      tab.markBlocking();
-    }
+    this.remember(active, openDialog(`d-${++active.dialogSequence}`, tab.id, event));
+    tab.markBlocking();
   }
 
   private dialogClosed(
@@ -894,7 +870,7 @@ export class CommandEngine {
       event.userInput || undefined,
       dialog.by ?? "client",
     );
-    if ((tab.pressed || tab.key) && dialog.by !== "auto" && dialog.by !== "request") {
+    if (tab.pressed || tab.key) {
       void tab.release().catch(() => undefined);
     }
   }
@@ -911,10 +887,6 @@ export class CommandEngine {
     dialog.by = by;
     this.closeDialog(dialog);
     this.record(active, "dialog", dialog.tab, { dialog: describeDialog(dialog) });
-    const execution = dialog.execution ? active.records.get(dialog.execution) : undefined;
-    if (execution && !isFinal(execution.state)) {
-      execution.dialogs = [...(execution.dialogs ?? []), describeDialog(dialog)];
-    }
   }
 
   private async answer(

@@ -19,7 +19,7 @@ const Dialog = z.object({
   defaultPrompt: z.string().optional(),
   accepted: z.boolean().optional(),
   text: z.string().optional(),
-  by: z.enum(["auto", "request", "command", "client", "closed"]).optional(),
+  by: z.enum(["command", "client", "closed"]).optional(),
 });
 
 const CommandResult = z
@@ -76,7 +76,6 @@ const CommandResponse = z.object({
     .partial()
     .optional(),
   dialog: Dialog.optional().describe("A dialog that is open on the tab and waits for an answer."),
-  dialogs: z.array(Dialog).optional().describe("Dialogs answered during the execution."),
   events: Events.optional(),
   bodyExpired: z.boolean().optional(),
 });

@@ -10,7 +10,6 @@ export function createCommandEngine(server: FastifyInstance): CommandEngine {
   const engine: CommandEngine = new CommandEngine({
     browser: () => server.cdpService.getBrowserInstance(),
     waitForPageSetup: (page) => server.cdpService.waitForPageSetup(page),
-    cdpClients: () => server.cdpService.getCdpClientCount(),
     endSession: async (id) => {
       const session = server.sessionService.activeSession;
       if (session.id === id && session.status === "live") {

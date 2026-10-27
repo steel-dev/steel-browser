@@ -2,9 +2,7 @@ import type { Protocol } from "puppeteer-core";
 
 export type DialogType = Protocol.Page.DialogType;
 
-export type DialogAction = "accept" | "dismiss";
-
-export type DialogHandler = "auto" | "request" | "command" | "client" | "closed";
+export type DialogHandler = "command" | "client" | "closed";
 
 export interface Dialog {
   id: string;
@@ -12,7 +10,6 @@ export interface Dialog {
   type: DialogType;
   message: string;
   defaultPrompt?: string;
-  execution?: string;
   open: boolean;
   accepted?: boolean;
   text?: string;

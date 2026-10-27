@@ -53,8 +53,6 @@ Then act on the ref:
 | `after` | The `next` value from your last response. The response sets `epochChanged: true` if another client changed the session in between. A retried request with the same `after` and commands runs only once, even if its `Idempotency-Key` changed. |
 | `observe` | `{ "mode": "snapshot" }` returns a snapshot after the commands. `"diff"` returns a unified diff against the last snapshot of the tab, or against `base` (a snapshot id). It takes the snapshot options below, and `tab` when several tabs are open and the commands did not pick one. |
 | `eventsAfter` | `c-0` the first time, then the last `events.cursor`. The response lists navigations, opened and closed tabs, dialogs, and downloads since then. |
-| `onDialog` | `accept` or `dismiss`. Answers confirm and prompt dialogs that open while this request runs, on the tabs it uses or opens. |
-| `claim` | Defaults to `true`. With `false`, the request does not mark the session as driven by commands (see [Quick actions](#quick-actions)). Only a request that starts an execution marks it. Refused requests and control commands do not. |
 
 Fields that are not listed here, or that a command does not take, are refused with `400 invalid_request`. A typo in `after` would otherwise turn off duplicate protection without notice.
 
@@ -65,13 +63,12 @@ Send a random `Idempotency-Key` header to make retries safe. A request with a ke
 | Field | Meaning |
 |---|---|
 | `next` | Send it as `after` in your next request. Valid for an hour. |
-| `epoch`, `epochChanged` | `epoch` goes up when an execution or a `dialog` answer changes the page, or when the browser restarts. |
+| `epoch`, `epochChanged` | `epoch` goes up when an execution or a `dialog` answer changes the page, when a quick action runs on the session's tabs, or when the browser restarts. |
 | `page` | The tab the execution used, with its URL and title. |
 | `execution` | `id`, `state`, `effect`, `replayed`, and `ran` (commands started). `error` says why an execution ended early. |
 | `results` | One entry per command that ran: `ok`, `effect`, command fields, and `error` (`code`, `message`, `reason`) when it failed. |
 | `observe` | `snapshotId` with `snapshot`, or `diff`. A diff without a usable base returns the full snapshot with `full: true`. If the snapshot fails, `observe` is `{ "error": { ... } }` and the commands' results stay as they are. |
 | `dialog` | A dialog that is open on the tab and waits for an answer. |
-| `dialogs` | Dialogs the engine answered during the execution. |
 | `events` | `cursor`, `items`, and `more` when there are more than 100. |
 
 `effect` tells what happened to the page: `none` (nothing changed), `applied` (the page changed), or `unknown` (it may have changed, for example after a timeout during input). When an execution is cancelled or runs out of time, the running command stops before its next input, so `effect: none` means nothing changed. A click or drag that already pressed the mouse button still lets it go, and its effect is `unknown`. The page has 10 seconds to take each input. If it takes longer, the command fails with `timeout`, and a pressed button or key is still let go.
@@ -163,21 +160,19 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 
 ## Dialogs
 
-- `alert` and `beforeunload` dialogs are accepted automatically once the session has run commands. Until a request without `"claim": false` has run, the engine answers no dialogs at all, and `onDialog` does not apply either.
-- `confirm` and `prompt` dialogs stay open. The response shows them in `dialog`. Answer with `{ "command": "dialog", "dialog": "d-1", "action": "accept", "text": "..." }`. Until then, commands on that tab fail with `dialog_pending`.
-- `onDialog` answers them for you during the request, on every tab the request has used and on tabs that open while it runs. A confirm that a click schedules for later is answered too, as long as the request is still running. It does not apply to `alert` and `beforeunload`, which are always accepted.
+- The engine never answers a dialog on its own. This holds for every type: `alert`, `confirm`, `prompt`, and `beforeunload`.
+- An open dialog shows in the response's `dialog`. Answer with `{ "command": "dialog", "dialog": "d-1", "action": "accept", "text": "..." }`. Until then, commands on that tab fail with `dialog_pending`. Another client, such as a CDP client, can answer it too. If it answers first, the `dialog` command returns `dialog_not_pending`.
 - If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Answer the dialog and click again.
 - If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after you answer the dialog. Send it again if you still need it.
-- A `confirm` or `prompt` that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
+- A dialog that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
 - If a dialog opens while a mouse button or key is down, the engine lets it go once the dialog closes. A click still completes. A Space press on a button can lose its click, because the dialog takes focus from the page.
 - When a tab closes, its open dialog closes with it. Answering that dialog afterwards returns `dialog_not_pending`.
 - A dialog that opened before the session started, such as one left open by an earlier session, shows in `dialog`. Commands on its tab fail with `dialog_pending` until you answer it.
 - Dialogs that a new tab shows while it loads, such as a popup that calls `alert()` right away, follow the same rules.
-- While a CDP client such as Puppeteer or Playwright is connected to the session, the engine does not answer dialogs on its own, and `onDialog` does not apply. Only clients connected through the session's WebSocket URL count. A client connected straight to Chrome's debugging port does not. The response still shows an open dialog in `dialog`, and the `dialog` command still answers it. If the client answers first, the command returns `dialog_not_pending`. The session viewer does not count as a client.
 
 ## Quick actions
 
-`/v1/scrape`, `/v1/screenshot`, `/v1/pdf`, `/v1/search`, `/v1/sessions/scrape`, `/v1/sessions/screenshot`, and `/v1/sessions/pdf` use the same tabs. Once a session has run commands, those endpoints return `409` for it. They also return `409` while commands are running or waiting to run, even with `"claim": false`. A commands request that arrives while one of them is still running waits until it finishes. Pass `proxyUrl` to run them in a separate browser context, or send `"claim": false` with commands that should not take over the session.
+`/v1/scrape`, `/v1/screenshot`, `/v1/pdf`, `/v1/search`, `/v1/sessions/scrape`, `/v1/sessions/screenshot`, and `/v1/sessions/pdf` use the same tabs, so they take turns with commands. They return `409` while commands are running or waiting to run. A commands request that arrives while one of them is still running waits until it finishes. A quick action raises `epoch`, so the next request with `after` gets `epochChanged: true`. Pass `proxyUrl` to run them in a separate browser context.
 
 ## Errors
 
