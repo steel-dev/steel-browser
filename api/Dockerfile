@@ -95,6 +95,10 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
+RUN mkdir -p /etc/chromium/policies/managed /etc/opt/chrome/policies/managed \
+    && echo '{"URLBlocklist":["file://*"]}' \
+    | tee /etc/chromium/policies/managed/00_policy.json > /etc/opt/chrome/policies/managed/00_policy.json
+
 RUN mkdir -p /files
 
 COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
