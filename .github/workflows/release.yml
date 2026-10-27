@@ -17,21 +17,41 @@ jobs:
         uses: actions/checkout@v4
 
       # Automatic semantic version bump (major/minor/patch from commit messages)
-      - name: Bump version and push tag
+      - name: Bump version
         id: bump_version
         uses: phips28/gh-action-bump-version@v11.0.3
         with:
           tag-prefix: "v"
           tag-suffix: "-beta"
           skip-commit: true
+          skip-push: true
           patch-wording: "patch,fix,fixes,docs,feat,feature,minor"
           minor-wording: ""
           major-wording: "breaking,breaking-change,major"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if tag exists
+        id: tag_check
+        env:
+          TAG: ${{ steps.bump_version.outputs.newTag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "::notice::Tag $TAG already exists, skipping release"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push tag
+        if: steps.tag_check.outputs.exists == 'false'
+        env:
+          TAG: ${{ steps.bump_version.outputs.newTag }}
+        run: git push origin "refs/tags/$TAG"
+
       # Generate changelog file from previous commits
       - name: Generate changelog
+        if: steps.tag_check.outputs.exists == 'false'
         uses: mikepenz/release-changelog-builder-action@v5
         id: changelog
         with:
@@ -94,6 +114,7 @@ jobs:
 
       # Create automatic GitHub release
       - name: Create GitHub Release
+        if: steps.tag_check.outputs.exists == 'false'
         uses: ncipollo/release-action@v1.18.0
         with:
           token: "${{ secrets.GITHUB_TOKEN }}"
