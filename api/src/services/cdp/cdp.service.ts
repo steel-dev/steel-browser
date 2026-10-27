@@ -445,9 +445,10 @@ export class CDPService extends EventEmitter {
           return;
         }
 
-        await page.setRequestInterception(true);
-
-        page.on("request", (request) => this.handlePageRequest(request, page));
+        if (this.requiresRequestInterception()) {
+          await page.setRequestInterception(true);
+          page.on("request", (request) => this.handlePageRequest(request, page));
+        }
 
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
@@ -471,6 +472,25 @@ export class CDPService extends EventEmitter {
     } else if (target.type() === TargetType.BACKGROUND_PAGE) {
       this.logger.info(`[CDPService] Background page created: ${target.url()}`);
     }
+  }
+
+  private requiresRequestInterception(): boolean {
+    if (this.launchConfig?.blockAds || this.compiledUrlPatterns.length > 0) {
+      return true;
+    }
+
+    const optimize = this.launchConfig?.optimizeBandwidth;
+    if (!optimize || typeof optimize === "boolean") {
+      return optimize === true;
+    }
+
+    return Boolean(
+      optimize.blockImages ||
+        optimize.blockMedia ||
+        optimize.blockStylesheets ||
+        optimize.blockHosts?.length ||
+        optimize.blockUrlPatterns?.length,
+    );
   }
 
   private async handlePageRequest(request: HTTPRequest, page: Page) {
