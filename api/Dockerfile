@@ -78,6 +78,7 @@ RUN apt-get update && \
     dbus \
     dbus-x11 \
     procps \
+    tini \
     x11-xserver-utils
 
 # Install Chrome and ChromeDriver
@@ -103,6 +104,7 @@ EXPOSE 3000 9223
 ENV HOST_IP=localhost \
     DBUS_SESSION_BUS_ADDRESS=autolaunch:
 
-ENTRYPOINT ["/app/api/entrypoint.sh"]
+# Tini runs as PID 1 to forward signals and reap zombies (like compose `init: true`)
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/api/entrypoint.sh"]
 
 COPY --from=build /app /app
