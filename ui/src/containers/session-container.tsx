@@ -15,6 +15,10 @@ export function SessionContainer() {
   if (isLoading) return <div>Loading...</div>;
   if (isError || !session) return <div>Error</div>;
 
+  // On the id-less route the query resolves to the first session, so take the
+  // id from the resolved session rather than passing undefined to children.
+  const sessionId = id ?? session.id;
+
   return (
     <div className="flex flex-col overflow-hidden items-center justify-center h-full w-full p-4">
       <div className="flex flex-col overflow-hidden items-center justify-center h-full w-full rounded-md bg-[var(--gray-2)] p-4 pt-2 gap-3">
@@ -35,12 +39,12 @@ export function SessionContainer() {
                 <ArrowLeftIcon className="w-4 h-4" />
               )}
             </Button>
-            <SessionViewer id={id!} />
+            <SessionViewer id={sessionId} />
           </div>
           {showConsole && (
             <div className="flex flex-col items-center overflow-hidden w-1/3 justify-center h-full text-primary gap-2">
               <div className="flex flex-col items-center overflow-hidden justify-center w-full h-full border border-[var(--gray-6)] rounded-md overflow-hidden">
-                {session && <SessionConsole id={id!} />}
+                <SessionConsole id={sessionId} />
               </div>
             </div>
           )}
