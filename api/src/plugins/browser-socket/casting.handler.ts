@@ -268,6 +268,7 @@ export async function handleCastSession(
               requestedPageId ? `pageId=${requestedPageId}` : `pageIndex=${requestedPageIndex}`
             }`,
           );
+          handleSessionCleanup();
           socket.destroy();
           return;
         }
