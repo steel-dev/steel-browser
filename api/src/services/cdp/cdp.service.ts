@@ -93,6 +93,7 @@ export class CDPService extends EventEmitter {
   private chromeExecPath: string;
   private wsProxyServer: httpProxy;
   private primaryPage: Page | null;
+  private downloadSettings: CDPSession | null = null;
   private launchConfig?: BrowserLauncherOptions;
   private defaultLaunchConfig: BrowserLauncherOptions;
   private currentSessionConfig: BrowserLauncherOptions | null;
@@ -1095,7 +1096,7 @@ export class CDPService extends EventEmitter {
               downloadPath: downloadPath,
               eventsEnabled: true,
             });
-            await cdpSession.detach();
+            this.downloadSettings = cdpSession;
             this.logger.debug(
               `[CDPService] Download behavior configured with path: ${downloadPath}`,
             );

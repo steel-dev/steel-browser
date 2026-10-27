@@ -328,6 +328,31 @@ describe("CDPService lifecycle hook ownership", () => {
   });
 });
 
+describe("CDPService downloads", () => {
+  beforeEach(() => {
+    vi.mocked(getExtensionPaths).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  test("keeps the session that set the download folder open", async () => {
+    const browser = fakeBrowser();
+    vi.mocked(puppeteer.launch).mockImplementation(async () => browser);
+    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
+    await service.launch();
+    const session = await browser.target().createCDPSession();
+    expect(session.send).toHaveBeenCalledWith(
+      "Browser.setDownloadBehavior",
+      expect.objectContaining({ behavior: "allow", eventsEnabled: true }),
+    );
+    expect(session.detach).not.toHaveBeenCalled();
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+});
+
 describe("CDPService cookies", () => {
   test("reads the default context cookies from the browser, not from a page", async () => {
     const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
