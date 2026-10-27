@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer, { ProtocolError, type Browser, type Page } from "puppeteer-core";
-import { CdpCDPSession } from "puppeteer-core/internal/cdp/CDPSession.js";
+import { CdpCDPSession } from "puppeteer-core/internal/cdp/CdpSession.js";
 import {
   afterAll,
   afterEach,
