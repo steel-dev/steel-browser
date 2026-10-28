@@ -34,6 +34,7 @@ import {
   isHostBlocked,
   isUrlMatchingPatterns,
   compileUrlPatterns,
+  normalizeHosts,
   isImageRequest,
 } from "../../utils/requests.js";
 import { filterHeaders, getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
@@ -106,6 +107,7 @@ export class CDPService extends EventEmitter {
   private targetInstrumentationManager: TargetInstrumentationManager;
   private instrumentationLogger: BrowserLogger;
 
+  private blockedHosts: string[] = [];
   private compiledUrlPatterns: RegExp[] = [];
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
@@ -442,7 +444,6 @@ export class CDPService extends EventEmitter {
 
     const optimize = this.launchConfig?.optimizeBandwidth;
     const isOptimizeObject = typeof optimize === "object";
-    const blockedHosts = isOptimizeObject ? optimize.blockHosts : undefined;
 
     if (parsed && this.launchConfig?.blockAds && isAdRequest(parsed)) {
       this.logger.info(`[CDPService] Blocked request to ad related resource: ${url}`);
@@ -451,7 +452,7 @@ export class CDPService extends EventEmitter {
     }
 
     if (
-      (parsed && isHostBlocked(parsed, blockedHosts)) ||
+      (parsed && isHostBlocked(parsed, this.blockedHosts)) ||
       isUrlMatchingPatterns(url, this.compiledUrlPatterns)
     ) {
       this.logger.info(`[CDPService] Blocked request to blocked host or pattern: ${url}`);
@@ -619,6 +620,9 @@ export class CDPService extends EventEmitter {
           const reusePatterns =
             typeof reuseOptimize === "object" ? reuseOptimize.blockUrlPatterns : undefined;
           this.compiledUrlPatterns = reusePatterns?.length ? compileUrlPatterns(reusePatterns) : [];
+          const reuseHosts =
+            typeof reuseOptimize === "object" ? reuseOptimize.blockHosts : undefined;
+          this.blockedHosts = reuseHosts?.length ? normalizeHosts(reuseHosts) : [];
 
           await executeCritical(
             async () => this.refreshPrimaryPage(),
@@ -676,6 +680,8 @@ export class CDPService extends EventEmitter {
         const optimize = this.launchConfig.optimizeBandwidth;
         const rawPatterns = typeof optimize === "object" ? optimize.blockUrlPatterns : undefined;
         this.compiledUrlPatterns = rawPatterns?.length ? compileUrlPatterns(rawPatterns) : [];
+        const rawHosts = typeof optimize === "object" ? optimize.blockHosts : undefined;
+        this.blockedHosts = rawHosts?.length ? normalizeHosts(rawHosts) : [];
 
         this.logger.info("[CDPService] Launching new browser instance.");
 

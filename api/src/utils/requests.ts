@@ -87,10 +87,14 @@ export function isHeavyMediaRequest(parsed: URL): boolean {
   return isRange && pathname.includes("/avf/");
 }
 
-export function isHostBlocked(parsed: URL, blockedHosts?: string[]): boolean {
-  if (!blockedHosts?.length) return false;
+export function normalizeHosts(hosts: string[]): string[] {
+  return hosts.map(normalizeHost);
+}
+
+export function isHostBlocked(parsed: URL, normalizedHosts?: string[]): boolean {
+  if (!normalizedHosts?.length) return false;
   const hostname = normalizeHost(parsed.hostname);
-  return blockedHosts.some((h) => hostMatches(hostname, normalizeHost(h)));
+  return normalizedHosts.some((h) => hostMatches(hostname, h));
 }
 
 export function compileUrlPatterns(patterns: string[]): RegExp[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAdRequest, isHostBlocked } from "./requests.js";
+import { isAdRequest, isHostBlocked, normalizeHosts } from "./requests.js";
 
 describe("isHostBlocked", () => {
   it("matches the host and its subdomains", () => {
@@ -10,7 +10,8 @@ describe("isHostBlocked", () => {
   });
 
   it("matches configured hosts regardless of case", () => {
-    expect(isHostBlocked(new URL("https://ads.example.com/a"), ["Ads.Example.COM"])).toBe(true);
+    const blocked = normalizeHosts(["Ads.Example.COM"]);
+    expect(isHostBlocked(new URL("https://ads.example.com/a"), blocked)).toBe(true);
   });
 
   it("matches a request host that has a trailing root dot", () => {
@@ -19,7 +20,17 @@ describe("isHostBlocked", () => {
   });
 
   it("matches a configured host that has a trailing root dot", () => {
-    expect(isHostBlocked(new URL("https://example.com/a"), ["example.com."])).toBe(true);
+    const blocked = normalizeHosts(["example.com."]);
+    expect(isHostBlocked(new URL("https://example.com/a"), blocked)).toBe(true);
+  });
+});
+
+describe("normalizeHosts", () => {
+  it("lowercases hosts and drops one trailing root dot", () => {
+    expect(normalizeHosts(["Ads.Example.COM", "example.com."])).toEqual([
+      "ads.example.com",
+      "example.com",
+    ]);
   });
 });
 
