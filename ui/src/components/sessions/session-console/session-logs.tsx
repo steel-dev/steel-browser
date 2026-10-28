@@ -5,24 +5,21 @@ export default function SessionLogs({ id }: { id: string }) {
   const [logs, setLogs] = useState<any[]>([]);
   const consoleRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const connectWebSocket = async () => {
-      const ws = new WebSocket(`${env.VITE_WS_URL}/v1/sessions/logs`);
+    const ws = new WebSocket(`${env.VITE_WS_URL}/v1/sessions/logs`);
 
-      ws.onmessage = (event) => {
-        const logs = JSON.parse(event.data);
-        setLogs((prevLogs) =>
-          [...prevLogs, ...logs].sort(
-            (a, b) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-          )
-        );
-      };
-
-      return () => {
-        ws.close();
-      };
+    ws.onmessage = (event) => {
+      const logs = JSON.parse(event.data);
+      setLogs((prevLogs) =>
+        [...prevLogs, ...logs].sort(
+          (a, b) =>
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        )
+      );
     };
-    connectWebSocket();
+
+    return () => {
+      ws.close();
+    };
   }, [id]);
 
   useEffect(() => {
