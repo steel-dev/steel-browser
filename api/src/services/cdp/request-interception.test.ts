@@ -77,7 +77,7 @@ describe("CDPService request interception", () => {
   });
 });
 
-describe("CDPService without request interception", () => {
+describe("CDPService request handling in Chrome", () => {
   let dataDir: string;
   let server: http.Server;
   let origin: string;
@@ -87,6 +87,20 @@ describe("CDPService without request interception", () => {
   beforeAll(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "steel-interception-"));
     server = http.createServer((req, res) => {
+      if (req.url === "/worker") {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(
+          `<script>window.worker_ = new Promise((resolve) => { new Worker("/worker.js").onmessage = (e) => resolve(e.data); });</script>`,
+        );
+        return;
+      }
+      if (req.url === "/worker.js") {
+        res.writeHead(200, { "content-type": "application/javascript" });
+        res.end(
+          `Promise.all([fetch("/image.png").then(() => "loaded", () => "blocked"), fetch("/data").then((r) => r.status)]).then(postMessage);`,
+        );
+        return;
+      }
       if (req.url === "/app.js") {
         res.writeHead(200, { "content-type": "application/javascript" });
         res.end(
@@ -175,5 +189,32 @@ describe("CDPService without request interception", () => {
         ["session-token", "session-tab"],
       ],
     );
+  }, 30000);
+
+  test("applies bandwidth blocking to dedicated worker requests", async () => {
+    const page = await start({ optimizeBandwidth: { blockImages: true } });
+
+    await page.goto(`${origin}/worker`);
+
+    expect(await page.evaluate(() => (window as any).worker_)).toEqual(["blocked", 200]);
+  }, 30000);
+
+  test("matches blocked URL patterns without the URL fragment", async () => {
+    const page = await start({ optimizeBandwidth: { blockUrlPatterns: ["*.png"] } });
+
+    await page.goto(origin);
+
+    expect(
+      await page.evaluate(() =>
+        Promise.all(
+          ["/image.png#frag", "/data#frag"].map((url) =>
+            fetch(url).then(
+              () => "loaded",
+              () => "blocked",
+            ),
+          ),
+        ),
+      ),
+    ).toEqual(["blocked", "loaded"]);
   }, 30000);
 });
