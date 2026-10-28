@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
 import puppeteer from "puppeteer-core";
+import WebSocket from "ws";
 import { handleCastSession } from "./casting.handler.js";
 
 vi.mock("puppeteer-core", () => ({
@@ -9,7 +10,7 @@ vi.mock("puppeteer-core", () => ({
   },
 }));
 
-describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid target page", () => {
+describe("handleCastSession cleanup", () => {
   let mockDisconnect: ReturnType<typeof vi.fn>;
   let mockBrowser: any;
   let mockPage: any;
@@ -53,7 +54,7 @@ describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid targ
     };
 
     mockWs = new EventEmitter();
-    mockWs.readyState = 1; // WebSocket.OPEN
+    mockWs.readyState = WebSocket.OPEN;
     mockWs.send = vi.fn();
     mockWs.close = vi.fn();
     mockWs.ping = vi.fn();
@@ -72,7 +73,7 @@ describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid targ
     };
   });
 
-  it("properly disconnects browser when requested pageId is not found", async () => {
+  it("disconnects the browser when the requested pageId is not found", async () => {
     const mockRequest = {
       url: "/v1/sessions/session-abc/cast?pageId=invalid-nonexistent-page",
     };
@@ -87,21 +88,14 @@ describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid targ
     );
     await upgradePromise;
 
-    // 1. Verify puppeteer.connect was called and connected
     expect(puppeteer.connect).toHaveBeenCalledTimes(1);
-
-    // 2. Verify socket.destroy was called because target was not found
     expect(mockSocket.destroy).toHaveBeenCalledTimes(1);
-
-    // 3. Verify that ws close/error listeners were NOT attached because function returned early
     expect(mockWs.listenerCount("close")).toBe(0);
     expect(mockWs.listenerCount("error")).toBe(0);
-
-    // 4. REGRESSION VERIFICATION: browser.disconnect() was called via handleSessionCleanup()
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("properly disconnects browser when requested pageIndex is out of bounds", async () => {
+  it("disconnects the browser when the requested pageIndex is out of range", async () => {
     const mockRequest = {
       url: "/v1/sessions/session-abc/cast?pageIndex=99",
     };
@@ -121,7 +115,7 @@ describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid targ
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("CONTROL 1: properly disconnects browser when target page is found and websocket closes", async () => {
+  it("disconnects the browser when the cast socket closes", async () => {
     const mockRequest = {
       url: "/v1/sessions/session-abc/cast?pageId=existing-page-id-999",
     };
@@ -139,14 +133,12 @@ describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid targ
     expect(puppeteer.connect).toHaveBeenCalledTimes(1);
     expect(mockWs.listenerCount("close")).toBe(1);
 
-    // Simulate websocket close
     mockWs.emit("close");
 
-    // In valid target flow, browser.disconnect() is called on close
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("CONTROL 2: properly disconnects browser in tabDiscoveryMode when websocket closes", async () => {
+  it("disconnects the browser when the tab discovery socket closes", async () => {
     const mockRequest = {
       url: "/v1/sessions/session-abc/cast?tabInfo=true",
     };
@@ -164,19 +156,16 @@ describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid targ
     expect(puppeteer.connect).toHaveBeenCalledTimes(1);
     expect(mockWs.listenerCount("close")).toBe(1);
 
-    // Simulate websocket close
     mockWs.emit("close");
 
-    // In tab discovery mode, browser.disconnect() is called on close
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("CONTROL 3: properly disconnects browser when an unexpected error is thrown in handleUpgrade", async () => {
+  it("disconnects the browser when setup fails", async () => {
     const mockRequest = {
       url: "/v1/sessions/session-abc/cast?pageId=existing-page-id-999",
     };
 
-    // Make browser.pages() reject to trigger catch(err)
     mockBrowser.pages.mockRejectedValueOnce(new Error("Unexpected error"));
 
     await handleCastSession(
@@ -191,8 +180,6 @@ describe("Candidate 4 MRE: handleCastSession CDP connection leak on invalid targ
 
     expect(puppeteer.connect).toHaveBeenCalledTimes(1);
     expect(mockSocket.destroy).toHaveBeenCalledTimes(1);
-
-    // In catch(err) block, handleSessionCleanup() is called!
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 });
