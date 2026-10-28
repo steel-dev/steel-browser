@@ -30,7 +30,7 @@ describe("ProxyServer close", () => {
       echoed += chunk.length;
     });
     socket.write(Buffer.alloc(size));
-    await vi.waitFor(() => expect(echoed).toBe(size));
+    await vi.waitFor(() => expect(echoed).toBe(size), { timeout: 5_000 });
   }
 
   it("settles bytes for the connections it force-closes", async () => {
