@@ -531,7 +531,7 @@ export class CDPService extends EventEmitter {
 
     if (
       (parsed && isHostBlocked(parsed, blockedHosts)) ||
-      isUrlMatchingPatterns(url, this.compiledUrlPatterns)
+      isUrlMatchingPatterns(url.split("#")[0], this.compiledUrlPatterns)
     ) {
       this.logger.debug(`[CDPService] Blocked request to blocked host or pattern: ${url}`);
       await request.abort();

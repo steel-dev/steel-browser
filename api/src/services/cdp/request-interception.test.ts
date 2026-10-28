@@ -198,4 +198,23 @@ describe("CDPService request handling in Chrome", () => {
 
     expect(await page.evaluate(() => (window as any).worker_)).toEqual(["blocked", 200]);
   }, 30000);
+
+  test("matches blocked URL patterns without the URL fragment", async () => {
+    const page = await start({ optimizeBandwidth: { blockUrlPatterns: ["*.png"] } });
+
+    await page.goto(origin);
+
+    expect(
+      await page.evaluate(() =>
+        Promise.all(
+          ["/image.png#frag", "/data#frag"].map((url) =>
+            fetch(url).then(
+              () => "loaded",
+              () => "blocked",
+            ),
+          ),
+        ),
+      ),
+    ).toEqual(["blocked", "loaded"]);
+  }, 30000);
 });
