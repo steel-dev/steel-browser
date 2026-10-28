@@ -4810,7 +4810,18 @@ describe.skipIf(!chrome)("command engine", () => {
       await run({ command: "dialog", dialog: alerted.dialog!.id, action: "accept" });
       await open("/download");
       await run({ command: "click", target: { text: "Get report" } });
-      await sleep(500);
+      await vi.waitFor(
+        async () => {
+          const events = (await run(
+            { command: "tab", action: "list" },
+            { eventsAfter: cursor },
+          )) as unknown as { events: { items: Array<Record<string, unknown>> } };
+          expect(events.events.items).toContainEqual(
+            expect.objectContaining({ type: "download", state: "completed" }),
+          );
+        },
+        { timeout: 10000, interval: 50 },
+      );
       const later = (await run(
         { command: "tab", action: "list" },
         { eventsAfter: cursor },
