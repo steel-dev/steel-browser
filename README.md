@@ -119,7 +119,7 @@ You will also need to run it with `--build` to ensure the Docker images are re-b
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-If you run on a custom host, create a `.env` file (see `docs/DEVELOPMENT_SETUP.md` for variables) or modify the environment variables used by `docker-compose.dev.yml` to use your host.
+If you run on a custom host, copy [`.env.example`](./.env.example) to `.env` and set `DOMAIN` and `CDP_DOMAIN` to your host. Docker Compose reads the `.env` file automatically.
 
 ### Node.js
 Alternatively, if you have Node.js and Chrome installed, you can run both the server and the UI directly:

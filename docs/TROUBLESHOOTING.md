@@ -33,7 +33,7 @@ chromium --version
 
 # Check Docker (if using containers)
 docker --version
-docker-compose --version
+docker compose version
 ```
 
 ## 🔧 Common Issues
@@ -163,14 +163,12 @@ curl -I https://google.com
 ```bash
 # Fix file permissions
 chmod -R 755 ./files
-chmod -R 755 ./.cache
 
 # Check disk space
 df -h
 
 # Create required directories
 mkdir -p ./files
-mkdir -p ./.cache
 mkdir -p ./api/extensions/recorder/dist
 ```
 
@@ -188,14 +186,11 @@ mkdir -p ./api/extensions/recorder/dist
 docker system prune -a
 
 # Rebuild without cache
-docker-compose build --no-cache
+docker compose build --no-cache
 
 # Check container logs
-docker-compose logs api
-docker-compose logs ui
-
-# Fix volume permissions
-sudo chown -R $USER:$USER ./.cache
+docker compose logs api
+docker compose logs ui
 ```
 
 ## 🐛 Debugging Techniques
@@ -323,20 +318,17 @@ curl -s http://localhost:3000/v1/sessions/SESSION_ID | jq
 
 # Check file service
 ls -la ./files/
-
-# Check cache
-ls -la ./.cache/
 ```
 
 ### Docker Diagnostics
 
 ```bash
 # Container status
-docker-compose ps
+docker compose ps
 
 # Container logs
-docker-compose logs --tail=50 api
-docker-compose logs --tail=50 ui
+docker compose logs --tail=50 api
+docker compose logs --tail=50 ui
 
 # Container resource usage
 docker stats
@@ -378,14 +370,13 @@ pkill -f "node.*steel"
 npm run dev
 
 # Docker restart
-docker-compose restart
+docker compose restart
 ```
 
 ### 2. Clear Cache and Temp Files
 
 ```bash
 # Clear application cache
-rm -rf ./.cache/*
 rm -rf ./files/*
 
 # Clear npm cache
@@ -399,14 +390,14 @@ docker system prune -f
 
 ```bash
 # Stop all services
-docker-compose down
+docker compose down
 
 # Remove volumes
-docker-compose down -v
+docker compose down -v
 
 # Rebuild everything
-docker-compose build --no-cache
-docker-compose up
+docker compose build --no-cache
+docker compose up
 ```
 
 ### 4. Database/Storage Recovery
@@ -421,7 +412,6 @@ mkdir -p ./files
 
 # Fix permissions
 chmod -R 755 ./files
-chmod -R 755 ./.cache
 ```
 
 ## 📞 Getting Help
