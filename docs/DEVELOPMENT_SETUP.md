@@ -181,13 +181,13 @@ npm start
 
 ```bash
 # Start development environment
-docker-compose -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.dev.yml up --build
 
 # Or in detached mode
-docker-compose -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.dev.yml up -d --build
 
 # View logs
-docker-compose -f docker-compose.dev.yml logs -f
+docker compose -f docker-compose.dev.yml logs -f
 ```
 
 ### 2. Individual Container Setup
@@ -210,10 +210,10 @@ docker run -p 5173:80 steel-browser-ui
 
 ### Environment Variables
 
-Create a `.env` file in the root directory:
+The API reads `api/.env` when you run it locally. Copy [`api/.env.example`](../api/.env.example) to `api/.env` and adjust it. For example:
 
 ```bash
-# .env
+# api/.env
 NODE_ENV=development
 HOST=0.0.0.0
 PORT=3000
@@ -222,16 +222,14 @@ CDP_REDIRECT_PORT=9223
 # Chrome Configuration
 CHROME_HEADLESS=false  # Set to true for headless mode
 CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome  # Adjust path as needed
-ENABLE_CDP_LOGGING=true
 ENABLE_VERBOSE_LOGGING=true
 
 # Development Features
 DEBUG_CHROME_PROCESS=false
 LOG_CUSTOM_EMIT_EVENTS=true
-
-# UI Configuration
-API_URL=http://localhost:3000
 ```
+
+The UI dev server proxies `/api` and `/ws` to `http://localhost:3000`, so the UI needs no `.env`. Docker Compose reads the root `.env` instead. Copy [`.env.example`](../.env.example) to `.env` to set `DOMAIN`, `CDP_DOMAIN`, and `API_URL` there.
 
 ### Chrome Configuration
 
