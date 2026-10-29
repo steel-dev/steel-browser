@@ -82,6 +82,7 @@ import {
   BrowserLogger,
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
+import { ProfileInUseError, releaseStaleProfileLock } from "./utils/profile-lock.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
 const LAUNCH_TIMEOUT_MS = 60_000;
@@ -91,6 +92,7 @@ export class CDPService extends EventEmitter {
   private keepAlive: boolean;
 
   private browserInstance: Browser | null;
+  private ownBrowserPid?: number;
   private wsEndpoint: string | null;
   private fingerprintData: BrowserFingerprintWithHeaders | null;
   private sessionContext: SessionData | null;
@@ -1062,6 +1064,11 @@ export class CDPService extends EventEmitter {
         this.logger.info(`[CDPService] Launch Options:`);
         this.logger.info(JSON.stringify(finalLaunchOptions, null, 2));
 
+        if (userDataDir) {
+          await this.releaseProfileLock(userDataDir);
+          abandon.signal.throwIfAborted();
+        }
+
         if (userDataDir && this.launchConfig.userPreferences) {
           this.logger.info(`[CDPService] Setting up user preferences in ${userDataDir}`);
           await executeBestEffort(
@@ -1095,6 +1102,7 @@ export class CDPService extends EventEmitter {
           abandon.signal.throwIfAborted();
         }
         this.browserInstance = browser;
+        this.ownBrowserPid = browser.process()?.pid;
 
         // Plugin notifications - catch individual plugin errors
         await executeOptional(
@@ -1802,6 +1810,30 @@ export class CDPService extends EventEmitter {
       this.emulationSessions.set(page, session);
     }
     await apply(session);
+  }
+
+  private async releaseProfileLock(userDataDir: string) {
+    try {
+      const result = await releaseStaleProfileLock(userDataDir, this.ownBrowserPid);
+      if (result.status === "cleared") {
+        this.logger.info(
+          `[CDPService] Removed stale profile lock left by PID ${result.pid} in ${userDataDir}`,
+        );
+      } else if (result.status === "stopped") {
+        this.logger.warn(
+          `[CDPService] Stopped Chrome PID ${result.pid} that was still holding ${userDataDir}`,
+        );
+      } else if (result.status === "skipped") {
+        this.logger.info(
+          `[CDPService] Left profile lock in ${userDataDir} as is: ${result.reason}`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof ProfileInUseError) {
+        throw new ResourceError(error.message, ResourceType.PROFILE, false, error);
+      }
+      this.logger.warn(`[CDPService] Could not release profile lock in ${userDataDir}: ${error}`);
+    }
   }
 
   @traceable
