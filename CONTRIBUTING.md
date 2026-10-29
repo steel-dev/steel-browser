@@ -7,17 +7,20 @@ Welcome to Steel Browser! 🎉 We're excited that you're interested in contribut
 ### Prerequisites
 
 - **Node.js**: Version 22 or higher
-- **npm**: Version 10 or higher  
+- **npm**: Version 10 or higher
 - **Docker**: For containerized development (optional but recommended)
 - **Git**: For version control
-- **Chrome/Chromium**: Required for browser automation
+- **Chrome/Chromium**: Required to run the API outside Docker
+
+The [Development Setup Guide](docs/DEVELOPMENT_SETUP.md) has install steps for each platform.
 
 ### Development Setup
 
 1. **Fork and Clone**
    ```bash
-   git clone https://github.com/steel-dev/steel-browser.git
+   git clone https://github.com/YOUR_USERNAME/steel-browser.git
    cd steel-browser
+   git remote add upstream https://github.com/steel-dev/steel-browser.git
    ```
 
 2. **Install Dependencies**
@@ -29,7 +32,7 @@ Welcome to Steel Browser! 🎉 We're excited that you're interested in contribut
    ```bash
    # Start both API and UI in development mode
    npm run dev
-   
+
    # Or start individually:
    npm run dev -w api    # API server on http://localhost:3000
    npm run dev -w ui     # UI server on http://localhost:5173
@@ -38,16 +41,16 @@ Welcome to Steel Browser! 🎉 We're excited that you're interested in contribut
 4. **Verify Setup**
    - API: Visit http://localhost:3000/documentation
    - UI: Visit http://localhost:5173
-   - Test REPL: `cd repl && npm start`
+   - REPL: Run `npm start -w repl` (see [repl/README.md](repl/README.md))
 
 ### Docker Development (Alternative)
 
 ```bash
-# Build and run with Docker Compose
-docker-compose -f docker-compose.dev.yml up --build
+# Build and run your local changes
+docker compose -f docker-compose.dev.yml up --build
 
 # Or use production images
-docker-compose up
+docker compose up
 ```
 
 ## 📁 Project Structure
@@ -56,9 +59,9 @@ docker-compose up
 steel-browser/
 ├── api/                    # Backend API (Fastify + Puppeteer)
 │   ├── src/
-│   │   ├── modules/        # API modules (actions, sessions, etc.)
+│   │   ├── modules/        # Route modules (actions, sessions, commands, etc.)
 │   │   ├── plugins/        # Fastify plugins
-│   │   ├── services/       # Core services (CDP, file, session)
+│   │   ├── services/       # Core services (CDP, session, file, commands)
 │   │   └── types/          # TypeScript type definitions
 │   └── extensions/         # Browser extensions (must pass name as param to session creation)
 ├── ui/                     # Frontend UI (React + Vite)
@@ -66,151 +69,64 @@ steel-browser/
 │       ├── components/     # Reusable UI components
 │       ├── containers/     # Page containers
 │       └── contexts/       # React contexts
-├── repl/                   # Interactive REPL for testing
-└── docs/                   # Documentation
+├── repl/                   # Example scripts to try a running server
+└── docs/                   # Guides and references
 ```
 
 ## 🏗️ Architecture Overview
 
-Steel Browser follows a plugin-based architecture:
+Steel Browser follows a plugin-based architecture. The [Architecture Overview](docs/ARCHITECTURE.md) covers it in depth.
 
 ### Core Components
 
 1. **Steel Browser Plugin** (`api/src/steel-browser-plugin.ts`)
    - Registers all the necessary services, routes, and hooks
-   - Can be used as a standalone plugin or integrated into your own application
-   - Provides the core functionality of Steel Browser
+   - Can be used as a standalone plugin or registered in your own Fastify app (`SteelBrowserConfig` in the same file lists the options)
 
 2. **CDP Service** (`api/src/services/cdp/cdp.service.ts`)
    - Manages Chrome DevTools Protocol connections
    - Handles browser lifecycle and page management
    - Supports plugin system for extensibility
 
-2. **CDP Plugin System** (`api/src/services/cdp/plugins/`)
+3. **CDP Plugin System** (`api/src/services/cdp/plugins/`)
    - **BasePlugin**: Abstract base class for all plugins
    - **PluginManager**: Manages plugin lifecycle and events
    - Plugins can hook into browser events (launch, page creation, navigation, etc.)
 
-3. **Session Management** (`api/src/services/session.service.ts`)
+4. **Session Management** (`api/src/services/session.service.ts`)
    - Manages browser sessions and their state
    - Handles session persistence and cleanup
 
-4. **File Storage** (`api/src/services/file.service.ts`)
+5. **File Storage** (`api/src/services/file.service.ts`)
    - Manages file uploads, downloads, and storage
    - Supports session-scoped file management
 
+6. **Commands API** (`api/src/services/commands/`)
+   - Drives the browser with high-level commands, built for AI agents
+   - Experimental and off by default (`ENABLE_COMMANDS_API=true`)
 
-### Using Steel Browser as a Plugin
+### Going Deeper
 
-```typescript
-import Fastify from 'fastify';
-import steelBrowserPlugin, { SteelBrowserConfig } from './api/src/steel-browser-plugin.js';
-
-const fastify = Fastify({ logger: true });
-
-// Register Steel Browser plugin with configuration
-const config: SteelBrowserConfig = {
-  fileStorage: {
-    maxSizePerSession: 100 * 1024 * 1024, // 100MB
-  },
-  customWsHandlers: [
-    // Your custom WebSocket handlers
-  ],
-};
-
-await fastify.register(steelBrowserPlugin, config);
-
-// Your additional routes and plugins
-await fastify.register(myCustomPlugin);
-
-await fastify.listen({ port: 3000 });
-```
-
-### Configuration Options
-
-The `SteelBrowserConfig` interface allows you to customize:
-
-- **fileStorage**: Configure file storage limits per session
-- **customWsHandlers**: Add custom WebSocket handlers for real-time features
-
-### CDP Plugin Development
-
-Using the CDP Plugin System, you can create plugins that hook into browser lifecycle events:
-
-```typescript
-import { BasePlugin, PluginOptions } from './api/src/services/cdp/plugins/core/base-plugin.js';
-import { Browser, Page } from 'puppeteer-core';
-
-export class MyCustomPlugin extends BasePlugin {
-  constructor(options: PluginOptions) {
-    super({ name: 'my-custom-plugin', ...options });
-  }
-
-  async onBrowserLaunch(browser: Browser): Promise<void> {
-    this.cdpService?.logger.info('Custom plugin: Browser launched');
-    // Your custom logic here
-  }
-
-  async onPageCreated(page: Page): Promise<void> {
-    this.cdpService?.logger.info('Custom plugin: New page created');
-    // Handle new page creation
-    await page.setUserAgent('MyCustomBot/1.0');
-  }
-
-  async onPageNavigate(page: Page): Promise<void> {
-    // Handle page navigation
-    const url = page.url();
-    this.cdpService?.logger.info(`Custom plugin: Navigated to ${url}`);
-  }
-
-  async onBrowserClose(browser: Browser): Promise<void> {
-    // Cleanup when browser closes
-    this.cdpService?.logger.info('Custom plugin: Browser closed');
-  }
-
-  async onShutdown(): Promise<void> {
-    // Cleanup when service shuts down
-    this.cdpService?.logger.info('Custom plugin: Service shutting down');
-  }
-}
-
-// Register the plugin
-fastify.cdpService.registerPlugin(new MyCustomPlugin({}));
-```
-
-### Available Plugin Hooks
-
-The `BasePlugin` class provides these lifecycle hooks:
-
-- `onBrowserLaunch(browser)`: Called when browser instance starts
-- `onPageCreated(page)`: Called when a new page is created
-- `onPageNavigate(page)`: Called when a page navigates to a new URL
-- `onPageUnload(page)`: Called when a page is about to unload
-- `onBeforePageClose(page)`: Called before a page is closed
-- `onBrowserClose(browser)`: Called when browser instance closes
-- `onShutdown()`: Called during service shutdown
-- `onSessionEnd(sessionConfig)`: Called when a session ends
+- **CDP plugins**: The [Plugin Development Guide](docs/PLUGIN_DEVELOPMENT.md) shows how to write one. `BasePlugin` in `api/src/services/cdp/plugins/core/base-plugin.ts` defines every lifecycle hook.
+- **Commands API**: [docs/COMMANDS.md](docs/COMMANDS.md) documents every command, the response format, and error codes.
 
 ## 🛠️ Development Workflow
 
 ### Branch Naming Convention
 
 - `feature/description` - New features
-- `fix/description` - Bug fixes  
+- `fix/description` - Bug fixes
 - `docs/description` - Documentation updates
 - `refactor/description` - Code refactoring
 - `test/description` - Test additions/updates
+- `chore/description` - Maintenance and dependency updates
 
-### Commit Message Format
+### PR Titles and Commit Messages
 
-We use [Conventional Commits](https://conventionalcommits.org/):
+We squash merge pull requests, so the PR title becomes the commit message on `main`. PR titles must follow [Conventional Commits](https://conventionalcommits.org/), and CI checks them ([`pr-checks.yml`](.github/workflows/pr-checks.yml)):
 
 ```
 type(scope): description
-
-[optional body]
-
-[optional footer]
 ```
 
 **Types:**
@@ -219,16 +135,24 @@ type(scope): description
 - `docs`: Documentation changes
 - `style`: Code style changes (formatting, etc.)
 - `refactor`: Code refactoring
+- `perf`: Performance improvements
 - `test`: Adding or updating tests
-- `chore`: Maintenance tasks
+- `build`: Build system changes
+- `ci`: CI configuration changes
+- `chore`: Maintenance tasks, such as dependency updates
+- `revert`: Reverting an earlier change
+
+The scope is optional, for example `api`, `cdp`, `docker`, or `deps`.
 
 **Examples:**
 ```
 feat(api): add session timeout configuration
-fix(ui): resolve session list refresh issue  
+fix(cdp): keep mobile emulation overrides alive
+chore(deps): refresh dependencies
 docs: update plugin development guide
-test(api): add CDP service unit tests
 ```
+
+Release notes group changes by type, so pick the one that fits best.
 
 ### Code Style & Formatting
 
@@ -238,11 +162,11 @@ We use automated formatting and linting:
 # Format code (API)
 npm run pretty -w api
 
-# Lint code (UI)  
+# Lint code (UI)
 npm run lint -w ui
-
-# These run automatically on commit via Husky
 ```
+
+A pre-commit hook formats and lints your changes before each commit.
 
 **Style Guidelines:**
 - Use TypeScript for all new code
@@ -253,23 +177,25 @@ npm run lint -w ui
 
 ### Testing
 
-> **Note**: We're currently building out our test suite! This is a great area for contributions.
+The API has unit and integration tests written with [Vitest](https://vitest.dev/):
 
 ```bash
-# Tests are currently being set up - for now run these checks:
-npm run build  # Type checking for both API and UI
-npm run lint -w ui  # UI linting  
-npm run pretty -w api  # API code formatting
-
-# When tests become available:
-# npm test -w api
-# npm test -w ui
+npm test         # Run the API tests
+npm run build    # Type-check and build the API and UI
 ```
 
+Most tests that drive a real browser are skipped unless `CHROME_EXECUTABLE_PATH` points to Chrome or Chromium. Some always launch the browser from its default install path, so install Chrome or Chromium before you run the suite. CI sets the variable, so set it locally too when you change browser code:
+
+```bash
+CHROME_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm test
+```
+
+`npm run test:heavy -w api` also runs the large, slow pages in the scrape evaluation.
+
 **Testing Guidelines:**
+- Put tests next to the code they cover, as `*.test.ts` files
 - Write unit tests for new functions and classes
 - Add integration tests for API endpoints
-- Include end-to-end tests for critical user flows
 - Mock external dependencies appropriately
 - Aim for meaningful test coverage, not just high percentages
 
@@ -286,47 +212,32 @@ npm run pretty -w api  # API code formatting
    ```bash
    # Build and test locally
    npm run build
-   # npm test  # tests coming soon
-   
+   npm test
+
    # Test with Docker
-   docker-compose -f docker-compose.dev.yml up --build
+   docker compose -f docker-compose.dev.yml up --build
    ```
 
 3. **Update Documentation**
-   - Update relevant README sections
+   - Update relevant README and `docs/` sections
    - Add/update JSDoc comments
-   - Update API documentation if needed
+   - Keep route schemas accurate, since they generate the API docs at `/documentation`
 
 ### PR Checklist
 
 - [ ] Branch is up-to-date with main
+- [ ] PR title follows Conventional Commits
 - [ ] Code follows project style guidelines
-- [ ] Tests pass (when available)
+- [ ] Tests pass (`npm test`)
 - [ ] Documentation is updated
-- [ ] Commit messages follow conventional format
 - [ ] PR description clearly explains changes
 - [ ] Breaking changes are documented
 
+CI runs the API tests ([`test.yml`](.github/workflows/test.yml)), builds the Docker images ([`check-build.yml`](.github/workflows/check-build.yml)), and checks the PR title ([`pr-checks.yml`](.github/workflows/pr-checks.yml)).
+
 ### PR Template
 
-```markdown
-## Description
-Brief description of changes
-
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature  
-- [ ] Breaking change
-- [ ] Documentation update
-
-## Testing
-- [ ] Tested locally
-- [ ] Added/updated tests
-- [ ] Tested with Docker
-
-## Related Issues
-Fixes #(issue number)
-```
+When you open a pull request, GitHub fills in our [PR template](.github/pull_request_template.md). Fill in the sections that apply to your change.
 
 ## 🐛 Reporting Issues
 
@@ -342,10 +253,16 @@ Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 ### Feature Requests
 
+Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) and:
+
 - Check existing issues first
 - Describe the use case and motivation
 - Provide examples of how it would work
 - Consider implementation complexity
+
+### Security Issues
+
+Please don't report security vulnerabilities in public issues. Email security@steel.dev instead.
 
 ## 🌟 Good First Issues
 
@@ -367,7 +284,8 @@ Looking for ways to contribute? Check out issues labeled:
 
 ### Project Resources
 
-- [API Documentation](http://localhost:3000/documentation)
+- [API Documentation](http://localhost:3000/documentation) (when the API runs locally)
+- [Documentation Index](docs/README.md)
 - [Steel Cookbook](https://github.com/steel-dev/steel-cookbook) - Usage examples
 - [Discord Community](https://discord.gg/steel-dev) - Get help and discuss
 
@@ -392,42 +310,37 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 We appreciate all contributions! Contributors are recognized:
 
-- In our README contributors section
 - In our Discord server + Changelog announcements
 - Through GitHub's contribution tracking
-- In release notes for significant contributions
+- In release notes, which credit the author of every merged PR
 - Potential invitation to join the core team
 
 ## 🔧 Advanced Development
 
 ### Environment Variables
 
-Key environment variables for development:
+The API reads `api/.env` when you run it locally. [`api/.env.example`](api/.env.example) lists the common variables, and [`api/src/env.ts`](api/src/env.ts) defines all of them with their defaults. These are handy while developing:
 
 ```bash
-# API Configuration
-NODE_ENV=development
-HOST=0.0.0.0
-PORT=3000
-CHROME_HEADLESS=false  # For debugging
-ENABLE_CDP_LOGGING=true  # For detailed logs
-
-# UI Configuration  
-API_URL=http://localhost:3000
+CHROME_HEADLESS=false        # Show the browser window
+ENABLE_VERBOSE_LOGGING=true  # Include extra log arguments in development logs
+ENABLE_COMMANDS_API=true     # Turn on the experimental Commands API
 ```
+
+The UI dev server proxies `/api` and `/ws` to `http://localhost:3000`, so it needs no configuration. `API_URL` only applies to the UI Docker image.
 
 ### Debugging
 
 ```bash
-# Debug API with Chrome DevTools
-node --inspect ./api/build/index.js
-
-# Debug with VS Code
-# Use the provided launch configurations
+# Debug the built API with the Node.js inspector
+npm run build -w api
+cd api && node --inspect build/index.js
 
 # Enable verbose logging
 ENABLE_VERBOSE_LOGGING=true npm run dev -w api
 ```
+
+Then attach a debugger, for example Chrome DevTools at `chrome://inspect`. The [Troubleshooting Guide](docs/TROUBLESHOOTING.md) covers common problems.
 
 ## 📝 Documentation
 
@@ -441,54 +354,25 @@ ENABLE_VERBOSE_LOGGING=true npm run dev -w api
 
 ### Documentation Structure
 
-- **README.md**: Project overview and quick start
-- **CONTRIBUTING.md**: This file - contribution guidelines
-- **API docs**: Auto-generated from OpenAPI schemas
-- **Architecture docs**: High-level system design
-- **Plugin docs**: Plugin development guides
+- **[README.md](README.md)**: Project overview and quick start
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: This file - contribution guidelines
+- **[docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md)**: Development environment setup
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**: High-level system design
+- **[docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md)**: Plugin development guide
+- **[docs/COMMANDS.md](docs/COMMANDS.md)**: Commands API reference
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**: Common issues and solutions
+- **API docs**: Generated from the route schemas and served at `/documentation`
 
 ## 🚀 Release Process
 
-### Automated Releases
+Releases are automated by [`release.yml`](.github/workflows/release.yml), which runs on every push to `main`:
 
-We use automated semantic versioning based on conventional commits:
+1. **Version bump**: Picks the next version from commit messages. `breaking`, `breaking-change`, or `major` bumps the major version. Anything else, including `feat`, bumps the patch version.
+2. **Tag**: Tags the version with a `-beta` suffix, such as `v0.5.4-beta`. If that tag already exists, the release is skipped.
+3. **Changelog**: Builds the changelog from commit titles, with sections for `feat`, `fix`, and `docs` changes.
+4. **GitHub release**: Publishes the release with the changelog and community links.
 
-- **Automatic Version Bumping**: Versions are automatically bumped based on commit messages
-  - `patch`: Commits with `patch`, `fix`, `fixes`, or `docs` 
-  - `minor`: Commits with `feat`, `feature`, or `minor`
-  - `major`: Commits with `breaking`, `breaking-change`, or `major`
-
-- **Beta Releases**: All releases are tagged with `-beta` suffix initially
-- **Automatic Changelog**: Generated from commit history with categorized changes
-- **GitHub Releases**: Automatically created with changelog and community links
-
-### Versioning
-
-We follow [Semantic Versioning](https://semver.org/):
-
-- **MAJOR**: Breaking changes (triggered by `breaking`, `breaking-change`, `major` in commits)
-- **MINOR**: New features, backwards compatible (triggered by `feat`, `feature`, `minor`)
-- **PATCH**: Bug fixes, backwards compatible (triggered by `patch`, `fix`, `fixes`, `docs`)
-
-### Release Workflow
-
-The release process is fully automated via GitHub Actions:
-
-1. **Push to main**: Any push to the main branch triggers the release workflow
-2. **Version bump**: Automatically determines version based on commit messages
-3. **Changelog generation**: Creates categorized changelog from commits
-4. **GitHub release**: Creates release with changelog and community links
-5. **Tag creation**: Tags the release with the new version
-
-### Manual Release Steps (if needed)
-
-If manual intervention is required:
-
-1. Ensure commit messages follow conventional format
-2. Push changes to main branch
-3. Monitor the GitHub Actions workflow
-4. Verify the release was created successfully
-5. Announce on Discord/social media
+The workflow doesn't commit the new version back. Every run starts from the version in the root `package.json`, so a new release only goes out after a PR raises that version.
 
 ---
 
@@ -496,4 +380,4 @@ If manual intervention is required:
 
 Thank you for contributing to Steel Browser! Your contributions help make browser automation more accessible and powerful for developers worldwide.
 
-**Happy hacking!** 🎉 
+**Happy hacking!** 🎉
