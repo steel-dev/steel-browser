@@ -1,6 +1,4 @@
 node_modules
-.pnp
-.pnp.js
 coverage
 .DS_Store
 *.pem
@@ -15,13 +13,10 @@ yarn-error.log*
 .env.production.local
 !.env.example
 production.env
-.turbo
 build
-db/data
 *.tsbuildinfo
 out
 .idea
 *.env
 dist
 .aider*
-extensions/*
