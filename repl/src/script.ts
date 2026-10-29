@@ -2,7 +2,7 @@ import puppeteer from "puppeteer-core";
 
 async function run() {
   // WebSocket endpoint to connect Browser using Chrome DevTools Protocol (CDP)
-  const wsEndpoint = "ws://0.0.0.0:3000";
+  const wsEndpoint = process.env.STEEL_WS_URL ?? "ws://localhost:3000";
   const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
   
   try {
