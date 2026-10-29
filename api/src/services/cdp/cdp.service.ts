@@ -84,6 +84,8 @@ import {
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
+const LAUNCH_TIMEOUT_MS = 60_000;
+
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
   private keepAlive: boolean;
@@ -113,6 +115,7 @@ export class CDPService extends EventEmitter {
   private blockedHosts: string[] = [];
   private compiledUrlPatterns: RegExp[] = [];
   private pageSetups = new Map<string, Promise<void>>();
+  private launchQueue: Promise<unknown> = Promise.resolve();
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
     [];
@@ -668,26 +671,32 @@ export class CDPService extends EventEmitter {
     };
 
     // Use retry mechanism for the launch process
-    const result = await this.retryManager.executeWithRetry(
-      operation,
-      "Browser Launch",
-      retryOptions,
+    const launched = this.launchQueue.then(() =>
+      this.retryManager.executeWithRetry(operation, "Browser Launch", retryOptions),
     );
+    this.launchQueue = launched.catch(() => undefined);
+    const result = await launched;
 
     return result.result;
   }
 
   @traceable
   private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
+    const abandon = new AbortController();
+    let timer: NodeJS.Timeout | undefined;
     try {
       const launchTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new LaunchTimeoutError(60000)), 60000);
+        timer = setTimeout(() => {
+          abandon.abort(new LaunchTimeoutError(LAUNCH_TIMEOUT_MS));
+          reject(abandon.signal.reason);
+        }, LAUNCH_TIMEOUT_MS);
       });
 
       const launchProcess = (async () => {
         const shouldReuseInstance =
           this.browserInstance &&
           (await isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig));
+        abandon.signal.throwIfAborted();
 
         if (shouldReuseInstance) {
           this.logger.info(
@@ -753,6 +762,7 @@ export class CDPService extends EventEmitter {
             async () => this.shutdown(ShutdownReason.RELAUNCH),
             "Error during shutdown before launch",
           );
+          abandon.signal.throwIfAborted();
         }
 
         this.launchConfig = config || this.defaultLaunchConfig;
@@ -1039,7 +1049,7 @@ export class CDPService extends EventEmitter {
           args: launchArgs,
           executablePath: this.chromeExecPath,
           ignoreDefaultArgs: ["--enable-automation"],
-          timeout: 0,
+          timeout: LAUNCH_TIMEOUT_MS,
           env: {
             HOME: os.userInfo().homedir,
             TZ: timezone,
@@ -1061,8 +1071,10 @@ export class CDPService extends EventEmitter {
           );
         }
 
+        abandon.signal.throwIfAborted();
+
         // Browser process launch - most critical step
-        this.browserInstance = await executeCritical(
+        const browser = await executeCritical(
           async () =>
             (await tracer.startActiveSpan("CDPService.launchBrowser", async () => {
               return await puppeteer.launch(finalLaunchOptions);
@@ -1074,6 +1086,15 @@ export class CDPService extends EventEmitter {
               error,
             ),
         );
+        if (abandon.signal.aborted) {
+          this.logger.warn(
+            "[CDPService] Closing browser launched after its launch attempt timed out",
+          );
+          await browser.close().catch(() => undefined);
+          browser.process()?.kill();
+          abandon.signal.throwIfAborted();
+        }
+        this.browserInstance = browser;
 
         // Plugin notifications - catch individual plugin errors
         await executeOptional(
@@ -1227,6 +1248,8 @@ export class CDPService extends EventEmitter {
       );
 
       throw categorizedError;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
