@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BrowserLauncherOptions } from "../../types/browser.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { CDPService } from "./cdp.service.js";
+import { LaunchTimeoutError } from "./errors/launch-errors.js";
 import { BasePlugin, ShutdownReason } from "./plugins/core/base-plugin.js";
 import type { CommandEngine } from "../commands/engine.js";
 import { CommandsPlugin } from "../commands/plugin.js";
@@ -324,6 +325,94 @@ describe("CDPService lifecycle hook ownership", () => {
       "closed 1",
       "launched 2",
     ]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+});
+
+describe("CDPService overlapping launches", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(puppeteer.launch).mockImplementation(async () => fakeBrowser());
+    vi.mocked(getExtensionPaths).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  test("starts a launch only after the previous launch has finished", async () => {
+    const { service } = lifecycleFixture();
+    const order: string[] = [];
+    let launches = 0;
+    vi.mocked(puppeteer.launch).mockImplementation(async () => {
+      const id = ++launches;
+      order.push(`launch ${id}`);
+      if (id === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      const browser = fakeBrowser();
+      vi.mocked(browser.close).mockImplementation(async () => {
+        order.push(`close ${id}`);
+      });
+      order.push(`ready ${id}`);
+      return browser;
+    });
+
+    const idle = service.launch(sessionConfig("idle", "idle-metadata"));
+    await vi.waitFor(() => expect(order).toEqual(["launch 1"]));
+    const session = service.startNewSession(sessionConfig("session", "session-metadata"));
+    await vi.advanceTimersByTimeAsync(1_000);
+    const [, browser] = await Promise.all([idle, session]);
+
+    expect(order).toEqual(["launch 1", "ready 1", "close 1", "launch 2", "ready 2"]);
+    expect(service.getBrowserInstance()).toBe(browser);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("closes a browser that starts after its launch attempt timed out", async () => {
+    const { service } = lifecycleFixture();
+    const late = fakeBrowser();
+    vi.mocked(puppeteer.launch).mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 61_000));
+      return late;
+    });
+
+    const timedOut = expect(
+      service.launch(sessionConfig("first", "first-metadata")),
+    ).rejects.toThrow(LaunchTimeoutError);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await timedOut;
+    const current = await service.launch(sessionConfig("second", "second-metadata"));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(late.close).toHaveBeenCalledOnce();
+    expect(service.getBrowserInstance()).toBe(current);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("does not launch a browser once its launch attempt timed out", async () => {
+    const { service } = lifecycleFixture();
+    let stalled = false;
+    service.registerLaunchHook(async () => {
+      if (!stalled) {
+        stalled = true;
+        await new Promise((resolve) => setTimeout(resolve, 61_000));
+      }
+    });
+
+    const timedOut = expect(
+      service.launch(sessionConfig("first", "first-metadata")),
+    ).rejects.toThrow(LaunchTimeoutError);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await timedOut;
+    const current = await service.launch(sessionConfig("second", "second-metadata"));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(puppeteer.launch).toHaveBeenCalledOnce();
+    expect(service.getBrowserInstance()).toBe(current);
     await service.shutdown(ShutdownReason.SESSION_END);
   });
 });
