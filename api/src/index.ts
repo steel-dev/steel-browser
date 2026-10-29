@@ -7,6 +7,7 @@ import { ShutdownReason } from "./services/cdp/plugins/core/base-plugin.js";
 import { loggingConfig } from "./config.js";
 import { MB } from "./utils/size.js";
 import path from "node:path";
+import type { Duplex } from "node:stream";
 
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -37,8 +38,18 @@ const setupServer = async () => {
     },
   });
 
-  server.addHook("onClose", async () => {
-    await server.cdpService.shutdown(ShutdownReason.SESSION_END);
+  const upgradedSockets = new Set<Duplex>();
+  server.server.on("upgrade", (_request, socket) => {
+    upgradedSockets.add(socket);
+    socket.once("close", () => upgradedSockets.delete(socket));
+  });
+
+  server.addHook("preClose", async () => {
+    try {
+      await server.cdpService.shutdown(ShutdownReason.SESSION_END);
+    } finally {
+      for (const socket of upgradedSockets) socket.destroy();
+    }
   });
 };
 
