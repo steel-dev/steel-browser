@@ -13,7 +13,6 @@ const KILL_TIMEOUT_MS = 2000;
 
 export type ProcessInfo = {
   ppid: number;
-  args: string[] | null;
   command: string;
 };
 
@@ -62,8 +61,8 @@ async function inspect(pid: number): Promise<ProcessInfo | null> {
     try {
       const stat = await readFile(`/proc/${pid}/stat`, "utf8");
       const ppid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
-      const args = (await readFile(`/proc/${pid}/cmdline`, "utf8")).split("\0").filter(Boolean);
-      return { ppid, args, command: args.join(" ") };
+      const cmdline = await readFile(`/proc/${pid}/cmdline`, "utf8");
+      return { ppid, command: cmdline.split("\0").filter(Boolean).join(" ") };
     } catch {
       return null;
     }
@@ -71,7 +70,7 @@ async function inspect(pid: number): Promise<ProcessInfo | null> {
   try {
     const { stdout } = await execFileAsync("ps", ["-o", "ppid=,command=", "-p", String(pid)]);
     const match = stdout.trim().match(/^(\d+)\s+([\s\S]*)$/);
-    return match ? { ppid: Number(match[1]), args: null, command: match[2] } : null;
+    return match ? { ppid: Number(match[1]), command: match[2] } : null;
   } catch {
     return null;
   }
@@ -90,11 +89,7 @@ const defaultDeps: ProfileLockDeps = {
 
 function usesProfile(info: ProcessInfo, userDataDir: string): boolean {
   const flags = [userDataDir, path.resolve(userDataDir)].map((dir) => `--user-data-dir=${dir}`);
-  return flags.some((flag) =>
-    info.args
-      ? info.args.includes(flag)
-      : info.command.endsWith(flag) || info.command.includes(`${flag} `),
-  );
+  return flags.some((flag) => info.command.endsWith(flag) || info.command.includes(`${flag} `));
 }
 
 async function clearLock(userDataDir: string, deps: ProfileLockDeps) {
@@ -162,8 +157,7 @@ export async function releaseStaleProfileLock(
     return { status: "skipped", reason: `cannot inspect PID ${pid}` };
   }
   if (!usesProfile(info, userDataDir)) {
-    await clearLock(userDataDir, deps);
-    return { status: "cleared", pid };
+    return { status: "skipped", reason: `PID ${pid} does not use this profile` };
   }
   if (pid !== ownedPid && info.ppid !== 1 && info.ppid !== process.pid) {
     throw new ProfileInUseError(userDataDir, pid, info.ppid);
