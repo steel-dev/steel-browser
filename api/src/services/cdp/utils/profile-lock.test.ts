@@ -182,6 +182,17 @@ describe("releaseStaleProfileLock", () => {
     expect(signals).toEqual([]);
   });
 
+  test("stops a Chrome this process launched but no longer tracks", async () => {
+    await lockProfile(HOST, 4109);
+    const { deps, signals } = fakeSystem({ 4109: chrome(process.pid) });
+
+    await expect(releaseStaleProfileLock(dir, undefined, deps)).resolves.toEqual({
+      status: "stopped",
+      pid: 4109,
+    });
+    expect(signals).toEqual([[4109, "SIGTERM"]]);
+  });
+
   describe.skipIf(process.platform === "win32")("with a real process", () => {
     let child: ChildProcess | undefined;
 

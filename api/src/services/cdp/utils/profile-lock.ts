@@ -165,7 +165,7 @@ export async function releaseStaleProfileLock(
     await clearLock(userDataDir, deps);
     return { status: "cleared", pid };
   }
-  if (pid !== ownedPid && info.ppid !== 1) {
+  if (pid !== ownedPid && info.ppid !== 1 && info.ppid !== process.pid) {
     throw new ProfileInUseError(userDataDir, pid, info.ppid);
   }
 
