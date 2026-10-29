@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BrowserLauncherOptions } from "../../types/browser.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { CDPService } from "./cdp.service.js";
-import { LaunchTimeoutError } from "./errors/launch-errors.js";
+import { LaunchTimeoutError, ResourceError } from "./errors/launch-errors.js";
 import { BasePlugin, ShutdownReason } from "./plugins/core/base-plugin.js";
+import { ProfileInUseError, releaseStaleProfileLock } from "./utils/profile-lock.js";
 import type { CommandEngine } from "../commands/engine.js";
 import { CommandsPlugin } from "../commands/plugin.js";
 
@@ -42,6 +43,11 @@ vi.mock("./instrumentation/target-manager.js", () => ({
     attach = vi.fn().mockResolvedValue(undefined);
     detach = vi.fn();
   },
+}));
+
+vi.mock("./utils/profile-lock.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./utils/profile-lock.js")>()),
+  releaseStaleProfileLock: vi.fn(async () => ({ status: "free" })),
 }));
 
 const logger = {
@@ -326,6 +332,52 @@ describe("CDPService lifecycle hook ownership", () => {
       "launched 2",
     ]);
     await service.shutdown(ShutdownReason.SESSION_END);
+  });
+});
+
+describe("CDPService profile lock", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(puppeteer.launch).mockImplementation(async () => fakeBrowser());
+    vi.mocked(getExtensionPaths).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  test("releases a stale lock before each launch and names its own Chrome", async () => {
+    const { service } = lifecycleFixture();
+    const first = Object.assign(fakeBrowser(), {
+      process: () => ({ pid: 4321, kill: vi.fn() }),
+    }) as unknown as Browser;
+    vi.mocked(puppeteer.launch).mockResolvedValueOnce(first);
+
+    await service.startNewSession(sessionConfig("first", "first-metadata"));
+    await service.startNewSession(sessionConfig("second", "second-metadata"));
+
+    expect(vi.mocked(releaseStaleProfileLock).mock.calls).toEqual([
+      ["/fixture/browser-data", undefined],
+      ["/fixture/browser-data", 4321],
+    ]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("fails without retrying when another process owns the profile", async () => {
+    const { service } = lifecycleFixture();
+    vi.mocked(releaseStaleProfileLock).mockRejectedValueOnce(
+      new ProfileInUseError("/fixture/browser-data", 4105, 3210),
+    );
+
+    const attempt = service.launch(sessionConfig("blocked", "blocked-metadata"));
+
+    await expect(attempt).rejects.toBeInstanceOf(ResourceError);
+    await expect(attempt).rejects.toThrow(/in use by PID 4105 \(parent 3210\)/);
+    expect(releaseStaleProfileLock).toHaveBeenCalledOnce();
+    expect(puppeteer.launch).not.toHaveBeenCalled();
   });
 });
 

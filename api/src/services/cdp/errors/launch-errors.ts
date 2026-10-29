@@ -53,6 +53,7 @@ export enum FingerprintStage {
 export enum ResourceType {
   EXTENSIONS = "extensions",
   FILE = "file",
+  PROFILE = "profile",
 }
 
 export enum NetworkOperation {
