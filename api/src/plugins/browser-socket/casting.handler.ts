@@ -33,7 +33,7 @@ export async function handleCastSession(
   }
 
   const session = await sessionService.activeSession;
-  if (!session) {
+  if (!session || session.id !== id) {
     console.error(`Cast Session ${id} not found`);
     socket.destroy();
     return;
