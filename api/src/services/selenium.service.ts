@@ -51,7 +51,7 @@ export class SeleniumService extends EventEmitter {
         type: BrowserEventType.Error,
         text: JSON.stringify({ type: BrowserEventType.Error, error: `${err}` }),
         timestamp: new Date(),
-      });
+      }).catch(() => {});
     });
 
     proc.stdout?.on("data", (data) => {
@@ -150,12 +150,16 @@ export class SeleniumService extends EventEmitter {
     if (!this.launchOptions?.logSinkUrl) {
       return;
     }
-    await fetch(this.launchOptions.logSinkUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(browserLog),
-    });
+    try {
+      await fetch(this.launchOptions.logSinkUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(browserLog),
+      });
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to post log to logSinkUrl");
+    }
   }
 }

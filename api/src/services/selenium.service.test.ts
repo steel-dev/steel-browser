@@ -51,8 +51,16 @@ describe("SeleniumService", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    process.env.PATH = originalPath;
-    process.env.Path = originalPathEnv;
+    if (originalPath !== undefined) {
+      process.env.PATH = originalPath;
+    } else {
+      delete process.env.PATH;
+    }
+    if (originalPathEnv !== undefined) {
+      process.env.Path = originalPathEnv;
+    } else {
+      delete process.env.Path;
+    }
     vi.restoreAllMocks();
   });
 
@@ -69,7 +77,9 @@ describe("SeleniumService", () => {
       // Check logger captured the error
       expect(logger.error).toHaveBeenCalled();
       const errorCalls = logger.error.mock.calls.map((call) => call[0]);
-      expect(errorCalls.some((msg) => typeof msg === "string" && msg.includes("Selenium process error"))).toBe(true);
+      expect(
+        errorCalls.some((msg) => typeof msg === "string" && msg.includes("Selenium process error")),
+      ).toBe(true);
 
       // Verify service remains in a safe idle state and subsequent close() does not throw
       expect(() => service.close()).not.toThrow();
@@ -88,7 +98,9 @@ describe("SeleniumService", () => {
       mockChild.emit("error", spawnError);
 
       await expect(launchPromise).rejects.toThrow("spawn java ENOENT");
-      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Selenium process error: Error: spawn java ENOENT"));
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Selenium process error: Error: spawn java ENOENT"),
+      );
       expect(() => service.close()).not.toThrow();
     });
 
@@ -103,8 +115,12 @@ describe("SeleniumService", () => {
 
       mockChild.emit("close", 1);
 
-      await expect(launchPromise).rejects.toThrow("Selenium process exited prematurely with code 1");
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("Selenium process exited with code 1"));
+      await expect(launchPromise).rejects.toThrow(
+        "Selenium process exited prematurely with code 1",
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining("Selenium process exited with code 1"),
+      );
       expect(() => service.close()).not.toThrow();
     });
 
@@ -121,6 +137,11 @@ describe("SeleniumService", () => {
 
       await expect(launchPromise).resolves.toBeUndefined();
       expect(service.getSeleniumServerUrl()).toBe("http://localhost:4444");
+
+      // Verify transient startup listeners are cleaned up, leaving only permanent handlers
+      expect(mockChild.listenerCount("error")).toBe(1);
+      expect(mockChild.listenerCount("close")).toBe(1);
+      expect(mockChild.stdout.listenerCount("data")).toBe(1);
 
       // Verify close kills the running process
       service.close();
@@ -141,7 +162,9 @@ describe("SeleniumService", () => {
       // Fast-forward past 15 seconds
       vi.advanceTimersByTime(15000);
 
-      await expect(launchPromise).rejects.toThrow("Selenium server failed to start within the timeout period");
+      await expect(launchPromise).rejects.toThrow(
+        "Selenium server failed to start within the timeout period",
+      );
       expect(mockChild.kill).toHaveBeenCalledWith("SIGINT");
 
       vi.useRealTimers();
