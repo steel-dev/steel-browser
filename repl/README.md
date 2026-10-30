@@ -4,6 +4,7 @@ This package provides simple scripts to interact with the browser instance you'v
 
 - `npm start` runs `src/script.ts`. The API exposes a WebSocket endpoint, allowing you to connect to the browser using Chrome DevTools Protocol (CDP) and use Puppeteer as usual.
 - `npm run commands` runs `src/commands.ts`. It drives the browser with the [Commands API](../docs/COMMANDS.md).
+- `npm run demo` runs `src/demo.ts`. It records the demo GIF in the main README.
 
 ## Quick Start
 
