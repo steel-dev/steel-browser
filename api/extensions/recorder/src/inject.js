@@ -1,7 +1,7 @@
 import { record } from "rrweb";
 import { pack } from "@rrweb/packer";
 
-const FLUSH_INTERVAL_MS = 1000;
+const FLUSH_INTERVAL_MS = 250;
 const MAX_BATCH_EVENTS = 200;
 const MAX_BATCH_BYTES = 512 * 1024;
 
