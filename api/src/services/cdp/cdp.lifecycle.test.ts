@@ -117,6 +117,27 @@ describe("CDPService lifecycle hook ownership", () => {
     vi.clearAllMocks();
   });
 
+  test.each([false, true])("preserves executable graphics for native Core=%s", async (native) => {
+    const { service } = lifecycleFixture();
+    const config = sessionConfig("graphics", "graphics");
+    config.extra!.stealthConfig = { useStealthBrowser: native };
+    await service.startNewSession(config);
+    const args = vi.mocked(puppeteer.launch).mock.calls.at(-1)![0]!.args!;
+    for (const flag of ["--disable-gpu", "--use-gl=swiftshader", "--in-process-gpu"]) {
+      expect(args.includes(flag)).toBe(!native);
+    }
+    for (const flag of ["--use-gl=angle", "--use-angle=gl", "--ignore-gpu-blocklist"]) {
+      expect(args.includes(flag)).toBe(native);
+    }
+    if (native) {
+      expect(vi.mocked(puppeteer.launch).mock.calls.at(-1)![0]!.env).toMatchObject({
+        LIBGL_ALWAYS_SOFTWARE: "1",
+        GALLIUM_DRIVER: "llvmpipe",
+      });
+    }
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
   test("tears down the idle browser before running incoming launch hooks", async () => {
     const { service, events } = lifecycleFixture();
     await service.launch();
