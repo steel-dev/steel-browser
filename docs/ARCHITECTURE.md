@@ -118,7 +118,7 @@ Handles file operations with session-scoped storage:
 Headless sessions load a Chrome extension that records every page with [rrweb](https://github.com/rrweb-io/rrweb):
 
 1. A content script records the page and sends events in batches every 250 ms, or sooner when a batch gets large.
-2. The extension's service worker posts each batch to `POST /v1/events` with the ID of the tab it came from. Failed posts are retried, and the queue is bounded.
+2. The extension's service worker posts each batch to `POST /v1/events` with the ID of the tab it came from. Failed posts are retried unless the API rejects them, and the queue is bounded.
 3. The API writes each batch to the browser logger as a `Recording` event and streams it on the `/v1/sessions/recording` WebSocket.
 4. With the `recording` plugin option, the API also keeps the active session's events in memory and serves them at `GET /v1/sessions/{sessionId}/recording`. The standalone server keeps up to 64 MB, and the UI replays the session from there.
 

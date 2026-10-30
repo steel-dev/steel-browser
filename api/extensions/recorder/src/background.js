@@ -23,8 +23,10 @@ async function send(body) {
       continue;
     }
     apiUrl = url;
-    if (!response.ok) throw new Error(`Saving events failed with status ${response.status}`);
-    return;
+    if (response.ok) return;
+    const error = new Error(`Saving events failed with status ${response.status}`);
+    error.rejected = response.status < 500 && response.status !== 408 && response.status !== 429;
+    throw error;
   }
   throw failure;
 }
@@ -38,7 +40,7 @@ async function drain() {
       await send(batch.body);
     } catch (error) {
       batch.attempts += 1;
-      if (batch.attempts < MAX_ATTEMPTS) {
+      if (!error.rejected && batch.attempts < MAX_ATTEMPTS) {
         queue.unshift(batch);
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** batch.attempts));
       } else {
