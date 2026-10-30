@@ -9,6 +9,19 @@ let batch = [];
 let batchBytes = 0;
 let timer;
 
+function jsonBytes(text) {
+  let bytes = 2;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code < 0x20) bytes += 6;
+    else if (code === 0x22 || code === 0x5c) bytes += 2;
+    else if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else bytes += 3;
+  }
+  return bytes;
+}
+
 function flush() {
   clearTimeout(timer);
   timer = undefined;
@@ -22,7 +35,7 @@ function flush() {
 record({
   emit(event) {
     batch.push(event);
-    batchBytes += event.length;
+    batchBytes += jsonBytes(event);
     if (batch.length >= MAX_BATCH_EVENTS || batchBytes >= MAX_BATCH_BYTES) {
       flush();
     } else {
