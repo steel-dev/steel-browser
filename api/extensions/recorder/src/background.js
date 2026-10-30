@@ -1,55 +1,61 @@
-const LOCAL_API_URL = "http://localhost:3000/v1/events";
-const FALLBACK_API_URL = "http://0.0.0.0:3000/v1/events"; // Need to point to 0.0.0.0 in some deploys
-let currentApiUrl = LOCAL_API_URL;
+const API_URLS = ["localhost", "127.0.0.1", "0.0.0.0"].map(
+  (host) => `http://${host}:${process.env.PORT}/v1/events`,
+);
+const MAX_QUEUED_BATCHES = 100;
+const MAX_ATTEMPTS = 5;
 
-async function injectScript(tabId, changeInfo, tab) {
-  if (changeInfo.status === "complete" && tab.url) {
+const queue = [];
+let apiUrl = API_URLS[0];
+let draining = false;
+
+async function send(body) {
+  let failure;
+  for (const url of [apiUrl, ...API_URLS.filter((candidate) => candidate !== apiUrl)]) {
+    let response;
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ["inject.js"],
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
       });
     } catch (error) {
-      console.error("Script injection failed:", error);
+      failure = error;
+      continue;
     }
+    apiUrl = url;
+    if (!response.ok) throw new Error(`Saving events failed with status ${response.status}`);
+    return;
   }
+  throw failure;
 }
 
-// Listen for tab updates
-chrome.tabs.onUpdated.addListener(injectScript);
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== "SAVE_EVENTS") {
-    return false;
-  }
-
-  console.log("[Recorder Background] Saving events to", currentApiUrl);
-
-  const sendEvents = async (url) => {
+async function drain() {
+  if (draining) return;
+  draining = true;
+  while (queue.length > 0) {
+    const batch = queue.shift();
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(message),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      sendResponse({ success: true });
+      await send(batch.body);
     } catch (error) {
-      if (url === LOCAL_API_URL) {
-        // Retry with fallback URL
-        currentApiUrl = FALLBACK_API_URL;
-        return sendEvents(FALLBACK_API_URL);
+      batch.attempts += 1;
+      if (batch.attempts < MAX_ATTEMPTS) {
+        queue.unshift(batch);
+        await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** batch.attempts));
+      } else {
+        console.error("[Recorder] Dropped a batch of events:", error);
       }
-      sendResponse({ success: false, error: error.message });
     }
-  };
+  }
+  draining = false;
+}
 
-  sendEvents(currentApiUrl);
-  return true;
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type !== "SAVE_EVENTS" || !Array.isArray(message.events)) return;
+  if (message.events.length === 0) return;
+  if (queue.length >= MAX_QUEUED_BATCHES) queue.shift();
+  queue.push({
+    body: JSON.stringify({ events: message.events, tabId: sender.tab?.id }),
+    attempts: 0,
+  });
+  void drain();
 });

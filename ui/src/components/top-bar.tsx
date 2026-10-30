@@ -1,6 +1,6 @@
 import type { SessionDetails } from "../api";
 import { CopyButton } from "./copy-button";
-import { ChevronRightIcon, ConsoleIcon, DevToolsIcon, RailIcon } from "./icons";
+import { ChevronRightIcon, ConsoleIcon, DevToolsIcon, RailIcon, ReplayIcon } from "./icons";
 import { NewSessionButton } from "./new-session";
 import { ReleaseButton } from "./release-button";
 
@@ -10,6 +10,8 @@ export function TopBar({
   onToggleRail,
   consoleOpen,
   onToggleConsole,
+  replayOpen,
+  onToggleReplay,
   devtoolsOpen,
   onToggleDevtools,
   onSessionChange,
@@ -19,11 +21,14 @@ export function TopBar({
   onToggleRail: () => void;
   consoleOpen: boolean;
   onToggleConsole: () => void;
+  replayOpen: boolean;
+  onToggleReplay: () => void;
   devtoolsOpen: boolean;
   onToggleDevtools: () => void;
   onSessionChange: () => void;
 }) {
   const consoleLabel = consoleOpen ? "Hide logs" : "Show logs";
+  const replayLabel = replayOpen ? "Show live view" : "Show replay";
   const devtoolsLabel = devtoolsOpen ? "Hide DevTools" : "Show DevTools";
 
   return (
@@ -52,7 +57,19 @@ export function TopBar({
           <ConsoleIcon />
         </button>
       )}
-      {session?.debugUrl && (
+      {session && (
+        <button
+          type="button"
+          className="bar-button"
+          aria-label={replayLabel}
+          aria-pressed={replayOpen}
+          title={replayLabel}
+          onClick={onToggleReplay}
+        >
+          <ReplayIcon />
+        </button>
+      )}
+      {session?.debugUrl && !replayOpen && (
         <button
           type="button"
           className="bar-button devtools-toggle"

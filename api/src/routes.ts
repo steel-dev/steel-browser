@@ -4,3 +4,4 @@ export { default as seleniumRoutes } from "./modules/selenium/selenium.routes.js
 export { default as cdpRoutes } from "./modules/cdp/cdp.routes.js";
 export { default as filesRoutes } from "./modules/files/files.routes.js";
 export { default as logsRoutes } from "./modules/logs/logs.routes.js";
+export { default as recordingRoutes } from "./modules/recording/recording.routes.js";
