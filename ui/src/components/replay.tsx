@@ -113,7 +113,7 @@ function Player({
       replayer.current = created;
     }
     fed.current = events.length;
-    setTotal(replayer.current?.getMetaData().totalTime ?? 0);
+    void Promise.resolve().then(() => setTotal(replayer.current?.getMetaData().totalTime ?? 0));
   }, [events, version]);
 
   useEffect(
