@@ -178,6 +178,13 @@ async function routes(server: FastifyInstance) {
         timestamp: new Date().toISOString(),
         data: request.body,
       });
+      server.cdpService.emit(EmitEvent.Recording, request.body);
+      server.recordingService?.append(
+        server.sessionService.activeSession.id,
+        request.body.events,
+        request.body.tabId,
+        Number(request.headers["content-length"]) || JSON.stringify(request.body.events).length,
+      );
       return reply.send({ status: "ok" });
     },
   );

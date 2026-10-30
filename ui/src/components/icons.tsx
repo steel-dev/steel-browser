@@ -226,6 +226,37 @@ export function ActivityIcon(props: IconProps) {
   );
 }
 
+export function ReplayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.25 8a5.75 5.75 0 1 0 1.7-4.07L2.25 5.6" />
+      <path d="M2.25 2.75V5.6H5.1" />
+      <path d="M8 5v3l2 1.25" />
+    </Icon>
+  );
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path
+        d="M5 3.9v8.2a.75.75 0 0 0 1.14.64l6.6-4.1a.75.75 0 0 0 0-1.28l-6.6-4.1A.75.75 0 0 0 5 3.9Z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </Icon>
+  );
+}
+
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="3.5" width="2.75" height="9" rx="0.75" fill="currentColor" stroke="none" />
+      <rect x="9.25" y="3.5" width="2.75" height="9" rx="0.75" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
 export function SteelLogo(props: IconProps) {
   return (
     <svg
