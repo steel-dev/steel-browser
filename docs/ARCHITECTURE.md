@@ -113,6 +113,17 @@ Handles file operations with session-scoped storage:
 - **Storage Isolation**: Session-scoped file storage
 - **Cleanup**: Automatic file cleanup on session end
 
+### 5. Session Recording (`api/extensions/recorder`)
+
+Headless sessions load a Chrome extension that records every page with [rrweb](https://github.com/rrweb-io/rrweb):
+
+1. A content script records the page and sends events in batches, once a second or sooner when a batch gets large.
+2. The extension's service worker posts each batch to `POST /v1/events` with the ID of the tab it came from. Failed posts are retried, and the queue is bounded.
+3. The API writes each batch to the browser logger as a `Recording` event and streams it on the `/v1/sessions/recording` WebSocket.
+4. With the `recording` plugin option, the API also keeps the active session's events in memory and serves them at `GET /v1/sessions/{sessionId}/recording`. The standalone server keeps up to 64 MB, and the UI replays the session from there.
+
+The extension sends events to port 3000. If the API runs on another port, set `PORT` when you build the extension with `npm run prepare:recorder -w api`.
+
 ## 🔌 Plugin Architecture Deep Dive
 
 ### Plugin Lifecycle
@@ -213,7 +224,7 @@ const ScrapeRequestSchema = z.object({
 
 ## 🎨 Frontend Architecture
 
-The UI depends on React alone at runtime. It uses plain CSS and has no component or data-fetching libraries.
+The UI depends on React at runtime, plus rrweb for session replay. The replay code loads only when you open it. The UI uses plain CSS and has no component or data-fetching libraries.
 
 ### React Component Structure
 
@@ -223,7 +234,7 @@ ui/src/
 ├── api.ts               # HTTP and WebSocket URL helpers
 ├── hooks.ts             # Session polling, WebSocket streams, clipboard, stored toggles
 ├── format.ts            # Log and value formatting
-├── components/          # Sidebar, top bar, logs, live view, DevTools dock, details, session dialogs
+├── components/          # Sidebar, top bar, logs, live view, replay, DevTools dock, details, session dialogs
 ├── styles/
 │   ├── tokens.css       # Design tokens: colors, fonts, radii, shadows
 │   └── app.css          # Component styles
