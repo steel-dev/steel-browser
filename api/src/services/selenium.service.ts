@@ -44,6 +44,15 @@ export class SeleniumService extends EventEmitter {
     this.seleniumProcess = spawn("java", seleniumArgs);
     this.seleniumServerUrl = `http://localhost:${this.port}`;
 
+    this.seleniumProcess.on("error", (err) => {
+      this.logger.error(`Selenium process error: ${err}`);
+      this.postLog({
+        type: BrowserEventType.Error,
+        text: JSON.stringify({ type: BrowserEventType.Error, error: `${err}` }),
+        timestamp: new Date(),
+      });
+    });
+
     this.seleniumProcess.stdout?.on("data", (data) => {
       this.logger.info(`Selenium stdout: ${data}`);
       this.postLog({
@@ -67,23 +76,65 @@ export class SeleniumService extends EventEmitter {
       this.seleniumProcess = null;
     });
 
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("Selenium server failed to start within the timeout period"));
-      }, 15000); // 15 seconds timeout
+    const proc = this.seleniumProcess;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
 
-      this.seleniumProcess!.stdout?.on("data", (data) => {
-        if (data.toString().includes("Started Selenium Standalone")) {
+        const cleanup = () => {
           clearTimeout(timeout);
-          resolve();
-        }
+          proc.stdout?.off("data", onData);
+          proc.off("error", onError);
+          proc.off("close", onClose);
+        };
+
+        const timeout = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error("Selenium server failed to start within the timeout period"));
+        }, 15000); // 15 seconds timeout
+
+        const onData = (data: Buffer | string) => {
+          if (data.toString().includes("Started Selenium Standalone")) {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+          }
+        };
+
+        const onError = (err: Error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(err);
+        };
+
+        const onClose = (code: number | null) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error(`Selenium process exited prematurely with code ${code}`));
+        };
+
+        proc.stdout?.on("data", onData);
+        proc.on("error", onError);
+        proc.on("close", onClose);
       });
-    });
+    } catch (error) {
+      this.close();
+      throw error;
+    }
   }
 
   public close(): void {
     if (this.seleniumProcess) {
-      this.seleniumProcess.kill("SIGINT");
+      try {
+        this.seleniumProcess.kill("SIGINT");
+      } catch {
+        // Process might not be running or already killed
+      }
       this.seleniumProcess = null;
     }
   }
