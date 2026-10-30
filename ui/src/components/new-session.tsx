@@ -160,16 +160,8 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              className="button"
-              data-variant="primary"
-              data-shortcut="s"
-              aria-keyshortcuts="S"
-              disabled={pending}
-            >
+            <button type="submit" className="button" data-variant="primary" disabled={pending}>
               {pending ? "Starting session…" : "Start session"}
-              <KeyChip k="S" />
             </button>
           </div>
         </form>
