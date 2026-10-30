@@ -277,9 +277,7 @@ export FILTER_CHROME_ARGS="--disable-dev-shm-usage"
 # Install VS Code extensions
 code --install-extension ms-typescript.typescript
 code --install-extension esbenp.prettier-vscode
-code --install-extension bradlc.vscode-tailwindcss
 code --install-extension ms-vscode.vscode-typescript-next
-code --install-extension ms-vscode.vscode-eslint
 ```
 
 #### Settings Configuration
@@ -291,9 +289,6 @@ Create `.vscode/settings.json`:
   "typescript.preferences.importModuleSpecifier": "relative",
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": true
-  },
   "typescript.preferences.includePackageJsonAutoImports": "on",
   "files.exclude": {
     "**/node_modules": true,
@@ -403,11 +398,10 @@ npx playwright test --ui
 ```bash
 # Format code
 npm run pretty -w api
-npm run lint -w ui
 
 # Check types
 npm run type-check -w api
-npm run type-check -w ui
+npm run typecheck -w ui
 
 # Pre-commit hooks (automatically set up with Husky)
 npm run prepare
@@ -461,7 +455,7 @@ npm run dev
 
 # 5. Run quality checks
 npm run pretty -w api
-npm run lint -w ui
+npm run typecheck -w ui
 npm run build
 
 # 6. Commit changes

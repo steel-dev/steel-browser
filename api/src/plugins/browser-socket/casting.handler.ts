@@ -14,6 +14,7 @@ import {
   PageInfo,
 } from "../../types/casting.js";
 import { getPageFavicon, getPageTitle, navigatePage } from "../../utils/casting.js";
+import { CastFormat, subscribeToScreencast } from "./page-screencast.js";
 
 export async function handleCastSession(
   request: IncomingMessage,
@@ -55,6 +56,7 @@ export async function handleCastSession(
     let targetPage: Page | null = null;
     let targetClient: CDPSession | null = null;
     let targetPageId: string | null = null;
+    let unsubscribeScreencast: (() => void) | null = null;
 
     const activePages = new Map<string, Page>();
 
@@ -66,20 +68,17 @@ export async function handleCastSession(
         heartbeatInterval = null;
       }
 
+      if (unsubscribeScreencast) {
+        unsubscribeScreencast();
+        unsubscribeScreencast = null;
+      }
+
       if (targetPage) {
         targetPage.removeAllListeners("framenavigated");
       }
 
-      // Clean up screencast
       if (targetClient) {
         try {
-          targetClient.send("Page.stopScreencast").catch((err) => {
-            // Ignore errors about closed targets
-            if (!err.message?.includes("Target closed")) {
-              console.error("Error stopping screencast:", err);
-            }
-          });
-
           targetClient.detach().catch((err) => {
             // Ignore errors about closed targets
             if (!err.message?.includes("Target closed")) {
@@ -115,9 +114,12 @@ export async function handleCastSession(
       }
     };
 
+    let tabListVersion = 0;
+
     const sendTabList = async () => {
       try {
         if (ws.readyState !== WebSocket.OPEN || !tabDiscoveryMode) return;
+        const version = ++tabListVersion;
 
         const tabList: PageInfo[] = [];
 
@@ -129,6 +131,8 @@ export async function handleCastSession(
             favicon: await getPageFavicon(page),
           });
         }
+
+        if (version !== tabListVersion) return;
 
         ws.send(
           JSON.stringify({
@@ -182,6 +186,10 @@ export async function handleCastSession(
         socket.destroy();
         return;
       }
+
+      browser.once("disconnected", () => {
+        if (ws.readyState === WebSocket.OPEN) ws.close();
+      });
 
       const pages = await browser.pages();
 
@@ -278,7 +286,6 @@ export async function handleCastSession(
 
         await targetPage.bringToFront();
 
-        // Setup screencast for the target page
         targetClient = await targetPage.target().createCDPSession();
 
         ws.on("message", async (message) => {
@@ -379,52 +386,19 @@ export async function handleCastSession(
           }
         });
 
-        // Setup device metrics and start screencast
-        await targetClient.send("Page.setDeviceMetricsOverride", {
-          screenHeight: height,
-          screenWidth: width,
-          width,
-          height,
-          mobile: isMobile,
-          screenOrientation: isMobile
-            ? { angle: 0, type: "portraitPrimary" }
-            : { angle: 90, type: "landscapePrimary" },
-          deviceScaleFactor: isMobile ? 3 : 1,
-        });
+        const format: CastFormat = queryParams.get("format") === "binary" ? "binary" : "json";
+        unsubscribeScreencast = await subscribeToScreencast(
+          targetPageId,
+          { width, height, isMobile },
+          ws,
+          format,
+          targetPage,
+        );
 
-        await targetClient.send("Page.startScreencast", {
-          format: "jpeg",
-          quality: 75,
-          maxWidth: width,
-          maxHeight: height,
-        });
-
-        // Handle screencast frames
-        targetClient.on("Page.screencastFrame", async ({ data, sessionId }) => {
-          try {
-            // Acknowledge the frame right away to free up memory
-            await targetClient?.send("Page.screencastFrameAck", { sessionId });
-
-            if (ws.readyState === WebSocket.OPEN) {
-              // Get page metadata
-              const title = await getPageTitle(targetPage!);
-              const favicon = await getPageFavicon(targetPage!);
-
-              // Send frame data
-              ws.send(
-                JSON.stringify({
-                  pageId: targetPageId,
-                  url: targetPage?.url(),
-                  title,
-                  favicon,
-                  data,
-                }),
-              );
-            }
-          } catch (err) {
-            console.error("Error in Page.screencastFrame handler:", err);
-          }
-        });
+        if (ws.readyState !== WebSocket.OPEN) {
+          handleSessionCleanup();
+          return;
+        }
 
         // Cleanup when target is destroyed
         browser.on("targetdestroyed", async (target) => {

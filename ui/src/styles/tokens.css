@@ -1,0 +1,168 @@
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/Inter-Medium-latin.woff2") format("woff2");
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/Inter-Medium-latin-ext.woff2") format("woff2");
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../fonts/GeistMono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 4px;
+  --radius-button: 6px;
+  --radius: 8px;
+
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  --sand-1: #fdfdfc;
+  --sand-2: #f9f9f8;
+  --sand-3: #f1f0ef;
+  --sand-4: #e9e8e6;
+  --sand-5: #e2e1de;
+  --sand-6: #dad9d6;
+  --sand-7: #cfceca;
+  --sand-8: #bcbbb5;
+  --sand-9: #8d8d86;
+  --sand-10: #82827c;
+  --sand-11: #63635e;
+  --sand-12: #21201c;
+  --sand-a3: #20100010;
+  --sand-a4: #1f150019;
+  --sand-a5: #1f180021;
+
+  --red-3: #ffebe7;
+  --red-9: #d40000;
+  --red-11: #d91009;
+  --yellow-3: #fff9b8;
+  --yellow-9: #ffe900;
+  --yellow-11: #8a7a00;
+  --green-3: #e5f8e3;
+  --green-9: #01a300;
+  --green-11: #008400;
+  --cyan-3: #d9f9f8;
+  --cyan-9: #00c6c5;
+  --cyan-11: #008080;
+  --blue-3: #e6f4ff;
+  --blue-9: #05a5ff;
+  --blue-11: #0078cc;
+  --pink-3: #ffe6ef;
+  --pink-9: #fe89b2;
+  --pink-11: #b24570;
+
+  --app-ground: var(--sand-2);
+  --panel-bg: #ffffff;
+  --dialog-bg: #ffffff;
+  --dialog-head-bg: #ffffff;
+  --raised-bg: #ffffff;
+  --field-bg: var(--sand-3);
+  --field-focus-bg: var(--sand-4);
+  --switch-knob: #ffffff;
+  --switch-knob-on: #ffffff;
+  --rail-hover-bg: var(--sand-3);
+  --rail-active-bg: var(--sand-4);
+  --card-bg: var(--sand-2);
+  --row-hover-bg: var(--sand-2);
+  --hairline: var(--sand-6);
+  --button-bg: #ffffff;
+  --button-hover-bg: var(--sand-2);
+  --round-bg: #ffffff;
+  --round-hover-bg: var(--sand-2);
+  --toggle-track: var(--sand-3);
+  --toggle-pill: #ffffff;
+
+  --shadow-panel: 0 0 0 0.5px var(--sand-a4), 0 1px 2px 0 rgba(0, 0, 0, 0.015),
+    0 2px 12px -2px rgba(0, 0, 0, 0.025);
+  --shadow-button: 0 1px 2px 0 rgb(33 32 28 / 0.12), 0 0 0 1px rgb(33 32 28 / 0.08);
+  --shadow-button-black: 0 1px 2px 0 rgb(33 32 28 / 0.12);
+  --shadow-pill: var(--shadow-button);
+  --shadow-toggle: var(--shadow-button);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sand-1: #111110;
+    --sand-2: #191918;
+    --sand-3: #222221;
+    --sand-4: #2a2a28;
+    --sand-5: #31312e;
+    --sand-6: #3b3a37;
+    --sand-7: #494844;
+    --sand-8: #62605b;
+    --sand-9: #6f6d66;
+    --sand-10: #7c7b74;
+    --sand-11: #b5b3ad;
+    --sand-12: #eeeeec;
+    --sand-a3: #f6f6f513;
+    --sand-a4: #fefef31b;
+    --sand-a5: #fbfbeb23;
+
+    --red-3: #3d120d;
+    --red-11: #ff907f;
+    --yellow-3: #292403;
+    --yellow-9: #f4dd15;
+    --yellow-11: #f5de18;
+    --green-3: #192b17;
+    --green-11: #5ad654;
+    --cyan-3: #002e2e;
+    --cyan-11: #2bd4d2;
+    --blue-3: #002945;
+    --blue-11: #5ebcff;
+    --pink-3: #361722;
+    --pink-11: #ff8fb8;
+
+    --app-ground: #080807;
+    --panel-bg: var(--sand-1);
+    --dialog-bg: var(--sand-2);
+    --dialog-head-bg: var(--sand-3);
+    --raised-bg: var(--sand-3);
+    --field-bg: var(--sand-3);
+    --field-focus-bg: var(--sand-4);
+    --switch-knob: var(--sand-11);
+    --switch-knob-on: var(--sand-1);
+    --rail-hover-bg: var(--sand-1);
+    --rail-active-bg: var(--sand-2);
+    --card-bg: var(--sand-2);
+    --row-hover-bg: var(--sand-3);
+    --hairline: var(--sand-6);
+    --button-bg: var(--sand-4);
+    --button-hover-bg: var(--sand-5);
+    --round-bg: var(--sand-2);
+    --round-hover-bg: var(--sand-4);
+    --toggle-track: var(--sand-2);
+    --toggle-pill: var(--sand-4);
+
+    --shadow-panel: 0 0 0 0.5px var(--sand-a3), 0 1px 2px 0 rgba(0, 0, 0, 0.5),
+      0 4px 16px -2px rgba(0, 0, 0, 0.6);
+    --shadow-button: 0 0 0 0.5px var(--sand-5);
+    --shadow-button-black: none;
+    --shadow-pill: 0 0 0 0.5px var(--sand-7);
+    --shadow-toggle: 0 1px 2px 0 rgb(0 0 0 / 0.32), 0 0 0 1px var(--sand-6);
+    --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.5);
+  }
+}

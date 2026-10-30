@@ -213,39 +213,39 @@ const ScrapeRequestSchema = z.object({
 
 ## 🎨 Frontend Architecture
 
+The UI depends on React alone at runtime. It uses plain CSS and has no component or data-fetching libraries.
+
 ### React Component Structure
 
 ```
-src/
-├── components/           # Reusable UI components
-│   ├── ui/              # Base UI components (buttons, inputs)
-│   ├── badges/          # Status badges
-│   ├── icons/           # Icon components
-│   └── sessions/        # Session-specific components
-├── containers/          # Page-level containers
-├── contexts/           # React contexts for state management
-├── hooks/              # Custom React hooks
-└── steel-client/       # Auto-generated API client
+ui/src/
+├── app.tsx              # Layout for the active session
+├── api.ts               # HTTP and WebSocket URL helpers
+├── hooks.ts             # Session polling, WebSocket streams, clipboard, stored toggles
+├── format.ts            # Log and value formatting
+├── components/          # Sidebar, top bar, logs, live view, DevTools dock, details, session dialogs
+├── styles/
+│   ├── tokens.css       # Design tokens: colors, fonts, radii, shadows
+│   └── app.css          # Component styles
+└── client/              # Types generated from api/openapi/schemas.json
 ```
 
 ### State Management
 
-- **React Query**: Server state management and caching
-- **React Context**: Global application state
-- **Local State**: Component-specific state with hooks
+- **Polling**: `useActiveSession` fetches `/v1/sessions` every second while the tab is visible
+- **Local State**: Component state with React hooks
 
 ### Real-time Updates
 
-WebSocket connections provide real-time updates:
+WebSocket connections stream browser events and the active page ID:
 
 ```typescript
-// Session monitoring
-const { data: sessions } = useQuery({
-  queryKey: ['sessions'],
-  queryFn: () => steelClient.sessions.getSessions(),
-  refetchInterval: 1000 // Real-time updates
+useSocket("/v1/sessions/logs", (data) => {
+  setEvents((current) => [...current, ...data]);
 });
 ```
+
+Sockets reconnect with exponential backoff when the API restarts.
 
 ## 🔒 Security Architecture
 
