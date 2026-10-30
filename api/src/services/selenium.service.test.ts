@@ -50,6 +50,7 @@ describe("SeleniumService", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env.PATH = originalPath;
     process.env.Path = originalPathEnv;
     vi.restoreAllMocks();
@@ -63,7 +64,7 @@ describe("SeleniumService", () => {
       const logger = createMockLogger();
       const service = new SeleniumService(logger as never);
 
-      await expect(service.launch({})).rejects.toThrow();
+      await expect(service.launch({} as never)).rejects.toThrow();
 
       // Check logger captured the error
       expect(logger.error).toHaveBeenCalled();
@@ -81,7 +82,7 @@ describe("SeleniumService", () => {
       const logger = createMockLogger();
       const service = new SeleniumService(logger as never);
 
-      const launchPromise = service.launch({});
+      const launchPromise = service.launch({} as never);
 
       const spawnError = new Error("spawn java ENOENT");
       mockChild.emit("error", spawnError);
@@ -98,7 +99,7 @@ describe("SeleniumService", () => {
       const logger = createMockLogger();
       const service = new SeleniumService(logger as never);
 
-      const launchPromise = service.launch({});
+      const launchPromise = service.launch({} as never);
 
       mockChild.emit("close", 1);
 
@@ -114,7 +115,7 @@ describe("SeleniumService", () => {
       const logger = createMockLogger();
       const service = new SeleniumService(logger as never);
 
-      const launchPromise = service.launch({});
+      const launchPromise = service.launch({} as never);
 
       mockChild.stdout.emit("data", Buffer.from("Started Selenium Standalone 4.25.0"));
 
@@ -135,7 +136,7 @@ describe("SeleniumService", () => {
       const logger = createMockLogger();
       const service = new SeleniumService(logger as never);
 
-      const launchPromise = service.launch({});
+      const launchPromise = service.launch({} as never);
 
       // Fast-forward past 15 seconds
       vi.advanceTimersByTime(15000);
@@ -159,17 +160,53 @@ describe("SeleniumService", () => {
       const logger = createMockLogger();
       const service = new SeleniumService(logger as never);
 
-      const firstLaunch = service.launch({});
+      const firstLaunch = service.launch({} as never);
       mockChild1.stdout.emit("data", Buffer.from("Started Selenium Standalone"));
       await firstLaunch;
 
-      const secondLaunch = service.launch({});
+      const secondLaunch = service.launch({} as never);
       await Promise.resolve();
 
       expect(mockChild1.kill).toHaveBeenCalledWith("SIGINT");
 
       mockChild2.stdout.emit("data", Buffer.from("Started Selenium Standalone"));
       await secondLaunch;
+    });
+
+    it("does not kill or nullify a newer process if an older superseded process closes or fails", async () => {
+      const mockChild1 = createMockChildProcess();
+      const mockChild2 = createMockChildProcess();
+
+      let spawnCount = 0;
+      vi.mocked(spawn).mockImplementation((() => {
+        spawnCount++;
+        return spawnCount === 1 ? mockChild1 : mockChild2;
+      }) as never);
+
+      const logger = createMockLogger();
+      const service = new SeleniumService(logger as never);
+
+      const firstLaunch = service.launch({} as never);
+      // Before firstLaunch settles, second launch starts and supersedes mockChild1
+      const secondLaunch = service.launch({} as never);
+
+      // Now mockChild1 fails during its startup
+      mockChild1.emit("error", new Error("first launch failed"));
+      await expect(firstLaunch).rejects.toThrow("first launch failed");
+
+      // mockChild2 should NOT have been killed by mockChild1's catch block
+      expect(mockChild2.kill).not.toHaveBeenCalled();
+
+      // mockChild1 emits close
+      mockChild1.emit("close", 1);
+
+      // mockChild2 finishes startup
+      mockChild2.stdout.emit("data", Buffer.from("Started Selenium Standalone"));
+      await secondLaunch;
+
+      // Closing service should target mockChild2 (it was not nullified by mockChild1's close)
+      service.close();
+      expect(mockChild2.kill).toHaveBeenCalledWith("SIGINT");
     });
   });
 });

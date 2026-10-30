@@ -41,10 +41,11 @@ export class SeleniumService extends EventEmitter {
 
     const seleniumArgs = ["-jar", seleniumServerPath, "standalone"];
 
-    this.seleniumProcess = spawn("java", seleniumArgs);
+    const proc = spawn("java", seleniumArgs);
+    this.seleniumProcess = proc;
     this.seleniumServerUrl = `http://localhost:${this.port}`;
 
-    this.seleniumProcess.on("error", (err) => {
+    proc.on("error", (err) => {
       this.logger.error(`Selenium process error: ${err}`);
       this.postLog({
         type: BrowserEventType.Error,
@@ -53,7 +54,7 @@ export class SeleniumService extends EventEmitter {
       });
     });
 
-    this.seleniumProcess.stdout?.on("data", (data) => {
+    proc.stdout?.on("data", (data) => {
       this.logger.info(`Selenium stdout: ${data}`);
       this.postLog({
         type: BrowserEventType.Console,
@@ -62,7 +63,7 @@ export class SeleniumService extends EventEmitter {
       });
     });
 
-    this.seleniumProcess.stderr?.on("data", (data) => {
+    proc.stderr?.on("data", (data) => {
       this.logger.error(`Selenium stderr: ${data}`);
       this.postLog({
         type: BrowserEventType.Error,
@@ -71,12 +72,12 @@ export class SeleniumService extends EventEmitter {
       });
     });
 
-    this.seleniumProcess.on("close", (code) => {
+    proc.on("close", (code) => {
       this.logger.info(`Selenium process exited with code ${code}`);
-      this.seleniumProcess = null;
+      if (this.seleniumProcess === proc) {
+        this.seleniumProcess = null;
+      }
     });
-
-    const proc = this.seleniumProcess;
     try {
       await new Promise<void>((resolve, reject) => {
         let settled = false;
@@ -123,7 +124,9 @@ export class SeleniumService extends EventEmitter {
         proc.on("close", onClose);
       });
     } catch (error) {
-      this.close();
+      if (this.seleniumProcess === proc) {
+        this.close();
+      }
       throw error;
     }
   }
