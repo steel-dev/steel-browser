@@ -9,13 +9,19 @@ function getProtocol(protocolType: "http" | "ws"): string {
   return env.USE_SSL ? `${protocolType}s` : protocolType;
 }
 
+const unspecifiedHosts = new Set(["0.0.0.0", "::", "[::]"]);
+
+export function publicHost(host: string): string {
+  return unspecifiedHosts.has(host) ? "localhost" : host;
+}
+
 /**
  * Returns the base URL for the server, handling DOMAIN vs HOST:PORT appropriately
  * @param protocolType 'http' or 'ws' - determines the protocol prefix
  * @returns Formatted base URL with appropriate protocol and trailing slash
  */
 export function getBaseUrl(protocolType: "http" | "ws" = "http"): string {
-  const baseUrl = env.DOMAIN ?? `${env.HOST}:${env.PORT}`;
+  const baseUrl = env.DOMAIN ?? `${publicHost(env.HOST)}:${env.PORT}`;
   const protocol = getProtocol(protocolType);
   return `${protocol}://${baseUrl}/`;
 }

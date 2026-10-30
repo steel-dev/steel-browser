@@ -40,11 +40,10 @@ describe("handleCastSession cleanup", () => {
       url: () => "http://localhost",
     };
 
-    mockBrowser = {
+    mockBrowser = Object.assign(new EventEmitter(), {
       pages: vi.fn().mockResolvedValue([mockPage]),
       disconnect: mockDisconnect,
-      on: vi.fn(),
-    };
+    });
 
     vi.mocked(puppeteer.connect).mockResolvedValue(mockBrowser as any);
 
@@ -161,6 +160,74 @@ describe("handleCastSession cleanup", () => {
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("closes the tab discovery socket when the browser goes away", async () => {
+    const mockRequest = {
+      url: "/v1/sessions/session-abc/cast?tabInfo=true",
+    };
+
+    await handleCastSession(
+      mockRequest as any,
+      mockSocket as any,
+      Buffer.alloc(0),
+      mockWss as any,
+      mockSessionService as any,
+      undefined,
+    );
+    await upgradePromise;
+
+    expect(mockWs.close).not.toHaveBeenCalled();
+    mockBrowser.emit("disconnected");
+
+    expect(mockWs.close).toHaveBeenCalledTimes(1);
+    mockWs.emit("close");
+  });
+
+  it("drops a tab list that a newer one overtakes", async () => {
+    const mockRequest = {
+      url: "/v1/sessions/session-abc/cast?tabInfo=true",
+    };
+    let finishTitle = (_title: string) => {};
+    const slowPage = {
+      url: () => "https://slow.test",
+      title: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            finishTitle = resolve;
+          }),
+      ),
+      evaluate: vi.fn().mockResolvedValue(null),
+    };
+    const slowTarget = { type: () => "page", asPage: async () => slowPage, _targetId: "slow-page" };
+    const tabLists = () =>
+      mockWs.send.mock.calls
+        .map(([payload]: [string]) => JSON.parse(payload))
+        .filter((message: { type: string }) => message.type === "tabList");
+
+    await handleCastSession(
+      mockRequest as any,
+      mockSocket as any,
+      Buffer.alloc(0),
+      mockWss as any,
+      mockSessionService as any,
+      undefined,
+    );
+    await upgradePromise;
+    mockWs.send.mockClear();
+
+    mockBrowser.emit("targetcreated", slowTarget);
+    await vi.waitFor(() => expect(slowPage.title).toHaveBeenCalledTimes(1));
+    mockBrowser.emit("targetdestroyed", slowTarget);
+    await vi.waitFor(() => expect(tabLists()).toHaveLength(1));
+    finishTitle("Slow");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(tabLists()).toHaveLength(1);
+    expect(tabLists()[0].tabs.map((tab: { id: string }) => tab.id)).toEqual([
+      "existing-page-id-999",
+    ]);
+    mockWs.emit("close");
+  });
+
   it("disconnects the browser when setup fails", async () => {
     const mockRequest = {
       url: "/v1/sessions/session-abc/cast?pageId=existing-page-id-999",
@@ -180,6 +247,29 @@ describe("handleCastSession cleanup", () => {
 
     expect(puppeteer.connect).toHaveBeenCalledTimes(1);
     expect(mockSocket.destroy).toHaveBeenCalledTimes(1);
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up when the cast socket closes during setup", async () => {
+    const mockRequest = {
+      url: "/v1/sessions/session-abc/cast?pageId=existing-page-id-999",
+    };
+
+    mockPage.bringToFront.mockImplementationOnce(async () => {
+      mockWs.readyState = WebSocket.CLOSED;
+    });
+
+    await handleCastSession(
+      mockRequest as any,
+      mockSocket as any,
+      Buffer.alloc(0),
+      mockWss as any,
+      mockSessionService as any,
+      { pageId: "existing-page-id-999" },
+    );
+    await upgradePromise;
+
+    expect(mockWs.listenerCount("close")).toBe(0);
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 });

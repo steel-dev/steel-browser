@@ -4,36 +4,61 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Steel Session Player</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2039.9639%2039.9639%22%3E%3Cstyle%3Epath%7Bfill%3A%2321201C%7D%40media%20(prefers-color-scheme%3Adark)%7Bpath%7Bfill%3A%23FFFFFF%7D%7D%3C%2Fstyle%3E%3Cpath%20d%3D%22M36.9898%2039.9639C38.0308%2039.9639%2038.5513%2039.9639%2038.9489%2039.7613C39.2987%2039.5831%2039.5831%2039.2987%2039.7613%2038.9489C39.9639%2038.5513%2039.9639%2038.0308%2039.9639%2036.9898L39.9639%202.97406C39.9639%201.93304%2039.9639%201.41253%2039.7613%201.01492C39.5831%200.665164%2039.2987%200.380806%2038.949%200.202599C38.5513%203.11805e-06%2038.0308%203.07255e-06%2036.9898%202.98154e-06L2.97406%207.78848e-09C1.93304%20-8.32201e-08%201.41253%20-1.28724e-07%201.01492%200.202595C0.665166%200.380803%200.380808%200.665161%200.2026%201.01491C4.58068e-06%201.41253%204.53518e-06%201.93304%204.44417e-06%202.97405L1.47042e-06%2036.9898C1.37941e-06%2038.0308%201.33391e-06%2038.5513%200.202597%2038.9489C0.380805%2039.2987%200.665162%2039.5831%201.01492%2039.7613C1.41253%2039.9639%201.93304%2039.9639%202.97406%2039.9639L36.9898%2039.9639ZM34.7682%206.66065C35.7464%206.66065%2036.2355%206.66065%2036.5578%206.86528C36.8399%207.04442%2037.0432%207.32439%2037.1261%207.64814C37.2208%208.01795%2037.0693%208.48299%2036.7662%209.41307L33.3964%2019.7548C33.156%2020.4925%2033.0358%2020.8614%2032.8098%2021.1343C32.6102%2021.3753%2032.353%2021.562%2032.0621%2021.6771C31.7326%2021.8074%2031.3446%2021.8074%2030.5687%2021.8074L5.45147%2021.8074C4.28855%2021.8074%203.70709%2021.8074%203.445%2021.58C3.21771%2021.3828%203.09997%2021.0878%203.12904%2020.7883C3.16256%2020.4429%203.58427%2020.0426%204.42769%2019.2419L15.9597%208.29483C16.5957%207.69108%2016.9137%207.3892%2017.2803%207.17362C17.6054%206.98246%2017.9577%206.84188%2018.3251%206.7567C18.7394%206.66065%2019.1778%206.66065%2020.0548%206.66065L34.7682%206.66065Z%22%2F%3E%3C%2Fsvg%3E">
     <style>
-        /* CSS Variables for themes */
         html[data-theme="dark"] {
-              --bg-primary: #272725;
-              --bg-secondary: #171717;
-              --border-color: #383838;
-              --text-color: #ffffff;
-              --tab-active-bg: #272725;
-              --tab-hover-bg: #333333;
-              --icon-color: #8a8a8a;
-              --icon-hover-color: #ffffff;
-              --error-color: #e53935;
-              --offline-indicator-color: #e53935;
-              --loading-overlay-bg: rgba(30, 30, 30, 0.8);
-              --loading-spinner-color: #ffffff;
+            --bg-primary: #191918;
+            --bg-secondary: #191918;
+            --tabbar-bg: #111110;
+            --content-bg: #111110;
+            --border-color: #2a2a28;
+            --text-color: #eeeeec;
+            --text-muted: #b5b3ad;
+            --tab-active-bg: #2a2a28;
+            --tab-active-shadow: 0 0 0 0.5px #31312e;
+            --tab-hover-bg: #222221;
+            --input-bg: #111110;
+            --input-border: #2a2a28;
+            --focus-ring: #05a5ff;
+            --icon-color: #7c7b74;
+            --icon-hover-color: #eeeeec;
+            --success-color: #5ad654;
+            --error-color: #ff907f;
+            --error-soft: #3d120d;
+            --offline-indicator-color: #ff907f;
+            --loading-overlay-bg: rgba(8, 8, 7, 0.72);
+            --loading-spinner-color: #b5b3ad;
+            --spinner-track: #31312e;
         }
 
         html[data-theme="light"] {
             --bg-primary: #ffffff;
-            --bg-secondary: #f5f5f5;
-            --border-color: #e0e0e0;
-            --text-color: #000000;
-              --tab-active-bg: #e8e8e8;
-              --tab-hover-bg: #efefef;
-              --icon-color: #666666;
-              --icon-hover-color: #000000;
-              --error-color: #e53935;
-              --offline-indicator-color: #e53935;
-              --loading-overlay-bg: rgba(240, 240, 240, 0.8);
-              --loading-spinner-color: #333333;
+            --bg-secondary: #ffffff;
+            --tabbar-bg: #f9f9f8;
+            --content-bg: #fdfdfc;
+            --border-color: #e9e8e6;
+            --text-color: #21201c;
+            --text-muted: #63635e;
+            --tab-active-bg: #ffffff;
+            --tab-active-shadow: 0 1px 2px 0 rgb(33 32 28 / 0.12), 0 0 0 1px rgb(33 32 28 / 0.08);
+            --tab-hover-bg: #f1f0ef;
+            --input-bg: #f9f9f8;
+            --input-border: #e2e1de;
+            --focus-ring: #05a5ff;
+            --icon-color: #82827c;
+            --icon-hover-color: #21201c;
+            --success-color: #008400;
+            --error-color: #d91009;
+            --error-soft: #ffebe7;
+            --offline-indicator-color: #d91009;
+            --loading-overlay-bg: rgba(249, 249, 248, 0.72);
+            --loading-spinner-color: #63635e;
+            --spinner-track: #e2e1de;
+        }
+
+        html {
+            --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
         }
 
         html, body {
@@ -43,7 +68,8 @@
             height: 100%;
             background: var(--bg-primary);
             overflow: hidden;
-              font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            font-family: var(--font-sans);
+            -webkit-font-smoothing: antialiased;
         }
         .container {
             width: 100%;
@@ -55,33 +81,23 @@
             box-sizing: border-box;
             overflow: hidden;
         }
-        .top-bar {
-            height: 40px;
-            flex: 0 0 40px;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-              padding: 0;
-            box-sizing: border-box;
-        }
         .url-bar {
-              width: 100%;
+            flex: 1;
+            min-width: 0;
             height: 28px;
-            padding: 0 12px;
-            background: var(--bg-primary);
-            border-radius: 4px;
-            border: 1px solid var(--border-color);
+            padding: 0 10px;
+            background: var(--input-bg);
+            border-radius: 6px;
+            border: 1px solid var(--input-border);
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             color: var(--text-color);
-            font-family: system-ui, -apple-system, sans-serif;
-            &:focus-within {
-              outline: none;
-              background: var(--tab-hover-bg);
-            }
+            box-sizing: border-box;
+            transition: border-color 0.15s cubic-bezier(0, 0, 0.2, 1);
+        }
+        .url-bar:focus-within {
+            border-color: var(--focus-ring);
         }
         .favicon {
             width: 14px;
@@ -91,349 +107,353 @@
         }
         .url-input {
             flex: 1;
+            min-width: 0;
             border: none;
             background: transparent;
             color: var(--text-color);
-            font-family: 'Geist', sans-serif;
-            font-size: 13px;
+            font-family: var(--font-mono);
+            font-size: 12px;
             outline: none;
             width: 100%;
+        }
+        .url-input:disabled {
+            color: var(--text-muted);
         }
         .content {
             min-height: 0;
             flex: 1;
             overflow: hidden;
-            background: white;
+            background: var(--content-bg);
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
         }
-          .canvas-container {
-              position: absolute;
-              height: 100%;
-              width: 100%;
-              display: none;
-          }
-          .canvas-container.active {
-              display: flex;
-              align-items: center;
-              justify-content: center;
-          }
-          .canvas {
+        .canvas-container {
+            position: absolute;
+            height: 100%;
+            width: 100%;
+            display: none;
+        }
+        .canvas-container.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .canvas {
             position: absolute;
             height: 100%;
             width: auto;
             left: 50%;
             transform: translateX(-50%);
             object-fit: contain;
-          }
+        }
 
-          /* Tab bar styles */
-          .tab-bar {
+        .tab-bar {
             display: flex;
-            padding: 6px;
-            gap: 4px;
-            height: 36px;
-            background: var(--bg-secondary);
+            padding: 0 6px;
+            gap: 2px;
+            height: 40px;
+            background: var(--tabbar-bg);
             border-bottom: 1px solid var(--border-color);
             overflow-x: auto;
-            scrollbar-width: none; /* Firefox */
-            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
             align-items: center;
-          }
-          .tab-bar::-webkit-scrollbar {
-              display: none; /* Chrome, Safari, Opera */
-          }
-          .tab {
-              display: flex;
-              align-items: center;
-              padding: 0 12px;
-              min-width: 120px;
-              max-width: 200px;
-              height: 36px;
-              border-radius: 8px;
-              color: var(--text-color);
-              font-size: 12px;
-              cursor: <%= interactive ? "pointer" : "default" %>;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              position: relative;
-              gap: 8px;
-              transition: background-color 0.2s;
-          }
-          .tab:hover {
-              background-color: <%= interactive ? "var(--tab-hover-bg)" : "transparent" %>;
-          }
-          .tab.active {
-              background-color: var(--tab-active-bg);
-          }
-          .tab-favicon {
-              width: 16px;
-              height: 16px;
-              object-fit: contain;
-          }
-          .tab-title {
-              flex: 1;
-              overflow: hidden;
-              text-overflow: ellipsis;
-          }
-          .tab-close {
-              width: 16px;
-              height: 16px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              border-radius: 50%;
-              opacity: 0.6;
-              font-size: 14px;
-              line-height: 1;
-          }
-          .tab-close:hover {
-              background: rgba(255, 255, 255, 0.1);
-              opacity: 1;
-          }
-          .new-tab-button {
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: 36px;
-              min-width: 36px;
-              height: 36px;
-              color: var(--icon-color);
-              cursor: pointer;
-              font-size: 18px;
-              transition: color 0.2s;
-          }
-          .new-tab-button:hover {
-              color: var(--icon-hover-color);
-          }
+            box-sizing: border-box;
+        }
+        .tab-bar::-webkit-scrollbar {
+            display: none;
+        }
+        .tab {
+            display: flex;
+            align-items: center;
+            padding: 0 8px 0 10px;
+            min-width: 120px;
+            max-width: 200px;
+            height: 28px;
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 12px;
+            cursor: <%= interactive ? "pointer" : "default" %>;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            position: relative;
+            gap: 8px;
+            box-sizing: border-box;
+            transition: background-color 0.15s cubic-bezier(0, 0, 0.2, 1), color 0.15s cubic-bezier(0, 0, 0.2, 1);
+        }
+        .tab:hover {
+            background-color: <%= interactive ? "var(--tab-hover-bg)" : "transparent" %>;
+        }
+        .tab.active {
+            background-color: var(--tab-active-bg);
+            box-shadow: var(--tab-active-shadow);
+            color: var(--text-color);
+        }
+        .tab-favicon {
+            width: 14px;
+            height: 14px;
+            object-fit: contain;
+        }
+        .tab-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tab-close {
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            color: var(--icon-color);
+            flex-shrink: 0;
+        }
+        .tab-close svg {
+            width: 12px;
+            height: 12px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+        }
+        .tab-close:hover {
+            background: var(--tab-hover-bg);
+            color: var(--icon-hover-color);
+        }
+        .new-tab-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            min-width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            color: var(--icon-color);
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .new-tab-button:hover {
+            background: var(--tab-hover-bg);
+            color: var(--icon-hover-color);
+        }
 
-          /* Navigation buttons */
-          .nav-buttons {
-              display: flex;
-              gap: 4px;
-              margin-left: 8px;
-              margin-right: 8px;
-          }
+        .nav-buttons {
+            display: flex;
+            gap: 2px;
+        }
         .nav-button {
-              width: 28px;
-              height: 28px;
+            width: 28px;
+            height: 28px;
             border: none;
             background: transparent;
-              color: var(--icon-color);
+            color: var(--icon-color);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-              font-size: 18px;
             padding: 0;
-              border-radius: 4px;
-              transition: all 0.2s;
+            border-radius: 6px;
+            transition: color 0.15s cubic-bezier(0, 0, 0.2, 1), background-color 0.15s cubic-bezier(0, 0, 0.2, 1);
         }
         .nav-button:hover {
-              color: var(--icon-hover-color);
-              background: rgba(255, 255, 255, 0.1);
-          }
-          .nav-button:disabled {
-              cursor: default;
-              &:hover {
-                background: transparent;
-              }
-          }
+            color: var(--icon-hover-color);
+            background: var(--tab-hover-bg);
+        }
+        .nav-button:disabled {
+            cursor: default;
+            opacity: 0.4;
+        }
+        .nav-button:disabled:hover {
+            color: var(--icon-color);
+            background: transparent;
+        }
+        .nav-button:focus-visible,
+        .tab-close:focus-visible {
+            outline: 2px solid var(--focus-ring);
+            outline-offset: 1px;
+        }
 
-          /* Browser chrome layout */
-          .browser-chrome {
-              display: flex;
-              flex-direction: column;
-              width: 100%;
-              position: relative;
-          }
-          .address-bar {
-              display: flex;
-              align-items: center;
-              padding: 0 8px;
-              height: 40px;
-              background: var(--bg-secondary);
-              border-bottom: 1px solid var(--border-color);
-          }
+        .browser-chrome {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            position: relative;
+        }
+        .address-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 6px;
+            height: 40px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            box-sizing: border-box;
+        }
 
-          /* Icons */
-          .icon {
-              width: 16px;
-              height: 16px;
-              fill: var(--icon-color);
-          }
-          .icon-container {
-              display: flex;
-              align-items: center;
-              justify-content: center;
-          }
+        .icon {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .icon-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-          /* Offline status indicator styling - inline with tabs */
-          .connection-status {
-              display: flex;
-              align-items: center;
-              padding: 0 12px;
-              height: 36px;
-              color: var(--text-color);
-              font-family: system-ui, -apple-system, sans-serif;
-              font-size: 13px;
-              box-sizing: border-box;
-              min-width: 140px;
-              flex-shrink: 0;
-          }
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            height: 20px;
+            padding: 0 8px;
+            margin: 0 4px;
+            border-radius: 999px;
+            background: var(--error-soft);
+            color: var(--error-color);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .connection-status.offline {
+            display: flex;
+        }
+        .connection-status.online,
+        .connection-status.connecting {
+            display: none;
+        }
+        .status-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .status-indicator.offline {
+            background-color: var(--offline-indicator-color);
+        }
 
-          .connection-status.offline {
-              display: flex;
-          }
+        .url-security-icon {
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--icon-color);
+            flex-shrink: 0;
+        }
+        .url-security-icon svg {
+            width: 14px;
+            height: 14px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .url-security-icon.secure {
+            color: var(--success-color);
+        }
 
-          .connection-status.online {
-              display: none;
-          }
+        html[data-single-page-mode="true"] .tab-bar {
+            display: none !important;
+        }
+        html[data-single-page-mode="true"] .content {
+            height: calc(100% - 40px);
+        }
 
-          /* Initially hide the connection status until we know the state */
-          .connection-status.connecting {
-              display: none;
-          }
+        .canvas-container.loading::before,
+        .canvas-container.error::before {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--text-muted);
+            font-family: var(--font-sans);
+            font-size: 13px;
+            z-index: 5;
+        }
+        .canvas-container.loading::before {
+            content: "Loading…";
+        }
+        .canvas-container.error::before {
+            content: "Session released";
+        }
 
-          .status-indicator {
-              width: 8px;
-              height: 8px;
-              border-radius: 50%;
-              margin-right: 8px;
-              display: inline-block;
-              flex-shrink: 0;
-          }
+        .canvas-container.tab-switching::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: var(--loading-overlay-bg);
+            z-index: 10;
+        }
+        .canvas-container.tab-switching::before {
+            content: "";
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 2px solid var(--spinner-track);
+            border-top-color: var(--loading-spinner-color);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            z-index: 11;
+        }
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
 
-          .status-indicator.offline {
-              background-color: var(--offline-indicator-color);
-          }
+        .tab-favicon-spinner {
+            width: 14px;
+            height: 14px;
+            display: none;
+            position: relative;
+        }
+        .tab-favicon-spinner::after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            top: 1px;
+            left: 1px;
+            border: 1.5px solid var(--icon-color);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spinner-rotation 0.8s linear infinite;
+        }
+        @keyframes spinner-rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .tab.loading .tab-favicon {
+            display: none;
+        }
+        .tab.loading .tab-favicon-spinner {
+            display: block;
+        }
 
-          /* Remove the margin adjustment since it's now inline */
-          .connection-status.offline + .tab-bar {
-              margin-top: 0;
-          }
-
-          /* Add new styles for the lock icons */
-          .url-security-icon {
-              width: 18px;
-              height: 18px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-          }
-
-          .url-security-icon svg {
-              width: 18px;
-              height: 18px;
-              fill: var(--icon-color);
-          }
-
-          .url-security-icon.secure svg {
-              fill: #4CAF50; /* Green for secure connections */
-          }
-
-          /* Single-page mode styles */
-          html[data-single-page-mode="true"] .tab-bar {
-              display: none !important;
-          }
-
-          html[data-single-page-mode="true"] .content {
-              height: calc(100% - 40px); /* Only account for address bar in single-page mode */
-          }
-
-          /* Add styles for WebSocket connection loading/error states */
-          .canvas-container.loading::before {
-              content: "Loading...";
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              color: var(--text-color);
-              font-family: system-ui, -apple-system, sans-serif;
-              font-size: 16px;
-              z-index: 5;
-          }
-
-          .canvas-container.error::before {
-              content: "Session released";
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              color: #fff;
-              font-family: system-ui, -apple-system, sans-serif;
-              font-size: 16px;
-              z-index: 5;
-          }
-
-          /* Tab switching loading overlay */
-          .canvas-container.tab-switching::after {
-              content: "";
-              position: absolute;
-              top: 0;
-              left: 0;
-              right: 0;
-              bottom: 0;
-              background: var(--loading-overlay-bg);
-              z-index: 10;
-          }
-
-          .canvas-container.tab-switching::before {
-              content: "";
-              position: absolute;
-              width: 40px;
-              height: 40px;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              border: 4px solid transparent;
-              border-top-color: var(--loading-spinner-color);
-              border-radius: 50%;
-              animation: spin 1s linear infinite;
-              z-index: 11;
-          }
-
-          @keyframes spin {
-              0% { transform: translate(-50%, -50%) rotate(0deg); }
-              100% { transform: translate(-50%, -50%) rotate(360deg); }
-          }
-
-          /* Tab loading spinner */
-          .tab-favicon-spinner {
-              width: 16px;
-              height: 16px;
-              display: none;
-              position: relative;
-          }
-
-          .tab-favicon-spinner::after {
-              content: '';
-              position: absolute;
-              width: 12px;
-              height: 12px;
-              top: 2px;
-              left: 2px;
-              border: 2px solid var(--icon-color);
-              border-top-color: transparent;
-              border-radius: 50%;
-              animation: spinner-rotation 0.8s linear infinite;
-          }
-
-          @keyframes spinner-rotation {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-          }
-
-          .tab.loading .tab-favicon {
-              display: none;
-          }
-
-          .tab.loading .tab-favicon-spinner {
-              display: block;
-          }
+        @media (prefers-reduced-motion: reduce) {
+            .tab,
+            .nav-button,
+            .url-bar {
+                transition: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -454,29 +474,34 @@
               <% } %>
               <div class="address-bar">
                 <div class="nav-buttons">
-                    <button class="nav-button" id="back-button" <%= interactive ? "" : "disabled" %>>
-                        <svg class="icon" viewBox="0 0 24 24">
-                            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                    <button class="nav-button" id="back-button" aria-label="Back" <%= interactive ? "" : "disabled" %>>
+                        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M13 8H3.5"/>
+                            <path d="m7.5 4-4 4 4 4"/>
                         </svg>
                     </button>
-                    <button class="nav-button" id="forward-button" <%= interactive ? "" : "disabled" %>>
-                        <svg class="icon" viewBox="0 0 24 24">
-                            <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/>
+                    <button class="nav-button" id="forward-button" aria-label="Forward" <%= interactive ? "" : "disabled" %>>
+                        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M3 8h9.5"/>
+                            <path d="m8.5 4 4 4-4 4"/>
                         </svg>
                     </button>
-                    <button class="nav-button" id="refresh-button" <%= interactive ? "" : "disabled" %>>
-                        <svg class="icon" viewBox="0 0 24 24">
-                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                    <button class="nav-button" id="refresh-button" aria-label="Reload" <%= interactive ? "" : "disabled" %>>
+                        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M12.5 8a4.5 4.5 0 1 1-1.32-3.18"/>
+                            <path d="M12.5 3v2.5H10"/>
                         </svg>
                     </button>
                 </div>
                 <div class="url-bar">
                     <div class="url-security-icon" id="url-security-icon">
-                        <svg viewBox="0 0 24 24" id="lock-icon" style="display: none;">
-                            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                        <svg viewBox="0 0 16 16" id="lock-icon" aria-hidden="true" style="display: none;">
+                            <rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>
+                            <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>
                         </svg>
-                        <svg viewBox="0 0 24 24" id="unlock-icon" style="display: none;">
-                            <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z"/>
+                        <svg viewBox="0 0 16 16" id="unlock-icon" aria-hidden="true" style="display: none;">
+                            <rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>
+                            <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/>
                         </svg>
                     </div>
                     <input type="text" id="url-text" class="url-input" value="Session connecting..." disabled <%= interactive ? "" : "readonly" %>>
@@ -511,6 +536,8 @@
           const baseWsUrl = '<%= wsUrl %>';
           let tabDiscoveryWebSocket = null; // WebSocket for discovering tabs (multi-page mode)
           let activeConnectionRetries = {}; // Track reconnection attempts
+          let tabDiscoveryRetries = 0;
+          let tabDiscoveryRetryTimer = null;
 
           // Default dimensions until we get first image
           const defaultWidth = <%= dimensions?.width || 1920 %>;
@@ -537,7 +564,7 @@
           // Function to create WebSocket URL for a specific page
           function createWebSocketUrl(pageId) {
               // For single-page mode, the URL already includes the pageId
-              if (singlePageMode) return baseWsUrl;
+              if (singlePageMode) return `${baseWsUrl}${baseWsUrl.includes('?') ? '&' : '?'}format=binary`;
 
               // For tab discovery, add tabInfo parameter
               if (pageId === 'tab-discovery') {
@@ -545,7 +572,17 @@
               }
 
               // Regular tab connection
-              return `${baseWsUrl}?pageId=${encodeURIComponent(pageId)}`;
+              return `${baseWsUrl}?pageId=${encodeURIComponent(pageId)}&format=binary`;
+          }
+
+          function reconnectTabDiscovery() {
+              if (tabDiscoveryRetryTimer) return;
+              const delay = Math.min(500 * Math.pow(2, tabDiscoveryRetries), 5000);
+              tabDiscoveryRetries++;
+              tabDiscoveryRetryTimer = setTimeout(() => {
+                  tabDiscoveryRetryTimer = null;
+                  connectTabWebSocket('tab-discovery');
+              }, delay);
           }
 
           // Function to establish WebSocket connection for a tab
@@ -623,6 +660,10 @@
               ws.onclose = () => {
                   console.log(`WebSocket connection closed for tab ${pageId}`);
 
+                  if (pageId === 'tab-discovery') {
+                      reconnectTabDiscovery();
+                  }
+
                   if (tabs[pageId]) {
                       // Only show error if this wasn't an intentional close
                       if (!tabs[pageId].intentionalClose) {
@@ -654,11 +695,17 @@
               };
 
               ws.onmessage = (event) => {
+                  if (typeof event.data !== 'string') {
+                      handleFrame(pageId, event.data);
+                      return;
+                  }
+
                   const payload = JSON.parse(event.data);
 
                   // Handle tab-discovery messages
                   if (pageId === 'tab-discovery') {
                       if (payload.type === "tabList") {
+                          tabDiscoveryRetries = 0;
                           handleTabList(payload.tabs, payload.firstTabId);
                           return;
                       } else if (payload.type === "tabClosed") {
@@ -681,64 +728,14 @@
                   } else if (payload.type === "targetClosed") {
                       handleTabClosed(pageId);
                       return;
+                  } else if (payload.type === "metadata") {
+                      applyMetadata(pageId, payload);
+                      return;
                   }
 
-                  // Handle canvas image data
                   if (payload.data) {
-                      if (!tabs[pageId]) {
-                          // console.error(`Received data for nonexistent tab ${pageId}`);
-                          return;
-                      }
-
-                      // Remove tab switching indicator when we receive the first frame
-                      tabs[pageId].canvasContainer.classList.remove('tab-switching');
-
-                      // Mark that we've received at least one frame for this tab
-                      tabs[pageId].receivedFirstFrame = true;
-                      if(urlText) urlText.disabled = false;
-
-                      if (urlText && document.activeElement !== urlText){
-                        updateUrlBar(payload.url);
-                        updateSecurityIcon(payload.url);
-                        updateTabInfo(pageId, payload.url, payload.title, payload.favicon);
-                      }
-
-                      // Track frame count for loading state
-                      if (tabs[pageId].isLoading) {
-                          tabs[pageId].frameCount++;
-
-                          // After receiving 2 frames, turn off loading state
-                          if (tabs[pageId].frameCount >= 2) {
-                              setTabLoadingState(pageId, false);
-                          }
-                      }
-                      window.parent.postMessage({
-                          type: 'navigation',
-                          url: payload.url,
-                          favicon: payload.favicon
-                      }, '*');
-
-                const img = new Image();
-                      const imageData = 'data:image/jpeg;base64,' + payload.data;
-                      tabs[pageId].lastImageData = imageData;
-
-                img.onload = () => {
-                          tabs[pageId].currentImageWidth = img.naturalWidth;
-                          tabs[pageId].currentImageHeight = img.naturalHeight;
-                          updateCanvasSize(pageId);
-
-                          tabs[pageId].ctx.drawImage(
-                        img,
-                        0,
-                        0,
-                              Math.floor(tabs[pageId].canvas.width / window.devicePixelRatio),
-                              Math.floor(tabs[pageId].canvas.height / window.devicePixelRatio)
-                          );
-
-                          tabs[pageId].canvasContainer.style.backgroundColor = 'var(--bg-secondary)';
-                      };
-
-                      img.src = imageData;
+                      applyMetadata(pageId, payload);
+                      handleFrame(pageId, payload.data);
                   }
               };
 
@@ -784,7 +781,8 @@
               if (!singlePageMode) {
                   const closeButton = document.createElement('div');
                   closeButton.className = 'tab-close';
-                  closeButton.innerHTML = '&times;';
+                  closeButton.setAttribute('aria-label', 'Close tab');
+                  closeButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
                   closeButton.onclick = (e) => {
                       e.stopPropagation();
                       if(interactive) closeTab(pageId);
@@ -832,7 +830,12 @@
                   intentionalClose: false,
                   currentImageWidth: defaultWidth,
                   currentImageHeight: defaultHeight,
-                  lastImageData: null,
+                  lastImage: null,
+                  pendingFrame: null,
+                  decoding: false,
+                  metadata: null,
+                  metadataKey: null,
+                  navigationKey: null,
                   receivedFirstFrame: false,
                   isLoading: false,
                   frameCount: 0,
@@ -1371,10 +1374,12 @@
               // Intentionally close the WebSocket
               if (tabs[pageId].websocket) {
                   tabs[pageId].intentionalClose = true;
-                  tabs[pageId].websocket.send(JSON.stringify({
-                      type: 'closeTab',
-                      pageId: pageId
-                  }));
+                  if (tabs[pageId].websocket.readyState === WebSocket.OPEN) {
+                      tabs[pageId].websocket.send(JSON.stringify({
+                          type: 'closeTab',
+                          pageId: pageId
+                      }));
+                  }
                   tabs[pageId].websocket.close();
                   tabs[pageId].websocket = null;
               }
@@ -1467,41 +1472,128 @@
                   return;
               }
 
-              const parentHeight = container.clientHeight;
-
-              // Scale to height while maintaining aspect ratio
-              const targetHeight = parentHeight;
-              const targetWidth = targetHeight * (tabData.currentImageWidth / tabData.currentImageHeight);
+              const aspectRatio = tabData.currentImageWidth / tabData.currentImageHeight;
+              const targetWidth = Math.min(container.clientWidth, container.clientHeight * aspectRatio);
+              const targetHeight = targetWidth / aspectRatio;
 
               // Account for device pixel ratio
               const dpr = window.devicePixelRatio || 1;
+              const backingWidth = Math.floor(targetWidth * dpr);
+              const backingHeight = Math.floor(targetHeight * dpr);
 
-              canvas.width = targetWidth * dpr;
-              canvas.height = targetHeight * dpr;
+              if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
+                  canvas.width = backingWidth;
+                  canvas.height = backingHeight;
 
-              // Reset transform before scaling
-              ctx.setTransform(1, 0, 0, 1, 0, 0);
-              ctx.scale(dpr, dpr);
+                  // Reset transform before scaling
+                  ctx.setTransform(1, 0, 0, 1, 0, 0);
+                  ctx.scale(dpr, dpr);
 
-              // Set display size
-              canvas.style.height = '100%';
-              canvas.style.width = 'auto';
+                  // Set display size
+                  canvas.style.width = `${targetWidth}px`;
+                  canvas.style.height = `${targetHeight}px`;
+              }
 
-              // Redraw the last image if available
-              if (tabData.lastImageData) {
-                  const img = new Image();
-                  img.onload = () => {
-                      ctx.drawImage(
-                          img,
-                          0,
-                          0,
-                          Math.floor(canvas.width / window.devicePixelRatio),
-                          Math.floor(canvas.height / window.devicePixelRatio)
-                      );
-                  };
-                  img.src = tabData.lastImageData;
+              if (tabData.lastImage) {
+                  ctx.drawImage(
+                      tabData.lastImage,
+                      0,
+                      0,
+                      Math.floor(canvas.width / dpr),
+                      Math.floor(canvas.height / dpr)
+                  );
               }
           }
+
+          function applyMetadata(pageId, metadata) {
+              const tabData = tabs[pageId];
+              if (!tabData) return;
+              tabData.metadata = metadata;
+
+              const metadataKey = `${metadata.url}\n${metadata.title}\n${metadata.favicon}`;
+              if (urlText && document.activeElement !== urlText && metadataKey !== tabData.metadataKey) {
+                  tabData.metadataKey = metadataKey;
+                  updateUrlBar(metadata.url);
+                  updateSecurityIcon(metadata.url);
+                  updateTabInfo(pageId, metadata.url, metadata.title, metadata.favicon);
+              }
+
+              const navigationKey = `${metadata.url}\n${metadata.favicon}`;
+              if (navigationKey !== tabData.navigationKey) {
+                  tabData.navigationKey = navigationKey;
+                  window.parent.postMessage({
+                      type: 'navigation',
+                      url: metadata.url,
+                      favicon: metadata.favicon
+                  }, '*');
+              }
+          }
+
+          function handleFrame(pageId, frame) {
+              const tabData = tabs[pageId];
+              if (!tabData) return;
+
+              tabData.canvasContainer.classList.remove('tab-switching');
+              tabData.receivedFirstFrame = true;
+              if (urlText) urlText.disabled = false;
+              if (tabData.metadata) applyMetadata(pageId, tabData.metadata);
+
+              if (tabData.isLoading) {
+                  tabData.frameCount++;
+                  if (tabData.frameCount >= 2) {
+                      setTabLoadingState(pageId, false);
+                  }
+              }
+
+              renderFrame(pageId, frame);
+          }
+
+          function renderFrame(pageId, frame) {
+              const tabData = tabs[pageId];
+              if (!tabData) return;
+              tabData.pendingFrame = frame;
+              if (tabData.decoding) return;
+              tabData.decoding = true;
+              decodeNextFrame(pageId, tabData);
+          }
+
+          function decodeFrame(frame) {
+              if (typeof frame !== 'string') return createImageBitmap(frame);
+              const img = new Image();
+              img.src = 'data:image/jpeg;base64,' + frame;
+              return img.decode().then(() => img);
+          }
+
+          function decodeNextFrame(pageId, tabData) {
+              if (tabs[pageId] !== tabData || !tabData.pendingFrame) {
+                  tabData.decoding = false;
+                  return;
+              }
+
+              const frame = tabData.pendingFrame;
+              tabData.pendingFrame = null;
+
+              decodeFrame(frame)
+                  .then((image) => {
+                      if (tabs[pageId] !== tabData) {
+                          if (image.close) image.close();
+                          return;
+                      }
+                      const previous = tabData.lastImage;
+                      tabData.lastImage = image;
+                      tabData.currentImageWidth = image.naturalWidth || image.width;
+                      tabData.currentImageHeight = image.naturalHeight || image.height;
+                      updateCanvasSize(pageId);
+                      tabData.canvasContainer.style.backgroundColor = 'var(--content-bg)';
+                      if (previous && previous !== image && previous.close) previous.close();
+                  })
+                  .catch(() => {})
+                  .finally(() => decodeNextFrame(pageId, tabData));
+          }
+
+          window.addEventListener('resize', () => {
+              if (activeTabId) updateCanvasSize(activeTabId);
+          });
 
           // Add a function to handle tab loading state
           function setTabLoadingState(pageId, isLoading, navigationUrl = null) {
@@ -1679,9 +1771,15 @@
           const originalConnectTabWebSocket = connectTabWebSocket;
           connectTabWebSocket = function(pageId) {
               const ws = originalConnectTabWebSocket(pageId);
+              if (!ws) return ws;
 
               const originalOnMessage = ws.onmessage;
               ws.onmessage = function(event) {
+                  if (typeof event.data !== 'string') {
+                      originalOnMessage.call(this, event);
+                      return;
+                  }
+
                   const payload = JSON.parse(event.data);
 
                   if (payload.type === "selectedTextResponse") {

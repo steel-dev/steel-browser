@@ -277,9 +277,7 @@ export FILTER_CHROME_ARGS="--disable-dev-shm-usage"
 # Install VS Code extensions
 code --install-extension ms-typescript.typescript
 code --install-extension esbenp.prettier-vscode
-code --install-extension bradlc.vscode-tailwindcss
 code --install-extension ms-vscode.vscode-typescript-next
-code --install-extension ms-vscode.vscode-eslint
 ```
 
 #### Settings Configuration
@@ -291,9 +289,6 @@ Create `.vscode/settings.json`:
   "typescript.preferences.importModuleSpecifier": "relative",
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": true
-  },
   "typescript.preferences.includePackageJsonAutoImports": "on",
   "files.exclude": {
     "**/node_modules": true,
