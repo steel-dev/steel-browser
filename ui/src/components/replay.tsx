@@ -10,7 +10,7 @@ import { Segmented } from "./segmented";
 
 type Tab = {
   id: string;
-  href: string | null;
+  href: string;
   events: RecordedEvent[];
 };
 
@@ -53,7 +53,9 @@ function useRecording(sessionId: string, intervalMs = 1000) {
             const id = String(batch.tabId);
             let tab = tabs.current.find((candidate) => candidate.id === id);
             if (!tab) {
-              tab = { id, href: pageHref(batch.events[0]), events: [] };
+              const href = pageHref(batch.events[0]);
+              if (href === null) continue;
+              tab = { id, href, events: [] };
               tabs.current.push(tab);
             }
             for (const event of batch.events) tab.events.push(event);
@@ -257,7 +259,7 @@ export function Replay({ sessionId }: { sessionId: string }) {
             onChange={setSelected}
             options={tabs.map(({ id, href }, index) => ({
               value: id,
-              label: <span title={href ?? undefined}>Tab {index + 1}</span>,
+              label: <span title={href}>Tab {index + 1}</span>,
             }))}
           />
         </div>
