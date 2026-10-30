@@ -72,6 +72,15 @@ export class SeleniumService extends EventEmitter {
         reject(new Error("Selenium server failed to start within the timeout period"));
       }, 15000); // 15 seconds timeout
 
+      // Without this listener, a spawn failure (for example a host without a `java`
+      // binary) is emitted as an unhandled 'error' event and takes the whole Node
+      // process down. Reject the launch instead so the API can answer with an error.
+      this.seleniumProcess!.once("error", (error) => {
+        clearTimeout(timeout);
+        this.seleniumProcess = null;
+        reject(new Error(`Failed to start the Selenium server: ${error.message}`));
+      });
+
       this.seleniumProcess!.stdout?.on("data", (data) => {
         if (data.toString().includes("Started Selenium Standalone")) {
           clearTimeout(timeout);
