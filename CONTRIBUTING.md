@@ -156,17 +156,17 @@ Release notes group changes by type, so pick the one that fits best.
 
 ### Code Style & Formatting
 
-We use automated formatting and linting:
+We use automated formatting and type checking:
 
 ```bash
 # Format code (API)
 npm run pretty -w api
 
-# Lint code (UI)
-npm run lint -w ui
+# Check types (UI)
+npm run typecheck -w ui
 ```
 
-A pre-commit hook formats and lints your changes before each commit.
+A pre-commit hook formats your changes before each commit.
 
 **Style Guidelines:**
 - Use TypeScript for all new code

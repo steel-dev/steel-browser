@@ -398,11 +398,10 @@ npx playwright test --ui
 ```bash
 # Format code
 npm run pretty -w api
-npm run lint -w ui
 
 # Check types
 npm run type-check -w api
-npm run type-check -w ui
+npm run typecheck -w ui
 
 # Pre-commit hooks (automatically set up with Husky)
 npm run prepare
@@ -456,7 +455,7 @@ npm run dev
 
 # 5. Run quality checks
 npm run pretty -w api
-npm run lint -w ui
+npm run typecheck -w ui
 npm run build
 
 # 6. Commit changes
