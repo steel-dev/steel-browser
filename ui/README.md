@@ -37,4 +37,4 @@ The fonts are Inter and Geist Mono, both under the SIL Open Font License. The fo
 npm run generate-api -w ui
 ```
 
-The generator runs through `npx` at a pinned version, so it is not installed with the project.
+The generator runs through `npx` at a pinned version, so it is not installed with the project. The script pins TypeScript for it too, because TypeScript 7 breaks the generator. `--prefix=/` makes npx install that TypeScript instead of reusing the project's copy, which the generator can't load. Prettier then formats the output.
