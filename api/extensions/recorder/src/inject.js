@@ -53,6 +53,9 @@ record({
 });
 
 addEventListener("pagehide", flush);
+addEventListener("pageshow", (event) => {
+  if (event.persisted) record.takeFullSnapshot(true);
+});
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") flush();
 });
