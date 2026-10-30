@@ -8,6 +8,8 @@ import { PauseIcon, PlayIcon } from "./icons";
 import { Notice } from "./notice";
 import { Segmented } from "./segmented";
 
+const SEEK_STEP_MS = 10;
+
 type Tab = {
   id: string;
   href: string;
@@ -27,6 +29,12 @@ function pageHref(event: RecordedEvent | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+function snapshotOffset(replayer: Replayer): number {
+  const { events } = replayer.service.state.context;
+  const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
+  return snapshot && events[0] ? snapshot.timestamp - events[0].timestamp : 0;
 }
 
 function useRecording(sessionId: string, intervalMs = 1000) {
@@ -165,8 +173,10 @@ function Player({
   const seek = (offset: number) => {
     const current = replayer.current;
     if (!current) return;
-    if (playing) current.play(offset);
-    else current.pause(offset);
+    const target =
+      offset > total - SEEK_STEP_MS ? total + 1 : Math.max(offset, snapshotOffset(current) + 1);
+    if (playing) current.play(target);
+    else current.pause(target);
     setTime(offset);
   };
 
@@ -201,7 +211,7 @@ function Player({
           aria-label="Seek"
           min={0}
           max={total}
-          step={10}
+          step={SEEK_STEP_MS}
           value={Math.min(time, total)}
           onChange={(event) => seek(Number(event.target.value))}
         />
