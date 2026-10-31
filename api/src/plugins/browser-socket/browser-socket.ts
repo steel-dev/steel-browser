@@ -12,6 +12,15 @@ export interface BrowserSocketOptions {
 // WebSocket server instance
 const wss = new WebSocketServer({ noServer: true });
 
+// The Host header and request-target are client-controlled, so never let them throw here.
+export function parseUpgradeParams(url: string): Record<string, string> | null {
+  try {
+    return Object.fromEntries(new URL(url || "", "http://localhost").searchParams.entries());
+  } catch {
+    return null;
+  }
+}
+
 const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
   fastify: FastifyInstance,
   options: BrowserSocketOptions,
@@ -39,9 +48,11 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
   fastify.server.on("upgrade", async (request, socket, head) => {
     fastify.log.info("Upgrading browser socket...");
     const url = request.url ?? "";
-    const params = Object.fromEntries(
-      new URL(url || "", `http://${request.headers.host}`).searchParams.entries(),
-    );
+    const params = parseUpgradeParams(url);
+    if (!params) {
+      socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+      return;
+    }
 
     const context: WebSocketHandlerContext = {
       fastify,
