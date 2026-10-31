@@ -70,7 +70,9 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   });
   await fastify.register(requestLogger);
   await fastify.register(openAPIPlugin);
-  await fastify.register(fileStoragePlugin);
+  await fastify.register(fileStoragePlugin, {
+    maxSizePerSession: opts.fileStorage?.maxSizePerSession,
+  });
   await fastify.register(browserInstancePlugin);
   await fastify.register(seleniumPlugin);
   await fastify.register(browserWebSocket, {
