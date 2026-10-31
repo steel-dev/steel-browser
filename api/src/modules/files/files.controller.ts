@@ -11,7 +11,7 @@ import path from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
-import { FileService } from "../../services/file.service.js";
+import { FileQuotaExceededError, FileService } from "../../services/file.service.js";
 import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
 
@@ -129,7 +129,27 @@ export class FilesController {
           finalPath = filePath;
         }
 
-        const { stream } = await this.createStreamFromUrl(fileUrl);
+        const { stream, contentLength } = await this.createStreamFromUrl(fileUrl);
+        const limit = server.steelBrowserConfig.fileStorage?.maxSizePerSession;
+        if (contentLength !== undefined && limit !== undefined) {
+          const storedFiles = await this.fileService.listFiles();
+          const storedBytes = storedFiles.reduce((total, file) => total + file.size, 0);
+          let overwrittenBytes = 0;
+          try {
+            overwrittenBytes = (await this.fileService.getFile({ filePath: finalPath })).size;
+          } catch {
+            overwrittenBytes = 0;
+          }
+          if (storedBytes - overwrittenBytes + contentLength > limit) {
+            stream.destroy();
+            const quotaError = new FileQuotaExceededError(
+              storedBytes - overwrittenBytes,
+              contentLength,
+              limit,
+            );
+            return reply.code(413).send({ success: false, message: quotaError.message });
+          }
+        }
         saveFileResult = await this.fileService.saveFile({
           filePath: finalPath,
           stream,
@@ -152,6 +172,9 @@ export class FilesController {
       if (tempFilePath) {
         await fs.promises.unlink(tempFilePath).catch(() => {});
       }
+      if (e instanceof FileQuotaExceededError) {
+        return reply.code(413).send({ success: false, message: e.message });
+      }
       const error = getErrors(e);
       return reply.code(500).send({ success: false, message: error });
     }
@@ -159,7 +182,7 @@ export class FilesController {
 
   private async createStreamFromUrl(
     url: string,
-  ): Promise<{ stream: Readable; contentType?: string; name: string }> {
+  ): Promise<{ stream: Readable; contentType?: string; name: string; contentLength?: number }> {
     return new Promise((resolve, reject) => {
       const protocol = url.startsWith("https") ? https : http;
 
@@ -181,10 +204,20 @@ export class FilesController {
             name = url.split("/").pop() || "downloaded-file";
           }
 
+          let contentLength: number | undefined;
+          const rawLength = response.headers["content-length"];
+          if (typeof rawLength === "string") {
+            const parsed = Number.parseInt(rawLength, 10);
+            if (Number.isFinite(parsed) && parsed >= 0) {
+              contentLength = parsed;
+            }
+          }
+
           resolve({
             stream: response,
             contentType,
             name,
+            contentLength,
           });
         })
         .on("error", reject);

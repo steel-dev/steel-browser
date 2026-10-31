@@ -5,7 +5,7 @@ import type { DebouncedFunc } from "lodash-es";
 import { debounce } from "lodash-es";
 import { tmpdir } from "os";
 import path, { resolve } from "path";
-import { Readable } from "stream";
+import { Readable, Transform } from "stream";
 import { env } from "../env.js";
 
 interface File {
@@ -13,10 +13,27 @@ interface File {
   lastModified: Date;
 }
 
+export class FileQuotaExceededError extends Error {
+  readonly currentBytes: number;
+  readonly incomingBytes: number;
+  readonly limitBytes: number;
+
+  constructor(currentBytes: number, incomingBytes: number, limitBytes: number) {
+    super(
+      `File storage quota exceeded: storing ${incomingBytes} more bytes would exceed the limit of ${limitBytes} bytes (currently using ${currentBytes} bytes)`,
+    );
+    this.name = "FileQuotaExceededError";
+    this.currentBytes = currentBytes;
+    this.incomingBytes = incomingBytes;
+    this.limitBytes = limitBytes;
+  }
+}
+
 export interface FileServiceOptions {
   baseFilesPath?: string;
   prebuiltArchiveDir?: string;
   watchFiles?: boolean;
+  maxSizeBytes?: number;
 }
 
 export class FileService {
@@ -30,6 +47,7 @@ export class FileService {
   private archiveDirty = true;
   private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
+  private readonly maxSizeBytes: number | null;
 
   public constructor(options: FileServiceOptions = {}) {
     this.baseFilesPath =
@@ -37,6 +55,7 @@ export class FileService {
       (env.NODE_ENV === "development" ? path.join(tmpdir(), "files") : "/files");
     this.prebuiltArchiveDir = options.prebuiltArchiveDir ?? "/tmp/.steel";
     this.prebuiltArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
+    this.maxSizeBytes = options.maxSizeBytes ?? null;
 
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
 
@@ -48,9 +67,9 @@ export class FileService {
     }
   }
 
-  public static getInstance() {
+  public static getInstance(options: FileServiceOptions = {}) {
     if (!FileService.instance) {
-      FileService.instance = new FileService();
+      FileService.instance = new FileService(options);
     }
     return FileService.instance;
   }
@@ -123,6 +142,26 @@ export class FileService {
     }
   }
 
+  private withQuotaGuard(source: Readable, currentBytes: number, limitBytes: number): Readable {
+    const remainingBytes = limitBytes - currentBytes;
+    let incomingBytes = 0;
+    const guard = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        incomingBytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+        if (incomingBytes > remainingBytes) {
+          callback(new FileQuotaExceededError(currentBytes, incomingBytes, limitBytes));
+        } else {
+          callback(null, chunk);
+        }
+      },
+    });
+    source.on("error", (error) => guard.destroy(error));
+    guard.on("error", () => {
+      source.destroy();
+    });
+    return source.pipe(guard);
+  }
+
   public async saveFile({
     filePath,
     stream,
@@ -136,8 +175,28 @@ export class FileService {
     const parentDir = path.dirname(safeFilePath);
     await fs.promises.mkdir(parentDir, { recursive: true });
 
+    let writeStream: Readable = stream;
+    if (this.maxSizeBytes !== null) {
+      const storedFiles = await this.listFiles();
+      const storedBytes = storedFiles.reduce((total, file) => total + file.size, 0);
+      let overwrittenBytes = 0;
+      if (await this.exists(safeFilePath)) {
+        try {
+          overwrittenBytes = (await fs.promises.stat(safeFilePath)).size;
+        } catch {
+          overwrittenBytes = 0;
+        }
+      }
+      const currentBytes = storedBytes - overwrittenBytes;
+      if (currentBytes > this.maxSizeBytes) {
+        stream.destroy();
+        throw new FileQuotaExceededError(currentBytes, 0, this.maxSizeBytes);
+      }
+      writeStream = this.withQuotaGuard(stream, currentBytes, this.maxSizeBytes);
+    }
+
     try {
-      await fs.promises.writeFile(safeFilePath, stream);
+      await fs.promises.writeFile(safeFilePath, writeStream);
       const stats = await fs.promises.stat(safeFilePath);
       const file: File = {
         size: stats.size,

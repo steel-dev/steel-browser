@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
 import { inflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FileService } from "./file.service.js";
+import { FileQuotaExceededError, FileService } from "./file.service.js";
 
 function unzipFiles(buffer: Buffer): Map<string, string> {
   let endOfCentralDirectory = -1;
@@ -173,5 +173,102 @@ describe("FileService session archives", () => {
     expect([...unzipFiles(await fs.promises.readFile(archivePath)).entries()]).toEqual([
       ["zip1.txt", "zip content 1"],
     ]);
+  });
+});
+
+describe("FileService cumulative quota (maxSizeBytes)", () => {
+  let testDirectory: string | undefined;
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (testDirectory) {
+      await fs.promises.rm(testDirectory, { recursive: true, force: true });
+      testDirectory = undefined;
+    }
+  });
+
+  async function createQuotaService(maxSizeBytes?: number) {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-quota-"));
+    return new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+      ...(maxSizeBytes === undefined ? {} : { maxSizeBytes }),
+    });
+  }
+
+  it("rejects a save that would exceed maxSizeBytes and keeps only prior files", async () => {
+    const fileService = await createQuotaService(100);
+
+    await fileService.saveFile({
+      filePath: "a.bin",
+      stream: Readable.from(Buffer.alloc(40, 0x61)),
+    });
+    await fileService.saveFile({
+      filePath: "b.bin",
+      stream: Readable.from(Buffer.alloc(40, 0x61)),
+    });
+    await expect(
+      fileService.saveFile({
+        filePath: "c.bin",
+        stream: Readable.from(Buffer.alloc(40, 0x61)),
+      }),
+    ).rejects.toThrow(FileQuotaExceededError);
+
+    const entries = await fs.promises.readdir(fileService.getBaseFilesPath());
+    expect(entries.sort()).toEqual(["a.bin", "b.bin"]);
+  });
+
+  it("allows overwriting an existing file when the replacement fits in quota", async () => {
+    const fileService = await createQuotaService(100);
+
+    await fileService.saveFile({
+      filePath: "a.bin",
+      stream: Readable.from(Buffer.alloc(60, 0x61)),
+    });
+    await fileService.saveFile({
+      filePath: "b.bin",
+      stream: Readable.from(Buffer.alloc(40, 0x61)),
+    });
+
+    // Stored total is exactly 100; replacing a.bin (60 bytes) with 40 bytes
+    // fits only when the overwritten size is subtracted from usage.
+    const result = await fileService.saveFile({
+      filePath: "a.bin",
+      stream: Readable.from(Buffer.alloc(40, 0x62)),
+    });
+    expect(result.size).toBe(40);
+  });
+
+  it("aborts unknown-length streams over quota and removes the partial file", async () => {
+    const fileService = await createQuotaService(100);
+
+    function* chunks() {
+      for (let index = 0; index < 200; index += 1) {
+        yield Buffer.alloc(1, 0x61);
+      }
+    }
+
+    await expect(
+      fileService.saveFile({ filePath: "big.bin", stream: Readable.from(chunks()) }),
+    ).rejects.toThrow(FileQuotaExceededError);
+    await expect(
+      fs.promises.stat(path.join(fileService.getBaseFilesPath(), "big.bin")),
+    ).rejects.toThrow();
+  });
+
+  it("stays unbounded when maxSizeBytes is unset", async () => {
+    const fileService = await createQuotaService();
+
+    for (const name of ["a.bin", "b.bin", "c.bin"]) {
+      const result = await fileService.saveFile({
+        filePath: name,
+        stream: Readable.from(Buffer.alloc(40, 0x61)),
+      });
+      expect(result.size).toBe(40);
+    }
+
+    const entries = await fs.promises.readdir(fileService.getBaseFilesPath());
+    expect(entries).toHaveLength(3);
   });
 });
