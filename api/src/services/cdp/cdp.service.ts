@@ -85,6 +85,7 @@ import {
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { ProfileInUseError, releaseStaleProfileLock } from "./utils/profile-lock.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
+import { CORE_CPU_GRAPHICS_ARGS, coreCpuGraphicsEnvironment } from "./utils/cpu-graphics.js";
 
 const LAUNCH_TIMEOUT_MS = 60_000;
 
@@ -966,10 +967,14 @@ export class CDPService extends EventEmitter {
           env.DISABLE_CHROME_SANDBOX ||
           (typeof process.getuid === "function" && process.getuid() === 0);
 
+        const useNativeCoreProfile =
+          (this.launchConfig.extra?.stealthConfig as { useStealthBrowser?: boolean } | undefined)
+            ?.useStealthBrowser === true;
+
         const staticDefaultArgs = [
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
-          "--disable-gpu",
+          ...(useNativeCoreProfile ? CORE_CPU_GRAPHICS_ARGS : ["--disable-gpu"]),
           "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync,DisableLoadExtensionCommandLineSwitch,DisableDisableExtensionsExceptCommandLineSwitch",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
@@ -1005,8 +1010,7 @@ export class CDPService extends EventEmitter {
           "--ozone-platform=x11",
           "--disable-renderer-backgrounding",
           "--disable-backgrounding-occluded-windows",
-          "--use-gl=swiftshader",
-          "--in-process-gpu",
+          ...(useNativeCoreProfile ? [] : ["--use-gl=swiftshader", "--in-process-gpu"]),
           "--enable-crashpad",
           "--crash-dumps-dir=/tmp/chrome-dumps",
           "--noerrdialogs",
@@ -1029,7 +1033,7 @@ export class CDPService extends EventEmitter {
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
             this.launchConfig.dimensions?.height ?? 1080
           }`,
-          userAgent ? `--user-agent=${userAgent}` : "",
+          userAgent && !useNativeCoreProfile ? `--user-agent=${userAgent}` : "",
           this.launchConfig.options.proxyUrl
             ? `--proxy-server=${this.launchConfig.options.proxyUrl}`
             : "",
@@ -1047,6 +1051,23 @@ export class CDPService extends EventEmitter {
           ...(env.CHROME_ARGS || []),
         ]).filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
 
+        if (useNativeCoreProfile) {
+          const conflictingArg = launchArgs.find((arg) => {
+            const [name, value = ""] = arg.split(/=(.*)/s);
+            const switchName = name.replace(/^--?/, "");
+            return (
+              ["user-agent", "spoofing-config", "disable-stealth"].includes(switchName) ||
+              (switchName === "disable-features" &&
+                value
+                  .split(",")
+                  .some((feature) => feature.split(/[<:]/)[0].trim() === "EnablePrivacySpoofing"))
+            );
+          });
+          if (conflictingArg) {
+            throw new Error("Launch arguments conflict with Core Browser's native profile");
+          }
+        }
+
         const finalLaunchOptions = {
           ...options,
           defaultViewport: null,
@@ -1057,7 +1078,11 @@ export class CDPService extends EventEmitter {
           env: {
             HOME: os.userInfo().homedir,
             TZ: timezone,
-            ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }),
+            ...(useNativeCoreProfile
+              ? coreCpuGraphicsEnvironment(env.DISPLAY)
+              : isHeadless
+                ? {}
+                : { DISPLAY: env.DISPLAY }),
           },
           userDataDir,
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
@@ -1611,7 +1636,7 @@ export class CDPService extends EventEmitter {
     page: Page,
     fingerprintData: BrowserFingerprintWithHeaders | null,
   ) {
-    if (!fingerprintData) return;
+    if (!fingerprintData || !this.isFingerprintInjectionEnabled()) return;
 
     try {
       const { fingerprint, headers } = fingerprintData;
@@ -1619,13 +1644,11 @@ export class CDPService extends EventEmitter {
       const { isMobile, navigatorPlatform, uaPlatform, override } =
         this.buildUserAgentOverride(fingerprintData);
 
-      if (isMobile) {
-        await page.setUserAgent(override.userAgent, override.userAgentMetadata);
-      } else {
-        await page.setUserAgent(override.userAgent);
-      }
+      // Puppeteer's persistent session propagates native UA-CH to new frames
+      // and workers. A UA-only override clears metadata in standard Chromium.
+      await page.setUserAgent(override.userAgent, override.userAgentMetadata);
 
-      await this.withEmulationSession(page, isMobile, async (session) => {
+      await this.withEmulationSession(page, true, async (session) => {
         await page.setExtraHTTPHeaders(filterHeaders(headers));
         await session.send("Emulation.setUserAgentOverride", override);
       });
@@ -1642,8 +1665,8 @@ export class CDPService extends EventEmitter {
           fixedArchitecture: userAgentMetadata.architecture ?? "x86",
           fixedBitness: userAgentMetadata.bitness ?? "64",
           fixedModel: userAgentMetadata.model ?? "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion ?? "15.0.0",
-          fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
+          fixedPlatformVersion: userAgentMetadata.platformVersion ?? "",
+          fixedUaFullVersion: userAgentMetadata.uaFullVersion,
           fixedBrands:
             userAgentMetadata.brands ||
             ([] as unknown as Array<{
@@ -1666,6 +1689,17 @@ export class CDPService extends EventEmitter {
 
   @traceable
   private async applyDeviceMetricsOverride(page: Page): Promise<void> {
+    // Core configures the real display/window before pages and workers start.
+    // A second, page-only metrics model can disagree with CSS, new targets,
+    // screenshots and input coordinates. Explicit client CDP overrides remain
+    // available; do not install our own one on top of the native profile.
+    if (
+      (this.launchConfig?.extra?.stealthConfig as { useStealthBrowser?: boolean } | undefined)
+        ?.useStealthBrowser === true
+    ) {
+      return;
+    }
+
     const screen = this.fingerprintData?.fingerprint?.screen;
     if (!screen) {
       this.logger.warn(
@@ -1676,7 +1710,7 @@ export class CDPService extends EventEmitter {
 
     const isMobile = this.isMobileUserAgent(this.getUserAgent());
     const { metrics, touch } = this.buildDeviceMetrics(screen, isMobile);
-    const persist = isMobile && this.isFingerprintInjectionEnabled();
+    const persist = this.isFingerprintInjectionEnabled();
     await this.withEmulationSession(page, persist, async (session) => {
       await session.send("Page.setDeviceMetricsOverride", metrics);
       if (touch) {
@@ -1728,7 +1762,7 @@ export class CDPService extends EventEmitter {
     } = {
       userAgent,
       acceptLanguage,
-      platform: isMobile ? navigatorPlatform : uaPlatform,
+      platform: navigatorPlatform,
       userAgentMetadata: {
         brands:
           userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
