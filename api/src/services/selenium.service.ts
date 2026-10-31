@@ -41,11 +41,11 @@ export class SeleniumService extends EventEmitter {
 
     const seleniumArgs = ["-jar", seleniumServerPath, "standalone"];
 
-    const proc = spawn("java", seleniumArgs);
-    this.seleniumProcess = proc;
+    const seleniumProcess = spawn("java", seleniumArgs);
+    this.seleniumProcess = seleniumProcess;
     this.seleniumServerUrl = `http://localhost:${this.port}`;
 
-    proc.on("error", (err) => {
+    seleniumProcess.on("error", (err) => {
       this.logger.error(`Selenium process error: ${err}`);
       this.postLog({
         type: BrowserEventType.Error,
@@ -54,7 +54,7 @@ export class SeleniumService extends EventEmitter {
       }).catch(() => {});
     });
 
-    proc.stdout?.on("data", (data) => {
+    seleniumProcess.stdout?.on("data", (data) => {
       this.logger.info(`Selenium stdout: ${data}`);
       this.postLog({
         type: BrowserEventType.Console,
@@ -63,7 +63,7 @@ export class SeleniumService extends EventEmitter {
       });
     });
 
-    proc.stderr?.on("data", (data) => {
+    seleniumProcess.stderr?.on("data", (data) => {
       this.logger.error(`Selenium stderr: ${data}`);
       this.postLog({
         type: BrowserEventType.Error,
@@ -72,9 +72,9 @@ export class SeleniumService extends EventEmitter {
       });
     });
 
-    proc.on("close", (code) => {
+    seleniumProcess.on("close", (code) => {
       this.logger.info(`Selenium process exited with code ${code}`);
-      if (this.seleniumProcess === proc) {
+      if (this.seleniumProcess === seleniumProcess) {
         this.seleniumProcess = null;
       }
     });
@@ -84,9 +84,9 @@ export class SeleniumService extends EventEmitter {
 
         const cleanup = () => {
           clearTimeout(timeout);
-          proc.stdout?.off("data", onData);
-          proc.off("error", onError);
-          proc.off("close", onClose);
+          seleniumProcess.stdout?.off("data", onData);
+          seleniumProcess.off("error", onError);
+          seleniumProcess.off("close", onClose);
         };
 
         const timeout = setTimeout(() => {
@@ -119,12 +119,12 @@ export class SeleniumService extends EventEmitter {
           reject(new Error(`Selenium process exited prematurely with code ${code}`));
         };
 
-        proc.stdout?.on("data", onData);
-        proc.on("error", onError);
-        proc.on("close", onClose);
+        seleniumProcess.stdout?.on("data", onData);
+        seleniumProcess.on("error", onError);
+        seleniumProcess.on("close", onClose);
       });
     } catch (error) {
-      if (this.seleniumProcess === proc) {
+      if (this.seleniumProcess === seleniumProcess) {
         this.close();
       }
       throw error;
