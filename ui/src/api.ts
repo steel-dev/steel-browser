@@ -1,6 +1,15 @@
+import type { eventWithTime } from "rrweb";
 import type { CreateSession, MultipleSessions, ReleaseSession, SessionDetails } from "./client";
 
 export type { SessionDetails };
+
+export type RecordedEvent = eventWithTime | string;
+
+export type RecordingPage = {
+  batches: { seq: number; tabId: number | null; events: RecordedEvent[] }[];
+  next: number;
+  truncated: boolean;
+};
 
 const apiBase = import.meta.env.VITE_API_URL ?? "/api";
 const wsBase = import.meta.env.VITE_WS_URL ?? "/ws";
@@ -46,4 +55,16 @@ export function releaseSession(id: string): Promise<ReleaseSession> {
   return request<ReleaseSession>(`/v1/sessions/${encodeURIComponent(id)}/release`, {
     method: "POST",
   });
+}
+
+export async function getRecording(
+  sessionId: string,
+  after: number,
+  signal: AbortSignal,
+): Promise<RecordingPage | null> {
+  const path = `/v1/sessions/${encodeURIComponent(sessionId)}/recording?after=${after}`;
+  const response = await fetch(apiUrl(path), { signal });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Request to ${path} failed with ${response.status}`);
+  return (await response.json()) as RecordingPage;
 }
