@@ -158,24 +158,16 @@ describe("FilesController quota enforcement", () => {
 
 describe("fileStoragePlugin registration", () => {
   it("registers without options (unbounded quota)", async () => {
-    // A bare register() constructs a real FileService whose watcher and
-    // debounced archive log asynchronously; swallow console output so those
-    // late logs do not race worker teardown. Mocks stay for the file lifetime.
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const decorated = new Map<string, unknown>();
+    // Never construct a real FileService here: its production defaults point
+    // at /files, which is not writable on CI. Assert the wiring instead.
+    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
     const fastify = {
       log: { info: () => {} },
-      decorate: (key: string, value: unknown) => {
-        decorated.set(key, value);
-      },
+      decorate: (_key: string, _value: unknown) => {},
     };
-    await fileStoragePlugin(
-      fastify as unknown as FastifyInstance,
-      undefined as unknown as Parameters<typeof fileStoragePlugin>[1],
-    );
+    await fileStoragePlugin(fastify as unknown as FastifyInstance, {});
 
-    expect(decorated.get("fileService")).toBeInstanceOf(FileService);
+    expect(spy).toHaveBeenCalledWith({ maxSizeBytes: undefined });
+    spy.mockRestore();
   });
 });
