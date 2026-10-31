@@ -41,10 +41,20 @@ export class SeleniumService extends EventEmitter {
 
     const seleniumArgs = ["-jar", seleniumServerPath, "standalone"];
 
-    this.seleniumProcess = spawn("java", seleniumArgs);
+    const seleniumProcess = spawn("java", seleniumArgs);
+    this.seleniumProcess = seleniumProcess;
     this.seleniumServerUrl = `http://localhost:${this.port}`;
 
-    this.seleniumProcess.stdout?.on("data", (data) => {
+    seleniumProcess.on("error", (err) => {
+      this.logger.error(`Selenium process error: ${err}`);
+      this.postLog({
+        type: BrowserEventType.Error,
+        text: JSON.stringify({ type: BrowserEventType.Error, error: `${err}` }),
+        timestamp: new Date(),
+      }).catch(() => {});
+    });
+
+    seleniumProcess.stdout?.on("data", (data) => {
       this.logger.info(`Selenium stdout: ${data}`);
       this.postLog({
         type: BrowserEventType.Console,
@@ -53,7 +63,7 @@ export class SeleniumService extends EventEmitter {
       });
     });
 
-    this.seleniumProcess.stderr?.on("data", (data) => {
+    seleniumProcess.stderr?.on("data", (data) => {
       this.logger.error(`Selenium stderr: ${data}`);
       this.postLog({
         type: BrowserEventType.Error,
@@ -62,28 +72,72 @@ export class SeleniumService extends EventEmitter {
       });
     });
 
-    this.seleniumProcess.on("close", (code) => {
+    seleniumProcess.on("close", (code) => {
       this.logger.info(`Selenium process exited with code ${code}`);
-      this.seleniumProcess = null;
+      if (this.seleniumProcess === seleniumProcess) {
+        this.seleniumProcess = null;
+      }
     });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
 
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("Selenium server failed to start within the timeout period"));
-      }, 15000); // 15 seconds timeout
-
-      this.seleniumProcess!.stdout?.on("data", (data) => {
-        if (data.toString().includes("Started Selenium Standalone")) {
+        const cleanup = () => {
           clearTimeout(timeout);
-          resolve();
-        }
+          seleniumProcess.stdout?.off("data", onData);
+          seleniumProcess.off("error", onError);
+          seleniumProcess.off("close", onClose);
+        };
+
+        const timeout = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error("Selenium server failed to start within the timeout period"));
+        }, 15000); // 15 seconds timeout
+
+        const onData = (data: Buffer | string) => {
+          if (data.toString().includes("Started Selenium Standalone")) {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+          }
+        };
+
+        const onError = (err: Error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(err);
+        };
+
+        const onClose = (code: number | null) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error(`Selenium process exited prematurely with code ${code}`));
+        };
+
+        seleniumProcess.stdout?.on("data", onData);
+        seleniumProcess.on("error", onError);
+        seleniumProcess.on("close", onClose);
       });
-    });
+    } catch (error) {
+      if (this.seleniumProcess === seleniumProcess) {
+        this.close();
+      }
+      throw error;
+    }
   }
 
   public close(): void {
     if (this.seleniumProcess) {
-      this.seleniumProcess.kill("SIGINT");
+      try {
+        this.seleniumProcess.kill("SIGINT");
+      } catch {
+        // Process might not be running or already killed
+      }
       this.seleniumProcess = null;
     }
   }
@@ -96,12 +150,16 @@ export class SeleniumService extends EventEmitter {
     if (!this.launchOptions?.logSinkUrl) {
       return;
     }
-    await fetch(this.launchOptions.logSinkUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(browserLog),
-    });
+    try {
+      await fetch(this.launchOptions.logSinkUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(browserLog),
+      });
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to post log to logSinkUrl");
+    }
   }
 }
