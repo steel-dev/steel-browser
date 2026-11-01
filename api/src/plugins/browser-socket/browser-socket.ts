@@ -46,37 +46,45 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
   fastify.decorate("webSocketRegistry", registry);
 
   fastify.server.on("upgrade", async (request, socket, head) => {
-    fastify.log.info("Upgrading browser socket...");
-    const url = request.url ?? "";
-    const params = parseUpgradeParams(url);
-    if (!params) {
-      socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
-      return;
-    }
-
-    const context: WebSocketHandlerContext = {
-      fastify,
-      wss,
-      params,
-    };
-
-    const handler = registry.matchHandler(url);
-
-    if (handler) {
-      try {
-        await handler.handler(request, socket, head, context);
-      } catch (err) {
-        fastify.log.error({ err }, `WebSocket handler error for ${url}`);
-        socket.destroy();
+    socket.on("error", (err) => fastify.log.debug({ err }, "Upgrade socket error"));
+    try {
+      fastify.log.info("Upgrading browser socket...");
+      const url = request.url ?? "";
+      const params = parseUpgradeParams(url);
+      if (!params) {
+        socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+        return;
       }
-    } else {
-      fastify.log.info("Connecting to CDP...");
-      try {
-        await fastify.cdpService.proxyWebSocket(request, socket, head);
-      } catch (err) {
-        fastify.log.error({ err }, "CDP WebSocket error");
-        socket.destroy();
+
+      const context: WebSocketHandlerContext = {
+        fastify,
+        wss,
+        params,
+      };
+
+      const handler = registry.matchHandler(url);
+
+      if (handler) {
+        try {
+          await handler.handler(request, socket, head, context);
+        } catch (err) {
+          fastify.log.error({ err }, `WebSocket handler error for ${url}`);
+          socket.destroy();
+        }
+      } else {
+        fastify.log.info("Connecting to CDP...");
+        try {
+          await fastify.cdpService.proxyWebSocket(request, socket, head);
+        } catch (err) {
+          fastify.log.error({ err }, "CDP WebSocket error");
+          socket.destroy();
+        }
       }
+    } catch (err) {
+      fastify.log.error({ err }, "Unexpected upgrade handler error");
+      try {
+        socket.destroy();
+      } catch {}
     }
   });
 };
