@@ -48,13 +48,25 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
   fastify.server.on("upgrade", async (request, socket, head) => {
     socket.on("error", (err) => fastify.log.debug({ err }, "Upgrade socket error"));
     try {
-      fastify.log.info("Upgrading browser socket...");
       const url = request.url ?? "";
       const params = parseUpgradeParams(url);
       if (!params) {
-        socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+        fastify.log.warn({ url: url.slice(0, 200) }, "Rejecting invalid upgrade target");
+        if (!socket.destroyed && socket.writable) {
+          try {
+            socket.end(
+              "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+              () => socket.destroy(),
+            );
+            // Ensure the socket cannot linger if the peer never reads the 400.
+            setTimeout(() => socket.destroy(), 1000).unref();
+          } catch {
+            socket.destroy();
+          }
+        }
         return;
       }
+      fastify.log.info("Upgrading browser socket...");
 
       const context: WebSocketHandlerContext = {
         fastify,
@@ -82,9 +94,14 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
       }
     } catch (err) {
       fastify.log.error({ err }, "Unexpected upgrade handler error");
-      try {
-        socket.destroy();
-      } catch {}
+      // Never socket.end here: a 101 may already be half-written, so destroy only.
+      if (!socket.destroyed) {
+        try {
+          socket.destroy();
+        } catch (destroyErr) {
+          fastify.log.debug({ err: destroyErr }, "Failed to destroy upgrade socket");
+        }
+      }
     }
   });
 };
