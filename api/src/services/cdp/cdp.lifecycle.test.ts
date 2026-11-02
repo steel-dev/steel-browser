@@ -109,7 +109,37 @@ describe("CDPService lifecycle hook ownership", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
   });
+
+  test.each([
+    { native: false, backend: "native" },
+    { native: false, backend: "llvmpipe" },
+    { native: true, backend: "llvmpipe" },
+  ])(
+    "preserves executable graphics with Core=$native and backend=$backend",
+    async ({ native, backend }) => {
+      vi.stubEnv("STEEL_RENDERING_BACKEND", backend);
+      const { service } = lifecycleFixture();
+      const config = sessionConfig("graphics", "graphics");
+      config.extra!.stealthConfig = { useStealthBrowser: native };
+      await service.startNewSession(config);
+      const args = vi.mocked(puppeteer.launch).mock.calls.at(-1)![0]!.args!;
+      for (const flag of ["--disable-gpu", "--use-gl=swiftshader", "--in-process-gpu"]) {
+        expect(args.includes(flag)).toBe(false);
+      }
+      for (const flag of ["--use-gl=angle", "--use-angle=gl", "--ignore-gpu-blocklist"]) {
+        expect(args.includes(flag)).toBe(backend === "llvmpipe");
+      }
+      if (backend === "llvmpipe") {
+        expect(vi.mocked(puppeteer.launch).mock.calls.at(-1)![0]!.env).toMatchObject({
+          LIBGL_ALWAYS_SOFTWARE: "1",
+          GALLIUM_DRIVER: "llvmpipe",
+        });
+      }
+      await service.shutdown(ShutdownReason.SESSION_END);
+    },
+  );
 
   test("tears down the idle browser before running incoming launch hooks", async () => {
     const { service, events } = lifecycleFixture();
@@ -125,6 +155,28 @@ describe("CDPService lifecycle hook ownership", () => {
     expect(events[1].config).toBe(incoming);
     await service.shutdown(ShutdownReason.SESSION_END);
   });
+
+  test.each([1, 1.25, 1.5])(
+    "launches native X11 at profile scale %s without a forced DPR=1 override",
+    async (scale) => {
+      const { service } = lifecycleFixture();
+      const config = sessionConfig("native-scale", "native-scale");
+      config.extra!.stealthConfig = { useStealthBrowser: true };
+      config.fingerprint = {
+        headers: {},
+        fingerprint: {
+          navigator: { userAgent: "FixtureBrowser/1.0" },
+          screen: { devicePixelRatio: scale },
+        },
+      } as any;
+      await service.startNewSession(config);
+      const args = vi.mocked(puppeteer.launch).mock.calls.at(-1)![0]!.args!;
+      expect(args.filter((arg) => arg.startsWith("--force-device-scale-factor="))).toEqual([
+        `--force-device-scale-factor=${scale}`,
+      ]);
+      await service.shutdown(ShutdownReason.SESSION_END);
+    },
+  );
 
   test("passes outgoing metadata to shutdown hooks during relaunch", async () => {
     const { service, events } = lifecycleFixture();

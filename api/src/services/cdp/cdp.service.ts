@@ -38,6 +38,10 @@ import {
 } from "../../utils/requests.js";
 import { filterHeaders, getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
 import {
+  overrideDeviceMemoryHints,
+  withDeviceMemoryHints,
+} from "../../utils/device-memory-hints.js";
+import {
   deepMerge,
   extractStorageForPageWithTimeout,
   getProfilePath,
@@ -81,6 +85,12 @@ import {
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
+import {
+  CORE_CPU_GRAPHICS_ARGS,
+  coreCpuGraphicsEnvironment,
+  renderingBackend,
+} from "./utils/cpu-graphics.js";
+import { nativeDeviceScaleFactor } from "./utils/native-display.js";
 
 export class CDPService extends EventEmitter {
   private logger: FastifyBaseLogger;
@@ -358,6 +368,7 @@ export class CDPService extends EventEmitter {
 
   private async handleNewTarget(target: Target) {
     if (target.type() === TargetType.PAGE) {
+      this.queueFingerprintHeaders(target);
       this.queueMobileEmulation(target);
     }
 
@@ -524,7 +535,16 @@ export class CDPService extends EventEmitter {
       page.close().catch(() => {});
       this.endSession(ShutdownReason.SECURITY_VIOLATION);
     } else {
-      await request.continue();
+      // JS and negotiated HTTP hints must describe the selected profile, not
+      // the host VM. Do not advertise hints when Chrome's policy omitted them.
+      const headers =
+        this.fingerprintData && this.isFingerprintInjectionEnabled()
+          ? overrideDeviceMemoryHints(
+              request.headers(),
+              this.fingerprintData.fingerprint.navigator.deviceMemory || 8,
+            )
+          : undefined;
+      await request.continue(headers ? { headers } : undefined);
     }
   }
 
@@ -740,7 +760,7 @@ export class CDPService extends EventEmitter {
             ),
         );
 
-        const { options, userAgent, userDataDir, fingerprint } = this.launchConfig;
+        const { options, userDataDir, fingerprint } = this.launchConfig;
         this.fingerprintData = fingerprint ?? null;
 
         // Run launch mutators - plugin errors should be caught
@@ -759,6 +779,10 @@ export class CDPService extends EventEmitter {
               error,
             ),
         );
+
+        // Mutators can restore/normalize a profile's UA for this executable.
+        // Use the effective value for launch and generation, not a stale copy.
+        const userAgent = this.launchConfig.userAgent;
 
         // Fingerprint generation - can fail gracefully
         if (
@@ -905,10 +929,18 @@ export class CDPService extends EventEmitter {
           env.DISABLE_CHROME_SANDBOX ||
           (typeof process.getuid === "function" && process.getuid() === 0);
 
+        const useNativeCoreProfile =
+          (this.launchConfig.extra?.stealthConfig as { useStealthBrowser?: boolean } | undefined)
+            ?.useStealthBrowser === true;
+        const graphicsBackend = renderingBackend(useNativeCoreProfile);
+        const deviceScaleFactor = useNativeCoreProfile
+          ? nativeDeviceScaleFactor(this.fingerprintData)
+          : 1;
+
         const staticDefaultArgs = [
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
-          "--disable-gpu",
+          ...(graphicsBackend === "llvmpipe" ? CORE_CPU_GRAPHICS_ARGS : []),
           "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync,DisableLoadExtensionCommandLineSwitch,DisableDisableExtensionsExceptCommandLineSwitch",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
@@ -944,12 +976,10 @@ export class CDPService extends EventEmitter {
           "--ozone-platform=x11",
           "--disable-renderer-backgrounding",
           "--disable-backgrounding-occluded-windows",
-          "--use-gl=swiftshader",
-          "--in-process-gpu",
           "--enable-crashpad",
           "--crash-dumps-dir=/tmp/chrome-dumps",
           "--noerrdialogs",
-          "--force-device-scale-factor=1",
+          `--force-device-scale-factor=${deviceScaleFactor}`,
           "--disable-hang-monitor",
         ];
 
@@ -968,7 +998,7 @@ export class CDPService extends EventEmitter {
           `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
             this.launchConfig.dimensions?.height ?? 1080
           }`,
-          userAgent ? `--user-agent=${userAgent}` : "",
+          userAgent && !useNativeCoreProfile ? `--user-agent=${userAgent}` : "",
           this.launchConfig.options.proxyUrl
             ? `--proxy-server=${this.launchConfig.options.proxyUrl}`
             : "",
@@ -986,6 +1016,44 @@ export class CDPService extends EventEmitter {
           ...(env.CHROME_ARGS || []),
         ]).filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
 
+        if (graphicsBackend === "llvmpipe") {
+          const conflictingGraphics = launchArgs.some((arg) => {
+            const [name, value] = arg.split("=");
+            return (
+              ["--disable-gpu", "--in-process-gpu", "--disable-software-rasterizer"].includes(
+                name,
+              ) ||
+              (name === "--use-gl" && value !== "angle") ||
+              (name === "--use-angle" && value !== "gl")
+            );
+          });
+          if (
+            conflictingGraphics ||
+            CORE_CPU_GRAPHICS_ARGS.some((arg) => !launchArgs.includes(arg))
+          ) {
+            throw new Error("Chrome arguments conflict with the llvmpipe rendering profile");
+          }
+        }
+
+        if (useNativeCoreProfile) {
+          const conflictingArg = launchArgs.find((arg) => {
+            const [name, value = ""] = arg.split(/=(.*)/s);
+            const switchName = name.replace(/^--?/, "");
+            return (
+              ["user-agent", "spoofing-config", "disable-stealth"].includes(switchName) ||
+              (switchName === "force-device-scale-factor" &&
+                (isHeadless || Number(value) !== deviceScaleFactor)) ||
+              (switchName === "disable-features" &&
+                value
+                  .split(",")
+                  .some((feature) => feature.split(/[<:]/)[0].trim() === "EnablePrivacySpoofing"))
+            );
+          });
+          if (conflictingArg) {
+            throw new Error("Launch arguments conflict with Core Browser's native profile");
+          }
+        }
+
         const finalLaunchOptions = {
           ...options,
           defaultViewport: null,
@@ -996,7 +1064,11 @@ export class CDPService extends EventEmitter {
           env: {
             HOME: os.userInfo().homedir,
             TZ: timezone,
-            ...(isHeadless ? {} : { DISPLAY: env.DISPLAY }),
+            ...(graphicsBackend === "llvmpipe"
+              ? coreCpuGraphicsEnvironment(env.DISPLAY)
+              : isHeadless
+              ? {}
+              : { DISPLAY: env.DISPLAY }),
           },
           userDataDir,
           dumpio: env.DEBUG_CHROME_PROCESS, // Enable Chrome process stdout and stderr
@@ -1041,6 +1113,10 @@ export class CDPService extends EventEmitter {
               error,
             ),
         );
+
+        // Plugin notifications are normally best-effort, but a selected JS
+        // identity must not proceed with an uninitialized worker injector.
+        this.assertWorkerFingerprintReady();
 
         this.browserInstance.on("error", (err) => {
           this.logger.error(`[CDPService] Browser error: ${err}`);
@@ -1526,7 +1602,7 @@ export class CDPService extends EventEmitter {
     page: Page,
     fingerprintData: BrowserFingerprintWithHeaders | null,
   ) {
-    if (!fingerprintData) return;
+    if (!fingerprintData || !this.isFingerprintInjectionEnabled()) return;
 
     try {
       const { fingerprint, headers } = fingerprintData;
@@ -1534,14 +1610,16 @@ export class CDPService extends EventEmitter {
       const { isMobile, navigatorPlatform, uaPlatform, override } =
         this.buildUserAgentOverride(fingerprintData);
 
-      if (isMobile) {
-        await page.setUserAgent(override.userAgent, override.userAgentMetadata);
-      } else {
-        await page.setUserAgent(override.userAgent);
-      }
+      // Puppeteer's persistent session propagates native UA-CH to new frames
+      // and workers. A UA-only override clears metadata in standard Chromium.
+      await page.setUserAgent(override.userAgent, override.userAgentMetadata);
 
-      await this.withEmulationSession(page, isMobile, async (session) => {
-        await page.setExtraHTTPHeaders(filterHeaders(headers));
+      await this.withEmulationSession(page, true, async (session) => {
+        // Apply before request creation/ServiceWorker dispatch. Fetch-only
+        // rewriting is too late for a worker that reads or forwards the request.
+        await page.setExtraHTTPHeaders(
+          withDeviceMemoryHints(filterHeaders(headers), fingerprint.navigator.deviceMemory || 8),
+        );
         await session.send("Emulation.setUserAgentOverride", override);
       });
 
@@ -1557,8 +1635,8 @@ export class CDPService extends EventEmitter {
           fixedArchitecture: userAgentMetadata.architecture ?? "x86",
           fixedBitness: userAgentMetadata.bitness ?? "64",
           fixedModel: userAgentMetadata.model ?? "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion ?? "15.0.0",
-          fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
+          fixedPlatformVersion: userAgentMetadata.platformVersion ?? "",
+          fixedUaFullVersion: userAgentMetadata.uaFullVersion,
           fixedBrands:
             userAgentMetadata.brands ||
             ([] as unknown as Array<{
@@ -1581,6 +1659,17 @@ export class CDPService extends EventEmitter {
 
   @traceable
   private async applyDeviceMetricsOverride(page: Page): Promise<void> {
+    // Core configures the real display/window before pages and workers start.
+    // A second, page-only metrics model can disagree with CSS, new targets,
+    // screenshots and input coordinates. Explicit client CDP overrides remain
+    // available; do not install our own one on top of the native profile.
+    if (
+      (this.launchConfig?.extra?.stealthConfig as { useStealthBrowser?: boolean } | undefined)
+        ?.useStealthBrowser === true
+    ) {
+      return;
+    }
+
     const screen = this.fingerprintData?.fingerprint?.screen;
     if (!screen) {
       this.logger.warn(
@@ -1591,7 +1680,7 @@ export class CDPService extends EventEmitter {
 
     const isMobile = this.isMobileUserAgent(this.getUserAgent());
     const { metrics, touch } = this.buildDeviceMetrics(screen, isMobile);
-    const persist = isMobile && this.isFingerprintInjectionEnabled();
+    const persist = this.isFingerprintInjectionEnabled();
     await this.withEmulationSession(page, persist, async (session) => {
       await session.send("Page.setDeviceMetricsOverride", metrics);
       if (touch) {
@@ -1626,6 +1715,24 @@ export class CDPService extends EventEmitter {
     });
   }
 
+  private queueFingerprintHeaders(target: Target): void {
+    const data = this.fingerprintData;
+    const session = (target as any)._session?.() as CDPSession | undefined;
+    if (!data || !session || !this.isFingerprintInjectionEnabled()) return;
+    // Queue on Puppeteer's paused session before asynchronous page setup yields.
+    // The later Page API call keeps its NetworkManager state synchronized too.
+    void session
+      .send("Network.setExtraHTTPHeaders", {
+        headers: withDeviceMemoryHints(
+          filterHeaders(data.headers),
+          data.fingerprint.navigator.deviceMemory || 8,
+        ),
+      })
+      .catch((err) => {
+        this.logger.debug({ err }, "[Fingerprint] Early request headers did not apply");
+      });
+  }
+
   private buildUserAgentOverride(fingerprintData: BrowserFingerprintWithHeaders) {
     const { fingerprint, headers } = fingerprintData;
     const userAgent = fingerprint.navigator.userAgent;
@@ -1643,7 +1750,7 @@ export class CDPService extends EventEmitter {
     } = {
       userAgent,
       acceptLanguage,
-      platform: isMobile ? navigatorPlatform : uaPlatform,
+      platform: navigatorPlatform,
       userAgentMetadata: {
         brands:
           userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
@@ -1700,6 +1807,27 @@ export class CDPService extends EventEmitter {
 
   private isFingerprintInjectionEnabled(): boolean {
     return !env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection;
+  }
+
+  private isWorkerFingerprintReady(): boolean {
+    const plugin = this.pluginManager.getPlugin("worker-fingerprint") as
+      | (BasePlugin & { isReady?: () => boolean })
+      | undefined;
+    return plugin?.isReady?.() === true;
+  }
+
+  private assertWorkerFingerprintReady(): void {
+    if (
+      this.fingerprintData &&
+      this.isFingerprintInjectionEnabled() &&
+      this.pluginManager.getPlugin("worker-fingerprint") &&
+      !this.isWorkerFingerprintReady()
+    ) {
+      throw new FingerprintError(
+        "Worker fingerprint initialization did not complete",
+        FingerprintStage.INJECTION,
+      );
+    }
   }
 
   private isMobileUserAgent(userAgent: string | null | undefined): boolean {

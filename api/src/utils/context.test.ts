@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FastifyBaseLogger } from "fastify";
 import type { Page } from "puppeteer-core";
-import { extractStorageForPageWithTimeout, safePageUrl } from "./context.js";
+import {
+  extractStorageForPageWithTimeout,
+  groupSessionStorageByOrigin,
+  safePageUrl,
+} from "./context.js";
 
 const logger = () =>
   ({
@@ -79,5 +83,45 @@ describe("safePageUrl", () => {
         },
       } as unknown as Page),
     ).toBe("unknown");
+  });
+});
+
+describe("origin-scoped storage extraction", () => {
+  const pageAt = (origin: string) =>
+    ({
+      url: () => `${origin}/account`,
+      target: () => ({
+        createCDPSession: async () => ({
+          send: async (method: string, params?: any) => {
+            if (method === "Page.getFrameTree") return { frameTree: {} };
+            if (method === "DOMStorage.getDOMStorageItems")
+              return {
+                entries: [[params.storageId.isLocalStorage ? "local" : "session", origin]],
+              };
+            if (method === "IndexedDB.requestDatabaseNames") return { databaseNames: ["fixture"] };
+            if (method === "IndexedDB.requestDatabase")
+              return { databaseWithObjectStores: { objectStores: [] } };
+            return {};
+          },
+          detach: async () => {},
+        }),
+      }),
+    }) as unknown as Page;
+
+  it("uses the exact origin keys consumed by restoration", async () => {
+    for (const origin of [
+      "https://example.com",
+      "http://example.com",
+      "https://example.com:8443",
+    ]) {
+      const data = await extractStorageForPageWithTimeout(pageAt(origin), logger());
+      expect(Object.keys(data.localStorage!)).toEqual([origin]);
+      expect(Object.keys(data.sessionStorage!)).toEqual([origin]);
+      expect(Object.keys(data.indexedDB!)).toEqual([origin]);
+      expect(groupSessionStorageByOrigin(data).get(origin)).toMatchObject({
+        localStorage: { local: origin },
+        sessionStorage: { session: origin },
+      });
+    }
   });
 });

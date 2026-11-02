@@ -32,6 +32,7 @@ function createService({ withProxy = false } = {}) {
     getUserAgent: () => "test-agent",
     getDimensions: () => ({ width: 1920, height: 1080 }),
     endSession: vi.fn().mockResolvedValue(undefined),
+    startNewSession: vi.fn().mockResolvedValue(undefined),
   };
   const service = new SessionService({
     cdpService: cdpService as never,
@@ -81,4 +82,19 @@ describe("SessionService.endSession proxy accounting", () => {
     expect(released.proxyRxBytes).toBe(0);
     expect(released.proxyTxBytes).toBe(0);
   });
+});
+
+describe("SessionService native display selection", () => {
+  it.each([undefined, { width: 1365, height: 900 }])(
+    "does not manufacture a native dimension override (%j)",
+    async (dimensions) => {
+      const { service, cdpService } = createService();
+      await service.startSession({
+        timezone: "UTC",
+        dimensions,
+        extra: { stealthConfig: { useStealthBrowser: true } },
+      } as any);
+      expect(cdpService.startNewSession.mock.calls[0][0].dimensions).toEqual(dimensions);
+    },
+  );
 });

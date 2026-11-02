@@ -56,6 +56,7 @@ export const loadFingerprintScript = ({
   };
 
   return `
+  (() => {
     const FIXED_VENDOR = ${safeStringValue(fixedVendor, "Google Inc.")};
     const FIXED_RENDERER = ${safeStringValue(
       fixedRenderer,
@@ -78,5 +79,6 @@ export const loadFingerprintScript = ({
     const FIXED_UA_FULL_VERSION = ${safeStringValue(fixedUaFullVersion, "131.0.6778.86")};
     const FIXED_BRANDS = ${JSON.stringify(fixedBrands)};
     ${fingerprintScript}
+  })();
   `;
 };

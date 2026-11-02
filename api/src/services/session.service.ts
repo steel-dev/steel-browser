@@ -227,7 +227,17 @@ export class SessionService {
       extensions: extensions || [],
       logSinkUrl,
       timezone: timezonePromise,
-      dimensions: finalDimensions,
+      // Omitted native dimensions are intentional: the fingerprint launch hook
+      // selects coherent display/window geometry (or restores the saved one).
+      // Inheriting the idle window here silently erased its scale/diversity.
+      dimensions:
+        !dimensions &&
+        !isSelenium &&
+        !isMobileDevice &&
+        (extra?.stealthConfig as { useStealthBrowser?: boolean } | undefined)?.useStealthBrowser ===
+          true
+          ? undefined
+          : finalDimensions,
       userDataDir,
       userPreferences: mergedUserPreferences,
       extra,
