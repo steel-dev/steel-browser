@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "events";
 import { spawn, ChildProcess } from "child_process";
 
@@ -6,7 +6,7 @@ vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
   return {
     ...actual,
-    spawn: vi.fn((...args: Parameters<typeof actual.spawn>) => actual.spawn(...args)),
+    spawn: vi.fn(),
   };
 });
 
@@ -41,13 +41,18 @@ function createMockChildProcess(): ChildProcess & {
 }
 
 describe("SeleniumService", () => {
+  beforeEach(() => {
+    vi.mocked(spawn).mockReset();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
+    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
   describe("launch error handling", () => {
-    it("rejects cleanly without uncaught exceptions when java is not in PATH", async () => {
+    it("rejects cleanly without uncaught exceptions on ENOENT (no PATH)", async () => {
       const mockChild = createMockChildProcess();
       vi.mocked(spawn).mockReturnValue(mockChild);
 
@@ -63,7 +68,7 @@ describe("SeleniumService", () => {
 
       // Check logger captured the error (object form, consistent with service S3 logging)
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(Error) }),
+        expect.objectContaining({ err: spawnError }),
         expect.stringContaining("Selenium process error"),
       );
 
@@ -80,12 +85,17 @@ describe("SeleniumService", () => {
 
       const launchPromise = service.launch({} as never);
 
-      const spawnError = new Error("spawn java ENOENT");
+      const spawnError = Object.assign(new Error("spawn java ENOENT"), {
+        code: "ENOENT",
+      });
       mockChild.emit("error", spawnError);
 
-      await expect(launchPromise).rejects.toThrow("spawn java ENOENT");
+      await expect(launchPromise).rejects.toMatchObject({
+        code: "ENOENT",
+        message: expect.stringContaining("spawn java ENOENT"),
+      });
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(Error) }),
+        expect.objectContaining({ err: spawnError }),
         expect.stringContaining("Selenium process error"),
       );
       expect(() => service.close()).not.toThrow();
@@ -129,6 +139,7 @@ describe("SeleniumService", () => {
       expect(mockChild.listenerCount("error")).toBe(1);
       expect(mockChild.listenerCount("close")).toBe(1);
       expect(mockChild.stdout.listenerCount("data")).toBe(1);
+      expect(mockChild.stderr.listenerCount("data")).toBe(1);
 
       // Verify close kills the running process
       service.close();
@@ -153,8 +164,43 @@ describe("SeleniumService", () => {
         "Selenium server failed to start within the timeout period",
       );
       expect(mockChild.kill).toHaveBeenCalledWith("SIGINT");
+    });
 
-      vi.useRealTimers();
+    it("resolves when startup message arrives in split chunks", async () => {
+      const mockChild = createMockChildProcess();
+      vi.mocked(spawn).mockReturnValue(mockChild);
+
+      const logger = createMockLogger();
+      const service = new SeleniumService(logger as never);
+
+      const launchPromise = service.launch({} as never);
+
+      mockChild.stdout.emit("data", Buffer.from("Started Selenium "));
+      mockChild.stdout.emit("data", Buffer.from("Standalone"));
+
+      await expect(launchPromise).resolves.toBeUndefined();
+      expect(service.getSeleniumServerUrl()).toBe("http://localhost:4444");
+      service.close();
+    });
+
+    it("recovers and resolves after a failed launch", async () => {
+      const mockChild1 = createMockChildProcess();
+      const mockChild2 = createMockChildProcess();
+      vi.mocked(spawn).mockReturnValueOnce(mockChild1).mockReturnValueOnce(mockChild2);
+
+      const logger = createMockLogger();
+      const service = new SeleniumService(logger as never);
+
+      const firstLaunch = service.launch({} as never);
+      mockChild1.emit("error", new Error("spawn java ENOENT"));
+      await expect(firstLaunch).rejects.toThrow("spawn java ENOENT");
+
+      const secondLaunch = service.launch({} as never);
+      mockChild2.stdout.emit("data", Buffer.from("Started Selenium Standalone"));
+      await expect(secondLaunch).resolves.toBeUndefined();
+      expect(service.getSeleniumServerUrl()).toBe("http://localhost:4444");
+      service.close();
+      expect(mockChild2.kill).toHaveBeenCalledWith("SIGINT");
     });
 
     it("closes existing process before launching a new one", async () => {
@@ -200,10 +246,14 @@ describe("SeleniumService", () => {
       // Before firstLaunch settles, second launch starts and supersedes mockChild1
       const secondLaunch = service.launch({} as never);
 
-      // Flush microtasks so secondLaunch passes `await close()` and spawns mockChild2
-      // before mockChild1 fails; otherwise the test is vacuous (mockChild2 not yet spawned).
+      // Flush microtasks so the second spawn occurs before mockChild1 fails;
+      // otherwise the test is vacuous (mockChild2 not yet spawned).
       await Promise.resolve();
       await Promise.resolve();
+
+      // Non-vacuity proof: second launch actually spawned and cleaned up the first.
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(mockChild1.kill).toHaveBeenCalledWith("SIGINT");
 
       // Now mockChild1 fails during its startup
       mockChild1.emit("error", new Error("first launch failed"));

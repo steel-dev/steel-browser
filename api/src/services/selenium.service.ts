@@ -34,7 +34,7 @@ export class SeleniumService extends EventEmitter {
     const logSinkUrl = launchOptions?.logSinkUrl;
 
     if (this.seleniumProcess) {
-      await this.close();
+      this.close();
     }
 
     const projectRoot = path.resolve(dirname(fileURLToPath(import.meta.url)), "../../");
@@ -59,11 +59,11 @@ export class SeleniumService extends EventEmitter {
           timestamp: new Date(),
         },
         logSinkUrl,
-      ).catch(() => {});
+      );
     });
 
     seleniumProcess.stdout?.on("data", (data) => {
-      this.logger.info(`Selenium stdout: ${data}`);
+      this.logger.info({ chunk: `${data}`.slice(0, 2000) }, "Selenium stdout");
       this.postLog(
         {
           type: BrowserEventType.Console,
@@ -75,7 +75,7 @@ export class SeleniumService extends EventEmitter {
     });
 
     seleniumProcess.stderr?.on("data", (data) => {
-      this.logger.error(`Selenium stderr: ${data}`);
+      this.logger.error({ chunk: `${data}`.slice(0, 2000) }, "Selenium stderr");
       this.postLog(
         {
           type: BrowserEventType.Error,
@@ -87,23 +87,27 @@ export class SeleniumService extends EventEmitter {
     });
 
     seleniumProcess.on("close", (code) => {
-      this.logger.info(`Selenium process exited with code ${code}`);
       if (this.seleniumProcess === seleniumProcess) {
+        this.logger.info({ code }, "Selenium process exited");
         this.seleniumProcess = null;
+      } else {
+        this.logger.debug({ code }, "Superseded Selenium process exited");
       }
     });
     try {
       await new Promise<void>((resolve, reject) => {
         let settled = false;
+        let timeout: ReturnType<typeof setTimeout>;
 
         const cleanup = () => {
           clearTimeout(timeout);
           seleniumProcess.stdout?.off("data", onData);
+          seleniumProcess.stderr?.off("data", onData);
           seleniumProcess.off("error", onError);
           seleniumProcess.off("close", onClose);
         };
 
-        const timeout = setTimeout(() => {
+        timeout = setTimeout(() => {
           if (settled) return;
           settled = true;
           cleanup();
@@ -137,6 +141,7 @@ export class SeleniumService extends EventEmitter {
         };
 
         seleniumProcess.stdout?.on("data", onData);
+        seleniumProcess.stderr?.on("data", onData);
         seleniumProcess.on("error", onError);
         seleniumProcess.on("close", onClose);
       });
@@ -149,14 +154,19 @@ export class SeleniumService extends EventEmitter {
   }
 
   public close(): void {
-    if (this.seleniumProcess) {
-      try {
-        this.seleniumProcess.kill("SIGINT");
-      } catch {
-        // Process might not be running or already killed
-      }
-      this.seleniumProcess = null;
+    const proc = this.seleniumProcess;
+    if (!proc) {
+      return;
     }
+    try {
+      proc.kill("SIGINT");
+    } catch {
+      // Process might not be running or already killed
+    }
+    proc.removeAllListeners();
+    proc.stdout?.removeAllListeners();
+    proc.stderr?.removeAllListeners();
+    this.seleniumProcess = null;
   }
 
   public getSeleniumServerUrl(): string {
@@ -174,6 +184,7 @@ export class SeleniumService extends EventEmitter {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(browserLog),
+        signal: AbortSignal.timeout(5000),
       });
     } catch (err) {
       this.logger.warn({ err }, "Failed to post log to logSinkUrl");
