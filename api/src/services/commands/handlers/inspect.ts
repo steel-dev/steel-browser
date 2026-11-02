@@ -3,6 +3,7 @@ import { ProtocolError } from "puppeteer-core";
 import { getDefuddleContent, stripBase64Images } from "../../../utils/scrape/index.js";
 import type { Command } from "../commands.js";
 import { CommandError } from "../errors.js";
+import { placements } from "../locators.js";
 import type { CommandResult } from "../records.js";
 import {
   ATTRIBUTE,
@@ -99,6 +100,8 @@ export async function get(
   }
   const target = await element(ctx, { ...command, target: command.target });
   switch (command.what) {
+    case "locator":
+      return { ok: true, effect: "none", value: await placements(target) };
     case "text":
     case "html": {
       const value = await callOn<string>(target, command.what === "text" ? TEXT : HTML);

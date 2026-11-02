@@ -18,6 +18,10 @@ import type { Tab } from "./tabs.js";
 
 const CHECK_TIMEOUT_MS = 5_000;
 
+export const MAX_FRAME_DEPTH = 8;
+
+const FRAME_TAGS = new Set(["IFRAME", "FRAME"]);
+
 let handleGroups = 0;
 
 export function handleGroup(): string {
@@ -110,6 +114,8 @@ export interface Locator {
 }
 
 export type Target = string | Locator;
+
+export type FrameTarget = Target | Target[];
 
 export interface Expectation {
   role?: string;
@@ -224,6 +230,107 @@ export async function frameScope(
   return child
     ? { tab, session: child, frameId, root: true, group }
     : { tab, session: parent, frameId, root: false, group };
+}
+
+export async function enterFrame(scope: Scope, target: Target): Promise<Scope> {
+  const locator = asLocator(target);
+  if (!locator) {
+    throw new CommandError(
+      "invalid_argument",
+      `Ref ${target} already names its frame. Pass it alone as frame, not in a list.`,
+    );
+  }
+  const matches = await locate(scope, locator);
+  const match = locator.nth === undefined ? sole(matches, locator) : pick(matches, locator);
+  if (!match) {
+    throw new CommandError(
+      "frame_not_found",
+      matches.length === 0
+        ? `No frame matches ${describeTarget(locator)}.`
+        : `Only ${matches.length} elements match ${describeTarget(locator)}.`,
+    );
+  }
+  const { node } = await scope.session
+    .send("DOM.describeNode", { backendNodeId: match.backendNodeId, depth: 1 })
+    .catch(() => ({ node: null }));
+  if (!node || !FRAME_TAGS.has(node.nodeName)) {
+    throw new CommandError(
+      "frame_not_found",
+      `${describeTarget(locator)} is ${
+        node ? `a ${node.nodeName.toLowerCase()}` : "gone"
+      }, not an iframe.`,
+    );
+  }
+  const frameId = node.contentDocument?.frameId ?? node.frameId;
+  if (!frameId) {
+    throw new CommandError(
+      "frame_not_found",
+      `The frame ${describeTarget(locator)} has no document.`,
+    );
+  }
+  const child = scope.tab.frameSession(frameId);
+  return child
+    ? { tab: scope.tab, session: child, frameId, root: true, group: scope.group }
+    : { tab: scope.tab, session: scope.session, frameId, root: false, group: scope.group };
+}
+
+export async function scopeOf(
+  tab: Tab,
+  session: CDPSession,
+  frameId: string,
+  group: string,
+): Promise<Scope> {
+  const { frameTree } = await session.send("Page.getFrameTree");
+  return { tab, session, frameId, root: frameTree.frame.id === frameId, group };
+}
+
+export async function frameOwner(
+  tab: Tab,
+  session: CDPSession,
+  frameId: string,
+): Promise<{ session: CDPSession; frameId: string; backendNodeId: number } | null> {
+  const { frameTree } = await session.send("Page.getFrameTree");
+  if (frameTree.frame.id !== frameId) {
+    const parent = parentFrame(frameTree, frameId);
+    if (!parent) {
+      throw new CommandError("frame_not_found", "The frame is no longer in the page.");
+    }
+    const { backendNodeId } = await session.send("DOM.getFrameOwner", { frameId });
+    return { session, frameId: parent, backendNodeId };
+  }
+  const link = tab.parentOf(session);
+  if (!link) {
+    if (session.id() !== (await tab.session()).id()) {
+      throw new CommandError("frame_not_found", "The frame lost track of its parent page.");
+    }
+    return null;
+  }
+  const { frameTree: outer } = await link.session.send("Page.getFrameTree");
+  const { backendNodeId } = await link.session.send("DOM.getFrameOwner", { frameId: link.frameId });
+  const { nodes } = await link.session
+    .send("Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true })
+    .catch(() => ({ nodes: [] }));
+  const document = nodes.find((node) => node.frameId)?.frameId;
+  return {
+    session: link.session,
+    frameId: document ?? parentFrame(outer, link.frameId) ?? outer.frame.id,
+    backendNodeId,
+  };
+}
+
+type FrameNode = { frame: { id: string }; childFrames?: FrameNode[] };
+
+function parentFrame(tree: FrameNode, frameId: string): string | null {
+  for (const child of tree.childFrames ?? []) {
+    if (child.frame.id === frameId) {
+      return tree.frame.id;
+    }
+    const found = parentFrame(child, frameId);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
 }
 
 export async function locate(scope: Scope, locator: Locator): Promise<Match[]> {

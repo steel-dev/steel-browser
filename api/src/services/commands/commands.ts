@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { LOCATOR_KINDS } from "./targets.js";
+import { LOCATOR_KINDS, MAX_FRAME_DEPTH } from "./targets.js";
 
 const tab = z
   .string()
@@ -40,9 +40,11 @@ const locator = z
 
 const target = z.union([filled, locator]);
 
+const frame = z.union([target, z.array(target).min(1).max(MAX_FRAME_DEPTH)]);
+
 const scoped = {
   tab,
-  frame: z.string().min(1).optional(),
+  frame: frame.optional(),
   expect: z
     .object({ role: z.string().min(1).optional(), name: z.string().optional() })
     .strict()
@@ -108,12 +110,23 @@ export const commandSchema = z.discriminatedUnion("command", [
     source: target,
     target,
     tab,
-    frame: z.string().min(1).optional(),
+    frame: frame.optional(),
   }),
   strict({ command: z.literal("uncheck"), ...element }),
   strict({
     command: z.literal("get"),
-    what: z.enum(["text", "html", "markdown", "value", "attr", "title", "url", "count", "box"]),
+    what: z.enum([
+      "text",
+      "html",
+      "markdown",
+      "value",
+      "attr",
+      "title",
+      "url",
+      "count",
+      "box",
+      "locator",
+    ]),
     target: target.optional(),
     attribute: z.string().min(1).optional(),
     ...scoped,
@@ -169,7 +182,7 @@ export const commandSchema = z.discriminatedUnion("command", [
     name: filled.optional(),
     exact: z.boolean().optional(),
     tab,
-    frame: z.string().min(1).optional(),
+    frame: frame.optional(),
   }),
   strict({
     command: z.literal("tab"),
