@@ -213,18 +213,23 @@ export async function frameScope(
     throw new CommandError(
       "frame_not_found",
       `Frame ${frame} is not an iframe ref from a snapshot of tab ${tab.id}.`,
+      "not_frame",
     );
   }
   const parent = tab.sessionByKey(entry.sessionKey);
   if (!parent) {
-    throw new CommandError("frame_not_found", `Frame ${frame} is no longer in the page.`);
+    throw new CommandError(
+      "frame_not_found",
+      `Frame ${frame} is no longer in the page.`,
+      "missing",
+    );
   }
   const { node } = await parent
     .send("DOM.describeNode", { backendNodeId: entry.backendNodeId, depth: 1 })
     .catch(() => ({ node: null }));
   const frameId = node?.contentDocument?.frameId ?? node?.frameId;
   if (!frameId) {
-    throw new CommandError("frame_not_found", `Frame ${frame} has no document.`);
+    throw new CommandError("frame_not_found", `Frame ${frame} has no document.`, "missing");
   }
   const child = tab.frameSession(frameId);
   return child
@@ -248,30 +253,44 @@ export async function enterFrame(scope: Scope, target: Target): Promise<Scope> {
       matches.length === 0
         ? `No frame matches ${describeTarget(locator)}.`
         : `Only ${matches.length} elements match ${describeTarget(locator)}.`,
+      "missing",
     );
   }
   const { node } = await scope.session
     .send("DOM.describeNode", { backendNodeId: match.backendNodeId, depth: 1 })
     .catch(() => ({ node: null }));
-  if (!node || !FRAME_TAGS.has(node.nodeName)) {
+  if (!node) {
     throw new CommandError(
       "frame_not_found",
-      `${describeTarget(locator)} is ${
-        node ? `a ${node.nodeName.toLowerCase()}` : "gone"
-      }, not an iframe.`,
+      `The frame ${describeTarget(locator)} left the page.`,
+      "missing",
+    );
+  }
+  if (!FRAME_TAGS.has(node.nodeName)) {
+    throw new CommandError(
+      "frame_not_found",
+      `${describeTarget(locator)} is a ${node.nodeName.toLowerCase()}, not an iframe.`,
+      "not_frame",
     );
   }
   const frameId = node.contentDocument?.frameId ?? node.frameId;
   if (!frameId) {
     throw new CommandError(
       "frame_not_found",
-      `The frame ${describeTarget(locator)} has no document.`,
+      `The frame ${describeTarget(locator)} has no document yet.`,
+      "missing",
     );
   }
   const child = scope.tab.frameSession(frameId);
   return child
     ? { tab: scope.tab, session: child, frameId, root: true, group: scope.group }
     : { tab: scope.tab, session: scope.session, frameId, root: false, group: scope.group };
+}
+
+export function frameMissing(error: unknown): boolean {
+  return (
+    error instanceof CommandError && error.code === "frame_not_found" && error.reason === "missing"
+  );
 }
 
 export async function scopeOf(

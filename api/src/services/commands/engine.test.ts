@@ -420,7 +420,9 @@ const fixtures: Record<string, (other: string) => string> = {
     <button id=":r7:">Generated</button>
     <select class="month-select css-1x2y3z"><option>March</option><option>April</option></select>
     <input type="password" aria-label="Password" value="hunter2-secret">
-    <span class="leak">hunter2-secret</span>`,
+    <span class="leak">hunter2-secret</span>
+    <input type="password" aria-label="Pin" value='zq"x\\secret-77'>
+    <span class="quoted">zq"x\\secret-77</span>`,
   "/consent": (other) => `<!doctype html><title>Consent</title>
     <iframe id="sp_message_iframe_1504881" title="Consent Message" src="${other}/consent-inner" width="300" height="120"></iframe>
     <iframe src="/inner" width="300" height="120"></iframe>`,
@@ -428,6 +430,17 @@ const fixtures: Record<string, (other: string) => string> = {
     <button onclick="document.body.dataset.accepted = 'yes'">Accept and Continue</button>`,
   "/nested": () => `<!doctype html><title>Nested</title>
     <iframe src="/oopif" width="400" height="220"></iframe>`,
+  "/late-frame": () => `<!doctype html><title>Late</title><h1>Late</h1>
+    <script>
+      setTimeout(() => {
+        const frame = document.createElement("iframe");
+        frame.title = "Late";
+        frame.src = "/inner";
+        document.body.append(frame);
+      }, 1500);
+    </script>`,
+  "/query-frame": () => `<!doctype html><title>Query</title>
+    <iframe src="/inner?session=a1b2c3d4e5f6&amp;ts=1730000000" width="300" height="120"></iframe>`,
   "/frame": () => `<!doctype html><h1>Parent</h1>
     <iframe src="/inner" width="300" height="120"></iframe>`,
   "/inner": () => `<!doctype html>
@@ -3827,6 +3840,9 @@ describe.skipIf(!chrome)("command engine", () => {
       const leak = await describe({ css: "span.leak" });
       expect(leak).toMatchObject({ ok: true });
       expect(JSON.stringify(leak)).not.toContain("hunter2");
+      const quoted = await describe({ css: "span.quoted" });
+      expect(quoted).toMatchObject({ ok: true });
+      expect(JSON.stringify(quoted)).not.toContain("secret-77");
     });
 
     test("describes elements inside frames with a frame locator", async () => {
@@ -3870,6 +3886,47 @@ describe.skipIf(!chrome)("command engine", () => {
       expect((await run({ command: "click", ...deep })).results[0]).toMatchObject({ ok: true });
       const remote = page.frames().find((frame) => frame.url().endsWith("/remote"));
       expect(await remote?.evaluate(() => document.body.dataset.clicked)).toBe("yes");
+    });
+
+    test("leaves the query out of a frame src", async () => {
+      await open("/query-frame");
+      const placed = await run({
+        command: "get",
+        what: "locator",
+        target: refOf(await snapshot(), 'button "Inner"'),
+      });
+      const [first] = placed.results[0].value as { frame: unknown }[];
+      expect(first.frame).toEqual({ css: 'iframe[src^="/inner?"]' });
+      await open("/query-frame");
+      expect((await run({ command: "click", ...first })).results[0]).toMatchObject({ ok: true });
+    });
+
+    test("treats a frame that is not there yet like an element that is not there", async () => {
+      await open("/late-frame");
+      const frame = { title: "Late" };
+      const inner = { role: "button", name: "Inner" };
+      expect(
+        (await run({ command: "is", what: "visible", target: inner, frame })).results[0],
+      ).toMatchObject({ ok: true, value: false });
+      expect(
+        (await run({ command: "get", what: "count", target: inner, frame })).results[0],
+      ).toMatchObject({ ok: true, value: 0 });
+      expect((await run({ command: "click", target: inner, frame })).results[0]).toMatchObject({
+        ok: false,
+        error: { code: "frame_not_found", reason: "missing" },
+      });
+      const waited = await run({ command: "wait", target: inner, frame, timeout: 5000 });
+      expect(waited.results[0]).toMatchObject({ ok: true });
+      const gone = await run([
+        { command: "eval", script: "document.querySelector('iframe').remove()" },
+        { command: "wait", target: inner, frame, state: "detached", timeout: 5000 },
+      ]);
+      expect(gone.results[1]).toMatchObject({ ok: true });
+      const wrong = await run({ command: "wait", target: inner, frame: "h1", timeout: 3000 });
+      expect(wrong.results[0]).toMatchObject({
+        ok: false,
+        error: { code: "frame_not_found", reason: "not_frame" },
+      });
     });
 
     test("takes a frame as a CSS selector, a locator, or a list from the outside in", async () => {

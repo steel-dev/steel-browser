@@ -87,6 +87,8 @@ const SEMANTIC_CLASS = /^[A-Za-z][\w-]{3,}$/;
 
 const HASHED_CLASS = /\d{2,}|^(css|sc|jsx|emotion|chakra|style)-|__[A-Za-z0-9]{5}$/;
 
+const SESSION_URL = /^(blob|data|javascript):/i;
+
 const TEXT_LIMIT = 80;
 
 const CLASS_LIMIT = 3;
@@ -146,44 +148,47 @@ async function candidates(scope: Scope, element: Element): Promise<Locator[]> {
     node?.name && !GENERIC_ROLES.has(node.role.toLowerCase())
       ? { role: node.role.toLowerCase(), name: node.name, exact: true }
       : null;
-  const ordered: Locator[] = [];
+  const ordered: { locator: Locator; raw: string[] }[] = [];
+  const add = (locator: Locator, ...raw: string[]) => ordered.push({ locator, raw });
   if (facts.testid) {
-    ordered.push({ testid: facts.testid });
+    add({ testid: facts.testid }, facts.testid);
   }
   for (const [attribute, value] of facts.data) {
-    ordered.push({ css: `[${attribute}="${cssString(value)}"]` });
+    add({ css: `[${attribute}="${cssString(value)}"]` }, value);
   }
   if (named) {
-    ordered.push(named);
+    add(named, node!.name);
   }
   if (facts.label) {
-    ordered.push({ label: facts.label, exact: true });
+    add({ label: facts.label, exact: true }, facts.label);
   }
   if (facts.placeholder) {
-    ordered.push({ placeholder: facts.placeholder, exact: true });
+    add({ placeholder: facts.placeholder, exact: true }, facts.placeholder);
   }
   if (facts.alt) {
-    ordered.push({ alt: facts.alt, exact: true });
+    add({ alt: facts.alt, exact: true }, facts.alt);
   }
   if (facts.title) {
-    ordered.push({ title: facts.title, exact: true });
+    add({ title: facts.title, exact: true }, facts.title);
   }
   if (facts.id && !GENERATED_ID.test(facts.id)) {
-    ordered.push({ css: `#${facts.escapedId}` });
+    add({ css: `#${facts.escapedId}` }, facts.id);
   }
   if (facts.name) {
-    ordered.push({ css: `${facts.escapedTag}[name="${cssString(facts.name)}"]` });
+    add({ css: `${facts.escapedTag}[name="${cssString(facts.name)}"]` }, facts.name);
   }
-  if (facts.src) {
-    ordered.push({ css: `${facts.escapedTag}[src="${cssString(facts.src)}"]` });
+  if (facts.src && !SESSION_URL.test(facts.src)) {
+    const cut = facts.src.search(/[?#]/);
+    const kept = cut >= 0 ? facts.src.slice(0, cut + 1) : facts.src;
+    add({ css: `${facts.escapedTag}[src${cut >= 0 ? "^" : ""}="${cssString(kept)}"]` }, kept);
   }
   if (facts.text && facts.text.length <= TEXT_LIMIT) {
-    ordered.push({ text: facts.text, exact: true });
+    add({ text: facts.text, exact: true }, facts.text);
   }
   for (const [name, escaped] of facts.classes
     .filter(([name]) => SEMANTIC_CLASS.test(name) && !HASHED_CLASS.test(name))
     .slice(0, CLASS_LIMIT)) {
-    ordered.push({ css: `${facts.escapedTag}.${escaped}` });
+    add({ css: `${facts.escapedTag}.${escaped}` }, name);
   }
   const secrets = [
     ...(await callOn<string[]>(element, SECRET_VALUES).catch(() => [])),
@@ -191,9 +196,8 @@ async function candidates(scope: Scope, element: Element): Promise<Locator[]> {
   ];
   const unique: Locator[] = [];
   const positional: Locator[] = [];
-  for (const candidate of ordered) {
-    const shown = JSON.stringify(candidate);
-    if (hideSecrets(shown, secrets) !== shown) {
+  for (const { locator: candidate, raw } of ordered) {
+    if (raw.some((value) => hideSecrets(value, secrets) !== value)) {
       continue;
     }
     const matches = await locate(scope, candidate).catch(() => []);
