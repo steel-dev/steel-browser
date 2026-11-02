@@ -212,10 +212,17 @@ async function candidates(scope: Scope, element: Element): Promise<Locator[]> {
     }
   }
   if (framed && unique.length === 0 && positional.length === 0) {
-    const matches = await locate(scope, { css: facts.escapedTag }).catch(() => []);
-    const index = matches.findIndex((match) => match.backendNodeId === element.backendNodeId);
-    if (index >= 0) {
-      positional.push({ css: facts.escapedTag, nth: index });
+    const fallbacks: Locator[] = [
+      { css: facts.escapedTag },
+      ...(node ? [{ role: node.role.toLowerCase() }] : []),
+    ];
+    for (const fallback of fallbacks) {
+      const matches = await locate(scope, fallback).catch(() => []);
+      const index = matches.findIndex((match) => match.backendNodeId === element.backendNodeId);
+      if (index >= 0) {
+        positional.push({ ...fallback, nth: index });
+        break;
+      }
     }
   }
   const seen = new Set<string>();

@@ -637,7 +637,7 @@ async function worldOf(scope: Scope): Promise<number> {
   const { frameTree } = await scope.session.send("Page.getFrameTree");
   const loaderId = findLoader(frameTree, scope.frameId);
   if (!loaderId) {
-    throw new CommandError("frame_not_found", "The frame has no document.");
+    throw new CommandError("frame_not_found", "The frame has no document.", "missing");
   }
   return scope.tab.world(scope.session, scope.frameId, loaderId);
 }

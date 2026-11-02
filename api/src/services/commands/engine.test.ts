@@ -439,6 +439,12 @@ const fixtures: Record<string, (other: string) => string> = {
         document.body.append(frame);
       }, 1500);
     </script>`,
+  "/shadow-frame": () => `<!doctype html><title>Shadow</title>
+    <div id="host"></div>
+    <script>
+      document.getElementById("host").attachShadow({ mode: "open" }).innerHTML =
+        '<iframe src="/inner" width="300" height="120"></iframe>';
+    </script>`,
   "/query-frame": () => `<!doctype html><title>Query</title>
     <iframe src="/inner?session=a1b2c3d4e5f6&amp;ts=1730000000" width="300" height="120"></iframe>`,
   "/frame": () => `<!doctype html><h1>Parent</h1>
@@ -3886,6 +3892,20 @@ describe.skipIf(!chrome)("command engine", () => {
       expect((await run({ command: "click", ...deep })).results[0]).toMatchObject({ ok: true });
       const remote = page.frames().find((frame) => frame.url().endsWith("/remote"));
       expect(await remote?.evaluate(() => document.body.dataset.clicked)).toBe("yes");
+    });
+
+    test("describes a frame inside a shadow root by its role", async () => {
+      await open("/shadow-frame");
+      const placed = await run({
+        command: "get",
+        what: "locator",
+        target: refOf(await snapshot(), 'button "Inner"'),
+      });
+      const [first] = placed.results[0].value as { frame: unknown }[];
+      expect(first.frame).toEqual({ role: "iframe", nth: 0 });
+      await open("/shadow-frame");
+      expect((await run({ command: "click", ...first })).results[0]).toMatchObject({ ok: true });
+      expect(await page.title()).toBe("inner");
     });
 
     test("leaves the query out of a frame src", async () => {
