@@ -163,9 +163,6 @@ export class SeleniumService extends EventEmitter {
     } catch {
       // Process might not be running or already killed
     }
-    proc.removeAllListeners();
-    proc.stdout?.removeAllListeners();
-    proc.stderr?.removeAllListeners();
     this.seleniumProcess = null;
   }
 
