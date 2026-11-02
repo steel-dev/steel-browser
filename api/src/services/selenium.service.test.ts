@@ -116,7 +116,8 @@ describe("SeleniumService", () => {
         "Selenium process exited prematurely with code 1",
       );
       expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining("Selenium process exited with code 1"),
+        expect.objectContaining({ code: 1 }),
+        expect.stringContaining("Selenium process exited"),
       );
       expect(() => service.close()).not.toThrow();
     });
