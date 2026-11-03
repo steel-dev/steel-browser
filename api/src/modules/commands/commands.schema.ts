@@ -96,7 +96,7 @@ const CommandRequestError = z
 
 const CommandsSchemaResponse = z.object({
   version: z.number().int(),
-  schema: z.record(z.unknown()).describe("JSON Schema of the request body."),
+  schema: z.record(z.string(), z.unknown()).describe("JSON Schema of the request body."),
 });
 
 export const commandsSchemas = {

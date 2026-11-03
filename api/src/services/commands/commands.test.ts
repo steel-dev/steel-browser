@@ -1,16 +1,16 @@
 import Fastify from "fastify";
 import { describe, expect, test } from "vitest";
-import type { ZodIssue } from "zod";
+import type { z } from "zod";
 import { $ref, schemas } from "../../plugins/schemas.js";
 import { requestJsonSchema, requestSchema } from "./commands.js";
 
-function issueCount(issues: ZodIssue[]): number {
+function issueCount(issues: z.core.$ZodIssue[]): number {
   return issues.reduce(
     (count, issue) =>
       count +
       1 +
       (issue.code === "invalid_union"
-        ? issue.unionErrors.reduce((nested, error) => nested + issueCount(error.issues), 0)
+        ? issue.errors.reduce((nested, branch) => nested + issueCount(branch), 0)
         : 0),
     0,
   );
@@ -38,7 +38,11 @@ describe("request schema", () => {
       });
     expect(select(1000).success).toBe(true);
     expect(select(1001).error?.issues).toMatchObject([
-      { code: "too_big", maximum: 1000, path: ["commands", 0, "values"] },
+      {
+        code: "invalid_union",
+        path: ["commands", 0, "values"],
+        errors: [[{ code: "invalid_type" }], [{ code: "too_big", maximum: 1000 }]],
+      },
     ]);
     const commands = (count: number) =>
       requestSchema.safeParse({ commands: Array(count).fill({ command: "snapshot" }) });
