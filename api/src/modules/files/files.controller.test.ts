@@ -1,15 +1,43 @@
-import { createServer } from "node:http";
 import { Readable } from "node:stream";
+import * as fs from "fs";
+import http from "node:http";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FileQuotaExceededError, FileService } from "../../services/file.service.js";
 import fileStoragePlugin from "../../plugins/file-storage.js";
 import { FilesController } from "./files.controller.js";
 
+// Records every staged temp path and every unlinked path through a
+// passthrough mock of "fs" (ESM namespaces are frozen, so vi.spyOn on
+// fs.* throws). Real behavior is preserved; only the paths are recorded.
+const { stagedPaths, unlinkedPaths } = vi.hoisted(() => ({
+  stagedPaths: [] as string[],
+  unlinkedPaths: [] as string[],
+}));
+
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  return {
+    ...actual,
+    createWriteStream: (...args: unknown[]) => {
+      stagedPaths.push(String(args[0]));
+      return (actual.createWriteStream as (...a: unknown[]) => unknown)(...args);
+    },
+    promises: {
+      ...actual.promises,
+      unlink: (...args: never[]) => {
+        unlinkedPaths.push(String(args[0]));
+        return (actual.promises.unlink as (...a: never[]) => Promise<void>)(...args);
+      },
+    },
+  };
+});
+
 function createReply() {
   const headers = new Map<string, unknown>();
   let statusCode = 200;
+  let payload: unknown;
   const reply = {
     header(name: string, value: unknown) {
       headers.set(name, value);
@@ -19,9 +47,17 @@ function createReply() {
       statusCode = status;
       return reply;
     },
-    send: () => reply,
+    send: (body?: unknown) => {
+      payload = body;
+      return reply;
+    },
   };
-  return { reply: reply as unknown as FastifyReply, headers, statusCode: () => statusCode };
+  return {
+    reply: reply as unknown as FastifyReply,
+    headers,
+    statusCode: () => statusCode,
+    body: () => payload,
+  };
 }
 
 function createController(saveFileImpl?: FileService["saveFile"]) {
@@ -137,14 +173,23 @@ describe("FilesController quota enforcement", () => {
   });
 
   it("passes the remote content-length to saveFile", async () => {
-    const httpServer = createServer((_req, res) => {
-      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": "4" });
-      res.end("tiny");
-    });
-    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    // No real egress and no 127.0.0.1 server: 93.184.216.34 is a public
+    // literal (skips DNS) and http.get is stubbed to answer 200 with
+    // Content-Length 4. Mirrors the deleted happy-path assertions.
+    const getSpy = vi.spyOn(http, "get").mockImplementation(
+      ((_url: unknown, _opts: unknown, cb: unknown) => {
+        const res = Object.assign(Readable.from(["tiny"]), {
+          statusCode: 200,
+          headers: {
+            "content-length": "4",
+            "content-type": "application/octet-stream",
+          },
+        });
+        (cb as (r: unknown) => void)(res);
+        return { on: () => ({}), destroy: () => {} };
+      }) as never,
+    );
     try {
-      const address = httpServer.address();
-      const port = typeof address === "object" && address ? address.port : 0;
       let declaredSize: number | undefined;
       const controller = createController(async ({ stream, size }) => {
         stream.on("error", () => {});
@@ -159,7 +204,7 @@ describe("FilesController quota enforcement", () => {
         uploadRequest({
           fieldname: "file",
           type: "field",
-          value: `http://127.0.0.1:${port}/tiny.bin`,
+          value: "http://93.184.216.34/tiny.bin",
         }),
         reply,
       );
@@ -167,10 +212,315 @@ describe("FilesController quota enforcement", () => {
       expect(declaredSize).toBe(4);
       expect(statusCode()).toBe(200);
     } finally {
-      await new Promise<void>((resolve, reject) =>
-        httpServer.close((err) => (err ? reject(err) : resolve())),
-      );
+      getSpy.mockRestore();
     }
+  });
+
+  it("rejects loopback URLs instead of fetching them", async () => {
+    // 127.0.0.1 is denied pre-connect, so no local server is needed. Port 1
+    // is used so the refusal would be instant even without the blocklist.
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequest({
+        fieldname: "file",
+        type: "field",
+        value: "http://127.0.0.1:1/tiny.bin",
+      }),
+      reply,
+    );
+
+    expect(saveCalls).toBe(0);
+    expect(statusCode()).toBe(400);
+  });
+
+  it("rejects private-range URLs without connecting", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequest({
+        fieldname: "file",
+        type: "field",
+        value: "http://10.255.255.1/file.bin",
+      }),
+      reply,
+    );
+
+    expect(saveCalls).toBe(0);
+    expect(statusCode()).toBe(400);
+  });
+
+  it("rejects localhost by name", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequest({
+        fieldname: "file",
+        type: "field",
+        value: "http://localhost:8080/file.bin",
+      }),
+      reply,
+    );
+
+    expect(saveCalls).toBe(0);
+    expect(statusCode()).toBe(400);
+  });
+
+  it("rejects non-http(s) schemes", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequest({
+        fieldname: "file",
+        type: "field",
+        value: "file:///etc/passwd",
+      }),
+      reply,
+    );
+
+    expect(saveCalls).toBe(0);
+    expect(statusCode()).toBe(400);
+  });
+
+  it("rejects IPv6 loopback without connecting", async () => {
+    // ::1 is denied pre-connect by the blocklist, so this is instant and
+    // deterministic with no server. Must stay 400, never 500.
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode, body } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequest({
+        fieldname: "file",
+        type: "field",
+        value: "http://[::1]:1/nope.bin",
+      }),
+      reply,
+    );
+
+    expect(saveCalls).toBe(0);
+    expect(statusCode()).toBe(400);
+    expect(body()).toMatchObject({ success: false });
+  });
+});
+
+function uploadRequestMulti(parts: Record<string, unknown>[]) {
+  return {
+    isMultipart: () => true,
+    parts: async function* () {
+      for (const p of parts) yield p;
+    },
+    params: { sessionId: "s" },
+  } as unknown as FastifyRequest<{ Params: { sessionId: string } }>;
+}
+
+function filePart(data: string) {
+  return { fieldname: "file", type: "file", file: Readable.from(data) };
+}
+
+function fieldPart(fieldname: string, value: string) {
+  return { fieldname, type: "field", value };
+}
+
+function cappedServer(maxSizePerSession: number) {
+  return {
+    steelBrowserConfig: { fileStorage: { maxSizePerSession } },
+  } as unknown as FastifyInstance;
+}
+
+// Runs an upload with fresh temp-path recording. Real fs behavior is
+// preserved (passthrough mock above), so afterwards every recorded staged
+// path must be gone from disk when cleanup worked.
+function resetTempTracking() {
+  stagedPaths.length = 0;
+  unlinkedPaths.length = 0;
+}
+
+function trackedTemps() {
+  return { created: [...stagedPaths], unlinked: [...unlinkedPaths] };
+}
+
+async function expectNoTmpLeak(paths: string[]) {
+  expect(paths.length).toBeGreaterThan(0);
+  for (const p of paths) {
+    await expect(fs.promises.stat(p)).rejects.toMatchObject({ code: "ENOENT" });
+  }
+}
+
+describe("FilesController multipart temp hardening", () => {
+  beforeEach(() => {
+    resetTempTracking();
+  });
+
+  it("unlinks every staged temp on multi-file success (last part wins)", async () => {
+    let saveCalls = 0;
+    let declaredSize: number | undefined;
+    const controller = createController(async ({ stream, size }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      declaredSize = size;
+      return { path: "stub", size: size ?? 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequestMulti([filePart("a"), filePart("bb"), filePart("ccc")]),
+      reply,
+    );
+    const { created, unlinked } = trackedTemps();
+
+    expect(statusCode()).toBe(200);
+    expect(saveCalls).toBe(1);
+    expect(declaredSize).toBe(3);
+    // All three staged temps tracked, all unlinked, none left on disk.
+    expect(new Set(created).size).toBe(3);
+    expect(new Set(unlinked)).toEqual(new Set(created));
+    await expectNoTmpLeak(created);
+  });
+
+  it("rejects file parts beyond the per-request cap with 413 and cleans up", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+    const over = FilesController.MAX_FILE_PARTS_PER_REQUEST + 1;
+    const parts = Array.from({ length: over }, (_, i) => filePart(`f${i}`));
+
+    await controller.handleFileUpload(server, uploadRequestMulti(parts), reply);
+    const { created, unlinked } = trackedTemps();
+
+    expect(statusCode()).toBe(413);
+    expect(saveCalls).toBe(0);
+    // Exactly MAX parts staged, all cleaned up, excess part never staged.
+    expect(new Set(created).size).toBe(FilesController.MAX_FILE_PARTS_PER_REQUEST);
+    expect(new Set(unlinked)).toEqual(new Set(created));
+    await expectNoTmpLeak(created);
+  });
+
+  it("rejects accumulated staged bytes over the per-request cap with 413", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    // Cap 4 bytes: "ab" (2) fits, "cde" (3) pushes the total to 5 > 4.
+    await controller.handleFileUpload(
+      cappedServer(4),
+      uploadRequestMulti([filePart("ab"), filePart("cde")]),
+      reply,
+    );
+    const { created, unlinked } = trackedTemps();
+
+    expect(statusCode()).toBe(413);
+    expect(saveCalls).toBe(0);
+    expect(new Set(created).size).toBe(2);
+    expect(new Set(unlinked)).toEqual(new Set(created));
+    await expectNoTmpLeak(created);
+  });
+
+  it("unlinks all staged temps on invalid-path 400 with multiple files", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode, body } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequestMulti([filePart("one"), filePart("two"), fieldPart("path", "../evil")]),
+      reply,
+    );
+    const { created, unlinked } = trackedTemps();
+
+    expect(statusCode()).toBe(400);
+    expect(body()).toMatchObject({ success: false });
+    expect(saveCalls).toBe(0);
+    expect(new Set(created).size).toBe(2);
+    expect(new Set(unlinked)).toEqual(new Set(created));
+    await expectNoTmpLeak(created);
+  });
+
+  it("maps multipart limit errors with statusCode 413 to 413 and cleans up", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+    const limitError = Object.assign(new Error("request file too large"), { statusCode: 413 });
+
+    await controller.handleFileUpload(
+      server,
+      {
+        isMultipart: () => true,
+        parts: async function* () {
+          yield filePart("boom");
+          throw limitError;
+        },
+        params: { sessionId: "s" },
+      } as unknown as FastifyRequest<{ Params: { sessionId: string } }>,
+      reply,
+    );
+    const { created, unlinked } = trackedTemps();
+
+    expect(statusCode()).toBe(413);
+    expect(saveCalls).toBe(0);
+    expect(new Set(created).size).toBe(1);
+    expect(new Set(unlinked)).toEqual(new Set(created));
+    await expectNoTmpLeak(created);
   });
 });
 

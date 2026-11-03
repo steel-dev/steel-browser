@@ -51,9 +51,10 @@ export class FileService {
   private archiveDirty = true;
   private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
-  private readonly maxSizeBytes: number | null;
+  private maxSizeBytes: number | null;
   private inFlightBytes = 0;
   private commitQueue: Promise<void> = Promise.resolve();
+  private realRoot: string;
 
   public constructor(options: FileServiceOptions = {}) {
     this.baseFilesPath =
@@ -64,6 +65,7 @@ export class FileService {
     this.maxSizeBytes = options.maxSizeBytes ?? null;
 
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
+    this.realRoot = this.resolveRealRootSync();
 
     const boundCreateArchive = this._createArchive.bind(this);
     this.debouncedCreateArchive = debounce(boundCreateArchive, this.archiveDebounceTime);
@@ -73,9 +75,23 @@ export class FileService {
     }
   }
 
+  /**
+   * Singleton accessor with quota reconcile: the first call fixes
+   * construction-time state (paths, watcher), but a later call carrying an
+   * explicit numeric maxSizeBytes updates the live quota (last-wins). Bare
+   * calls — no key, or undefined (e.g. the file-storage plugin passing
+   * `maxSizeBytes: options?.maxSizePerSession` through when unset) — keep the
+   * existing quota, so call order between configured and bare callers cannot
+   * silently drop (or resurrect) the limit. Non-numeric values (including
+   * null, which FileServiceOptions does not accept) never clobber.
+   *
+   * Mid-flight mutation is last-wins with no draining: configure once at boot.
+   */
   public static getInstance(options: FileServiceOptions = {}) {
     if (!FileService.instance) {
       FileService.instance = new FileService(options);
+    } else if (typeof options.maxSizeBytes === "number") {
+      FileService.instance.maxSizeBytes = options.maxSizeBytes;
     }
     return FileService.instance;
   }
@@ -137,6 +153,127 @@ export class FileService {
     return resolvedPath;
   }
 
+  private resolveRealRootSync(): string {
+    try {
+      return fs.realpathSync(this.baseFilesPath);
+    } catch {
+      return this.baseFilesPath;
+    }
+  }
+
+  private async ensureBaseDir(): Promise<void> {
+    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    const baseLink = await fs.promises.lstat(this.baseFilesPath).catch(() => null);
+    if (baseLink && baseLink.isSymbolicLink()) {
+      throw new Error("Invalid path");
+    }
+    try {
+      this.realRoot = await fs.promises.realpath(this.baseFilesPath);
+    } catch {
+      // Base was just created; keep the last known root.
+    }
+  }
+
+  private isInsideRoot(candidate: string, root: string): boolean {
+    return candidate === root || candidate.startsWith(root + path.sep);
+  }
+
+  private supportsNoFollow(): boolean {
+    const nofollow = (fs.constants as unknown as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+    return process.platform !== "win32" && nofollow !== 0;
+  }
+
+  /**
+   * Denies any symlink on the lexical path from the base dir to the target
+   * (direct file symlinks and parent-dir symlinks alike). Uses lstat so
+   * dangling links are still detected. Missing trailing components are not
+   * an error here: the caller validates the nearest existing parent via
+   * realpath separately (save destinations don't exist yet).
+   */
+  private async assertNoSymlinks(safeFilePath: string): Promise<void> {
+    const relative = path.relative(this.baseFilesPath, safeFilePath);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error("Invalid path");
+    }
+    const parts = relative.split(path.sep).filter((part) => part.length > 0);
+    let current = this.baseFilesPath;
+    for (const part of parts) {
+      current = path.join(current, part);
+      let entry;
+      try {
+        entry = await fs.promises.lstat(current);
+      } catch (error: any) {
+        if (error?.code === "ENOENT") {
+          return;
+        }
+        throw error;
+      }
+      if (entry.isSymbolicLink()) {
+        throw new Error("Invalid path");
+      }
+    }
+  }
+
+  /**
+   * Confirms the real (symlink-resolved) location still lives under the real
+   * root. For targets that don't exist yet (save destinations), resolves the
+   * nearest existing parent and checks that instead.
+   */
+  private async assertRealpathInside(safeFilePath: string): Promise<void> {
+    let root: string;
+    try {
+      root = await fs.promises.realpath(this.baseFilesPath);
+      this.realRoot = root;
+    } catch {
+      root = this.realRoot;
+    }
+    try {
+      const real = await fs.promises.realpath(safeFilePath);
+      if (!this.isInsideRoot(real, root)) {
+        throw new Error("Invalid path");
+      }
+    } catch (error: any) {
+      if (error?.message === "Invalid path") {
+        throw error;
+      }
+      if (error?.code === "ELOOP") {
+        throw new Error("Invalid path");
+      }
+      if (error?.code !== "ENOENT") {
+        throw error;
+      }
+      let dir = path.dirname(safeFilePath);
+      for (;;) {
+        try {
+          const realDir = await fs.promises.realpath(dir);
+          if (!this.isInsideRoot(realDir, root)) {
+            throw new Error("Invalid path");
+          }
+          return;
+        } catch (inner: any) {
+          if (inner?.message === "Invalid path") {
+            throw inner;
+          }
+          if (inner?.code === "ELOOP") {
+            throw new Error("Invalid path");
+          }
+          if (inner?.code !== "ENOENT") {
+            throw inner;
+          }
+          if (dir === this.baseFilesPath || dir === path.dirname(dir)) {
+            throw new Error("Invalid path");
+          }
+          dir = path.dirname(dir);
+        }
+      }
+    }
+  }
+
+  private async assertSafeResolved(safeFilePath: string): Promise<void> {
+    await this.assertNoSymlinks(safeFilePath);
+    await this.assertRealpathInside(safeFilePath);
+  }
+
   private async exists(filePath: string): Promise<boolean> {
     try {
       await fs.promises.stat(filePath);
@@ -165,6 +302,20 @@ export class FileService {
     );
   }
 
+  /**
+   * Serializes commit-phase mutations (save rename, single delete, delete-all)
+   * so their check-then-act sequences cannot interleave: without this, a
+   * cleanup could run between a save's quota check and its rename (ENOENT on
+   * commit or a resurrected file), and a delete could land between another
+   * delete's existence check and its unlink (double-delete 500).
+   *
+   * Staging writes intentionally stay outside this queue; only the commit
+   * (quota recheck + rename) is serialized with deletes.
+   *
+   * Deletes intentionally don't adjust inFlightBytes: over-counting held bytes
+   * is benign (quota stays conservative until in-flight uploads settle) and
+   * avoids coupling the delete path to upload bookkeeping.
+   */
   private serializeCommit(task: () => Promise<void>): Promise<void> {
     const result = this.commitQueue.then(task);
     this.commitQueue = result.catch(() => {});
@@ -189,7 +340,7 @@ export class FileService {
     };
 
     try {
-      await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+      await this.ensureBaseDir();
 
       const safeFilePath = this.getSafeFilePath(filePath);
       if (
@@ -198,8 +349,12 @@ export class FileService {
       ) {
         throw new Error("Invalid path");
       }
+      // Check before creating anything: mkdir below must not create
+      // directories outside the root through a planted parent symlink.
+      await this.assertNoSymlinks(safeFilePath);
       const parentDir = path.dirname(safeFilePath);
       await fs.promises.mkdir(parentDir, { recursive: true });
+      await this.assertSafeResolved(safeFilePath);
 
       const usedBytes = await this.getUsedBytes(safeFilePath);
       this.checkQuota(usedBytes + this.inFlightBytes, size ?? 0);
@@ -227,18 +382,57 @@ export class FileService {
       tempFilePath = stagingPath;
       await pipeline(stream, quotaGuard, fs.createWriteStream(stagingPath));
 
+      // The post-commit stat lives inside the queue so a queued delete cannot
+      // slip between the rename and the stat.
+      const file: File = { size: 0, lastModified: new Date(0) };
+      // Staging writes above stay outside the queue; only this commit is
+      // serialized with deletes (see serializeCommit).
       await this.serializeCommit(async () => {
+        // Re-check after staging: the parent chain may have been swapped
+        // for a symlink while the upload was streaming.
+        await this.assertSafeResolved(safeFilePath);
         this.checkQuota(await this.getUsedBytes(safeFilePath), receivedBytes);
-        await fs.promises.rename(stagingPath, safeFilePath);
+        try {
+          await fs.promises.rename(stagingPath, safeFilePath);
+        } catch (renameError: any) {
+          if (renameError?.code !== "ENOENT") throw renameError;
+          if (!(await this.exists(stagingPath))) {
+            // A serialized delete-all removed the staging file before this
+            // commit ran: the upload loses to the delete. Surface a clean
+            // error instead of raw ENOENT.
+            throw new Error(`Upload target was removed during save: ${safeFilePath}`);
+          }
+          // The parent dir was removed concurrently but the staged upload
+          // survived; recreate it and retry once.
+          await fs.promises.mkdir(parentDir, { recursive: true });
+          await this.assertSafeResolved(safeFilePath);
+          try {
+            await fs.promises.rename(stagingPath, safeFilePath);
+          } catch (retryError: any) {
+            if (retryError?.code === "ENOENT") {
+              throw new Error(`Upload target was removed during save: ${safeFilePath}`);
+            }
+            throw retryError;
+          }
+        }
+        try {
+          await this.assertSafeResolved(safeFilePath);
+        } catch (verifyError) {
+          await fs.promises.unlink(safeFilePath).catch(() => {});
+          throw verifyError;
+        }
+        const committed = await fs.promises.lstat(safeFilePath).catch(() => null);
+        if (!committed || committed.isSymbolicLink()) {
+          await fs.promises.unlink(safeFilePath).catch(() => {});
+          throw new Error("Invalid path");
+        }
+        const stats = await fs.promises.stat(safeFilePath);
+        file.size = stats.size;
+        file.lastModified = stats.mtime;
       });
       tempFilePath = null;
       releaseHeldBytes();
 
-      const stats = await fs.promises.stat(safeFilePath);
-      const file: File = {
-        size: stats.size,
-        lastModified: stats.mtime,
-      };
       console.log(`File saved: ${safeFilePath}, Size: ${file.size}`);
       this.scheduleArchiveCreation();
       return { ...file, path: safeFilePath };
@@ -264,10 +458,48 @@ export class FileService {
   }: {
     filePath: string;
   }): Promise<{ stream: Readable } & File> {
-    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    await this.ensureBaseDir();
     const safeFilePath = this.getSafeFilePath(filePath);
 
     try {
+      await this.assertSafeResolved(safeFilePath);
+      if (this.supportsNoFollow()) {
+        let handle;
+        try {
+          handle = await fs.promises.open(
+            safeFilePath,
+            fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+          );
+        } catch (openError: any) {
+          if (openError?.code === "ELOOP" || openError?.code === "EMLINK") {
+            throw new Error("Invalid path");
+          }
+          if (openError?.code === "ENOENT") {
+            throw new Error(`File not found: ${safeFilePath}`);
+          }
+          throw openError;
+        }
+        let stats;
+        try {
+          stats = await handle.stat();
+        } catch (statError) {
+          await handle.close().catch(() => {});
+          throw statError;
+        }
+        if (!stats.isFile()) {
+          await handle.close().catch(() => {});
+          throw new Error(`Requested path is not a file: ${safeFilePath}`);
+        }
+        const file: File = {
+          size: stats.size,
+          lastModified: stats.mtime,
+        };
+        const stream = handle.createReadStream() as unknown as Readable;
+        return {
+          stream,
+          ...file,
+        };
+      }
       const stats = await fs.promises.stat(safeFilePath);
       if (!stats.isFile()) {
         throw new Error(`Requested path is not a file: ${safeFilePath}`);
@@ -282,6 +514,12 @@ export class FileService {
         ...file,
       };
     } catch (error: any) {
+      if (error?.message === "Invalid path") {
+        throw error;
+      }
+      if (error?.code === "ELOOP" || error?.code === "EMLINK") {
+        throw new Error("Invalid path");
+      }
       if (error.code === "ENOENT") {
         throw new Error(`File not found: ${safeFilePath}`);
       }
@@ -291,10 +529,37 @@ export class FileService {
   }
 
   public async getFile({ filePath }: { filePath: string }): Promise<File> {
-    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    await this.ensureBaseDir();
     const safeFilePath = this.getSafeFilePath(filePath);
 
     try {
+      await this.assertSafeResolved(safeFilePath);
+      if (this.supportsNoFollow()) {
+        let handle;
+        try {
+          handle = await fs.promises.open(
+            safeFilePath,
+            fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+          );
+        } catch (openError: any) {
+          if (openError?.code === "ELOOP" || openError?.code === "EMLINK") {
+            throw new Error("Invalid path");
+          }
+          if (openError?.code === "ENOENT") {
+            throw new Error(`File not found: ${safeFilePath}`);
+          }
+          throw openError;
+        }
+        try {
+          const stats = await handle.stat();
+          if (!stats.isFile()) {
+            throw new Error(`Requested path is not a file: ${safeFilePath}`);
+          }
+          return { size: stats.size, lastModified: stats.mtime };
+        } finally {
+          await handle.close().catch(() => {});
+        }
+      }
       const stats = await fs.promises.stat(safeFilePath);
       if (!stats.isFile()) {
         throw new Error(`Requested path is not a file: ${safeFilePath}`);
@@ -305,6 +570,12 @@ export class FileService {
       };
       return file;
     } catch (error: any) {
+      if (error?.message === "Invalid path") {
+        throw error;
+      }
+      if (error?.code === "ELOOP" || error?.code === "EMLINK") {
+        throw new Error("Invalid path");
+      }
       if (error.code === "ENOENT") {
         throw new Error(`File not found: ${safeFilePath}`);
       }
@@ -314,7 +585,7 @@ export class FileService {
   }
 
   public async listFiles(): Promise<Array<{ path: string } & File>> {
-    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    await this.ensureBaseDir();
 
     const allFiles: Array<{ path: string } & File> = [];
 
@@ -322,10 +593,16 @@ export class FileService {
       try {
         const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
         for (const entry of entries) {
+          if (entry.isSymbolicLink()) {
+            continue;
+          }
           const entryPath = path.join(currentDir, entry.name);
           if (entry.isFile() && !entry.name.startsWith(UPLOAD_TEMP_PREFIX)) {
             try {
-              const stats = await fs.promises.stat(entryPath);
+              const stats = await fs.promises.lstat(entryPath);
+              if (stats.isSymbolicLink() || !stats.isFile()) {
+                continue;
+              }
               allFiles.push({
                 path: entryPath,
                 size: stats.size,
@@ -363,29 +640,48 @@ export class FileService {
   }
 
   public async deleteFile({ filePath }: { filePath: string }): Promise<void> {
-    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+    await this.ensureBaseDir();
     const safeFilePath = this.getSafeFilePath(filePath);
 
-    if (!(await this.exists(safeFilePath))) {
-      console.log(
-        `[FileService] File ${safeFilePath} not found on disk during delete operation. Skipping.`,
-      );
-      return;
-    }
-
-    try {
-      const stats = await fs.promises.stat(safeFilePath);
-      if (!stats.isFile()) {
+    // Serialized with save commits and cleanups so this delete cannot land
+    // between another operation's check and its act (or vice versa).
+    await this.serializeCommit(async () => {
+      await this.assertSafeResolved(safeFilePath);
+      let entry;
+      try {
+        entry = await fs.promises.lstat(safeFilePath);
+      } catch (statError: any) {
+        if (statError?.code === "ENOENT") {
+          console.log(
+            `[FileService] File ${safeFilePath} not found on disk during delete operation. Skipping.`,
+          );
+          return;
+        }
+        throw statError;
+      }
+      if (entry.isSymbolicLink()) {
+        throw new Error("Invalid path");
+      }
+      if (!entry.isFile()) {
         console.warn(`[FileService] Path ${safeFilePath} is not a file. Skipping delete.`);
         return;
       }
-      await fs.promises.unlink(safeFilePath);
+      try {
+        await fs.promises.unlink(safeFilePath);
+      } catch (unlinkError: any) {
+        if (unlinkError?.code === "ENOENT") {
+          // Lost a race with a concurrent delete/cleanup; already gone.
+          console.log(
+            `[FileService] File ${safeFilePath} not found on disk during delete operation. Skipping.`,
+          );
+          return;
+        }
+        console.error(`Error unlinking file ${safeFilePath}:`, unlinkError);
+        throw unlinkError;
+      }
       console.log(`[FileService] File deleted: ${safeFilePath}`);
       this.scheduleArchiveCreation();
-    } catch (unlinkError) {
-      console.error(`Error unlinking file ${safeFilePath}:`, unlinkError);
-      throw unlinkError;
-    }
+    });
 
     return;
   }
@@ -419,14 +715,33 @@ export class FileService {
       console.error(`[FileService cleanupFiles] Error cleaning up archive files:`, err);
     }
 
+    // Serialized with save commits and single deletes so no commit's
+    // quota-check/rename can slip between this listing and its removals
+    // (which would resurrect a file after delete-all) and no delete can
+    // interleave mid-cleanup. Archive coordination above/below is unchanged.
     try {
-      const files = await fs.promises.readdir(this.baseFilesPath);
-      for (const file of files) {
-        await fs.promises.rm(path.join(this.baseFilesPath, file), {
-          recursive: true,
-          force: true,
-        });
-      }
+      await this.serializeCommit(async () => {
+        const baseLink = await fs.promises.lstat(this.baseFilesPath).catch(() => null);
+        if (baseLink && baseLink.isSymbolicLink()) {
+          throw new Error("Invalid path");
+        }
+        const files = await fs.promises.readdir(this.baseFilesPath);
+        for (const file of files) {
+          const fullPath = path.join(this.baseFilesPath, file);
+          const entry = await fs.promises.lstat(fullPath).catch(() => null);
+          if (!entry) {
+            continue;
+          }
+          if (entry.isSymbolicLink()) {
+            await fs.promises.unlink(fullPath).catch(() => {});
+          } else {
+            await fs.promises.rm(fullPath, {
+              recursive: true,
+              force: true,
+            });
+          }
+        }
+      });
       console.log(
         `[FileService cleanupFiles] Cleared contents of directory: ${this.baseFilesPath}`,
       );
@@ -580,19 +895,33 @@ export class FileService {
             `[_createArchive] Base directory ${this.baseFilesPath} does not exist. Creating empty archive.`,
           );
         } else {
-          const stats = await fs.promises.stat(this.baseFilesPath);
-          if (!stats.isDirectory()) {
-            console.error(
-              `[_createArchive] Base path ${this.baseFilesPath} is not a directory. Creating empty archive.`,
+          const baseLink = await fs.promises.lstat(this.baseFilesPath).catch(() => null);
+          if (baseLink && baseLink.isSymbolicLink()) {
+            console.warn(
+              `[_createArchive] Base path ${this.baseFilesPath} is a symlink. Creating empty archive.`,
             );
           } else {
-            const files = await fs.promises.readdir(this.baseFilesPath);
-            if (files.length === 0) {
-              console.log("[_createArchive] Base directory is empty. Creating empty archive.");
-            } else {
-              archive.directory(this.baseFilesPath, false, (entry) =>
-                path.basename(entry.name).startsWith(UPLOAD_TEMP_PREFIX) ? false : entry,
+            const stats = await fs.promises.stat(this.baseFilesPath);
+            if (!stats.isDirectory()) {
+              console.error(
+                `[_createArchive] Base path ${this.baseFilesPath} is not a directory. Creating empty archive.`,
               );
+            } else {
+              // Build the archive from listFiles() so symlinks are never
+              // followed: listFiles skips symlink entries and never recurses
+              // into symlinked directories.
+              const listed = await this.listFiles();
+              if (listed.length === 0) {
+                console.log("[_createArchive] Base directory is empty. Creating empty archive.");
+              } else {
+                for (const listedFile of listed) {
+                  const relativeName = path
+                    .relative(this.baseFilesPath, listedFile.path)
+                    .split(path.sep)
+                    .join("/");
+                  archive.file(listedFile.path, { name: relativeName });
+                }
+              }
             }
           }
         }
