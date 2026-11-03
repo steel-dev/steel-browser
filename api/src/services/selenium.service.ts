@@ -86,12 +86,10 @@ export class SeleniumService extends EventEmitter {
       );
     });
 
-    seleniumProcess.on("close", (code) => {
+    seleniumProcess.on("close", (code, signal) => {
+      this.logger.info({ code, signal }, "Selenium process exited");
       if (this.seleniumProcess === seleniumProcess) {
-        this.logger.info({ code }, "Selenium process exited");
         this.seleniumProcess = null;
-      } else {
-        this.logger.debug({ code }, "Superseded Selenium process exited");
       }
     });
     try {

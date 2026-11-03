@@ -52,30 +52,6 @@ describe("SeleniumService", () => {
   });
 
   describe("launch error handling", () => {
-    it("rejects cleanly without uncaught exceptions on ENOENT (no PATH)", async () => {
-      const mockChild = createMockChildProcess();
-      vi.mocked(spawn).mockReturnValue(mockChild);
-
-      const logger = createMockLogger();
-      const service = new SeleniumService(logger as never);
-
-      const launchPromise = service.launch({} as never);
-
-      const spawnError = new Error("spawn java ENOENT");
-      mockChild.emit("error", spawnError);
-
-      await expect(launchPromise).rejects.toThrow("spawn java ENOENT");
-
-      // Check logger captured the error (object form, consistent with service S3 logging)
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: spawnError }),
-        expect.stringContaining("Selenium process error"),
-      );
-
-      // Verify service remains in a safe idle state and subsequent close() does not throw
-      expect(() => service.close()).not.toThrow();
-    });
-
     it("rejects when the child process emits an error event", async () => {
       const mockChild = createMockChildProcess();
       vi.mocked(spawn).mockReturnValue(mockChild);
@@ -145,6 +121,12 @@ describe("SeleniumService", () => {
       // Verify close kills the running process
       service.close();
       expect(mockChild.kill).toHaveBeenCalledWith("SIGINT");
+
+      mockChild.emit("close", null, "SIGINT");
+      expect(logger.info).toHaveBeenCalledWith(
+        { code: null, signal: "SIGINT" },
+        "Selenium process exited",
+      );
     });
 
     it("times out and cleans up if startup message is not received", async () => {
