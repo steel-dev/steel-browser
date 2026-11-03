@@ -48,6 +48,17 @@ declare module "fastify" {
 
 export interface SteelBrowserConfig {
   fileStorage?: {
+    /**
+     * Single global cumulative bucket (bytes) shared across all sessions.
+     * This is NOT isolated per session today: FileService is a store-wide
+     * singleton with one baseFilesPath and no per-session scoping.
+     * Per-session isolation is future work.
+     */
+    maxTotalBytes?: number;
+    /**
+     * @deprecated Use `maxTotalBytes` instead. Kept as a backward-compatible
+     * alias: `maxTotalBytes ?? maxSizePerSession` wins when both are set.
+     */
     maxSizePerSession?: number;
   };
   customWsHandlers?: WebSocketHandler[];
@@ -71,7 +82,7 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(requestLogger);
   await fastify.register(openAPIPlugin);
   await fastify.register(fileStoragePlugin, {
-    maxSizePerSession: opts.fileStorage?.maxSizePerSession,
+    maxTotalBytes: opts.fileStorage?.maxTotalBytes ?? opts.fileStorage?.maxSizePerSession,
   });
   await fastify.register(browserInstancePlugin);
   await fastify.register(seleniumPlugin);

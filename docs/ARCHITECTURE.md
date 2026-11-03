@@ -178,8 +178,16 @@ Steel Browser uses Fastify's plugin architecture for modular API design:
 ```typescript
 // Main plugin registration
 await fastify.register(steelBrowserPlugin, {
-  fileStorage: { maxSizePerSession: 100 * MB }
+  fileStorage: { maxTotalBytes: 100 * MB }
 });
+
+// NOTE: `maxTotalBytes` is a single global cumulative bucket shared across
+// all sessions, NOT isolated per session. `maxSizePerSession` remains as a
+// deprecated backward-compatible alias (`maxTotalBytes ?? maxSizePerSession`).
+// True per-session isolation (per-session subdirs + lifecycle scoping) is
+// future work: FileService is currently a store-wide singleton with one
+// baseFilesPath, sessionId is decorative in routes/types, and cleanupFiles
+// wipes the whole store.
 
 // Individual plugins
 await fastify.register(browserInstancePlugin);

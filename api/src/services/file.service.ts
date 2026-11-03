@@ -40,6 +40,12 @@ export interface FileServiceOptions {
   maxSizeBytes?: number;
 }
 
+function normalizeQuota(v: number | null | undefined): number | null {
+  if (v === undefined || v === null) return null;
+  if (!Number.isFinite(v) || v < 0) throw new RangeError(`Invalid maxSizeBytes: ${v}`);
+  return v;
+}
+
 export class FileService {
   private baseFilesPath: string;
   private fileWatcher: FSWatcher | null = null;
@@ -62,7 +68,7 @@ export class FileService {
       (env.NODE_ENV === "development" ? path.join(tmpdir(), "files") : "/files");
     this.prebuiltArchiveDir = options.prebuiltArchiveDir ?? "/tmp/.steel";
     this.prebuiltArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
-    this.maxSizeBytes = options.maxSizeBytes ?? null;
+    this.maxSizeBytes = normalizeQuota(options.maxSizeBytes ?? null);
 
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
     this.realRoot = this.resolveRealRootSync();
@@ -357,7 +363,8 @@ export class FileService {
       await this.assertSafeResolved(safeFilePath);
 
       const usedBytes = await this.getUsedBytes(safeFilePath);
-      this.checkQuota(usedBytes + this.inFlightBytes, size ?? 0);
+      const incomingHint = Number.isFinite(size) && (size as number) >= 0 ? (size as number) : 0;
+      this.checkQuota(usedBytes + this.inFlightBytes, incomingHint);
 
       const quotaGuard = new Transform({
         transform: (chunk: Buffer, _encoding, callback) => {

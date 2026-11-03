@@ -16,7 +16,6 @@ import { v4 as uuidv4 } from "uuid";
 import { FileQuotaExceededError, FileService } from "../../services/file.service.js";
 import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
-import { MB } from "../../utils/size.js";
 
 // Thrown for every URL-fetch failure (blocked host/scheme, DNS failure,
 // non-200, redirect, timeout, network error). handleFileUpload maps these to
@@ -154,11 +153,13 @@ export class FilesController {
       tempFilePaths.length = 0;
     };
 
-    // Per-request total-bytes cap, mirroring the per-session quota config
+    // Per-request total-bytes cap, mirroring the global quota config
     // (FileService enforces committed bytes; this guards transient staged
-    // bytes before they reach the service).
-    const maxTotalBytes =
-      server.steelBrowserConfig?.fileStorage?.maxSizePerSession ?? 100 * MB;
+    // bytes before they reach the service). Single global cumulative bucket
+    // shared across all sessions, NOT isolated per session.
+    const maxTotalBytes: number | undefined =
+      server.steelBrowserConfig?.fileStorage?.maxTotalBytes ??
+      server.steelBrowserConfig?.fileStorage?.maxSizePerSession;
 
     try {
       if (!request.isMultipart()) {
@@ -199,7 +200,7 @@ export class FilesController {
             await pipeline(part.file, writeStream);
             const { size } = await fs.promises.stat(stagedPath);
             totalStagedBytes += size;
-            if (totalStagedBytes > maxTotalBytes) {
+            if (maxTotalBytes !== undefined && totalStagedBytes > maxTotalBytes) {
               await unlinkAllTemps();
               return reply.code(413).send({
                 success: false,
@@ -314,8 +315,10 @@ export class FilesController {
       }
       // Busboy/multipart limit errors (per-file fileSize, files/parts
       // count) carry statusCode 413: map them to 413, never 500.
-      if (typeof (e as { statusCode?: unknown })?.statusCode === "number" &&
-        (e as { statusCode: number }).statusCode === 413) {
+      if (
+        typeof (e as { statusCode?: unknown })?.statusCode === "number" &&
+        (e as { statusCode: number }).statusCode === 413
+      ) {
         const message = e instanceof Error ? e.message : "Upload exceeds request limits";
         return reply.code(413).send({ success: false, message });
       }

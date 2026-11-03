@@ -10,7 +10,10 @@ async function routes(server: FastifyInstance) {
 
   await server.register(fastifyMultipart, {
     limits: {
-      fileSize: server.steelBrowserConfig.fileStorage?.maxSizePerSession ?? 100 * MB,
+      fileSize:
+        server.steelBrowserConfig.fileStorage?.maxTotalBytes ??
+        server.steelBrowserConfig.fileStorage?.maxSizePerSession ??
+        100 * MB,
       // Max number of file fields per request (busboy `files` limit;
       // exceeding it raises FilesLimitError/413 from request.parts()).
       // Mirrors FilesController.MAX_FILE_PARTS_PER_REQUEST; the
