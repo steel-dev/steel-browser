@@ -51,7 +51,10 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
       const url = request.url ?? "";
       const params = parseUpgradeParams(url);
       if (!params) {
-        fastify.log.warn({ url: url.slice(0, 200) }, "Rejecting invalid upgrade target");
+        fastify.log.warn(
+          { path: url.split("?", 1)[0].slice(0, 200) },
+          "Rejecting invalid upgrade target",
+        );
         if (!socket.destroyed && socket.writable) {
           try {
             socket.end(
@@ -63,6 +66,8 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
           } catch {
             socket.destroy();
           }
+        } else {
+          socket.destroy();
         }
         return;
       }
