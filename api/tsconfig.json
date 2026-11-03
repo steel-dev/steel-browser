@@ -17,9 +17,6 @@
     "emitDecoratorMetadata": true
   },
   "include": ["src"],
-  "files": [
-    "./src/types/fastify.d.ts",
-    "src/services/cdp/plugins/pptr-extensions.d.ts"
-  ],
-  "exclude": ["node_modules", "build", "src/**/__tests__/**"]
+  "files": ["./src/types/fastify.d.ts", "src/services/cdp/plugins/pptr-extensions.d.ts"],
+  "exclude": ["node_modules", "build", "src/**/__tests__/**", "src/**/*.test.ts"]
 }

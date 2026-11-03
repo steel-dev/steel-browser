@@ -3,7 +3,6 @@ import puppeteer, { Browser, CDPSession, Page } from "puppeteer-core";
 import { Duplex } from "stream";
 import WebSocket, { Server } from "ws";
 
-import { env } from "../../env.js";
 import { SessionService } from "../../services/session.service.js";
 import {
   CloseTabEvent,
@@ -24,18 +23,19 @@ export async function handleCastSession(
   sessionService: SessionService,
   params: Record<string, string> | undefined,
 ): Promise<void> {
-  const id = request.url?.split("/sessions/")[1].split("/cast")[0];
-
-  if (!id) {
-    console.error("Cast Session ID not found");
-    socket.destroy();
+  const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+  const match = pathname.match(/^\/v1\/sessions\/([^/]+)\/cast$/);
+  let session;
+  try {
+    session = match
+      ? sessionService.getLiveSession(decodeURIComponent(match[1]))
+      : sessionService.getOnlyActiveSession();
+  } catch (error) {
+    socket.end("HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n");
     return;
   }
-
-  const session = await sessionService.activeSession;
-  if (!session || session.id !== id) {
-    console.error(`Cast Session ${id} not found`);
-    socket.destroy();
+  if (!session || session.isSelenium || !session.cdpService.isRunning()) {
+    socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
     return;
   }
 
@@ -177,8 +177,13 @@ export async function handleCastSession(
     };
 
     try {
+      const wsEndpoint = session.cdpService.getWsEndpoint();
+      if (!wsEndpoint) {
+        socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+        return;
+      }
       browser = await puppeteer.connect({
-        browserWSEndpoint: `ws://${env.HOST}:${env.PORT}`,
+        browserWSEndpoint: wsEndpoint,
       });
 
       if (!browser) {

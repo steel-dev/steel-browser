@@ -27,6 +27,8 @@ export interface BrowserLaunchExtra {
 
 export interface BrowserLauncherOptions {
   options: BrowserServerOptions;
+  /** Internal ID used to scope files and logs to this browser session. */
+  sessionId?: string;
   req?: Request;
   stealth?: boolean;
   sessionContext?: {

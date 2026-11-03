@@ -23,6 +23,7 @@ export class FileService {
   private baseFilesPath: string;
   private fileWatcher: FSWatcher | null = null;
   private static instance: FileService | null = null;
+  private static readonly sessionInstances = new Map<string, FileService>();
   private prebuiltArchiveDir: string;
   private prebuiltArchivePath: string;
   private isArchiving: boolean = false;
@@ -48,11 +49,39 @@ export class FileService {
     }
   }
 
-  public static getInstance() {
+  public static getInstance(sessionId?: string) {
+    if (sessionId) {
+      const key = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      let instance = FileService.sessionInstances.get(key);
+      if (!instance) {
+        const baseFilesPath =
+          env.NODE_ENV === "development"
+            ? path.join(tmpdir(), "files", "sessions", key)
+            : path.join("/files", "sessions", key);
+        instance = new FileService({
+          baseFilesPath,
+          prebuiltArchiveDir: path.join(tmpdir(), ".steel", "sessions", key),
+        });
+        FileService.sessionInstances.set(key, instance);
+      }
+      return instance;
+    }
+
     if (!FileService.instance) {
       FileService.instance = new FileService();
     }
     return FileService.instance;
+  }
+
+  public static async releaseSession(sessionId: string): Promise<void> {
+    const key = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const instance = FileService.sessionInstances.get(key);
+    if (!instance) return;
+    await instance.cleanupFiles();
+    instance.debouncedCreateArchive.cancel();
+    await instance.fileWatcher?.close();
+    instance.fileWatcher = null;
+    FileService.sessionInstances.delete(key);
   }
 
   private async handleFileAdd(filePath: string) {

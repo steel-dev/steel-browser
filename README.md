@@ -218,6 +218,14 @@ const client = new Steel({
 
 </details>
 
+#### Concurrent sessions
+
+The self-hosted API can run multiple independent browser sessions in one server process. Each response includes its own `id` and `websocketUrl`; connect clients using that URL and release the session with `POST /v1/sessions/{sessionId}/release`.
+
+`MAX_SESSIONS` sets the concurrent session limit (default `5`). Session slots are allocated as sessions are requested. When every slot is occupied, `POST /v1/sessions` returns `503`. Use the session ID for browser actions, for example `POST /v1/sessions/{sessionId}/scrape`, `/screenshot`, `/pdf`, or `/search`. Use the returned `websocketUrl` to connect to a specific session over CDP; the legacy `9223` console debugger port remains tied to the default CDP slot. Session-scoped debug view, details, context, files, and Selenium URLs are included in the API routes or session response.
+
+Legacy HTTP API and WebSocket routes that do not include a session ID continue to work while zero or one session is active. If multiple sessions are active, those routes return `409` so a request cannot be routed to the wrong browser.
+
 <details>
 <summary><b>Creating a Session using the Python SDK</b></summary>
 <br>

@@ -1,15 +1,21 @@
 services:
   api:
     image: ghcr.io/steel-dev/steel-browser-api:latest
+    shm_size: "2gb"
+    command: ["--no-nginx"]
     ports:
       - "3000:3000"
-      - "9223:9223"
+      - "${CDP_REDIRECT_PORT:-9223}:${CDP_PORT_BASE:-9222}"
     volumes:
       - logs:/data/logs
       - exports:/tmp/steel-browser-exports
     environment:
       - DOMAIN=${DOMAIN:-localhost:3000}
       - CDP_DOMAIN=${CDP_DOMAIN:-localhost:9223}
+      - CDP_REDIRECT_PORT=${CDP_REDIRECT_PORT:-9223}
+      - MAX_SESSIONS=${MAX_SESSIONS:-5}
+      - CDP_PORT_BASE=${CDP_PORT_BASE:-9222}
+      - SELENIUM_PORT_BASE=${SELENIUM_PORT_BASE:-4444}
       - LOG_STORAGE_ENABLED=true
       - LOG_STORAGE_PATH=/data/logs/browser-logs.duckdb
     healthcheck:

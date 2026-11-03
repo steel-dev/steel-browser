@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { CommandEngine } from "../../services/commands/engine.js";
 
 interface QuickActions {
   running: number;
@@ -20,8 +21,11 @@ export function heldByCommands(
   server: FastifyInstance,
   request: { body?: { proxyUrl?: string | null } },
   reply: FastifyReply,
+  sessionId?: string,
 ): boolean {
-  const engine = server.commandEngine;
+  const engine: CommandEngine | undefined = sessionId
+    ? server.commandEngine?.get(sessionId)
+    : undefined;
   if (!engine || request.body?.proxyUrl) {
     return false;
   }
@@ -40,19 +44,21 @@ export async function quickAction(
   request: { body?: { proxyUrl?: string | null } },
   reply: FastifyReply,
   run: () => Promise<unknown>,
+  sessionId?: string,
 ): Promise<unknown> {
-  if (heldByCommands(server, request, reply)) {
+  if (heldByCommands(server, request, reply, sessionId)) {
     return reply;
   }
-  if (!server.commandEngine || request.body?.proxyUrl) {
+  const engine = sessionId ? server.commandEngine?.get(sessionId) : undefined;
+  if (!engine || request.body?.proxyUrl) {
     return run();
   }
-  const state = quickActionsOf(server.commandEngine);
+  const state = quickActionsOf(engine);
   state.running++;
   try {
     return await run();
   } finally {
-    server.commandEngine.pageChanged();
+    engine.pageChanged();
     state.running--;
     if (state.running === 0) {
       for (const resolve of state.idle.splice(0)) {

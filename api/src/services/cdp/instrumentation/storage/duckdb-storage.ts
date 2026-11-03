@@ -278,9 +278,15 @@ export class DuckDBStorage implements LogStorage {
     if (!this.db) {
       throw new Error("Database not initialized");
     }
+    await this.flushWriteBuffer();
 
     const conditions: string[] = [];
     const params: any[] = [];
+
+    if (query.sessionId) {
+      conditions.push("json_extract_string(context, '$.sessionId') = ?");
+      params.push(query.sessionId);
+    }
 
     if (query.startTime) {
       conditions.push("timestamp >= ?");
@@ -346,6 +352,7 @@ export class DuckDBStorage implements LogStorage {
     if (!this.db) {
       throw new Error("Database not initialized");
     }
+    await this.flushWriteBuffer();
 
     // Build WHERE clause if query is provided
     let whereClause = "";
@@ -353,6 +360,11 @@ export class DuckDBStorage implements LogStorage {
 
     if (query) {
       const conditions: string[] = [];
+
+      if (query.sessionId) {
+        conditions.push("json_extract_string(context, '$.sessionId') = ?");
+        params.push(query.sessionId);
+      }
 
       if (query.startTime) {
         conditions.push("timestamp >= ?");
@@ -403,7 +415,7 @@ export class DuckDBStorage implements LogStorage {
     return filePath;
   }
 
-  async getStats(): Promise<{
+  async getStats(query: LogQuery = {}): Promise<{
     totalEvents: number;
     oldestEvent: Date | null;
     newestEvent: Date | null;
@@ -412,20 +424,35 @@ export class DuckDBStorage implements LogStorage {
     if (!this.db) {
       throw new Error("Database not initialized");
     }
+    await this.flushWriteBuffer();
 
-    const result = await this.db.all(`
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (query.sessionId) {
+      conditions.push("json_extract_string(context, '$.sessionId') = ?");
+      params.push(query.sessionId);
+    }
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const result = await this.db.all(
+      `
       SELECT
         COUNT(*) as total,
         MIN(timestamp) as oldest,
-        MAX(timestamp) as newest
-      FROM browser_events
-    `);
+        MAX(timestamp) as newest,
+        SUM(length(CAST(data AS VARCHAR)) + length(CAST(context AS VARCHAR))) as scoped_size
+      FROM browser_events ${whereClause}
+    `,
+      ...params,
+    );
 
     const row = result[0];
     let sizeBytes = 0;
 
     // Get file size if using file-based storage
-    if (this.dbPath !== ":memory:") {
+    if (query.sessionId) {
+      sizeBytes = Number(row?.scoped_size ?? 0);
+    } else if (this.dbPath !== ":memory:") {
       const stats = await fs.stat(this.dbPath);
       sizeBytes = stats.size;
     }
@@ -438,15 +465,21 @@ export class DuckDBStorage implements LogStorage {
     };
   }
 
-  async clear(options: { vacuum?: boolean } = {}): Promise<void> {
+  async clear(options: { vacuum?: boolean; sessionId?: string } = {}): Promise<void> {
     if (!this.db) {
       throw new Error("Database not initialized");
     }
-
     // Flush any pending writes first
     await this.flushWriteBuffer();
 
-    await this.db.run("DELETE FROM browser_events");
+    if (options.sessionId) {
+      await this.db.run(
+        "DELETE FROM browser_events WHERE json_extract_string(context, '$.sessionId') = ?",
+        options.sessionId,
+      );
+    } else {
+      await this.db.run("DELETE FROM browser_events");
+    }
 
     // VACUUM is CPU-intensive; run in background by default
     if (options.vacuum) {

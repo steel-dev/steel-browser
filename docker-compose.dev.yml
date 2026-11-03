@@ -1,5 +1,7 @@
 services:
   api:
+    shm_size: "2gb"
+    command: ["--no-nginx"]
     build:
       context: .
       dockerfile: ./api/Dockerfile
@@ -7,10 +9,14 @@ services:
         NODE_VERSION: 22.23.4
     ports:
       - "3000:3000"
-      - "9223:9223"
+      - "${CDP_REDIRECT_PORT:-9223}:${CDP_PORT_BASE:-9222}"
     environment:
       - DOMAIN=${DOMAIN:-localhost:3000}
       - CDP_DOMAIN=${CDP_DOMAIN:-localhost:9223}
+      - CDP_REDIRECT_PORT=${CDP_REDIRECT_PORT:-9223}
+      - MAX_SESSIONS=${MAX_SESSIONS:-5}
+      - CDP_PORT_BASE=${CDP_PORT_BASE:-9222}
+      - SELENIUM_PORT_BASE=${SELENIUM_PORT_BASE:-4444}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/v1/health"]
       interval: 10s

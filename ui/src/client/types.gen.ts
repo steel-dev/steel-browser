@@ -12,6 +12,7 @@ export type ScrapeRequest = {
   format?: Array<"html" | "readability" | "cleaned_html" | "markdown">;
   screenshot?: boolean;
   pdf?: boolean;
+  removeBase64Images?: boolean;
   /**
    * Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.
    */
@@ -46,6 +47,7 @@ export type ScrapeResponse = {
     canonical?: string;
     favicon?: string;
     jsonLd?: unknown;
+    wordCount?: number;
     statusCode: number;
   };
   links: Array<{
@@ -92,6 +94,29 @@ export type PdfRequest = {
  * PDFResponse
  */
 export type PdfResponse = unknown;
+
+/**
+ * SearchRequest
+ */
+export type SearchRequest = {
+  query: string;
+  /**
+   * Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.
+   */
+  proxyUrl?: string | null;
+  logUrl?: string;
+};
+
+/**
+ * SearchResponse
+ */
+export type SearchResponse = {
+  results: Array<{
+    title: string;
+    url: string;
+    description?: string | null;
+  }>;
+};
 
 /**
  * CreateSession
@@ -258,11 +283,15 @@ export type CreateSession = {
    */
   skipFingerprintInjection?: boolean;
   /**
-   * Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations.
+   * Device configuration for the session
    */
   deviceConfig?: {
     device?: "desktop" | "mobile";
   };
+  /**
+   * Launch the browser in fullscreen mode, covering the full screen with no Chrome UI.
+   */
+  fullscreen?: boolean;
   /**
    * Deprecated: Log sink URL to use for the session
    */
@@ -360,6 +389,10 @@ export type SessionDetails = {
    */
   websocketUrl: string;
   /**
+   * URL for this session's Selenium WebDriver endpoint
+   */
+  seleniumUrl?: string;
+  /**
    * URL for a viewing the live browser instance for the session
    */
   debugUrl: string;
@@ -395,6 +428,12 @@ export type SessionDetails = {
    * Indicates if Selenium is used in the session
    */
   isSelenium?: boolean;
+  /**
+   * Device configuration for the session
+   */
+  deviceConfig?: {
+    device?: "desktop" | "mobile";
+  };
 };
 
 /**
@@ -442,6 +481,10 @@ export type MultipleSessions = {
      */
     websocketUrl: string;
     /**
+     * URL for this session's Selenium WebDriver endpoint
+     */
+    seleniumUrl?: string;
+    /**
      * URL for a viewing the live browser instance for the session
      */
     debugUrl: string;
@@ -477,6 +520,12 @@ export type MultipleSessions = {
      * Indicates if Selenium is used in the session
      */
     isSelenium?: boolean;
+    /**
+     * Device configuration for the session
+     */
+    deviceConfig?: {
+      device?: "desktop" | "mobile";
+    };
   }>;
 };
 
@@ -659,6 +708,10 @@ export type ReleaseSession = {
    */
   websocketUrl: string;
   /**
+   * URL for this session's Selenium WebDriver endpoint
+   */
+  seleniumUrl?: string;
+  /**
    * URL for a viewing the live browser instance for the session
    */
   debugUrl: string;
@@ -694,6 +747,12 @@ export type ReleaseSession = {
    * Indicates if Selenium is used in the session
    */
   isSelenium?: boolean;
+  /**
+   * Device configuration for the session
+   */
+  deviceConfig?: {
+    device?: "desktop" | "mobile";
+  };
   /**
    * Indicates if the session was successfully released
    */
@@ -762,6 +821,10 @@ export type SessionLiveDetailsResponse = {
  * LogQuerySchema
  */
 export type LogQuerySchema = {
+  /**
+   * Session ID whose browser logs should be queried
+   */
+  sessionId?: string;
   startTime?: string;
   endTime?: string;
   eventTypes?: string;
@@ -769,6 +832,16 @@ export type LogQuerySchema = {
   targetType?: string;
   limit?: number;
   offset?: number;
+};
+
+/**
+ * SessionLogQuerySchema
+ */
+export type SessionLogQuerySchema = {
+  /**
+   * Session ID whose browser logs should be queried
+   */
+  sessionId?: string;
 };
 
 /**
@@ -797,6 +870,10 @@ export type LogQueryResultSchema = {
  */
 export type ExportLogsSchema = {
   query?: {
+    /**
+     * Session ID whose browser logs should be queried
+     */
+    sessionId?: string;
     startTime?: string;
     endTime?: string;
     eventTypes?: string;
@@ -958,6 +1035,97 @@ export type PdfResponses = {
 
 export type PdfResponse2 = PdfResponses[keyof PdfResponses];
 
+export type SearchData = {
+  body?: SearchRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/search";
+};
+
+export type SearchResponses = {
+  /**
+   * Default Response
+   */
+  200: SearchResponse;
+};
+
+export type SearchResponse2 = SearchResponses[keyof SearchResponses];
+
+export type ScrapeSessionByIdData = {
+  body?: ScrapeRequest;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/sessions/{sessionId}/scrape";
+};
+
+export type ScrapeSessionByIdResponses = {
+  /**
+   * Default Response
+   */
+  200: ScrapeResponse;
+};
+
+export type ScrapeSessionByIdResponse =
+  ScrapeSessionByIdResponses[keyof ScrapeSessionByIdResponses];
+
+export type ScreenshotSessionByIdData = {
+  body?: ScreenshotRequest;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/sessions/{sessionId}/screenshot";
+};
+
+export type ScreenshotSessionByIdResponses = {
+  /**
+   * Default Response
+   */
+  200: ScreenshotResponse;
+};
+
+export type ScreenshotSessionByIdResponse =
+  ScreenshotSessionByIdResponses[keyof ScreenshotSessionByIdResponses];
+
+export type PdfSessionByIdData = {
+  body?: PdfRequest;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/sessions/{sessionId}/pdf";
+};
+
+export type PdfSessionByIdResponses = {
+  /**
+   * Default Response
+   */
+  200: PdfResponse;
+};
+
+export type PdfSessionByIdResponse = PdfSessionByIdResponses[keyof PdfSessionByIdResponses];
+
+export type SearchSessionByIdData = {
+  body?: SearchRequest;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/sessions/{sessionId}/search";
+};
+
+export type SearchSessionByIdResponses = {
+  /**
+   * Default Response
+   */
+  200: SearchResponse;
+};
+
+export type SearchSessionByIdResponse =
+  SearchSessionByIdResponses[keyof SearchSessionByIdResponses];
+
 export type HealthData = {
   body?: never;
   path?: never;
@@ -1117,6 +1285,46 @@ export type GetSessionDebuggerStreamResponses = {
 export type GetSessionDebuggerStreamResponse =
   GetSessionDebuggerStreamResponses[keyof GetSessionDebuggerStreamResponses];
 
+export type GetSessionDebuggerStreamByIdData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: {
+    /**
+     * Show controls in the browser iframe
+     */
+    showControls?: boolean;
+    /**
+     * Theme of the browser iframe
+     */
+    theme?: "dark" | "light";
+    /**
+     * Make the browser iframe interactive
+     */
+    interactive?: boolean;
+    /**
+     * Page ID to connect to
+     */
+    pageId?: string;
+    /**
+     * Page index (or tab index) to connect to
+     */
+    pageIndex?: string;
+  };
+  url: "/v1/sessions/{sessionId}/debug";
+};
+
+export type GetSessionDebuggerStreamByIdResponses = {
+  /**
+   * HTML content for the session streamer view
+   */
+  200: SessionStreamResponse;
+};
+
+export type GetSessionDebuggerStreamByIdResponse =
+  GetSessionDebuggerStreamByIdResponses[keyof GetSessionDebuggerStreamByIdResponses];
+
 export type ReceiveEventsData = {
   body?: RecordedEvents;
   path?: never;
@@ -1125,6 +1333,22 @@ export type ReceiveEventsData = {
 };
 
 export type ReceiveEventsResponses = {
+  /**
+   * Default Response
+   */
+  200: unknown;
+};
+
+export type ReceiveSessionEventsData = {
+  body?: RecordedEvents;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/sessions/{sessionId}/events";
+};
+
+export type ReceiveSessionEventsResponses = {
   /**
    * Default Response
    */
@@ -1198,6 +1422,24 @@ export type PdfSessionResponses = {
 };
 
 export type PdfSessionResponse = PdfSessionResponses[keyof PdfSessionResponses];
+
+export type GetSessionDevtoolsUrlData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: {
+    pageId?: string;
+  };
+  url: "/v1/sessions/{sessionId}/devtools/inspector.html";
+};
+
+export type GetSessionDevtoolsUrlResponses = {
+  /**
+   * Default Response
+   */
+  200: unknown;
+};
 
 export type GetDevtoolsUrlData = {
   body?: never;
@@ -1325,6 +1567,10 @@ export type GetV1LogsQueryData = {
   body?: never;
   path?: never;
   query?: {
+    /**
+     * Session ID whose browser logs should be queried
+     */
+    sessionId?: string;
     startTime?: string;
     endTime?: string;
     eventTypes?: string;
@@ -1346,7 +1592,12 @@ export type GetV1LogsQueryResponses = {
 export type GetV1LogsStatsData = {
   body?: never;
   path?: never;
-  query?: never;
+  query?: {
+    /**
+     * Session ID whose browser logs should be queried
+     */
+    sessionId?: string;
+  };
   url: "/v1/logs/stats";
 };
 
@@ -1360,7 +1611,12 @@ export type GetV1LogsStatsResponses = {
 export type GetV1LogsStreamData = {
   body?: never;
   path?: never;
-  query?: never;
+  query?: {
+    /**
+     * Session ID whose browser logs should be queried
+     */
+    sessionId?: string;
+  };
   url: "/v1/logs/stream";
 };
 
@@ -1375,6 +1631,10 @@ export type PostV1LogsExportData = {
   body?: never;
   path?: never;
   query?: {
+    /**
+     * Session ID whose browser logs should be queried
+     */
+    sessionId?: string;
     startTime?: string;
     endTime?: string;
     eventTypes?: string;
@@ -1396,7 +1656,12 @@ export type PostV1LogsExportResponses = {
 export type DeleteV1LogsData = {
   body?: never;
   path?: never;
-  query?: never;
+  query?: {
+    /**
+     * Session ID whose browser logs should be queried
+     */
+    sessionId?: string;
+  };
   url: "/v1/logs/";
 };
 

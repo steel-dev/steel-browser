@@ -3,9 +3,15 @@ import { Duplex } from "stream";
 import { WebSocket } from "ws";
 import { EmitEvent } from "../../../types/enums.js";
 import { WebSocketHandler, WebSocketHandlerContext } from "../../../types/websocket.js";
+import { sessionCDPService } from "./session-context.js";
 
 function handleRecordingWebSocket(context: WebSocketHandlerContext, ws: WebSocket) {
   const { fastify } = context;
+  const cdpService = sessionCDPService(context);
+  if (!cdpService) {
+    ws.close(1008, "No active browser session");
+    return;
+  }
 
   const messageHandler = (payload: { events: Record<string, any>[] }) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -13,14 +19,14 @@ function handleRecordingWebSocket(context: WebSocketHandlerContext, ws: WebSocke
     }
   };
 
-  fastify.cdpService.on(EmitEvent.Recording, messageHandler);
+  cdpService.on(EmitEvent.Recording, messageHandler);
 
   // TODO: handle inputs to browser from client
   ws.on("message", async (message) => {});
 
   ws.on("close", () => {
     fastify.log.info("Recording WebSocket connection closed");
-    fastify.cdpService.removeListener(EmitEvent.Recording, messageHandler);
+    cdpService.removeListener(EmitEvent.Recording, messageHandler);
   });
 
   ws.on("error", (err) => {

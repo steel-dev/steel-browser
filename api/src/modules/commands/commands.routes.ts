@@ -1,37 +1,18 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { COMMANDS_API_VERSION, requestJsonSchema } from "../../services/commands/commands.js";
-import { CommandEngine } from "../../services/commands/engine.js";
-import { CommandsPlugin } from "../../services/commands/plugin.js";
-import { FileService } from "../../services/file.service.js";
+import { SessionCommandEngineRegistry } from "../../services/commands/session-engine-registry.js";
 import { $ref } from "../../plugins/schemas.js";
 import { quickActionsDone } from "./commands.guard.js";
 
-export function createCommandEngine(server: FastifyInstance): CommandEngine {
-  const engine: CommandEngine = new CommandEngine({
-    browser: () => server.cdpService.getBrowserInstance(),
-    waitForPageSetup: (page) => server.cdpService.waitForPageSetup(page),
-    endSession: async (id) => {
-      const session = server.sessionService.activeSession;
-      if (session.id === id && session.status === "live") {
-        await server.sessionService.endSession();
-      }
-    },
-    filesRoot: () => FileService.getInstance().getBaseFilesPath(),
-    released: (id) => {
-      const session = server.sessionService.activeSession;
-      return session.id !== id || session.status !== "live";
-    },
-    quickActionsDone: () => quickActionsDone(engine),
-  });
-  server.cdpService.registerPlugin(
-    new CommandsPlugin(engine, { id: () => server.sessionService.activeSession.id }),
-  );
-  return engine;
+export function createCommandEngine(server: FastifyInstance): SessionCommandEngineRegistry {
+  const engines = new SessionCommandEngineRegistry(server);
+  server.sessionService.addSessionStartHook(engines.registerSession);
+  server.sessionService.addSessionEndHook((sessionId) => engines.release(sessionId));
+  return engines;
 }
 
 async function routes(server: FastifyInstance) {
-  const engine = server.commandEngine;
-  if (!engine) {
+  if (!server.commandEngine) {
     return;
   }
   const schema = requestJsonSchema();
@@ -91,6 +72,13 @@ async function routes(server: FastifyInstance) {
       serializerCompiler: () => (data) => JSON.stringify(data),
     },
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) => {
+      const engine = server.commandEngine?.get(request.params.sessionId);
+      if (!engine) {
+        return reply.code(404).send({
+          error: "session_not_found",
+          message: `Session ${request.params.sessionId} is not active.`,
+        });
+      }
       const key = request.headers["idempotency-key"];
       const response = await engine.handle({
         sessionId: request.params.sessionId,

@@ -39,6 +39,15 @@ export function getUrl(path: string, protocolType: "http" | "ws" = "http"): stri
   return `${base}${formattedPath}`;
 }
 
+export function getSessionUrl(
+  sessionId: string,
+  route: string,
+  protocolType: "http" | "ws" = "http",
+): string {
+  const formattedRoute = route.startsWith("/") ? route.slice(1) : route;
+  return getUrl(`v1/sessions/${encodeURIComponent(sessionId)}/${formattedRoute}`, protocolType);
+}
+
 /**
  * Normalizes a URL by adding https:// protocol if missing
  * @param url The URL to normalize

@@ -4,9 +4,7 @@ import { SessionService } from "../services/session.service.js";
 
 const browserSessionPlugin: FastifyPluginAsync = async (fastify, _options) => {
   const sessionService = new SessionService({
-    cdpService: fastify.cdpService,
-    seleniumService: fastify.seleniumService,
-    fileService: fastify.fileService,
+    browserPool: fastify.browserPool,
     logger: fastify.log,
   });
   fastify.decorate("sessionService", sessionService);

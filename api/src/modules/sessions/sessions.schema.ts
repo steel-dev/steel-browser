@@ -106,6 +106,7 @@ const SessionDetails = z.object({
   timeout: z.number().int().describe("Session timeout duration in milliseconds"),
   creditsUsed: z.number().int().describe("Amount of credits consumed by the session"),
   websocketUrl: z.string().describe("URL for the session's WebSocket connection"),
+  seleniumUrl: z.string().optional().describe("URL for this session's Selenium WebDriver endpoint"),
   debugUrl: z.string().describe("URL for a viewing the live browser instance for the session"),
   debuggerUrl: z.string().describe("URL for debugging the session"),
   sessionViewerUrl: z.string().describe("URL to view session details"),

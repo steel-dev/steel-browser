@@ -48,6 +48,10 @@ export class InMemoryStorage implements LogStorage {
     let filtered = [...this.events];
 
     // Apply filters
+    if (query.sessionId) {
+      filtered = filtered.filter((e) => e.context.sessionId === query.sessionId);
+    }
+
     if (query.startTime) {
       filtered = filtered.filter((e) => e.timestamp >= query.startTime!);
     }
@@ -94,24 +98,29 @@ export class InMemoryStorage implements LogStorage {
     throw new Error("Parquet export not supported in InMemoryStorage. Use DuckDBStorage instead.");
   }
 
-  async getStats(): Promise<{
+  async getStats(query: LogQuery = {}): Promise<{
     totalEvents: number;
     oldestEvent: Date | null;
     newestEvent: Date | null;
     sizeBytes: number;
   }> {
-    const timestamps = this.events.map((e) => e.timestamp.getTime());
+    const events = query.sessionId
+      ? this.events.filter((event) => event.context.sessionId === query.sessionId)
+      : this.events;
+    const timestamps = events.map((e) => e.timestamp.getTime());
 
     return {
-      totalEvents: this.events.length,
+      totalEvents: events.length,
       oldestEvent: timestamps.length > 0 ? new Date(Math.min(...timestamps)) : null,
       newestEvent: timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null,
-      sizeBytes: JSON.stringify(this.events).length, // Approximate
+      sizeBytes: JSON.stringify(events).length, // Approximate
     };
   }
 
-  async clear(): Promise<void> {
-    this.events = [];
+  async clear(options: { sessionId?: string; vacuum?: boolean } = {}): Promise<void> {
+    this.events = options.sessionId
+      ? this.events.filter((event) => event.context.sessionId !== options.sessionId)
+      : [];
   }
 
   async flush(): Promise<void> {

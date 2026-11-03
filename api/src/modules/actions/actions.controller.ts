@@ -33,8 +33,11 @@ async function closeEphemeralContext(context: BrowserContext | null): Promise<vo
 function pageProxyUrl(
   sessionService: SessionService,
   proxy: IProxyServer | null,
+  sessionId?: string,
 ): string | undefined {
-  return proxy?.url ?? sessionService.activeSession?.proxyServer?.url;
+  return (
+    proxy?.url ?? (sessionId ? sessionService.getSession(sessionId)?.proxyServer?.url : undefined)
+  );
 }
 
 export function pageLoadTimeLeft(navigationMs: number): number {
@@ -77,6 +80,7 @@ export const handleScrape = async (
   browserService: CDPService,
   request: ScrapeRequest,
   reply: FastifyReply,
+  sessionId?: string,
 ) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
@@ -149,7 +153,7 @@ export const handleScrape = async (
     if (isPdf || contentType.includes("application/pdf")) {
       const targetUrl = normalizedUrl || url!;
       const download = await fetchPdf(page, (pdfResponse ?? response)?.url() || targetUrl, {
-        proxyUrl: pageProxyUrl(sessionService, proxy),
+        proxyUrl: pageProxyUrl(sessionService, proxy, sessionId),
         timeoutMs: pageLoadTimeLeft(navigationMs),
       });
       const pdfBuffer = download.buffer;
@@ -378,6 +382,7 @@ export const handleSearch = async (
   browserService: CDPService,
   request: SearchRequest,
   reply: FastifyReply,
+  sessionId?: string,
 ) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
@@ -489,6 +494,7 @@ export const handleScreenshot = async (
   browserService: CDPService,
   request: ScreenshotRequest,
   reply: FastifyReply,
+  sessionId?: string,
 ) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
@@ -535,7 +541,7 @@ export const handleScreenshot = async (
       });
       if (navigation.isPdf) {
         const download = await fetchPdf(page, navigation.pdfResponse?.url() || normalizedUrl, {
-          proxyUrl: pageProxyUrl(sessionService, proxy),
+          proxyUrl: pageProxyUrl(sessionService, proxy, sessionId),
           timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
         pdfDocument = download.buffer;
@@ -583,6 +589,7 @@ export const handlePDF = async (
   browserService: CDPService,
   request: PDFRequest,
   reply: FastifyReply,
+  sessionId?: string,
 ) => {
   const startTime = Date.now();
   let times: Record<string, number> = {};
@@ -629,7 +636,7 @@ export const handlePDF = async (
       });
       if (navigation.isPdf) {
         const download = await fetchPdf(page, navigation.pdfResponse?.url() || normalizedUrl, {
-          proxyUrl: pageProxyUrl(sessionService, proxy),
+          proxyUrl: pageProxyUrl(sessionService, proxy, sessionId),
           timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
         pdfDocument = download.buffer;

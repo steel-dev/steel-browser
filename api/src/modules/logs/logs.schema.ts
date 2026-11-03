@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const LogQuerySchema = z.object({
+  sessionId: z.string().optional().describe("Session ID whose browser logs should be queried"),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
   eventTypes: z.string().optional(),
@@ -8,6 +9,10 @@ export const LogQuerySchema = z.object({
   targetType: z.string().optional(),
   limit: z.number().int().min(1).max(1000).optional().default(100),
   offset: z.number().int().min(0).optional().default(0),
+});
+
+export const SessionLogQuerySchema = z.object({
+  sessionId: z.string().optional().describe("Session ID whose browser logs should be queried"),
 });
 
 export const LogStatsSchema = z.object({
@@ -34,6 +39,7 @@ export type ExportLogsInput = z.infer<typeof ExportLogsSchema>;
 
 export const loggingSchemas = {
   LogQuerySchema,
+  SessionLogQuerySchema,
   LogStatsSchema,
   LogQueryResultSchema,
   ExportLogsSchema,

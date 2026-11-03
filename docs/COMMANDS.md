@@ -11,7 +11,7 @@ The API is experimental and off by default. Start the server with `ENABLE_COMMAN
 | `POST` | `/v1/sessions/{sessionId}/commands` | Run commands in the session |
 | `GET` | `/v1/sessions/{sessionId}/commands/schema` | JSON Schema of the request body (`version: 1`) |
 
-`sessionId` is the session this server is running. `POST /v1/sessions` returns it. A request for another session gets `410 session_ended`. The session also ends when the browser crashes or when the server ends it for a security reason, such as a `file://` request. The server then starts a fresh browser with default settings, without the session's proxy or extensions, so create a new session to go on. When a release starts, commands get `410` right away. Both routes are also described in the OpenAPI document at `/documentation`.
+`sessionId` comes from the `id` returned by `POST /v1/sessions`. Self-hosted Steel can run several independent sessions at once, each with its own browser and command state. A request for a released or ended session gets `410 session_ended`. The session also ends when its browser crashes or when Steel ends it for a security reason, such as a `file://` request. When a release starts, commands get `410` right away. Both routes are also described in the OpenAPI document at `/documentation`.
 
 ## Example
 

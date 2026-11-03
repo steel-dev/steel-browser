@@ -1,6 +1,7 @@
 import { BrowserEventUnion } from "../types.js";
 
 export interface LogQuery {
+  sessionId?: string;
   startTime?: Date;
   endTime?: Date;
   eventTypes?: string[];
@@ -52,7 +53,7 @@ export interface LogStorage {
   /**
    * Get statistics about stored logs
    */
-  getStats(): Promise<{
+  getStats(query?: LogQuery): Promise<{
     totalEvents: number;
     oldestEvent: Date | null;
     newestEvent: Date | null;
@@ -62,7 +63,7 @@ export interface LogStorage {
   /**
    * Clear all logs
    */
-  clear(): Promise<void>;
+  clear(options?: { sessionId?: string; vacuum?: boolean }): Promise<void>;
 
   /**
    * Flush any pending writes

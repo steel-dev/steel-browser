@@ -7,14 +7,16 @@ import { fileURLToPath } from "url";
 
 export class SeleniumService extends EventEmitter {
   private seleniumProcess: ChildProcess | null = null;
-  private seleniumServerUrl: string = "http://localhost:4444";
-  private port: number = 4444;
+  private seleniumServerUrl: string;
+  private port: number;
   private launchOptions?: BrowserLauncherOptions;
   private logger: FastifyBaseLogger;
 
-  constructor(logger: FastifyBaseLogger) {
+  constructor(logger: FastifyBaseLogger, port = 4444) {
     super();
     this.logger = logger;
+    this.port = port;
+    this.seleniumServerUrl = `http://localhost:${port}`;
   }
 
   public async getChromeArgs(): Promise<string[]> {
@@ -39,7 +41,7 @@ export class SeleniumService extends EventEmitter {
     const projectRoot = path.resolve(dirname(fileURLToPath(import.meta.url)), "../../");
     const seleniumServerPath = path.join(projectRoot, "selenium", "server", "selenium-server.jar");
 
-    const seleniumArgs = ["-jar", seleniumServerPath, "standalone"];
+    const seleniumArgs = ["-jar", seleniumServerPath, "standalone", "--port", String(this.port)];
 
     this.seleniumProcess = spawn("java", seleniumArgs);
     this.seleniumServerUrl = `http://localhost:${this.port}`;
@@ -69,23 +71,64 @@ export class SeleniumService extends EventEmitter {
 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        cleanup();
         reject(new Error("Selenium server failed to start within the timeout period"));
       }, 15000); // 15 seconds timeout
 
-      this.seleniumProcess!.stdout?.on("data", (data) => {
+      const onOutput = (data: Buffer | string) => {
         if (data.toString().includes("Started Selenium Standalone")) {
-          clearTimeout(timeout);
+          cleanup();
           resolve();
         }
-      });
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.seleniumProcess?.stdout?.off("data", onOutput);
+        this.seleniumProcess?.off("error", onError);
+      };
+
+      this.seleniumProcess!.stdout?.on("data", onOutput);
+      this.seleniumProcess!.once("error", onError);
     });
   }
 
-  public close(): void {
-    if (this.seleniumProcess) {
-      this.seleniumProcess.kill("SIGINT");
-      this.seleniumProcess = null;
+  public async close(): Promise<void> {
+    const process = this.seleniumProcess;
+    if (!process) return;
+
+    const waitForClose = (timeoutMs: number) =>
+      new Promise<boolean>((resolve) => {
+        if (process.exitCode !== null || process.signalCode !== null) {
+          resolve(true);
+          return;
+        }
+        const timer = setTimeout(() => resolve(false), timeoutMs);
+        process.once("close", () => {
+          clearTimeout(timer);
+          resolve(true);
+        });
+      });
+
+    if (process.exitCode === null && process.signalCode === null) {
+      process.kill("SIGINT");
     }
+    if (await waitForClose(3000)) return;
+    process.kill("SIGKILL");
+    if (!(await waitForClose(2000))) {
+      throw new Error(`Selenium server on port ${this.port} did not stop`);
+    }
+  }
+
+  public isRunning(): boolean {
+    return Boolean(
+      this.seleniumProcess &&
+        this.seleniumProcess.exitCode === null &&
+        this.seleniumProcess.signalCode === null,
+    );
   }
 
   public getSeleniumServerUrl(): string {

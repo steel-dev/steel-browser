@@ -39,7 +39,7 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
     openapi: {
       info: {
         title: "Steel Browser Instance API",
-        description: "Documentation for controlling a single instance of Steel Browser",
+        description: "Documentation for controlling browser sessions in Steel Browser",
         version: "0.0.1",
       },
       servers: [

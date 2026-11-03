@@ -20,6 +20,14 @@ import {
 } from "./sessions.schema.js";
 import { BrowserEventType, EmitEvent } from "../../types/enums.js";
 import { quickAction } from "../commands/commands.guard.js";
+import { SessionServiceError } from "../../services/session.service.js";
+
+function sessionActionError(reply: FastifyReply, error: unknown) {
+  const statusCode = error instanceof SessionServiceError ? error.statusCode : 500;
+  return reply
+    .code(statusCode)
+    .send({ message: error instanceof Error ? error.message : String(error) });
+}
 
 async function routes(server: FastifyInstance) {
   server.get(
@@ -33,10 +41,14 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!server.cdpService.isRunning()) {
+      if (!server.browserPool) {
         return reply.status(503).send({ status: "service_unavailable" });
       }
-      return reply.send({ status: "ok" });
+      return reply.send({
+        status: "ok",
+        activeSessions: server.browserPool.activeCount,
+        maxSessions: server.browserPool.maxSessions,
+      });
     },
   );
   server.post(
@@ -104,8 +116,8 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
-      handleGetBrowserContext(server.cdpService, request, reply),
+    async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) =>
+      handleGetBrowserContext(server, request, reply),
   );
 
   server.post(
@@ -121,7 +133,7 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) =>
+    async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) =>
       handleExitBrowserSession(server, request, reply),
   );
 
@@ -139,7 +151,11 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) =>
-      handleExitBrowserSession(server, request, reply),
+      handleExitBrowserSession(
+        server,
+        request as FastifyRequest<{ Params: { sessionId?: string } }>,
+        reply,
+      ),
   );
 
   server.get(
@@ -158,7 +174,35 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: SessionStreamRequest, reply: FastifyReply) =>
-      handleGetSessionStream(server, request, reply),
+      handleGetSessionStream(
+        server,
+        request as SessionStreamRequest & FastifyRequest<{ Params: { sessionId?: string } }>,
+        reply,
+      ),
+  );
+
+  server.get(
+    "/sessions/:sessionId/debug",
+    {
+      onRequest: [],
+      schema: {
+        operationId: "get_session_debugger_stream_by_id",
+        description: "Returns an HTML page with a live debugger view for a specific session",
+        tags: ["Sessions"],
+        summary: "Get a session-specific debugger view",
+        querystring: $ref("SessionStreamQuery"),
+        response: { 200: $ref("SessionStreamResponse") },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Params: { sessionId: string }; Querystring: any }>,
+      reply: FastifyReply,
+    ) =>
+      handleGetSessionStream(
+        server,
+        request as SessionStreamRequest & FastifyRequest<{ Params: { sessionId?: string } }>,
+        reply,
+      ),
   );
 
   server.post(
@@ -173,12 +217,47 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Body: RecordedEvents }>, reply: FastifyReply) => {
-      server.cdpService.getInstrumentationLogger().record({
-        type: BrowserEventType.Recording,
-        timestamp: new Date().toISOString(),
-        data: request.body,
-      });
-      return reply.send({ status: "ok" });
+      try {
+        const session = server.sessionService.getOnlyActiveSession();
+        const cdpService = session?.cdpService ?? server.cdpService;
+        cdpService.getInstrumentationLogger().record({
+          type: BrowserEventType.Recording,
+          timestamp: new Date().toISOString(),
+          data: request.body,
+        });
+        return reply.send({ status: "ok" });
+      } catch (error) {
+        return sessionActionError(reply, error);
+      }
+    },
+  );
+
+  server.post(
+    "/sessions/:sessionId/events",
+    {
+      schema: {
+        operationId: "receive_session_events",
+        description: "Receive recorded events for a specific browser session",
+        tags: ["Sessions"],
+        summary: "Receive session events",
+        body: $ref("RecordedEvents"),
+      },
+    },
+    async (
+      request: FastifyRequest<{ Params: { sessionId: string }; Body: RecordedEvents }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const session = server.sessionService.resolveLiveSession(request.params.sessionId);
+        session?.cdpService.getInstrumentationLogger().record({
+          type: BrowserEventType.Recording,
+          timestamp: new Date().toISOString(),
+          data: request.body,
+        });
+        return reply.send({ status: "ok" });
+      } catch (error) {
+        return sessionActionError(reply, error);
+      }
     },
   );
 
@@ -215,10 +294,21 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: SessionsScrapeRequest, reply: FastifyReply) =>
-      quickAction(server, request, reply, () =>
-        handleScrape(server.sessionService, server.cdpService, request, reply),
-      ),
+    async (request: SessionsScrapeRequest, reply: FastifyReply) => {
+      try {
+        const session = server.sessionService.getOnlyActiveSession();
+        const cdpService = session?.cdpService ?? server.cdpService;
+        return quickAction(
+          server,
+          request,
+          reply,
+          () => handleScrape(server.sessionService, cdpService, request, reply, session?.id),
+          session?.id,
+        );
+      } catch (error) {
+        return sessionActionError(reply, error);
+      }
+    },
   );
 
   server.post(
@@ -235,10 +325,21 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: SessionsScreenshotRequest, reply: FastifyReply) =>
-      quickAction(server, request, reply, () =>
-        handleScreenshot(server.sessionService, server.cdpService, request, reply),
-      ),
+    async (request: SessionsScreenshotRequest, reply: FastifyReply) => {
+      try {
+        const session = server.sessionService.getOnlyActiveSession();
+        const cdpService = session?.cdpService ?? server.cdpService;
+        return quickAction(
+          server,
+          request,
+          reply,
+          () => handleScreenshot(server.sessionService, cdpService, request, reply, session?.id),
+          session?.id,
+        );
+      } catch (error) {
+        return sessionActionError(reply, error);
+      }
+    },
   );
 
   server.post(
@@ -255,10 +356,21 @@ async function routes(server: FastifyInstance) {
         },
       },
     },
-    async (request: SessionsPDFRequest, reply: FastifyReply) =>
-      quickAction(server, request, reply, () =>
-        handlePDF(server.sessionService, server.cdpService, request, reply),
-      ),
+    async (request: SessionsPDFRequest, reply: FastifyReply) => {
+      try {
+        const session = server.sessionService.getOnlyActiveSession();
+        const cdpService = session?.cdpService ?? server.cdpService;
+        return quickAction(
+          server,
+          request,
+          reply,
+          () => handlePDF(server.sessionService, cdpService, request, reply, session?.id),
+          session?.id,
+        );
+      } catch (error) {
+        return sessionActionError(reply, error);
+      }
+    },
   );
 }
 

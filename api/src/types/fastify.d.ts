@@ -4,6 +4,7 @@ import { SessionService } from "../services/session.service.js";
 import { SeleniumService } from "../services/selenium.service.js";
 import { Page } from "puppeteer-core";
 import { FileService } from "../services/file.service.js";
+import { BrowserPool } from "../services/browser-pool.service.js";
 
 declare module "fastify" {
   interface FastifyRequest {}
@@ -11,5 +12,6 @@ declare module "fastify" {
     seleniumService: SeleniumService;
     sessionService: SessionService;
     fileService: FileService;
+    browserPool: BrowserPool;
   }
 }

@@ -106,7 +106,7 @@ main() {
     start_nginx || exit 1
     
     # Set required environment variables
-    export CDP_REDIRECT_PORT=9223
+    export CDP_REDIRECT_PORT="${CDP_REDIRECT_PORT:-9223}"
     export DISPLAY=:10
     
     # Log environment state

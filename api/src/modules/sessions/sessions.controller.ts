@@ -3,7 +3,8 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getErrors } from "../../utils/errors.js";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
 import { CookieData } from "../../services/context/types.js";
-import { getUrl, getBaseUrl } from "../../utils/url.js";
+import { getUrl, getBaseUrl, getSessionUrl } from "../../utils/url.js";
+import { SessionServiceError } from "../../services/session.service.js";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -58,33 +59,44 @@ export const handleLaunchBrowserSession = async (
       headless,
     });
   } catch (e: unknown) {
-    server.log.error({ err: e }, "Failed lauching browser session");
+    server.log.error({ err: e }, "Failed launching browser session");
     const error = getErrors(e);
-    return reply.code(500).send({ success: false, message: error });
+    const statusCode = e instanceof SessionServiceError ? e.statusCode : 500;
+    return reply.code(statusCode).send({ success: false, message: error });
   }
 };
 
 export const handleExitBrowserSession = async (
   server: FastifyInstance,
-  request: FastifyRequest,
+  request: FastifyRequest<{ Params: { sessionId?: string } }>,
   reply: FastifyReply,
 ) => {
   try {
-    const sessionDetails = await server.sessionService.endSession();
+    const sessionDetails = await server.sessionService.endSession(request.params.sessionId);
 
     reply.send({ success: true, ...sessionDetails });
   } catch (e: any) {
     const error = getErrors(e);
-    return reply.code(500).send({ success: false, message: error });
+    const statusCode = e instanceof SessionServiceError ? e.statusCode : 500;
+    return reply.code(statusCode).send({ success: false, message: error });
   }
 };
 
 export const handleGetBrowserContext = async (
-  browserService: CDPService,
-  request: FastifyRequest,
+  server: FastifyInstance,
+  request: FastifyRequest<{ Params: { sessionId: string } }>,
   reply: FastifyReply,
 ) => {
-  const context = await browserService.getBrowserState();
+  const session = server.sessionService.getLiveSession(request.params.sessionId);
+  if (!session) {
+    return reply.code(404).send({ message: `Session ${request.params.sessionId} not found` });
+  }
+  if (session.isSelenium) {
+    return reply
+      .code(409)
+      .send({ message: "Browser context is unavailable for Selenium sessions." });
+  }
+  const context = await session.cdpService.getBrowserState();
   return reply.send(context);
 };
 
@@ -94,7 +106,8 @@ export const handleGetSessionDetails = async (
   reply: FastifyReply,
 ) => {
   const sessionId = request.params.sessionId;
-  if (sessionId !== server.sessionService.activeSession.id) {
+  const session = server.sessionService.getSessionDetails(sessionId);
+  if (!session) {
     return reply.send({
       id: sessionId,
       createdAt: new Date().toISOString(),
@@ -116,13 +129,7 @@ export const handleGetSessionDetails = async (
     } as SessionDetails);
   }
 
-  const session = server.sessionService.activeSession;
-  const duration = new Date().getTime() - new Date(session.createdAt).getTime();
-  console.log("duration", duration);
-  return reply.send({
-    ...session,
-    duration,
-  });
+  return reply.send(session);
 };
 
 export const handleGetSessions = async (
@@ -130,26 +137,37 @@ export const handleGetSessions = async (
   request: FastifyRequest,
   reply: FastifyReply,
 ) => {
-  const currentSession = {
-    ...server.sessionService.activeSession,
-    duration:
-      new Date().getTime() - new Date(server.sessionService.activeSession.createdAt).getTime(),
-  };
-  const pastSessions = server.sessionService.pastSessions;
-  return reply.send({ sessions: [currentSession, ...pastSessions] });
+  return reply.send({ sessions: server.sessionService.listSessions() });
 };
 
 export const handleGetSessionStream = async (
   server: FastifyInstance,
-  request: SessionStreamRequest,
+  request: SessionStreamRequest & FastifyRequest<{ Params: { sessionId?: string } }>,
   reply: FastifyReply,
 ) => {
   const { showControls, theme, interactive, pageId, pageIndex } = request.query;
+  const requestedId = request.params.sessionId;
+
+  let session;
+  try {
+    session = requestedId
+      ? server.sessionService.getLiveSession(requestedId)
+      : server.sessionService.getOnlyActiveSession();
+  } catch (error) {
+    const statusCode = error instanceof SessionServiceError ? error.statusCode : 500;
+    return reply.code(statusCode).send({ message: getErrors(error) });
+  }
+  if (requestedId && !session) {
+    return reply.code(404).send({ message: `Session ${requestedId} not found` });
+  }
+  if (session?.isSelenium) {
+    return reply.code(409).send({ message: "Live view is unavailable for Selenium sessions." });
+  }
 
   const singlePageMode = !!(pageId || pageIndex);
 
   // Construct WebSocket URL with page parameters if present
-  let wsUrl = getUrl("v1/sessions/cast", "ws");
+  let wsUrl = session ? getSessionUrl(session.id, "cast", "ws") : getUrl("v1/sessions/cast", "ws");
   if (pageId) {
     wsUrl += `?pageId=${encodeURIComponent(pageId)}`;
   } else if (pageIndex) {
@@ -161,7 +179,7 @@ export const handleGetSessionStream = async (
     showControls,
     theme,
     interactive,
-    dimensions: server.sessionService.activeSession.dimensions,
+    dimensions: session?.dimensions ?? { width: 1920, height: 1080 },
     singlePageMode,
   });
 };
@@ -172,7 +190,17 @@ export const handleGetSessionLiveDetails = async (
   reply: FastifyReply,
 ) => {
   try {
-    const pages = await server.cdpService.getAllPages();
+    const session = server.sessionService.getLiveSession(request.params.id);
+    if (!session) {
+      return reply.code(404).send({ message: `Session ${request.params.id} not found` });
+    }
+    if (session.isSelenium) {
+      return reply
+        .code(409)
+        .send({ message: "Live details are unavailable for Selenium sessions." });
+    }
+    const cdpService: CDPService = session.cdpService;
+    const pages = await cdpService.getAllPages();
 
     const pagesInfo = await Promise.all(
       pages.map(async (page) => {
@@ -213,13 +241,13 @@ export const handleGetSessionLiveDetails = async (
 
     const validPagesInfo = pagesInfo.filter((page) => page !== null);
 
-    const browserVersion = await server.cdpService.getBrowserState();
+    const browserVersion = await cdpService.getBrowserState();
 
     const browserState = {
-      status: server.sessionService.activeSession.status,
-      userAgent: server.sessionService.activeSession.userAgent,
+      status: session.status,
+      userAgent: session.userAgent ?? "",
       browserVersion,
-      initialDimensions: server.sessionService.activeSession.dimensions || {
+      initialDimensions: session.dimensions || {
         width: 1920,
         height: 1080,
       },
@@ -229,9 +257,9 @@ export const handleGetSessionLiveDetails = async (
     return reply.send({
       pages: validPagesInfo,
       browserState,
-      websocketUrl: server.sessionService.activeSession.websocketUrl,
-      sessionViewerUrl: server.sessionService.activeSession.sessionViewerUrl,
-      sessionViewerFullscreenUrl: `${server.sessionService.activeSession.sessionViewerUrl}?showControls=false`,
+      websocketUrl: session.websocketUrl,
+      sessionViewerUrl: session.sessionViewerUrl,
+      sessionViewerFullscreenUrl: `${session.sessionViewerUrl}?showControls=false`,
     });
   } catch (error) {
     console.error("Error getting session state:", error);

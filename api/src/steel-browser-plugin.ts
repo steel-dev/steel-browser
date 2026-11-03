@@ -10,7 +10,6 @@ import customBodyParser from "./plugins/custom-body-parser.js";
 import fileStoragePlugin from "./plugins/file-storage.js";
 import requestLogger from "./plugins/request-logger.js";
 import openAPIPlugin from "./plugins/schemas.js";
-import seleniumPlugin from "./plugins/selenium.js";
 import {
   actionsRoutes,
   cdpRoutes,
@@ -22,11 +21,12 @@ import {
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import type { CDPService } from "./services/cdp/cdp.service.js";
-import type { CommandEngine } from "./services/commands/engine.js";
+import type { SessionCommandEngineRegistry } from "./services/commands/session-engine-registry.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
 import { SessionService } from "./services/session.service.js";
+import { BrowserPool } from "./services/browser-pool.service.js";
 import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.interface.js";
 
 // We need to redeclare any decorators from within the plugin that we want to expose
@@ -34,9 +34,10 @@ declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: SteelBrowserConfig;
     cdpService: CDPService;
+    browserPool: BrowserPool;
     sessionService: SessionService;
     webSocketRegistry: WebSocketRegistryService;
-    commandEngine: CommandEngine | null;
+    commandEngine: SessionCommandEngineRegistry | null;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
     registerCDPShutdownHook: (
       hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
@@ -72,7 +73,6 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(openAPIPlugin);
   await fastify.register(fileStoragePlugin);
   await fastify.register(browserInstancePlugin);
-  await fastify.register(seleniumPlugin);
   await fastify.register(browserWebSocket, {
     customHandlers: opts.customWsHandlers,
   });

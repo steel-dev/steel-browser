@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Steel Browser Instance API",
-    "description": "Documentation for controlling a single instance of Steel Browser",
+    "description": "Documentation for controlling browser sessions in Steel Browser",
     "version": "0.0.1"
   },
   "components": {
@@ -31,6 +31,9 @@
             "type": "boolean"
           },
           "pdf": {
+            "type": "boolean"
+          },
+          "removeBase64Images": {
             "type": "boolean"
           },
           "proxyUrl": {
@@ -111,6 +114,9 @@
                 "type": "string"
               },
               "jsonLd": {},
+              "wordCount": {
+                "type": "number"
+              },
               "statusCode": {
                 "type": "integer"
               }
@@ -203,6 +209,60 @@
       },
       "PDFResponse": {
         "title": "PDFResponse"
+      },
+      "SearchRequest": {
+        "title": "SearchRequest",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "proxyUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used."
+          },
+          "logUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "SearchResponse": {
+        "title": "SearchResponse",
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "title",
+                "url"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "additionalProperties": false
       },
       "CreateSession": {
         "title": "CreateSession",
@@ -504,7 +564,11 @@
               }
             },
             "additionalProperties": false,
-            "description": "Device configuration for the session. Specify 'mobile' for mobile device fingerprints and configurations."
+            "description": "Device configuration for the session"
+          },
+          "fullscreen": {
+            "type": "boolean",
+            "description": "Launch the browser in fullscreen mode, covering the full screen with no Chrome UI."
           },
           "logSinkUrl": {
             "type": "string",
@@ -661,6 +725,10 @@
             "type": "string",
             "description": "URL for the session's WebSocket connection"
           },
+          "seleniumUrl": {
+            "type": "string",
+            "description": "URL for this session's Selenium WebDriver endpoint"
+          },
           "debugUrl": {
             "type": "string",
             "description": "URL for a viewing the live browser instance for the session"
@@ -698,6 +766,21 @@
           "isSelenium": {
             "type": "boolean",
             "description": "Indicates if Selenium is used in the session"
+          },
+          "deviceConfig": {
+            "type": "object",
+            "properties": {
+              "device": {
+                "type": "string",
+                "enum": [
+                  "desktop",
+                  "mobile"
+                ],
+                "default": "desktop"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Device configuration for the session"
           }
         },
         "required": [
@@ -783,6 +866,10 @@
                   "type": "string",
                   "description": "URL for the session's WebSocket connection"
                 },
+                "seleniumUrl": {
+                  "type": "string",
+                  "description": "URL for this session's Selenium WebDriver endpoint"
+                },
                 "debugUrl": {
                   "type": "string",
                   "description": "URL for a viewing the live browser instance for the session"
@@ -820,6 +907,21 @@
                 "isSelenium": {
                   "type": "boolean",
                   "description": "Indicates if Selenium is used in the session"
+                },
+                "deviceConfig": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "type": "string",
+                      "enum": [
+                        "desktop",
+                        "mobile"
+                      ],
+                      "default": "desktop"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Device configuration for the session"
                 }
               },
               "required": [
@@ -1144,6 +1246,10 @@
             "type": "string",
             "description": "URL for the session's WebSocket connection"
           },
+          "seleniumUrl": {
+            "type": "string",
+            "description": "URL for this session's Selenium WebDriver endpoint"
+          },
           "debugUrl": {
             "type": "string",
             "description": "URL for a viewing the live browser instance for the session"
@@ -1181,6 +1287,21 @@
           "isSelenium": {
             "type": "boolean",
             "description": "Indicates if Selenium is used in the session"
+          },
+          "deviceConfig": {
+            "type": "object",
+            "properties": {
+              "device": {
+                "type": "string",
+                "enum": [
+                  "desktop",
+                  "mobile"
+                ],
+                "default": "desktop"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Device configuration for the session"
           },
           "success": {
             "type": "boolean",
@@ -1346,6 +1467,10 @@
         "title": "LogQuerySchema",
         "type": "object",
         "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session ID whose browser logs should be queried"
+          },
           "startTime": {
             "type": "string",
             "format": "date-time"
@@ -1373,6 +1498,17 @@
             "type": "integer",
             "minimum": 0,
             "default": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionLogQuerySchema": {
+        "title": "SessionLogQuerySchema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session ID whose browser logs should be queried"
           }
         },
         "additionalProperties": false
@@ -1438,6 +1574,10 @@
           "query": {
             "type": "object",
             "properties": {
+              "sessionId": {
+                "type": "string",
+                "description": "Session ID whose browser logs should be queried"
+              },
               "startTime": {
                 "type": "string",
                 "format": "date-time"
@@ -1770,6 +1910,198 @@
         }
       }
     },
+    "/v1/search": {
+      "post": {
+        "operationId": "search",
+        "summary": "Search for URLs",
+        "tags": [
+          "Browser Actions"
+        ],
+        "description": "Use a search engine to search for URLs given a query",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/scrape": {
+      "post": {
+        "operationId": "scrape_session_by_id",
+        "summary": "Scrape a browser session",
+        "tags": [
+          "Browser Actions"
+        ],
+        "description": "Scrape the current page in the specified browser session.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScrapeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/screenshot": {
+      "post": {
+        "operationId": "screenshot_session_by_id",
+        "summary": "Take a screenshot of a browser session",
+        "tags": [
+          "Browser Actions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreenshotRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/pdf": {
+      "post": {
+        "operationId": "pdf_session_by_id",
+        "summary": "Generate a PDF for a browser session",
+        "tags": [
+          "Browser Actions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PDFRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PDFResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/search": {
+      "post": {
+        "operationId": "search_session_by_id",
+        "summary": "Search in a browser session",
+        "tags": [
+          "Browser Actions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "operationId": "health",
@@ -2030,6 +2362,90 @@
         }
       }
     },
+    "/v1/sessions/{sessionId}/debug": {
+      "get": {
+        "operationId": "get_session_debugger_stream_by_id",
+        "summary": "Get a session-specific debugger view",
+        "tags": [
+          "Sessions"
+        ],
+        "description": "Returns an HTML page with a live debugger view for a specific session",
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "in": "query",
+            "name": "showControls",
+            "required": false,
+            "description": "Show controls in the browser iframe"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dark",
+                "light"
+              ],
+              "default": "dark"
+            },
+            "in": "query",
+            "name": "theme",
+            "required": false,
+            "description": "Theme of the browser iframe"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "in": "query",
+            "name": "interactive",
+            "required": false,
+            "description": "Make the browser iframe interactive"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "pageId",
+            "required": false,
+            "description": "Page ID to connect to"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "pageIndex",
+            "required": false,
+            "description": "Page index (or tab index) to connect to"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML content for the session streamer view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStreamResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/events": {
       "post": {
         "operationId": "receive_events",
@@ -2047,6 +2463,40 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/events": {
+      "post": {
+        "operationId": "receive_session_events",
+        "summary": "Receive session events",
+        "tags": [
+          "Sessions"
+        ],
+        "description": "Receive recorded events for a specific browser session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordedEvents"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"
@@ -2175,6 +2625,39 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/devtools/inspector.html": {
+      "get": {
+        "operationId": "getSessionDevtoolsUrl",
+        "summary": "Get a session-scoped DevTools inspector URL",
+        "tags": [
+          "CDP"
+        ],
+        "description": "Get the DevTools inspector URL for a browser session",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "pageId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
@@ -2396,6 +2879,15 @@
         "parameters": [
           {
             "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false,
+            "description": "Session ID whose browser logs should be queried"
+          },
+          {
+            "schema": {
               "type": "string",
               "format": "date-time"
             },
@@ -2471,6 +2963,17 @@
           "Logs"
         ],
         "description": "Get statistics about stored browser logs",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false,
+            "description": "Session ID whose browser logs should be queried"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"
@@ -2484,6 +2987,17 @@
           "Logs"
         ],
         "description": "Stream browser logs in real-time using SSE",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false,
+            "description": "Session ID whose browser logs should be queried"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"
@@ -2498,6 +3012,15 @@
         ],
         "description": "Export browser logs to Parquet format",
         "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false,
+            "description": "Session ID whose browser logs should be queried"
+          },
           {
             "schema": {
               "type": "string",
@@ -2575,6 +3098,17 @@
           "Logs"
         ],
         "description": "Clear all browser logs from storage",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false,
+            "description": "Session ID whose browser logs should be queried"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"

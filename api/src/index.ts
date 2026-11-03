@@ -3,7 +3,6 @@ import fastifyCors from "@fastify/cors";
 import fastifySensible from "@fastify/sensible";
 import steelBrowserPlugin from "./steel-browser-plugin.js";
 import uiPlugin from "./plugins/ui-plugin.js";
-import { ShutdownReason } from "./services/cdp/plugins/core/base-plugin.js";
 import { loggingConfig } from "./config.js";
 import { MB } from "./utils/size.js";
 import path from "node:path";
@@ -46,8 +45,11 @@ const setupServer = async () => {
 
   server.addHook("preClose", async () => {
     try {
-      await server.cdpService.shutdown(ShutdownReason.SESSION_END);
+      await server.sessionService.shutdownAll();
     } finally {
+      await server.fileService.cleanupFiles().catch((error) => {
+        server.log.error({ err: error }, "Default file cleanup failed");
+      });
       for (const socket of upgradedSockets) socket.destroy();
     }
   });
