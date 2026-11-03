@@ -46,36 +46,61 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
   fastify.decorate("webSocketRegistry", registry);
 
   fastify.server.on("upgrade", async (request, socket, head) => {
-    fastify.log.info("Upgrading browser socket...");
-    const url = request.url ?? "";
-    const params = parseUpgradeParams(url);
-    if (!params) {
-      socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
-      return;
-    }
-
-    const context: WebSocketHandlerContext = {
-      fastify,
-      wss,
-      params,
-    };
-
-    const handler = registry.matchHandler(url);
-
-    if (handler) {
-      try {
-        await handler.handler(request, socket, head, context);
-      } catch (err) {
-        fastify.log.error({ err }, `WebSocket handler error for ${url}`);
-        socket.destroy();
+    socket.on("error", (err) => fastify.log.debug({ err }, "Upgrade socket error"));
+    try {
+      const url = request.url ?? "";
+      const params = parseUpgradeParams(url);
+      if (!params) {
+        fastify.log.warn({ url: url.slice(0, 200) }, "Rejecting invalid upgrade target");
+        if (!socket.destroyed && socket.writable) {
+          try {
+            socket.end(
+              "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+              () => socket.destroy(),
+            );
+            // Ensure the socket cannot linger if the peer never reads the 400.
+            setTimeout(() => socket.destroy(), 1000).unref();
+          } catch {
+            socket.destroy();
+          }
+        }
+        return;
       }
-    } else {
-      fastify.log.info("Connecting to CDP...");
-      try {
-        await fastify.cdpService.proxyWebSocket(request, socket, head);
-      } catch (err) {
-        fastify.log.error({ err }, "CDP WebSocket error");
-        socket.destroy();
+      fastify.log.info("Upgrading browser socket...");
+
+      const context: WebSocketHandlerContext = {
+        fastify,
+        wss,
+        params,
+      };
+
+      const handler = registry.matchHandler(url);
+
+      if (handler) {
+        try {
+          await handler.handler(request, socket, head, context);
+        } catch (err) {
+          fastify.log.error({ err }, `WebSocket handler error for ${url}`);
+          socket.destroy();
+        }
+      } else {
+        fastify.log.info("Connecting to CDP...");
+        try {
+          await fastify.cdpService.proxyWebSocket(request, socket, head);
+        } catch (err) {
+          fastify.log.error({ err }, "CDP WebSocket error");
+          socket.destroy();
+        }
+      }
+    } catch (err) {
+      fastify.log.error({ err }, "Unexpected upgrade handler error");
+      // Never socket.end here: a 101 may already be half-written, so destroy only.
+      if (!socket.destroyed) {
+        try {
+          socket.destroy();
+        } catch (destroyErr) {
+          fastify.log.debug({ err: destroyErr }, "Failed to destroy upgrade socket");
+        }
       }
     }
   });
