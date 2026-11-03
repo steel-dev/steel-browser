@@ -1,12 +1,16 @@
 import archiver from "archiver";
 import chokidar, { FSWatcher } from "chokidar";
+import { randomUUID } from "crypto";
 import fs from "fs";
 import type { DebouncedFunc } from "lodash-es";
 import { debounce } from "lodash-es";
 import { tmpdir } from "os";
 import path, { resolve } from "path";
 import { Readable, Transform } from "stream";
+import { pipeline } from "stream/promises";
 import { env } from "../env.js";
+
+const UPLOAD_TEMP_PREFIX = ".steel-upload-";
 
 interface File {
   size: number;
@@ -48,6 +52,8 @@ export class FileService {
   private archiveDebounceTime = 500;
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
   private readonly maxSizeBytes: number | null;
+  private inFlightBytes = 0;
+  private commitQueue: Promise<void> = Promise.resolve();
 
   public constructor(options: FileServiceOptions = {}) {
     this.baseFilesPath =
@@ -142,61 +148,86 @@ export class FileService {
     }
   }
 
-  private withQuotaGuard(source: Readable, currentBytes: number, limitBytes: number): Readable {
-    const remainingBytes = limitBytes - currentBytes;
-    let incomingBytes = 0;
-    const guard = new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        incomingBytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
-        if (incomingBytes > remainingBytes) {
-          callback(new FileQuotaExceededError(currentBytes, incomingBytes, limitBytes));
-        } else {
-          callback(null, chunk);
-        }
-      },
-    });
-    source.on("error", (error) => guard.destroy(error));
-    guard.on("error", () => {
-      source.destroy();
-    });
-    return source.pipe(guard);
+  private checkQuota(currentBytes: number, incomingBytes: number) {
+    if (this.maxSizeBytes !== null && currentBytes + incomingBytes > this.maxSizeBytes) {
+      throw new FileQuotaExceededError(currentBytes, incomingBytes, this.maxSizeBytes);
+    }
+  }
+
+  private async getUsedBytes(excludedPath: string): Promise<number> {
+    if (this.maxSizeBytes === null) {
+      return 0;
+    }
+    const files = await this.listFiles();
+    return files.reduce(
+      (total, file) => (file.path === excludedPath ? total : total + file.size),
+      0,
+    );
+  }
+
+  private serializeCommit(task: () => Promise<void>): Promise<void> {
+    const result = this.commitQueue.then(task);
+    this.commitQueue = result.catch(() => {});
+    return result;
   }
 
   public async saveFile({
     filePath,
     stream,
+    size,
   }: {
     filePath: string;
     stream: Readable;
+    size?: number;
   }): Promise<File & { path: string }> {
-    await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
-
-    const safeFilePath = this.getSafeFilePath(filePath);
-    const parentDir = path.dirname(safeFilePath);
-    await fs.promises.mkdir(parentDir, { recursive: true });
-
-    let writeStream: Readable = stream;
-    if (this.maxSizeBytes !== null) {
-      const storedFiles = await this.listFiles();
-      const storedBytes = storedFiles.reduce((total, file) => total + file.size, 0);
-      let overwrittenBytes = 0;
-      if (await this.exists(safeFilePath)) {
-        try {
-          overwrittenBytes = (await fs.promises.stat(safeFilePath)).size;
-        } catch {
-          overwrittenBytes = 0;
-        }
-      }
-      const currentBytes = storedBytes - overwrittenBytes;
-      if (currentBytes > this.maxSizeBytes) {
-        stream.destroy();
-        throw new FileQuotaExceededError(currentBytes, 0, this.maxSizeBytes);
-      }
-      writeStream = this.withQuotaGuard(stream, currentBytes, this.maxSizeBytes);
-    }
+    let tempFilePath: string | null = null;
+    let receivedBytes = 0;
+    let heldBytes = 0;
+    const releaseHeldBytes = () => {
+      this.inFlightBytes -= heldBytes;
+      heldBytes = 0;
+    };
 
     try {
-      await fs.promises.writeFile(safeFilePath, writeStream);
+      await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
+
+      const safeFilePath = this.getSafeFilePath(filePath);
+      const parentDir = path.dirname(safeFilePath);
+      await fs.promises.mkdir(parentDir, { recursive: true });
+
+      const usedBytes = await this.getUsedBytes(safeFilePath);
+      this.checkQuota(usedBytes + this.inFlightBytes, size ?? 0);
+
+      const quotaGuard = new Transform({
+        transform: (chunk: Buffer, _encoding, callback) => {
+          try {
+            this.checkQuota(
+              usedBytes + this.inFlightBytes - heldBytes,
+              receivedBytes + chunk.length,
+            );
+          } catch (error) {
+            releaseHeldBytes();
+            callback(error as Error);
+            return;
+          }
+          receivedBytes += chunk.length;
+          heldBytes += chunk.length;
+          this.inFlightBytes += chunk.length;
+          callback(null, chunk);
+        },
+      });
+
+      const stagingPath = path.join(parentDir, `${UPLOAD_TEMP_PREFIX}${randomUUID()}`);
+      tempFilePath = stagingPath;
+      await pipeline(stream, quotaGuard, fs.createWriteStream(stagingPath));
+
+      await this.serializeCommit(async () => {
+        this.checkQuota(await this.getUsedBytes(safeFilePath), receivedBytes);
+        await fs.promises.rename(stagingPath, safeFilePath);
+      });
+      tempFilePath = null;
+      releaseHeldBytes();
+
       const stats = await fs.promises.stat(safeFilePath);
       const file: File = {
         size: stats.size,
@@ -206,17 +237,17 @@ export class FileService {
       this.scheduleArchiveCreation();
       return { ...file, path: safeFilePath };
     } catch (error) {
-      console.error(`[FileService] Error saving file ${safeFilePath}:`, error);
+      releaseHeldBytes();
+      stream.destroy();
+      console.error(`[FileService] Error saving file ${filePath}:`, error);
 
-      try {
-        if (await this.exists(safeFilePath)) {
-          await fs.promises.unlink(safeFilePath);
-        }
-      } catch (cleanupErr) {
-        console.error(
-          `[FileService] Failed to cleanup file ${safeFilePath} after save error:`,
-          cleanupErr,
-        );
+      if (tempFilePath) {
+        await fs.promises.rm(tempFilePath, { force: true }).catch((cleanupErr) => {
+          console.error(
+            `[FileService] Failed to remove temp file ${tempFilePath} after save error:`,
+            cleanupErr,
+          );
+        });
       }
       throw error;
     }
@@ -286,7 +317,7 @@ export class FileService {
         const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
         for (const entry of entries) {
           const entryPath = path.join(currentDir, entry.name);
-          if (entry.isFile()) {
+          if (entry.isFile() && !entry.name.startsWith(UPLOAD_TEMP_PREFIX)) {
             try {
               const stats = await fs.promises.stat(entryPath);
               allFiles.push({
@@ -553,7 +584,9 @@ export class FileService {
             if (files.length === 0) {
               console.log("[_createArchive] Base directory is empty. Creating empty archive.");
             } else {
-              archive.directory(this.baseFilesPath, false);
+              archive.directory(this.baseFilesPath, false, (entry) =>
+                path.basename(entry.name).startsWith(UPLOAD_TEMP_PREFIX) ? false : entry,
+              );
             }
           }
         }

@@ -86,6 +86,16 @@ describe("FilesController download headers", () => {
   });
 });
 
+function uploadRequest(part: Record<string, unknown>) {
+  return {
+    isMultipart: () => true,
+    parts: async function* () {
+      yield part;
+    },
+    params: { sessionId: "s" },
+  } as unknown as FastifyRequest<{ Params: { sessionId: string } }>;
+}
+
 describe("FilesController quota enforcement", () => {
   it("maps FileQuotaExceededError to 413", async () => {
     const controller = createController(async ({ stream }) => {
@@ -96,57 +106,65 @@ describe("FilesController quota enforcement", () => {
       throw new FileQuotaExceededError(80, 40, 100);
     });
     const { reply, statusCode } = createReply();
-    const request = {
-      isMultipart: () => true,
-      parts: async function* () {
-        yield { fieldname: "file", type: "file", file: Readable.from("hello") };
-      },
-      params: { sessionId: "s" },
-    } as unknown as FastifyRequest<{ Params: { sessionId: string } }>;
 
-    await controller.handleFileUpload(server, request, reply);
+    await controller.handleFileUpload(
+      server,
+      uploadRequest({ fieldname: "file", type: "file", file: Readable.from("hello") }),
+      reply,
+    );
 
     expect(statusCode()).toBe(413);
   });
 
-  it("skips the URL pre-check when no session limit is configured", async () => {
+  it("passes the staged upload size to saveFile", async () => {
+    let declaredSize: number | undefined;
+    const controller = createController(async ({ stream, size }) => {
+      stream.on("error", () => {});
+      stream.destroy();
+      declaredSize = size;
+      return { path: "stub", size: 5, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileUpload(
+      server,
+      uploadRequest({ fieldname: "file", type: "file", file: Readable.from("hello") }),
+      reply,
+    );
+
+    expect(declaredSize).toBe(5);
+    expect(statusCode()).toBe(200);
+  });
+
+  it("passes the remote content-length to saveFile", async () => {
     const httpServer = createServer((_req, res) => {
-      // Declare far more than the 100 MB app default but send almost nothing:
-      // with no limit configured the pre-check must be skipped, not 413.
-      res.writeHead(200, {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(150 * 1000 * 1000),
-      });
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": "4" });
       res.end("tiny");
     });
     await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
     try {
       const address = httpServer.address();
       const port = typeof address === "object" && address ? address.port : 0;
-      let saved = false;
-      const controller = createController(async ({ stream }) => {
+      let declaredSize: number | undefined;
+      const controller = createController(async ({ stream, size }) => {
         stream.on("error", () => {});
         stream.destroy();
-        saved = true;
+        declaredSize = size;
         return { path: "stub", size: 4, lastModified: new Date(0) };
       });
       const { reply, statusCode } = createReply();
-      const unconfiguredServer = { steelBrowserConfig: {} } as unknown as FastifyInstance;
-      const request = {
-        isMultipart: () => true,
-        parts: async function* () {
-          yield {
-            fieldname: "file",
-            type: "field",
-            value: `http://127.0.0.1:${port}/big.bin`,
-          };
-        },
-        params: { sessionId: "s" },
-      } as unknown as FastifyRequest<{ Params: { sessionId: string } }>;
 
-      await controller.handleFileUpload(unconfiguredServer, request, reply);
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: `http://127.0.0.1:${port}/tiny.bin`,
+        }),
+        reply,
+      );
 
-      expect(saved).toBe(true);
+      expect(declaredSize).toBe(4);
       expect(statusCode()).toBe(200);
     } finally {
       await new Promise<void>((resolve, reject) =>

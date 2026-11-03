@@ -105,10 +105,12 @@ export class FilesController {
           finalPath = filePath;
         }
 
+        const { size } = await fs.promises.stat(tempFilePath);
         const readStream = fs.createReadStream(tempFilePath);
         saveFileResult = await this.fileService.saveFile({
           filePath: finalPath,
           stream: readStream,
+          size,
         });
 
         await fs.promises.unlink(tempFilePath).catch(() => {});
@@ -130,29 +132,10 @@ export class FilesController {
         }
 
         const { stream, contentLength } = await this.createStreamFromUrl(fileUrl);
-        const limit = server.steelBrowserConfig.fileStorage?.maxSizePerSession;
-        if (contentLength !== undefined && limit !== undefined) {
-          const storedFiles = await this.fileService.listFiles();
-          const storedBytes = storedFiles.reduce((total, file) => total + file.size, 0);
-          let overwrittenBytes = 0;
-          try {
-            overwrittenBytes = (await this.fileService.getFile({ filePath: finalPath })).size;
-          } catch {
-            overwrittenBytes = 0;
-          }
-          if (storedBytes - overwrittenBytes + contentLength > limit) {
-            stream.destroy();
-            const quotaError = new FileQuotaExceededError(
-              storedBytes - overwrittenBytes,
-              contentLength,
-              limit,
-            );
-            return reply.code(413).send({ success: false, message: quotaError.message });
-          }
-        }
         saveFileResult = await this.fileService.saveFile({
           filePath: finalPath,
           stream,
+          size: contentLength,
         });
       }
 

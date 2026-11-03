@@ -1,7 +1,8 @@
+import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { inflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -240,21 +241,103 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     expect(result.size).toBe(40);
   });
 
+  function* byteChunks(count: number) {
+    for (let index = 0; index < count; index += 1) {
+      yield Buffer.alloc(1, 0x61);
+    }
+  }
+
+  async function* delayedChunks(count: number, chunkSize: number) {
+    for (let index = 0; index < count; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      yield Buffer.alloc(chunkSize, 0x61);
+    }
+  }
+
   it("aborts unknown-length streams over quota and removes the partial file", async () => {
     const fileService = await createQuotaService(100);
 
-    function* chunks() {
-      for (let index = 0; index < 200; index += 1) {
-        yield Buffer.alloc(1, 0x61);
-      }
-    }
+    await expect(
+      fileService.saveFile({ filePath: "big.bin", stream: Readable.from(byteChunks(200)) }),
+    ).rejects.toThrow(FileQuotaExceededError);
+    expect(await fs.promises.readdir(fileService.getBaseFilesPath())).toEqual([]);
+  });
+
+  it("keeps the original file when an overwrite is rejected", async () => {
+    const fileService = await createQuotaService(100);
+
+    await fileService.saveFile({
+      filePath: "a.bin",
+      stream: Readable.from(Buffer.alloc(30, 0x61)),
+    });
+    await fileService.saveFile({
+      filePath: "b.bin",
+      stream: Readable.from(Buffer.alloc(60, 0x62)),
+    });
 
     await expect(
-      fileService.saveFile({ filePath: "big.bin", stream: Readable.from(chunks()) }),
+      fileService.saveFile({ filePath: "a.bin", stream: Readable.from(byteChunks(50)) }),
     ).rejects.toThrow(FileQuotaExceededError);
-    await expect(
-      fs.promises.stat(path.join(fileService.getBaseFilesPath(), "big.bin")),
-    ).rejects.toThrow();
+
+    const original = await fs.promises.readFile(path.join(fileService.getBaseFilesPath(), "a.bin"));
+    expect(original.equals(Buffer.alloc(30, 0x61))).toBe(true);
+    expect((await fs.promises.readdir(fileService.getBaseFilesPath())).sort()).toEqual([
+      "a.bin",
+      "b.bin",
+    ]);
+  });
+
+  it("rejects a declared size over quota without reading the stream", async () => {
+    const fileService = await createQuotaService(100);
+    const read = vi.fn();
+    const stream = new Readable({ read });
+
+    await expect(fileService.saveFile({ filePath: "big.bin", stream, size: 101 })).rejects.toThrow(
+      FileQuotaExceededError,
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it("holds the quota across concurrent saves", async () => {
+    const fileService = await createQuotaService(100);
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) =>
+        fileService.saveFile({
+          filePath: `file-${index}.bin`,
+          stream: Readable.from(delayedChunks(9, 10)),
+        }),
+      ),
+    );
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(await fs.promises.readdir(fileService.getBaseFilesPath())).toHaveLength(1);
+    const files = await fileService.listFiles();
+    expect(files.reduce((total, file) => total + file.size, 0)).toBe(90);
+  });
+
+  it("rechecks the quota when another save commits during an upload", async () => {
+    const fileService = await createQuotaService(100);
+    const baseFilesPath = fileService.getBaseFilesPath();
+    const slowStream = new PassThrough();
+
+    const slowSave = fileService.saveFile({ filePath: "slow.bin", stream: slowStream });
+    await once(slowStream, "resume");
+    slowStream.write(Buffer.alloc(10, 0x62));
+    await vi.waitFor(async () => {
+      expect(await fs.promises.readdir(baseFilesPath)).toHaveLength(1);
+    });
+    expect(await fileService.listFiles()).toEqual([]);
+
+    await fileService.saveFile({
+      filePath: "fast.bin",
+      stream: Readable.from(Buffer.alloc(60, 0x61)),
+    });
+    slowStream.end(Buffer.alloc(50, 0x62));
+
+    await expect(slowSave).rejects.toThrow(FileQuotaExceededError);
+    expect(await fs.promises.readdir(baseFilesPath)).toEqual(["fast.bin"]);
   });
 
   it("stays unbounded when maxSizeBytes is unset", async () => {
