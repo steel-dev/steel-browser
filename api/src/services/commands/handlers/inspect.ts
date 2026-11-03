@@ -3,6 +3,7 @@ import { ProtocolError } from "puppeteer-core";
 import { getDefuddleContent, stripBase64Images } from "../../../utils/scrape/index.js";
 import type { Command } from "../commands.js";
 import { CommandError } from "../errors.js";
+import { placements } from "../locators.js";
 import type { CommandResult } from "../records.js";
 import {
   ATTRIBUTE,
@@ -22,7 +23,7 @@ import { hideSecrets, htmlForms, SECRET_VALUES } from "../secrets.js";
 import type { Job } from "../session.js";
 import type { Tab } from "../tabs.js";
 import { inPage } from "../pointer.js";
-import { asLocator, callIn, callOn, locate } from "../targets.js";
+import { asLocator, callIn, callOn, frameMissing, locate } from "../targets.js";
 import {
   activate,
   element,
@@ -90,15 +91,22 @@ export async function get(
       throw new CommandError("invalid_argument", "get count needs a locator or a CSS selector.");
     }
     const tab = tabFor(ctx, command.tab);
-    const scope = await scopeFor(ctx, tab, command.frame);
+    const scope = await scopeFor(ctx, tab, command.frame).catch((error) => {
+      if (frameMissing(error)) {
+        return null;
+      }
+      throw error;
+    });
     const { nth: _, ...all } = locator;
-    return { ok: true, effect: "none", value: (await locate(scope, all)).length };
+    return { ok: true, effect: "none", value: scope ? (await locate(scope, all)).length : 0 };
   }
   if (command.what === "attr" && !command.attribute) {
     throw new CommandError("invalid_argument", "get attr needs an attribute name.");
   }
   const target = await element(ctx, { ...command, target: command.target });
   switch (command.what) {
+    case "locator":
+      return { ok: true, effect: "none", value: await placements(target) };
     case "text":
     case "html": {
       const value = await callOn<string>(target, command.what === "text" ? TEXT : HTML);
@@ -195,7 +203,7 @@ export async function is(
 ): Promise<CommandResult> {
   const target = await element(ctx, command).catch((error) => {
     if (command.what === "visible" && error instanceof CommandError) {
-      if (error.code === "element_not_found") {
+      if (error.code === "element_not_found" || frameMissing(error)) {
         return null;
       }
       if (error.reason === "ambiguous") {
@@ -282,10 +290,11 @@ export async function wait(
         tab: ref ? command.tab : tab!.id,
       }).catch((error) => {
         if (
-          error instanceof CommandError &&
-          (error.code === "element_not_found" ||
-            (error.code === "stale_ref" &&
-              (error.reason === "detached" || error.reason === "content_changed")))
+          frameMissing(error) ||
+          (error instanceof CommandError &&
+            (error.code === "element_not_found" ||
+              (error.code === "stale_ref" &&
+                (error.reason === "detached" || error.reason === "content_changed"))))
         ) {
           return null;
         }
@@ -328,6 +337,7 @@ export async function wait(
     satisfied().catch((error) => {
       if (
         error instanceof ProtocolError ||
+        frameMissing(error) ||
         (error instanceof CommandError && error.code === "dialog_pending")
       ) {
         return false;

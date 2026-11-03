@@ -6,7 +6,7 @@ import type { CommandResult } from "../records.js";
 import { combine, errorInfo, failed } from "../results.js";
 import type { Observe } from "../session.js";
 import { refsFor, scanSecrets } from "../snapshot.js";
-import { callIn, locate } from "../targets.js";
+import { callIn, frameMissing, locate } from "../targets.js";
 import { SECRET_VALUES, secretsWithin } from "../secrets.js";
 import {
   capture,
@@ -45,7 +45,15 @@ export async function find(
     throw new CommandError("invalid_argument", "name works only with by: role.");
   }
   const tab = tabFor(ctx, command.tab);
-  const scope = await scopeFor(ctx, tab, command.frame);
+  const scope = await scopeFor(ctx, tab, command.frame).catch((error) => {
+    if (frameMissing(error)) {
+      return null;
+    }
+    throw error;
+  });
+  if (!scope) {
+    return { ok: true, effect: "none", count: 0, matches: [] };
+  }
   const matches = await locate(scope, {
     [command.by]: command.value,
     ...(command.name !== undefined ? { name: command.name } : {}),

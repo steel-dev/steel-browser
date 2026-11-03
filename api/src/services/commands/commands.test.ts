@@ -17,11 +17,19 @@ describe("published request schema", () => {
       for (const commands of [
         { command: "snapshot" },
         [{ command: "snapshot" }, { command: "tab", action: "list" }],
+        { command: "get", what: "locator", target: "e3" },
+        { command: "click", target: { text: "Accept" }, frame: { title: "Consent" } },
+        { command: "click", target: { text: "Accept" }, frame: "iframe#consent" },
+        { command: "click", target: { text: "Accept" }, frame: ["iframe", { css: "iframe" }] },
       ]) {
         const response = await app.inject({ method: "POST", url, payload: { commands } });
         expect(response.statusCode, `${url} ${response.body}`).toBe(200);
       }
-      for (const commands of [[], { command: "teleport" }]) {
+      for (const commands of [
+        [],
+        { command: "teleport" },
+        { command: "click", target: { text: "Accept" }, frame: [] },
+      ]) {
         const response = await app.inject({ method: "POST", url, payload: { commands } });
         expect(response.statusCode, `${url} ${JSON.stringify(commands)}`).toBe(400);
       }

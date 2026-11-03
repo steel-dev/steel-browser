@@ -17,12 +17,14 @@ import { takeSnapshot, type FrameHandle, type SnapshotOptions } from "../snapsho
 import type { Tab, TabInfo } from "../tabs.js";
 import {
   asLocator,
+  enterFrame,
   frameScope,
   mainScope,
   resolveLocator,
   resolveRef,
   type Element,
   type Expectation,
+  type FrameTarget,
   type Scope,
   type Target,
 } from "../targets.js";
@@ -109,8 +111,18 @@ export function watchBlocking(tab: Tab, crashes = true): Watch {
   return { promise, stop: () => stop() };
 }
 
-export function scopeFor(ctx: Context, tab: Tab, frame?: string): Promise<Scope> {
-  return frame ? frameScope(tab, ctx.active.refs, frame, ctx.group) : mainScope(tab, ctx.group);
+export async function scopeFor(ctx: Context, tab: Tab, frame?: FrameTarget): Promise<Scope> {
+  if (frame === undefined) {
+    return mainScope(tab, ctx.group);
+  }
+  if (typeof frame === "string" && parseRef(frame)) {
+    return frameScope(tab, ctx.active.refs, frame, ctx.group);
+  }
+  let scope = await mainScope(tab, ctx.group);
+  for (const step of Array.isArray(frame) ? frame : [frame]) {
+    scope = await enterFrame(scope, step);
+  }
+  return scope;
 }
 
 export function touch(ctx: Context) {
@@ -157,7 +169,7 @@ export function inputs(ctx: Context, tab: Tab): InputContext {
 
 export async function element(
   ctx: Context,
-  command: { target: Target; tab?: string; frame?: string; expect?: Expectation },
+  command: { target: Target; tab?: string; frame?: FrameTarget; expect?: Expectation },
 ): Promise<Element> {
   const { active } = ctx;
   const ref = typeof command.target === "string" ? parseRef(command.target) : null;
@@ -166,7 +178,7 @@ export async function element(
     const scope = await scopeFor(ctx, tab, command.frame);
     return resolveLocator(scope, asLocator(command.target)!, command.expect);
   }
-  if (command.frame) {
+  if (command.frame !== undefined) {
     throw new CommandError(
       "invalid_argument",
       `Ref ${ref} already knows its frame. Pass frame only with a locator.`,
