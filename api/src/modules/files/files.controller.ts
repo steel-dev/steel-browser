@@ -121,7 +121,7 @@ export class FilesController {
       return false;
     }
 
-    if (filePath.includes("..")) {
+    if (filePath.includes("\\")) {
       return false;
     }
 
@@ -130,7 +130,7 @@ export class FilesController {
     }
 
     const normalized = path.normalize(filePath);
-    if (normalized.startsWith("..")) {
+    if (normalized === ".." || normalized.startsWith(`..${path.sep}`)) {
       return false;
     }
 

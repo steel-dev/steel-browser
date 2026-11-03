@@ -176,19 +176,21 @@ describe("FilesController quota enforcement", () => {
     // No real egress and no 127.0.0.1 server: 93.184.216.34 is a public
     // literal (skips DNS) and http.get is stubbed to answer 200 with
     // Content-Length 4. Mirrors the deleted happy-path assertions.
-    const getSpy = vi.spyOn(http, "get").mockImplementation(
-      ((_url: unknown, _opts: unknown, cb: unknown) => {
-        const res = Object.assign(Readable.from(["tiny"]), {
-          statusCode: 200,
-          headers: {
-            "content-length": "4",
-            "content-type": "application/octet-stream",
-          },
-        });
-        (cb as (r: unknown) => void)(res);
-        return { on: () => ({}), destroy: () => {} };
-      }) as never,
-    );
+    const getSpy = vi.spyOn(http, "get").mockImplementation(((
+      _url: unknown,
+      _opts: unknown,
+      cb: unknown,
+    ) => {
+      const res = Object.assign(Readable.from(["tiny"]), {
+        statusCode: 200,
+        headers: {
+          "content-length": "4",
+          "content-type": "application/octet-stream",
+        },
+      });
+      (cb as (r: unknown) => void)(res);
+      return { on: () => ({}), destroy: () => {} };
+    }) as never);
     try {
       let declaredSize: number | undefined;
       const controller = createController(async ({ stream, size }) => {
@@ -427,6 +429,8 @@ describe("FilesController multipart temp hardening", () => {
       return { path: "stub", size: 0, lastModified: new Date(0) };
     });
     const { reply, statusCode } = createReply();
+    // Literal pin of the documented contract: at most 5 file parts per request.
+    expect(FilesController.MAX_FILE_PARTS_PER_REQUEST).toBe(5);
     const over = FilesController.MAX_FILE_PARTS_PER_REQUEST + 1;
     const parts = Array.from({ length: over }, (_, i) => filePart(`f${i}`));
 

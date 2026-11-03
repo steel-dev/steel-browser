@@ -12,6 +12,10 @@ import { env } from "../env.js";
 
 const UPLOAD_TEMP_PREFIX = ".steel-upload-";
 
+// Crash orphans older than this are safe to GC: staging writes stream for
+// well under this in practice, so fresher files may still be live uploads.
+const STALE_UPLOAD_MS = 60 * 60 * 1000;
+
 interface File {
   size: number;
   lastModified: Date;
@@ -59,6 +63,15 @@ export class FileService {
   private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
   private maxSizeBytes: number | null;
   private inFlightBytes = 0;
+  // Cached total of committed regular files under baseFilesPath (bytes).
+  // Warmed/reconciled only inside serializeCommit from the commit recheck
+  // walk (recheckBase + newSize) so check-then-act stays serialized; the
+  // pre-check reads it O(1) + a single stat for the overwrite exclusion.
+  // External browser downloads / stray writes drift it until the next
+  // successful commit re-walks and reconciles. Archive temps live in a
+  // different dir and are never counted.
+  private committedBytes = 0;
+  private committedBytesReady = false;
   private commitQueue: Promise<void> = Promise.resolve();
   private realRoot: string;
 
@@ -79,6 +92,12 @@ export class FileService {
     if (options.watchFiles !== false) {
       this.initFileWatcher();
     }
+
+    // Startup orphan sweep: boot async, never blocks construction or the
+    // commit queue; never invalidates the archive.
+    void this.sweepStaleUploads().catch((error) => {
+      console.error("[FileService sweepStaleUploads] Startup sweep failed:", error);
+    });
   }
 
   /**
@@ -198,7 +217,12 @@ export class FileService {
    */
   private async assertNoSymlinks(safeFilePath: string): Promise<void> {
     const relative = path.relative(this.baseFilesPath, safeFilePath);
-    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    if (
+      !relative ||
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
       throw new Error("Invalid path");
     }
     const parts = relative.split(path.sep).filter((part) => part.length > 0);
@@ -211,6 +235,9 @@ export class FileService {
       } catch (error: any) {
         if (error?.code === "ENOENT") {
           return;
+        }
+        if (error?.code === "ENOTDIR" || error?.code === "EEXIST") {
+          throw new Error("Invalid path");
         }
         throw error;
       }
@@ -242,7 +269,7 @@ export class FileService {
       if (error?.message === "Invalid path") {
         throw error;
       }
-      if (error?.code === "ELOOP") {
+      if (error?.code === "ELOOP" || error?.code === "ENOTDIR" || error?.code === "EEXIST") {
         throw new Error("Invalid path");
       }
       if (error?.code !== "ENOENT") {
@@ -260,7 +287,7 @@ export class FileService {
           if (inner?.message === "Invalid path") {
             throw inner;
           }
-          if (inner?.code === "ELOOP") {
+          if (inner?.code === "ELOOP" || inner?.code === "ENOTDIR" || inner?.code === "EEXIST") {
             throw new Error("Invalid path");
           }
           if (inner?.code !== "ENOENT") {
@@ -301,11 +328,182 @@ export class FileService {
     if (this.maxSizeBytes === null) {
       return 0;
     }
-    const files = await this.listFiles();
+    return this.scanUsedBytesStrict(excludedPath);
+  }
+
+  /**
+   * Strict file enumeration for quota and archive: same counting parity as
+   * listFiles (skips symlinks, non-files, staging temps) but fail-closed on
+   * I/O errors. Only ENOENT (concurrent delete/rename race) is benign and
+   * skipped; EACCES/EPERM/ELOOP/EMFILE/EIO and any other error propagate so
+   * quota cannot undercount to 0/partial and archives cannot go silently
+   * incomplete. listFiles stays lenient for the listing endpoint.
+   */
+  private async scanFilesStrict(): Promise<Array<{ path: string } & File>> {
+    await this.ensureBaseDir();
+
+    const allFiles: Array<{ path: string } & File> = [];
+
+    const collectStrictRecursively = async (currentDir: string): Promise<void> => {
+      let entries: import("fs").Dirent[];
+      try {
+        entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+      } catch (readDirError: any) {
+        if (readDirError?.code === "ENOENT") {
+          return;
+        }
+        throw readDirError;
+      }
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) {
+          continue;
+        }
+        const entryPath = path.join(currentDir, entry.name);
+        if (entry.isFile() && !entry.name.startsWith(UPLOAD_TEMP_PREFIX)) {
+          let stats: import("fs").Stats;
+          try {
+            stats = await fs.promises.lstat(entryPath);
+          } catch (statError: any) {
+            if (statError?.code === "ENOENT") {
+              continue;
+            }
+            throw statError;
+          }
+          if (stats.isSymbolicLink() || !stats.isFile()) {
+            continue;
+          }
+          allFiles.push({
+            path: entryPath,
+            size: stats.size,
+            lastModified: stats.mtime,
+          });
+        } else if (entry.isDirectory()) {
+          await collectStrictRecursively(entryPath);
+        }
+      }
+    };
+
+    await collectStrictRecursively(this.baseFilesPath);
+    allFiles.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+    return allFiles;
+  }
+
+  /**
+   * Strict quota input: fail-closed byte total excluding the overwrite target.
+   * Throws on EACCES/EPERM/ELOOP/EMFILE/EIO (any non-ENOENT walk error) so
+   * cold pre-check and commit recheck never check-then-act on an undercount,
+   * and the committedBytes reconcile never caches a poisoned total.
+   */
+  private async scanUsedBytesStrict(excludedPath: string): Promise<number> {
+    const files = await this.scanFilesStrict();
     return files.reduce(
       (total, file) => (file.path === excludedPath ? total : total + file.size),
       0,
     );
+  }
+
+  /**
+   * Single-stat size of a committed file for the quota pre-check, with the
+   * same counting parity as listFiles: symlinks, non-files, and staging
+   * temps never count (0). Missing paths (new files) are 0. ENOTDIR/EEXIST
+   * mean the path cannot be a counted regular file, so 0 — later commit
+   * asserts still enforce path validity.
+   */
+  private async getRegularFileSize(filePath: string): Promise<number> {
+    let entry;
+    try {
+      entry = await fs.promises.lstat(filePath);
+    } catch (error: any) {
+      if (error?.code === "ENOENT" || error?.code === "ENOTDIR" || error?.code === "EEXIST") {
+        return 0;
+      }
+      throw error;
+    }
+    if (!entry || entry.isSymbolicLink() || !entry.isFile()) {
+      return 0;
+    }
+    if (path.basename(filePath).startsWith(UPLOAD_TEMP_PREFIX)) {
+      return 0;
+    }
+    return entry.size;
+  }
+
+  /**
+   * O(1) pre-check usage (cached total minus the overwritten file), warmed
+   * by the commit recheck walk. Cold cache falls back to one full walk
+   * without warming here — the counter is only ever mutated inside
+   * serializeCommit. Null quota returns 0 with no I/O.
+   */
+  private async getPreCheckUsedBytes(excludedPath: string): Promise<number> {
+    if (this.maxSizeBytes === null) {
+      return 0;
+    }
+    if (!this.committedBytesReady) {
+      return this.getUsedBytes(excludedPath);
+    }
+    const oldSize = await this.getRegularFileSize(excludedPath);
+    const used = this.committedBytes - oldSize;
+    return used < 0 ? 0 : used;
+  }
+
+  /**
+   * Removes orphaned staging files left by crashes between pipeline and
+   * rename. Staging files are invisible to listFiles/quota/archive and the
+   * watcher ignores dotfiles, so without this they leak uncounted disk.
+   * Only regular files older than STALE_UPLOAD_MS are removed to preserve
+   * live uploads; symlinked dirs are skipped and never followed; ENOENT
+   * races are tolerated; never touches the archive.
+   */
+  private async sweepStaleUploads(): Promise<void> {
+    const baseLink = await fs.promises.lstat(this.baseFilesPath).catch(() => null);
+    if (!baseLink || baseLink.isSymbolicLink()) {
+      return;
+    }
+    const walk = async (dir: string): Promise<void> => {
+      let entries: import("fs").Dirent[];
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        try {
+          if (entry.isSymbolicLink()) {
+            continue;
+          }
+          if (entry.isDirectory()) {
+            const link = await fs.promises.lstat(fullPath).catch(() => null);
+            if (!link || link.isSymbolicLink() || !link.isDirectory()) {
+              continue;
+            }
+            await walk(fullPath);
+          } else if (entry.isFile() && entry.name.startsWith(UPLOAD_TEMP_PREFIX)) {
+            const stats = await fs.promises.lstat(fullPath).catch(() => null);
+            if (!stats || !stats.isFile()) {
+              continue;
+            }
+            if (Date.now() - stats.mtimeMs < STALE_UPLOAD_MS) {
+              continue;
+            }
+            await fs.promises.rm(fullPath, { force: true }).catch((rmError: any) => {
+              if (rmError?.code !== "ENOENT") {
+                console.error(
+                  `[FileService sweepStaleUploads] Failed to remove ${fullPath}:`,
+                  rmError,
+                );
+              }
+            });
+            console.log(`[FileService sweepStaleUploads] Removed stale upload ${fullPath}`);
+          }
+        } catch (error: any) {
+          if (error?.code === "ENOENT") {
+            continue;
+          }
+        }
+      }
+    };
+    await walk(this.baseFilesPath);
   }
 
   /**
@@ -362,7 +560,7 @@ export class FileService {
       await fs.promises.mkdir(parentDir, { recursive: true });
       await this.assertSafeResolved(safeFilePath);
 
-      const usedBytes = await this.getUsedBytes(safeFilePath);
+      const usedBytes = await this.getPreCheckUsedBytes(safeFilePath);
       const incomingHint = Number.isFinite(size) && (size as number) >= 0 ? (size as number) : 0;
       this.checkQuota(usedBytes + this.inFlightBytes, incomingHint);
 
@@ -395,10 +593,18 @@ export class FileService {
       // Staging writes above stay outside the queue; only this commit is
       // serialized with deletes (see serializeCommit).
       await this.serializeCommit(async () => {
+        // Lazy GC for crash orphans: grace-protected, never fails the commit,
+        // never invalidates the archive.
+        await this.sweepStaleUploads().catch(() => {});
         // Re-check after staging: the parent chain may have been swapped
         // for a symlink while the upload was streaming.
         await this.assertSafeResolved(safeFilePath);
-        this.checkQuota(await this.getUsedBytes(safeFilePath), receivedBytes);
+        // TOCTOU + concurrent-save safety net: always a fresh walk, never
+        // removed or replaced by the cached pre-check. Its result also
+        // reconciles the cache (external downloads / stray writes drift it
+        // between commits). Excludes the target so overwrites count as delta.
+        const recheckBase = await this.getUsedBytes(safeFilePath);
+        this.checkQuota(recheckBase, receivedBytes);
         try {
           await fs.promises.rename(stagingPath, safeFilePath);
         } catch (renameError: any) {
@@ -436,6 +642,13 @@ export class FileService {
         const stats = await fs.promises.stat(safeFilePath);
         file.size = stats.size;
         file.lastModified = stats.mtime;
+        if (this.maxSizeBytes !== null) {
+          // Success-only: rejected overwrites leave the counter unchanged.
+          // recheckBase excludes the target, so + new size is the overwrite
+          // delta and simultaneously reconciles external drift. No extra I/O.
+          this.committedBytes = recheckBase + stats.size;
+          this.committedBytesReady = true;
+        }
       });
       tempFilePath = null;
       releaseHeldBytes();
@@ -664,6 +877,9 @@ export class FileService {
           );
           return;
         }
+        if (statError?.code === "ENOTDIR" || statError?.code === "EEXIST") {
+          throw new Error("Invalid path");
+        }
         throw statError;
       }
       if (entry.isSymbolicLink()) {
@@ -683,10 +899,22 @@ export class FileService {
           );
           return;
         }
+        if (unlinkError?.code === "ENOTDIR" || unlinkError?.code === "EEXIST") {
+          throw new Error("Invalid path");
+        }
         console.error(`Error unlinking file ${safeFilePath}:`, unlinkError);
         throw unlinkError;
       }
       console.log(`[FileService] File deleted: ${safeFilePath}`);
+      // Decrement only on successful unlink with no extra I/O (entry.size is
+      // already known). ENOENT / non-file early returns above leave the
+      // counter unchanged, so double-deletes are idempotent.
+      if (this.committedBytesReady) {
+        this.committedBytes -= entry.size;
+        if (this.committedBytes < 0) {
+          this.committedBytes = 0;
+        }
+      }
       this.scheduleArchiveCreation();
     });
 
@@ -748,6 +976,10 @@ export class FileService {
             });
           }
         }
+        // The directory was just emptied: zero with no extra I/O. External
+        // writes after this reconcile on the next successful save commit.
+        this.committedBytes = 0;
+        this.committedBytesReady = true;
       });
       console.log(
         `[FileService cleanupFiles] Cleared contents of directory: ${this.baseFilesPath}`,
@@ -914,10 +1146,12 @@ export class FileService {
                 `[_createArchive] Base path ${this.baseFilesPath} is not a directory. Creating empty archive.`,
               );
             } else {
-              // Build the archive from listFiles() so symlinks are never
-              // followed: listFiles skips symlink entries and never recurses
-              // into symlinked directories.
-              const listed = await this.listFiles();
+              // Build the archive from scanFilesStrict() so symlinks are never
+              // followed and I/O errors fail the zip instead of going
+              // silently incomplete: strict throws on EACCES/EPERM/etc (only
+              // ENOENT races skip), empty dir still yields [] for an empty
+              // archive, distinguishing "empty" from "error".
+              const listed = await this.scanFilesStrict();
               if (listed.length === 0) {
                 console.log("[_createArchive] Base directory is empty. Creating empty archive.");
               } else {
