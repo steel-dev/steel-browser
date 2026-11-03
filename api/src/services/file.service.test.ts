@@ -299,6 +299,26 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     expect(stream.destroyed).toBe(true);
   });
 
+  it.each([".", ".steel-upload-1", "nested/.steel-upload-2"])(
+    "rejects %s as a save target without reading the stream",
+    async (filePath) => {
+      const fileService = await createQuotaService(100);
+      let reads = 0;
+      const stream = new Readable({
+        read() {
+          reads += 1;
+          this.push(Buffer.alloc(10, 0x61));
+          this.push(null);
+        },
+      });
+
+      await expect(fileService.saveFile({ filePath, stream })).rejects.toThrow("Invalid path");
+      expect(reads).toBe(0);
+      expect(stream.destroyed).toBe(true);
+      expect(await fs.promises.readdir(fileService.getBaseFilesPath())).toEqual([]);
+    },
+  );
+
   it("holds the quota across concurrent saves", async () => {
     const fileService = await createQuotaService(100);
 

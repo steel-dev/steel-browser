@@ -192,6 +192,12 @@ export class FileService {
       await fs.promises.mkdir(this.baseFilesPath, { recursive: true });
 
       const safeFilePath = this.getSafeFilePath(filePath);
+      if (
+        safeFilePath === this.baseFilesPath ||
+        path.basename(safeFilePath).startsWith(UPLOAD_TEMP_PREFIX)
+      ) {
+        throw new Error("Invalid path");
+      }
       const parentDir = path.dirname(safeFilePath);
       await fs.promises.mkdir(parentDir, { recursive: true });
 
