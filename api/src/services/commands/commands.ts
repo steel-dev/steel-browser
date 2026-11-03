@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { toJsonSchema } from "../../utils/schema.js";
 import { LOCATOR_KINDS, MAX_FRAME_DEPTH } from "./targets.js";
+
+const MAX_COMMANDS = 50;
+const MAX_ITEMS = 1000;
 
 const tab = z
   .string()
@@ -97,13 +100,13 @@ export const commandSchema = z.discriminatedUnion("command", [
   strict({
     command: z.literal("select"),
     ...element,
-    values: z.union([z.string(), z.array(z.string()).min(1)]),
+    values: z.union([z.string(), z.array(z.string()).min(1).max(MAX_ITEMS)]),
   }),
   strict({ command: z.literal("check"), ...element }),
   strict({
     command: z.literal("upload"),
     ...element,
-    files: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+    files: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(MAX_ITEMS)]),
   }),
   strict({
     command: z.literal("drag"),
@@ -202,7 +205,7 @@ export const commandSchema = z.discriminatedUnion("command", [
 
 export type Command = z.infer<typeof commandSchema>;
 
-const commandList = z.array(commandSchema).min(1).max(50);
+const commandList = z.array(commandSchema).min(1).max(MAX_COMMANDS);
 
 export const requestSchema = z
   .object({
@@ -236,10 +239,17 @@ export const publishedRequestSchema = requestSchema.extend({
 export const COMMANDS_API_VERSION = 1;
 
 export function requestJsonSchema() {
-  return zodToJsonSchema(publishedRequestSchema, {
-    name: "CommandRequest",
-    definitions: { Command: commandSchema },
+  const ids = z.registry<{ id: string }>();
+  ids.add(commandSchema, { id: "Command" });
+  const { $schema, definitions, ...request } = toJsonSchema(publishedRequestSchema, {
+    target: "draft-07",
+    metadata: ids,
   });
+  return {
+    $schema,
+    $ref: "#/definitions/CommandRequest",
+    definitions: { ...(definitions as object), CommandRequest: request },
+  };
 }
 
 const MUTATING = new Set([

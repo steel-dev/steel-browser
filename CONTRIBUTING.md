@@ -6,7 +6,7 @@ Welcome to Steel Browser! 🎉 We're excited that you're interested in contribut
 
 ### Prerequisites
 
-- **Node.js**: Version 22 or higher
+- **Node.js**: 22.22.2+, 24.15+, or 26+
 - **npm**: Version 10 or higher
 - **Docker**: For containerized development (optional but recommended)
 - **Git**: For version control

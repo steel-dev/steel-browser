@@ -18,7 +18,7 @@ export const LogStatsSchema = z.object({
 });
 
 export const LogQueryResultSchema = z.object({
-  events: z.array(z.record(z.any())),
+  events: z.array(z.record(z.string(), z.any())),
   total: z.number(),
   hasMore: z.boolean(),
 });

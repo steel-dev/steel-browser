@@ -124,8 +124,8 @@ export const IndexedDBBlobFileSchema = z.object({
 });
 
 export const IndexedDBRecordSchema = z.object({
-  key: z.any(),
-  value: z.any(),
+  key: z.any().optional(),
+  value: z.any().optional(),
   blobFiles: z.array(IndexedDBBlobFileSchema).optional(),
 });
 

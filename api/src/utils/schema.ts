@@ -1,14 +1,7 @@
 import { ZodType, z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
 export type Models<Key extends string = string> = {
   readonly [K in Key]: ZodType<unknown>;
-};
-
-export type BuildJsonSchemasOptions = {
-  readonly $id?: string;
-  readonly target?: `jsonSchema7` | `openApi3`;
-  readonly errorMessages?: boolean;
 };
 
 export type SchemaKey<M extends Models> = M extends Models<infer Key> ? Key & string : never;
@@ -34,24 +27,37 @@ export type BuildJsonSchemasResult<M extends Models> = {
   readonly $ref: $Ref<M>;
 };
 
-export const buildJsonSchemas = <M extends Models>(
-  models: M,
-  opts: BuildJsonSchemasOptions = {},
-): BuildJsonSchemasResult<M> => {
-  const zodSchema = z.object(models);
-
-  const zodJsonSchema = zodToJsonSchema(zodSchema, {
-    target: "openApi3",
-    $refStrategy: "none",
-    errorMessages: opts.errorMessages,
+export const toJsonSchema = (schema: ZodType, params: z.core.ToJSONSchemaParams) =>
+  z.toJSONSchema(schema, {
+    io: "input",
+    unrepresentable: ({ zodSchema }) =>
+      zodSchema._zod.def.type === "date" ? { type: "string", format: "date-time" } : "throw",
+    override: ({ zodSchema, jsonSchema }) => {
+      const def = zodSchema._zod.def;
+      if (def.type === "object" && !def.catchall) {
+        jsonSchema.additionalProperties = false;
+      }
+      if (jsonSchema.format) {
+        delete jsonSchema.pattern;
+      }
+      if (jsonSchema.minimum === Number.MIN_SAFE_INTEGER) {
+        delete jsonSchema.minimum;
+      }
+      if (jsonSchema.maximum === Number.MAX_SAFE_INTEGER) {
+        delete jsonSchema.maximum;
+      }
+    },
+    ...params,
   });
 
-  const cleanedSchemas = Object.entries(
-    //@ts-ignore
-    zodJsonSchema.properties as { [key: string]: any },
-  ).reduce((acc, [key, value]) => {
-    return [...acc, { $id: key, title: key, ...value }];
-  }, [] as JsonSchema[]);
+export const buildJsonSchemas = <M extends Models>(models: M): BuildJsonSchemasResult<M> => {
+  const zodJsonSchema = toJsonSchema(z.object(models), { target: "openapi-3.0" });
+
+  const cleanedSchemas = Object.entries(zodJsonSchema.properties ?? {}).map(([key, value]) => ({
+    $id: key,
+    title: key,
+    ...(value as object),
+  }));
 
   const $ref: $Ref<M> = (key) => {
     const $ref = `${typeof key === `string` ? key : key.key}#`;
