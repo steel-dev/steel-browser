@@ -117,13 +117,13 @@ export class SeleniumService extends EventEmitter {
         let output = "";
         const onData = (data: Buffer | string) => {
           output += data.toString();
-          if (output.length > 4096) output = output.slice(-4096);
           if (output.includes("Started Selenium Standalone")) {
             if (settled) return;
             settled = true;
             cleanup();
             resolve();
           }
+          if (output.length > 4096) output = output.slice(-4096);
         };
 
         const onError = (err: Error) => {

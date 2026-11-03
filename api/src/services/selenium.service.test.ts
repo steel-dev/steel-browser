@@ -184,6 +184,24 @@ describe("SeleniumService", () => {
       service.close();
     });
 
+    it("resolves when more than 4KB follows the startup message in one chunk", async () => {
+      const mockChild = createMockChildProcess();
+      vi.mocked(spawn).mockReturnValue(mockChild);
+
+      const logger = createMockLogger();
+      const service = new SeleniumService(logger as never);
+
+      const launchPromise = service.launch({} as never);
+
+      mockChild.stdout.emit(
+        "data",
+        Buffer.from(`Started Selenium Standalone 4.25.0\n${"x".repeat(5000)}\n`),
+      );
+
+      await expect(launchPromise).resolves.toBeUndefined();
+      service.close();
+    });
+
     it("recovers and resolves after a failed launch", async () => {
       const mockChild1 = createMockChildProcess();
       const mockChild2 = createMockChildProcess();
