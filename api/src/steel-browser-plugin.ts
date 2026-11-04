@@ -49,19 +49,9 @@ declare module "fastify" {
 
 export interface SteelBrowserConfig {
   fileStorage?: {
-    /**
-     * Single global cumulative bucket (bytes) shared across all sessions.
-     * This is NOT isolated per session today: FileService is a store-wide
-     * singleton with one baseFilesPath and no per-session scoping.
-     * Per-session isolation is future work.
-     */
+    /** Store-wide cumulative bucket (bytes), shared across all sessions. */
     maxTotalBytes?: number;
-    /**
-     * @deprecated Use `maxTotalBytes` instead. Kept as a backward-compatible
-     * alias: `maxTotalBytes ?? maxSizePerSession` wins when both are set.
-     * Store-wide, NOT per-session: behaves exactly as `maxTotalBytes`.
-     * Using it without `maxTotalBytes` emits a one-time deprecation warning.
-     */
+    /** @deprecated Use `maxTotalBytes`; alias `maxTotalBytes ?? maxSizePerSession`, warns once when legacy-only. */
     maxSizePerSession?: number;
   };
   customWsHandlers?: WebSocketHandler[];
@@ -74,9 +64,7 @@ export interface SteelBrowserConfig {
 }
 
 const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
-  // Central normalization (single source in utils/file-quota.ts): deprecated
-  // `maxSizePerSession` maps to `maxTotalBytes`, which wins when both are set.
-  // Exact input shape is preserved when no quota is configured.
+  // Normalize legacy-only fileStorage to maxTotalBytes (warns once).
   const steelBrowserConfig = normalizeSteelBrowserFileStorage(opts);
   fastify.decorate("steelBrowserConfig", steelBrowserConfig);
   // Plugins

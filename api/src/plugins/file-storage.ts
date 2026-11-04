@@ -4,17 +4,9 @@ import { FileService } from "../services/file.service.js";
 import { resolveMaxTotalBytes } from "../utils/file-quota.js";
 
 export interface FileStoragePluginOptions {
-  /**
-   * Single global cumulative bucket (bytes) shared across all sessions.
-   * NOT isolated per session (see SteelBrowserConfig.fileStorage).
-   */
+  /** Store-wide cumulative bucket (bytes), shared across all sessions. */
   maxTotalBytes?: number;
-  /**
-   * @deprecated Use `maxTotalBytes` instead. Kept as a backward-compatible
-   * alias: `maxTotalBytes ?? maxSizePerSession` wins when both are set.
-   * Store-wide, NOT per-session: behaves exactly as `maxTotalBytes`.
-   * Using it without `maxTotalBytes` emits a one-time deprecation warning.
-   */
+  /** @deprecated Use `maxTotalBytes`; alias `maxTotalBytes ?? maxSizePerSession`, warns once when legacy-only. */
   maxSizePerSession?: number;
 }
 

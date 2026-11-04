@@ -85,7 +85,7 @@ describe("FileService session archives", () => {
     });
   }
 
-  it("rebuilds a stale archive with current root and nested entries for concurrent requests", async () => {
+  it("rebuilds stale archive for concurrent requests", async () => {
     const fileService = await createFileService();
     const baseFilesPath = fileService.getBaseFilesPath();
 
@@ -895,7 +895,7 @@ describe("FileService symlink hardening", () => {
     await expect(fileService.getFile({ filePath: "real.txt" })).rejects.not.toThrow("Invalid path");
   });
 
-  it("maps a real dir-as-file to a 404-class error on POSIX and Windows branches", async () => {
+  it("maps dir-as-file to 404", async () => {
     const fileService = await createSymlinkService();
     await fs.promises.mkdir(path.join(fileService.getBaseFilesPath(), "subdir"), {
       recursive: true,

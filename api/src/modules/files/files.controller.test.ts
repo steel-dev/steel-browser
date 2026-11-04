@@ -516,7 +516,7 @@ describe("FilesController multipart temp hardening", () => {
     resetTempTracking();
   });
 
-  it("unlinks every staged temp on multi-file success (last part wins)", async () => {
+  it("cleans up staged temps on multi-file success", async () => {
     let saveCalls = 0;
     let declaredSize: number | undefined;
     const controller = createController(async ({ stream, size }) => {
@@ -544,7 +544,7 @@ describe("FilesController multipart temp hardening", () => {
     await expectNoTmpLeak(created);
   });
 
-  it("rejects file parts beyond the per-request cap with 413 and cleans up", async () => {
+  it("rejects excess file parts with 413", async () => {
     let saveCalls = 0;
     const controller = createController(async ({ stream }) => {
       saveCalls += 1;
@@ -626,7 +626,7 @@ describe("FilesController multipart temp hardening", () => {
     await expectNoTmpLeak(created);
   });
 
-  it("maps multipart limit errors with statusCode 413 to 413 and cleans up", async () => {
+  it("maps multipart 413 errors to 413", async () => {
     let saveCalls = 0;
     const controller = createController(async ({ stream }) => {
       saveCalls += 1;

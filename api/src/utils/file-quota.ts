@@ -3,17 +3,7 @@ export interface FileStorageQuotaConfig {
   maxSizePerSession?: number;
 }
 
-/**
- * Single source for the deprecated quota alias: `maxTotalBytes` wins when
- * both keys are set, `maxSizePerSession` is the backward-compatible fallback.
- * Returns undefined when neither key is set. Fail-closed: NaN, non-finite,
- * or negative values throw RangeError (consistent with FileService
- * normalizeQuota); 0 stays valid.
- *
- * Quota is store-wide, NOT per-session: one global cumulative bucket shared
- * across all sessions. Legacy-only resolution emits a one-time
- * `console.warn` deprecation notice (deduped per process).
- */
+/** Quota alias: `maxTotalBytes ?? maxSizePerSession`; fail-closed RangeError on non-finite/negative, 0 valid; legacy-only use warns once. */
 let legacyQuotaWarningEmitted = false;
 
 function emitLegacyQuotaWarningOnce(): void {
@@ -38,11 +28,7 @@ export function resolveMaxTotalBytes(fileStorage?: FileStorageQuotaConfig): numb
   return resolved;
 }
 
-/**
- * Central normalization for SteelBrowserConfig.fileStorage: maps a
- * deprecated-only config to `maxTotalBytes` while preserving the exact input
- * shape when no quota is configured (no materialized `fileStorage` object).
- */
+/** Maps legacy-only fileStorage to maxTotalBytes; preserves shape when unconfigured. */
 export function normalizeSteelBrowserFileStorage<
   T extends { fileStorage?: FileStorageQuotaConfig },
 >(opts: T): T & { fileStorage?: FileStorageQuotaConfig } {
