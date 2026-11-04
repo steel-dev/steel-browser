@@ -203,6 +203,12 @@ export class FileService {
     return candidate === root || candidate.startsWith(root + path.sep);
   }
 
+  /**
+   * O_NOFOLLOW is only reliable on POSIX. Windows has no atomic no-follow
+   * open, so this returns false on win32 and callers take the re-lstat
+   * fallback path (best-effort; residual TOCTOU remains between lstat and
+   * use). POSIX callers use O_RDONLY|O_NOFOLLOW + fstat on the open handle.
+   */
   private supportsNoFollow(): boolean {
     const nofollow = (fs.constants as unknown as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
     return process.platform !== "win32" && nofollow !== 0;
@@ -731,6 +737,14 @@ export class FileService {
           ...file,
         };
       }
+      // Windows fallback (no O_NOFOLLOW): re-lstat immediately before use
+      // so a symlink swapped in after assertSafeResolved is still denied.
+      // Residual TOCTOU remains between this lstat and stat/open below —
+      // Windows offers no atomic no-follow open to close it fully.
+      const link = await fs.promises.lstat(safeFilePath);
+      if (link.isSymbolicLink() || !link.isFile()) {
+        throw new Error("Invalid path");
+      }
       const stats = await fs.promises.stat(safeFilePath);
       if (!stats.isFile()) {
         throw new Error(`Requested path is not a file: ${safeFilePath}`);
@@ -793,6 +807,14 @@ export class FileService {
         } finally {
           await handle.close().catch(() => {});
         }
+      }
+      // Windows fallback (no O_NOFOLLOW): re-lstat immediately before use
+      // so a symlink swapped in after assertSafeResolved is still denied.
+      // Residual TOCTOU remains between this lstat and stat below — Windows
+      // offers no atomic no-follow open to close it fully.
+      const link = await fs.promises.lstat(safeFilePath);
+      if (link.isSymbolicLink() || !link.isFile()) {
+        throw new Error("Invalid path");
       }
       const stats = await fs.promises.stat(safeFilePath);
       if (!stats.isFile()) {
@@ -1169,20 +1191,53 @@ export class FileService {
                 `[_createArchive] Base path ${this.baseFilesPath} is not a directory. Creating empty archive.`,
               );
             } else {
-              // Build the archive from scanFilesStrict() so symlinks are never
-              // followed and I/O errors fail the zip instead of going
-              // silently incomplete: strict throws on EACCES/EPERM/etc (only
-              // ENOENT races skip), empty dir still yields [] for an empty
-              // archive, distinguishing "empty" from "error".
+              // Archive ingestion: re-lstat every listed path immediately
+              // before adding it (scanFilesStrict results may be stale if a
+              // file was swapped for a symlink mid-archive) and sanitize the
+              // zip entry name. Residual TOCTOU remains between lstat and
+              // archive.file's read — archiver offers no no-follow input.
               const listed = await this.scanFilesStrict();
               if (listed.length === 0) {
                 console.log("[_createArchive] Base directory is empty. Creating empty archive.");
               } else {
                 for (const listedFile of listed) {
-                  const relativeName = path
-                    .relative(this.baseFilesPath, listedFile.path)
-                    .split(path.sep)
-                    .join("/");
+                  let entry;
+                  try {
+                    entry = await fs.promises.lstat(listedFile.path);
+                  } catch (lstatError: any) {
+                    if (lstatError?.code === "ENOENT") {
+                      continue;
+                    }
+                    throw lstatError;
+                  }
+                  if (entry.isSymbolicLink() || !entry.isFile()) {
+                    continue;
+                  }
+                  const rawRel = path.relative(this.baseFilesPath, listedFile.path);
+                  if (
+                    !rawRel ||
+                    path.isAbsolute(rawRel) ||
+                    rawRel.startsWith("/") ||
+                    rawRel.startsWith("\\") ||
+                    /^[a-zA-Z]:([\\/]|$)/.test(rawRel) ||
+                    rawRel === ".." ||
+                    rawRel.startsWith(`..${path.sep}`) ||
+                    rawRel.split(path.sep).includes("..")
+                  ) {
+                    continue;
+                  }
+                  const relativeName = rawRel.split(path.sep).join("/");
+                  if (
+                    !relativeName ||
+                    relativeName.startsWith("/") ||
+                    relativeName === ".." ||
+                    relativeName.startsWith("../") ||
+                    relativeName.includes("/../") ||
+                    relativeName.endsWith("/..") ||
+                    /^[a-zA-Z]:/.test(relativeName)
+                  ) {
+                    continue;
+                  }
                   archive.file(listedFile.path, { name: relativeName });
                 }
               }

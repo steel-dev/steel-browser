@@ -16,7 +16,6 @@ import { v4 as uuidv4 } from "uuid";
 import { FileQuotaExceededError, FileService } from "../../services/file.service.js";
 import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
-import { resolveMaxTotalBytes } from "../../utils/file-quota.js";
 
 // Thrown for every URL-fetch failure (blocked host/scheme, DNS failure,
 // non-200, redirect, timeout, network error). handleFileUpload maps these to
@@ -132,6 +131,7 @@ export class FilesController {
   // `limits.files` mirrors this value and the in-controller check below is
   // the authoritative guard. Documented policy: at most 5 file parts per
   // request; the last staged file part wins (pre-existing behavior).
+  // Transient tmpdir worst case per request is 5 x routes fileSize (each part staged, only last committed); quota (FileService cumulative) never applies to discarded sum.
   public static readonly MAX_FILE_PARTS_PER_REQUEST = 5;
 
   private validatePath(filePath: string): boolean {
@@ -165,7 +165,7 @@ export class FilesController {
     reply: FastifyReply,
   ) {
     // Every staged file part is tracked here so ALL temps are unlinked on
-    // every exit (success, invalid-path 400, per-request cap 413, quota
+    // every exit (success, invalid-path 400, file-count cap 413, quota
     // 413, pipeline/iteration throw, client abort). Never glob tmpdir():
     // the `upload_` prefix is generic and a glob could delete other
     // processes' files.
@@ -174,14 +174,6 @@ export class FilesController {
       await Promise.all(tempFilePaths.map((p) => fs.promises.unlink(p).catch(() => {})));
       tempFilePaths.length = 0;
     };
-
-    // Per-request total-bytes cap, mirroring the global quota config
-    // (FileService enforces committed bytes; this guards transient staged
-    // bytes before they reach the service). Single global cumulative bucket
-    // shared across all sessions, NOT isolated per session.
-    const maxTotalBytes: number | undefined = resolveMaxTotalBytes(
-      server.steelBrowserConfig?.fileStorage,
-    );
 
     try {
       if (!request.isMultipart()) {
@@ -195,7 +187,6 @@ export class FilesController {
       let fileUrl: string | null = null;
       let fileProvided: boolean = false;
       let filePartCount = 0;
-      let totalStagedBytes = 0;
       let saveFileResult: Awaited<ReturnType<typeof this.fileService.saveFile>> | null = null;
 
       for await (const part of request.parts()) {
@@ -220,15 +211,6 @@ export class FilesController {
 
             const writeStream = fs.createWriteStream(stagedPath);
             await pipeline(part.file, writeStream);
-            const { size } = await fs.promises.stat(stagedPath);
-            totalStagedBytes += size;
-            if (maxTotalBytes !== undefined && totalStagedBytes > maxTotalBytes) {
-              await unlinkAllTemps();
-              return reply.code(413).send({
-                success: false,
-                message: `Total upload size exceeds the per-request limit of ${maxTotalBytes} bytes.`,
-              });
-            }
           } else if (part.type === "field" && typeof part.value === "string") {
             fileUrl = part.value;
           }

@@ -828,6 +828,138 @@ describe("FileService symlink hardening", () => {
     // the mocked symlink branch, not another "Invalid path" path.
     expect(symlinkTrapHit).toBe(true);
   });
+
+  it("windows fallback re-lstats before stat so a swapped symlink is denied", async () => {
+    const fileService = await createSymlinkService();
+    await fileService.saveFile({ filePath: "real.txt", stream: Readable.from("data") });
+    const target = path.join(fileService.getBaseFilesPath(), "real.txt");
+
+    // Force the Windows branch regardless of host OS.
+    vi.spyOn(fileService as any, "supportsNoFollow").mockReturnValue(false);
+
+    const realLstat = fs.promises.lstat.bind(fs.promises);
+    const fakeLink = {
+      isSymbolicLink: () => true,
+      isFile: () => false,
+      isDirectory: () => false,
+    } as unknown as fs.Stats;
+    let fallbackTrapHit = false;
+    vi.spyOn(fs.promises, "lstat").mockImplementation(async (linkPath: any, ...rest: any[]) => {
+      if (path.resolve(linkPath) === path.resolve(target)) {
+        fallbackTrapHit = true;
+        return fakeLink;
+      }
+      return (realLstat as any)(linkPath, ...rest);
+    });
+
+    await expect(fileService.downloadFile({ filePath: "real.txt" })).rejects.toThrow(
+      "Invalid path",
+    );
+    await expect(fileService.getFile({ filePath: "real.txt" })).rejects.toThrow("Invalid path");
+    expect(fallbackTrapHit).toBe(true);
+  });
+
+  it("windows fallback rejects a non-file reported by re-lstat", async () => {
+    const fileService = await createSymlinkService();
+    await fileService.saveFile({ filePath: "real.txt", stream: Readable.from("data") });
+    const target = path.join(fileService.getBaseFilesPath(), "real.txt");
+
+    vi.spyOn(fileService as any, "supportsNoFollow").mockReturnValue(false);
+
+    const realLstat = fs.promises.lstat.bind(fs.promises);
+    const fakeDir = {
+      isSymbolicLink: () => false,
+      isFile: () => false,
+      isDirectory: () => true,
+    } as unknown as fs.Stats;
+    vi.spyOn(fs.promises, "lstat").mockImplementation(async (linkPath: any, ...rest: any[]) => {
+      if (path.resolve(linkPath) === path.resolve(target)) {
+        return fakeDir;
+      }
+      return (realLstat as any)(linkPath, ...rest);
+    });
+
+    await expect(fileService.downloadFile({ filePath: "real.txt" })).rejects.toThrow(
+      "Invalid path",
+    );
+    await expect(fileService.getFile({ filePath: "real.txt" })).rejects.toThrow("Invalid path");
+  });
+
+  it("archive re-lstat skips a file swapped for a symlink mid-archive", async () => {
+    const fileService = await createSymlinkService();
+    const baseFilesPath = fileService.getBaseFilesPath();
+    await fileService.saveFile({ filePath: "good.txt", stream: Readable.from("inside content") });
+
+    const racePath = path.join(baseFilesPath, "race.txt");
+    await fs.promises.writeFile(racePath, "race content");
+
+    // Stale scan listing: race.txt looked like a regular file at scan time
+    // but was swapped for a symlink before ingestion. The archive loop's
+    // re-lstat must skip it.
+    const now = new Date();
+    vi.spyOn(fileService as any, "scanFilesStrict").mockResolvedValue([
+      {
+        path: path.join(baseFilesPath, "good.txt"),
+        size: "inside content".length,
+        lastModified: now,
+      },
+      { path: racePath, size: 12, lastModified: now },
+    ]);
+    const realLstat = fs.promises.lstat.bind(fs.promises);
+    const fakeLink = {
+      isSymbolicLink: () => true,
+      isFile: () => false,
+      isDirectory: () => false,
+    } as unknown as fs.Stats;
+    vi.spyOn(fs.promises, "lstat").mockImplementation(async (linkPath: any, ...rest: any[]) => {
+      if (path.resolve(linkPath) === path.resolve(racePath)) {
+        return fakeLink;
+      }
+      return (realLstat as any)(linkPath, ...rest);
+    });
+
+    const archivePath = await fileService.getPrebuiltArchivePath();
+    const archive = unzipFiles(await fs.promises.readFile(archivePath));
+    expect([...archive.keys()].sort()).toEqual(["good.txt"]);
+    expect(archive.get("good.txt")).toBe("inside content");
+  });
+
+  it("archive skips entries with unsafe relative names", async () => {
+    const fileService = await createSymlinkService();
+    const baseFilesPath = fileService.getBaseFilesPath();
+    await fileService.saveFile({ filePath: "good.txt", stream: Readable.from("inside content") });
+
+    const now = new Date();
+    const outsideAbs = process.platform === "win32" ? "C:\\Windows\\evil.txt" : "/etc/evil.txt";
+    vi.spyOn(fileService as any, "scanFilesStrict").mockResolvedValue([
+      {
+        path: path.join(baseFilesPath, "good.txt"),
+        size: "inside content".length,
+        lastModified: now,
+      },
+      // Absolute outside path: path.relative yields an absolute/.. rel that
+      // the archive sanitizer must reject.
+      { path: outsideAbs, size: 4, lastModified: now },
+      // Traversal-styled absolute path on any platform.
+      { path: "/../evil.txt", size: 4, lastModified: now },
+    ]);
+
+    // The outside lstat targets must not throw fail-closed errors: report
+    // them as missing so only the sanitizer's skip logic is under test.
+    const realLstat = fs.promises.lstat.bind(fs.promises);
+    vi.spyOn(fs.promises, "lstat").mockImplementation(async (linkPath: any, ...rest: any[]) => {
+      const resolved = path.resolve(linkPath);
+      if (resolved === path.resolve(outsideAbs) || resolved === path.resolve("/../evil.txt")) {
+        throw Object.assign(new Error("no such file or directory, lstat"), { code: "ENOENT" });
+      }
+      return (realLstat as any)(linkPath, ...rest);
+    });
+
+    const archivePath = await fileService.getPrebuiltArchivePath();
+    const archive = unzipFiles(await fs.promises.readFile(archivePath));
+    expect([...archive.keys()]).toEqual(["good.txt"]);
+    expect(archive.get("good.txt")).toBe("inside content");
+  });
 });
 
 describe("FileService singleton quota reconcile", () => {

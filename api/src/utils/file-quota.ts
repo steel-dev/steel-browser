@@ -9,12 +9,31 @@ export interface FileStorageQuotaConfig {
  * Returns undefined when neither key is set. Fail-closed: NaN, non-finite,
  * or negative values throw RangeError (consistent with FileService
  * normalizeQuota); 0 stays valid.
+ *
+ * Quota is store-wide, NOT per-session: one global cumulative bucket shared
+ * across all sessions. Legacy-only resolution emits a one-time
+ * `console.warn` deprecation notice (deduped per process).
  */
+let legacyQuotaWarningEmitted = false;
+
+function emitLegacyQuotaWarningOnce(): void {
+  if (legacyQuotaWarningEmitted) return;
+  legacyQuotaWarningEmitted = true;
+  console.warn(
+    "[deprecation] fileStorage.maxSizePerSession is deprecated, behaves as store-wide maxTotalBytes, use maxTotalBytes instead.",
+  );
+}
+
 export function resolveMaxTotalBytes(fileStorage?: FileStorageQuotaConfig): number | undefined {
+  const hasCanonical = fileStorage?.maxTotalBytes != null;
+  const hasLegacy = fileStorage?.maxSizePerSession != null;
   const resolved = fileStorage?.maxTotalBytes ?? fileStorage?.maxSizePerSession;
   if (resolved === undefined || resolved === null) return undefined;
   if (!Number.isFinite(resolved) || (resolved as number) < 0) {
     throw new RangeError(`Invalid maxTotalBytes: ${resolved}`);
+  }
+  if (!hasCanonical && hasLegacy) {
+    emitLegacyQuotaWarningOnce();
   }
   return resolved;
 }

@@ -12,6 +12,8 @@ export interface FileStoragePluginOptions {
   /**
    * @deprecated Use `maxTotalBytes` instead. Kept as a backward-compatible
    * alias: `maxTotalBytes ?? maxSizePerSession` wins when both are set.
+   * Store-wide, NOT per-session: behaves exactly as `maxTotalBytes`.
+   * Using it without `maxTotalBytes` emits a one-time deprecation warning.
    */
   maxSizePerSession?: number;
 }

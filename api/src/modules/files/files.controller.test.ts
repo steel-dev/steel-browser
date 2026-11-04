@@ -227,7 +227,9 @@ describe("FilesController quota enforcement", () => {
       getSpy.mockRestore();
     }
   });
+});
 
+describe("FilesController URL SSRF blocklist", () => {
   it("rejects loopback URLs instead of fetching them", async () => {
     // 127.0.0.1 is denied pre-connect, so no local server is needed. Port 1
     // is used so the refusal would be instant even without the blocklist.
@@ -455,26 +457,33 @@ describe("FilesController multipart temp hardening", () => {
     await expectNoTmpLeak(created);
   });
 
-  it("rejects accumulated staged bytes over the per-request cap with 413", async () => {
+  it("commits only the last part when staged bytes sum over quota (no 413)", async () => {
+    // Regression: only the last staged part is committed, so the transient
+    // sum of staged bytes must never be compared against the cumulative
+    // quota. Cap 4 bytes: "ab" (2) + "cde" (3) sums to 5 > 4, but each part
+    // fits and only the last (3 bytes) reaches FileService.
     let saveCalls = 0;
-    const controller = createController(async ({ stream }) => {
+    let declaredSize: number | undefined;
+    const controller = createController(async ({ stream, size }) => {
       saveCalls += 1;
       stream.on("error", () => {});
       stream.destroy();
-      return { path: "stub", size: 0, lastModified: new Date(0) };
+      declaredSize = size;
+      return { path: "stub", size: size ?? 0, lastModified: new Date(0) };
     });
     const { reply, statusCode } = createReply();
 
-    // Cap 4 bytes: "ab" (2) fits, "cde" (3) pushes the total to 5 > 4.
     await controller.handleFileUpload(
+      // cappedServer(4) is intentionally passed but must be ignored (no staged-sum check).
       cappedServer(4),
       uploadRequestMulti([filePart("ab"), filePart("cde")]),
       reply,
     );
     const { created, unlinked } = trackedTemps();
 
-    expect(statusCode()).toBe(413);
-    expect(saveCalls).toBe(0);
+    expect(statusCode()).toBe(200);
+    expect(saveCalls).toBe(1);
+    expect(declaredSize).toBe(3);
     expect(new Set(created).size).toBe(2);
     expect(new Set(unlinked)).toEqual(new Set(created));
     await expectNoTmpLeak(created);
@@ -590,43 +599,6 @@ describe("fileStoragePlugin registration", () => {
   });
 });
 
-function legacyServer(maxSizePerSession: number) {
-  return {
-    steelBrowserConfig: { fileStorage: { maxSizePerSession } },
-  } as unknown as FastifyInstance;
-}
-
-describe("FilesController deprecated quota alias", () => {
-  beforeEach(() => {
-    resetTempTracking();
-  });
-
-  it("honors deprecated maxSizePerSession for staged-bytes cap", async () => {
-    let saveCalls = 0;
-    const controller = createController(async ({ stream }) => {
-      saveCalls += 1;
-      stream.on("error", () => {});
-      stream.destroy();
-      return { path: "stub", size: 0, lastModified: new Date(0) };
-    });
-    const { reply, statusCode } = createReply();
-
-    // Cap 4 bytes via legacy key: "ab" (2) fits, "cde" (3) pushes total to 5 > 4.
-    await controller.handleFileUpload(
-      legacyServer(4),
-      uploadRequestMulti([filePart("ab"), filePart("cde")]),
-      reply,
-    );
-    const { created, unlinked } = trackedTemps();
-
-    expect(statusCode()).toBe(413);
-    expect(saveCalls).toBe(0);
-    expect(new Set(created).size).toBe(2);
-    expect(new Set(unlinked)).toEqual(new Set(created));
-    await expectNoTmpLeak(created);
-  });
-});
-
 describe("steelBrowserPlugin fileStorage normalization", () => {
   it("normalizes deprecated-only maxSizePerSession to maxTotalBytes", async () => {
     // steel-browser-plugin.ts delegates to this single source; importing the
@@ -714,6 +686,68 @@ describe("resolveMaxTotalBytes validation", () => {
     expect(() => resolveMaxTotalBytes({ maxTotalBytes: -1 })).toThrow(RangeError);
     expect(() => resolveMaxTotalBytes({ maxSizePerSession: NaN })).toThrow(RangeError);
     expect(() => resolveMaxTotalBytes({ maxSizePerSession: -5 })).toThrow(RangeError);
+  });
+});
+
+describe("resolveMaxTotalBytes legacy deprecation warning", () => {
+  it("warns once across repeated legacy-only calls", async () => {
+    vi.resetModules();
+    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      expect(resolveMaxTotalBytes({ maxSizePerSession: 77 })).toBe(77);
+      expect(resolveMaxTotalBytes({ maxSizePerSession: 78 })).toBe(78);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain("fileStorage.maxSizePerSession");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("stays silent when both keys are set, and when no quota is configured", async () => {
+    vi.resetModules();
+    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      expect(resolveMaxTotalBytes({ maxTotalBytes: 100, maxSizePerSession: 77 })).toBe(100);
+      expect(resolveMaxTotalBytes(undefined)).toBeUndefined();
+      expect(resolveMaxTotalBytes({})).toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("warns for legacy 0 and resolves 0", async () => {
+    vi.resetModules();
+    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      expect(resolveMaxTotalBytes({ maxSizePerSession: 0 })).toBe(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("invalid legacy throws without consuming the one-time warning flag", async () => {
+    vi.resetModules();
+    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      expect(() => resolveMaxTotalBytes({ maxSizePerSession: NaN })).toThrow(RangeError);
+      expect(warn).not.toHaveBeenCalled();
+      // Next valid legacy call must still warn: the throw above did not
+      // consume the dedupe flag.
+      expect(resolveMaxTotalBytes({ maxSizePerSession: 77 })).toBe(77);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
