@@ -243,7 +243,7 @@ When you open a pull request, GitHub fills in our [PR template](.github/pull_req
 
 ### Bug Reports
 
-Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
+Use our [bug report form](https://github.com/steel-dev/steel-browser/issues/new?template=bug_report.yml) and include:
 
 - Clear description of the issue
 - Steps to reproduce
@@ -253,7 +253,7 @@ Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 ### Feature Requests
 
-Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) and:
+Use our [feature request form](https://github.com/steel-dev/steel-browser/issues/new?template=feature_request.yml) and:
 
 - Check existing issues first
 - Describe the use case and motivation
