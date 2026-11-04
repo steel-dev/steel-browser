@@ -12,12 +12,6 @@ import { env } from "../env.js";
 
 const UPLOAD_TEMP_PREFIX = ".steel-upload-";
 
-// Controller multipart staging prefix in os.tmpdir() (`upload_<uuid>`).
-// The sweep below additionally requires the uuidv4 head shape so foreign
-// `upload_*` files in the shared tmpdir are never touched.
-const TMP_UPLOAD_PREFIX = "upload_";
-const TMP_UPLOAD_STAGED_RE = /^upload_[0-9a-f]{8}-[0-9a-f]{4}-/i;
-
 // Crash orphans older than this are safe to GC: staging writes stream for
 // well under this in practice, so fresher files may still be live uploads.
 const STALE_UPLOAD_MS = 60 * 60 * 1000;
@@ -99,13 +93,12 @@ export class FileService {
       this.initFileWatcher();
     }
 
-    // Startup orphan sweeps: boot async, never blocks construction or the
+    // Startup orphan sweep: boot async, never blocks construction or the
     // commit queue; never invalidates the archive.
+    // NOTE: os.tmpdir() `upload_<uuid>` GC lives in the tmpdir-sweep
+    // follow-up (see tmpdir-sweep.split.md), not here.
     void this.sweepStaleUploads().catch((error) => {
       console.error("[FileService sweepStaleUploads] Startup sweep failed:", error);
-    });
-    void this.sweepTmpStaleUploads().catch((error) => {
-      console.error("[FileService sweepTmpStaleUploads] Startup sweep failed:", error);
     });
   }
 
@@ -185,18 +178,6 @@ export class FileService {
       throw new Error("Invalid path");
     }
     return resolvedPath;
-  }
-
-  private getDisplayPath(safeFilePath: string, fallback: string): string {
-    try {
-      const rel = path.relative(this.baseFilesPath, safeFilePath);
-      if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-        return fallback;
-      }
-      return rel;
-    } catch {
-      return fallback;
-    }
   }
 
   private resolveRealRootSync(): string {
@@ -541,65 +522,6 @@ export class FileService {
   }
 
   /**
-   * Removes orphaned controller staging files left in os.tmpdir() by crashes
-   * between multipart staging and commit/cleanup (client abort, 413, pipeline
-   * throw, process crash). Staging stays in tmpdir by design and concurrent
-   * requests are uncapped (accepted: per-request cap is 5 parts, see
-   * FilesController.MAX_FILE_PARTS_PER_REQUEST), so this is lazy GC only.
-   * Mirrors sweepStaleUploads guards: only `upload_<uuid>` regular files older
-   * than STALE_UPLOAD_MS are removed to preserve live uploads; symlinks and
-   * directories are skipped and never followed; ENOENT races are tolerated;
-   * rm uses force; never touches the archive. Startup-only (see constructor);
-   * never runs inside serializeCommit so commits stay free of tmpdir I/O.
-   */
-  private async sweepTmpStaleUploads(): Promise<void> {
-    let entries: import("fs").Dirent[];
-    try {
-      entries = await fs.promises.readdir(tmpdir(), { withFileTypes: true });
-    } catch (error) {
-      console.warn("[FileService sweepTmpStaleUploads] Failed to read tmpdir:", error);
-      return;
-    }
-    for (const entry of entries) {
-      try {
-        if (!entry.name.startsWith(TMP_UPLOAD_PREFIX) || !TMP_UPLOAD_STAGED_RE.test(entry.name)) {
-          continue;
-        }
-        if (entry.isSymbolicLink()) {
-          continue;
-        }
-        if (!entry.isFile()) {
-          continue;
-        }
-        const fullPath = path.join(tmpdir(), entry.name);
-        const stats = await fs.promises.lstat(fullPath).catch(() => null);
-        if (!stats || !stats.isFile()) {
-          continue;
-        }
-        if (Date.now() - stats.mtimeMs < STALE_UPLOAD_MS) {
-          continue;
-        }
-        try {
-          await fs.promises.rm(fullPath, { force: true });
-        } catch (rmError: any) {
-          if (rmError?.code !== "ENOENT") {
-            console.error(
-              `[FileService sweepTmpStaleUploads] Failed to remove ${fullPath}:`,
-              rmError,
-            );
-          }
-          continue;
-        }
-        console.log(`[FileService sweepTmpStaleUploads] Removed stale upload ${fullPath}`);
-      } catch (error: any) {
-        if (error?.code === "ENOENT") {
-          continue;
-        }
-      }
-    }
-  }
-
-  /**
    * Serializes commit-phase mutations (save rename, single delete, delete-all)
    * so their check-then-act sequences cannot interleave: without this, a
    * cleanup could run between a save's quota check and its rename (ENOENT on
@@ -704,7 +626,6 @@ export class FileService {
         // between commits). Excludes the target so overwrites count as delta.
         const recheckBase = await this.getUsedBytes(safeFilePath);
         this.checkQuota(recheckBase, receivedBytes);
-        const displayPath = this.getDisplayPath(safeFilePath, filePath);
         try {
           await fs.promises.rename(stagingPath, safeFilePath);
         } catch (renameError: any) {
@@ -713,7 +634,7 @@ export class FileService {
             // A serialized delete-all removed the staging file before this
             // commit ran: the upload loses to the delete. Surface a clean
             // error instead of raw ENOENT.
-            throw new Error(`Upload target was removed during save: ${displayPath}`);
+            throw new Error(`Upload target was removed during save: ${safeFilePath}`);
           }
           // The parent dir was removed concurrently but the staged upload
           // survived; recreate it and retry once.
@@ -723,7 +644,7 @@ export class FileService {
             await fs.promises.rename(stagingPath, safeFilePath);
           } catch (retryError: any) {
             if (retryError?.code === "ENOENT") {
-              throw new Error(`Upload target was removed during save: ${displayPath}`);
+              throw new Error(`Upload target was removed during save: ${safeFilePath}`);
             }
             throw retryError;
           }
@@ -786,8 +707,6 @@ export class FileService {
     ) {
       throw new Error("Invalid path");
     }
-    const displayPath = this.getDisplayPath(safeFilePath, filePath);
-
     try {
       await this.assertSafeResolved(safeFilePath);
       if (this.supportsNoFollow()) {
@@ -812,7 +731,7 @@ export class FileService {
         }
         if (!stats.isFile()) {
           await handle.close().catch(() => {});
-          throw new Error(`Requested path is not a file: ${displayPath}`);
+          throw new Error(`Requested path is not a file: ${safeFilePath}`);
         }
         const file: File = {
           size: stats.size,
@@ -833,11 +752,11 @@ export class FileService {
         throw new Error("Invalid path");
       }
       if (!link.isFile()) {
-        throw new Error(`Requested path is not a file: ${displayPath}`);
+        throw new Error(`Requested path is not a file: ${safeFilePath}`);
       }
       const stats = await fs.promises.stat(safeFilePath);
       if (!stats.isFile()) {
-        throw new Error(`Requested path is not a file: ${displayPath}`);
+        throw new Error(`Requested path is not a file: ${safeFilePath}`);
       }
       const file: File = {
         size: stats.size,
@@ -856,14 +775,14 @@ export class FileService {
         throw new Error("Invalid path");
       }
       if (error?.code === "ENOENT" || error?.message?.startsWith("File not found:")) {
-        throw new Error(`File not found: ${displayPath}`);
+        throw new Error(`File not found: ${safeFilePath}`);
       }
       if (error?.message?.startsWith("Requested path is not a file:")) {
         console.warn(`[FileService] Path is not a file ${safeFilePath} for download.`);
       } else {
         console.error(`[FileService] Error accessing file ${safeFilePath} for download:`, error);
       }
-      throw new Error(`File not found or inaccessible: ${displayPath}`);
+      throw new Error(`File not found or inaccessible: ${safeFilePath}`);
     }
   }
 
@@ -876,8 +795,6 @@ export class FileService {
     ) {
       throw new Error("Invalid path");
     }
-    const displayPath = this.getDisplayPath(safeFilePath, filePath);
-
     try {
       await this.assertSafeResolved(safeFilePath);
       if (this.supportsNoFollow()) {
@@ -896,7 +813,7 @@ export class FileService {
         try {
           const stats = await handle.stat();
           if (!stats.isFile()) {
-            throw new Error(`Requested path is not a file: ${displayPath}`);
+            throw new Error(`Requested path is not a file: ${safeFilePath}`);
           }
           return { size: stats.size, lastModified: stats.mtime };
         } finally {
@@ -912,11 +829,11 @@ export class FileService {
         throw new Error("Invalid path");
       }
       if (!link.isFile()) {
-        throw new Error(`Requested path is not a file: ${displayPath}`);
+        throw new Error(`Requested path is not a file: ${safeFilePath}`);
       }
       const stats = await fs.promises.stat(safeFilePath);
       if (!stats.isFile()) {
-        throw new Error(`Requested path is not a file: ${displayPath}`);
+        throw new Error(`Requested path is not a file: ${safeFilePath}`);
       }
       const file: File = {
         size: stats.size,
@@ -931,14 +848,14 @@ export class FileService {
         throw new Error("Invalid path");
       }
       if (error?.code === "ENOENT" || error?.message?.startsWith("File not found:")) {
-        throw new Error(`File not found: ${displayPath}`);
+        throw new Error(`File not found: ${safeFilePath}`);
       }
       if (error?.message?.startsWith("Requested path is not a file:")) {
         console.warn(`[FileService] Path is not a file ${safeFilePath} for getFile.`);
       } else {
         console.error(`[FileService] Error accessing file ${safeFilePath} for getFile:`, error);
       }
-      throw new Error(`File not found or inaccessible: ${displayPath}`);
+      throw new Error(`File not found or inaccessible: ${safeFilePath}`);
     }
   }
 

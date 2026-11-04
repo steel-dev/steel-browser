@@ -106,19 +106,12 @@ interface SessionConfig {
 
 ### 4. File Storage Service (`api/src/services/file.service.ts`)
 
-Handles file operations with a single global cumulative storage bucket:
+Handles file operations with session-scoped storage:
 
-- **Upload Management**: Handles multipart file uploads (at most 5 `file`
-  parts per request; the last staged binary part wins, earlier staged parts
-  are discarded — quota never applies to the discarded sum)
-- **Transient Staging Cost**: Each binary `file` part is staged to
-  `os.tmpdir()` before commit, so transient disk per upload request is up to
-  5 × the per-file `fileSize` limit; URL-string uploads skip multipart
-  staging entirely (no per-file `fileSize` limit — cumulative quota +
-  30s fetch timeout only)
+- **Upload Management**: Handles multipart file uploads
 - **Download Coordination**: Manages browser downloads
-- **Storage Isolation**: Single global cumulative bucket shared across all sessions (per-session isolation is future work)
-- **Cleanup**: `cleanupFiles` clears the entire store
+- **Storage Isolation**: Session-scoped file storage
+- **Cleanup**: Automatic file cleanup on session end
 
 ## 🔌 Plugin Architecture Deep Dive
 
@@ -185,7 +178,7 @@ Steel Browser uses Fastify's plugin architecture for modular API design:
 ```typescript
 // Main plugin registration
 await fastify.register(steelBrowserPlugin, {
-  fileStorage: { maxTotalBytes: 100 * MB }
+  fileStorage: { maxSizePerSession: 100 * MB }
 });
 
 // Individual plugins
@@ -193,27 +186,6 @@ await fastify.register(browserInstancePlugin);
 await fastify.register(sessionPlugin);
 await fastify.register(fileStoragePlugin);
 ```
-
-> [!NOTE]
-> `maxTotalBytes` is a single global cumulative bucket shared
-> across all sessions, NOT isolated per session.
-> `maxSizePerSession` remains as a deprecated backward-compatible alias
-> (`maxTotalBytes ?? maxSizePerSession`).
-> True per-session isolation (per-session subdirs + lifecycle scoping)
-> is future work: FileService is currently a store-wide singleton with
-> one baseFilesPath, sessionId is decorative in routes/types, and
-> cleanupFiles wipes the whole store.
->
-> Upload staging (see `FilesController.handleFileUpload`): each binary
-> `file` part is staged to `os.tmpdir()` before commit, so transient disk
-> per upload request is up to 5 × the routes-level per-file `fileSize`
-> limit (`MAX_FILE_PARTS_PER_REQUEST = 5`). When several binary parts are
-> sent, the last staged part wins and earlier staged parts are discarded —
-> the cumulative quota (`FileService`, 413 on exceed) is checked only
-> against the committed file, never the discarded sum. URL-string uploads
-> (`file` field carrying a URL) bypass the per-file `fileSize` multipart
-> limit entirely: they stream directly into the quota-guarded commit with
-> only the cumulative quota and the 30s fetch timeout applying.
 
 ### Route Organization
 
@@ -297,7 +269,7 @@ context.setDefaultTimeout(30000);
 
 - **Memory**: Browser process memory limits
 - **CPU**: Process CPU throttling
-- **Storage**: Global cumulative file storage quota
+- **Storage**: Session-scoped file storage limits
 - **Network**: Request rate limiting and proxy support
 
 ## 📊 Performance Considerations

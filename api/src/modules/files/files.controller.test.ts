@@ -97,7 +97,7 @@ describe("FilesController download headers", () => {
     expect(headers.get("Content-Disposition")).not.toContain('%20"');
   });
 
-  it("keeps spaces in the file name of a HEAD request", async () => {
+  it("keeps spaces in filename of HEAD request", async () => {
     const { reply, headers } = createReply();
 
     await createController().handleFileHead(server, requestFor("my report.pdf"), reply);
@@ -113,7 +113,7 @@ describe("FilesController download headers", () => {
     expect(headers.get("Content-Disposition")).toContain("filename*=UTF-8''r%C3%A9sum%C3%A9.pdf");
   });
 
-  it("does not let a quote in the name end the quoted parameter", async () => {
+  it("replaces quotes in download filename", async () => {
     const { reply, headers } = createReply();
 
     await createController().handleFileDownload(server, requestFor('a"b.txt'), reply);
@@ -136,103 +136,6 @@ function controllerWith(
     ...overrides,
   } as unknown as FileService);
 }
-
-describe("FilesController file error mapping", () => {
-  it.each([
-    ["Invalid path", 400],
-    ["File not found: a.txt", 404],
-    ["File not found or inaccessible: a.txt", 404],
-    ["Requested path is not a file: a.txt", 404],
-  ])("maps download reject %j to %i", async (message, status) => {
-    const controller = controllerWith({
-      downloadFile: async () => {
-        throw new Error(message);
-      },
-    });
-    const { reply, statusCode, body } = createReply();
-
-    await controller.handleFileDownload(server, requestFor("a.txt"), reply);
-
-    expect(statusCode()).toBe(status);
-    expect(body()).toMatchObject({ success: false, message });
-  });
-
-  it("maps unknown download errors to 500", async () => {
-    const controller = controllerWith({
-      downloadFile: async () => {
-        throw new Error("boom");
-      },
-    });
-    const { reply, statusCode, body } = createReply();
-
-    await controller.handleFileDownload(server, requestFor("a.txt"), reply);
-
-    expect(statusCode()).toBe(500);
-    expect(body()).toMatchObject({ success: false, message: "boom" });
-  });
-
-  it.each([
-    ["Invalid path", 400],
-    ["File not found: a.txt", 404],
-    ["File not found or inaccessible: a.txt", 404],
-    ["Requested path is not a file: a.txt", 404],
-  ])("maps head reject %j to %i", async (message, status) => {
-    const controller = controllerWith({
-      getFile: async () => {
-        throw new Error(message);
-      },
-    });
-    const { reply, statusCode, body } = createReply();
-
-    await controller.handleFileHead(server, requestFor("a.txt"), reply);
-
-    expect(statusCode()).toBe(status);
-    expect(body()).toMatchObject({ success: false, message });
-  });
-
-  it("maps unknown head errors to 500", async () => {
-    const controller = controllerWith({
-      getFile: async () => {
-        throw new Error("boom");
-      },
-    });
-    const { reply, statusCode } = createReply();
-
-    await controller.handleFileHead(server, requestFor("a.txt"), reply);
-
-    expect(statusCode()).toBe(500);
-  });
-
-  it("maps delete Invalid path to 400", async () => {
-    const controller = controllerWith({
-      deleteFile: async () => {
-        throw new Error("Invalid path");
-      },
-    });
-    const { reply, statusCode, body } = createReply();
-
-    await controller.handleFileDelete(server, requestFor("../evil"), reply);
-
-    expect(statusCode()).toBe(400);
-    expect(body()).toMatchObject({ success: false });
-  });
-
-  it("maps unknown delete errors to 500", async () => {
-    const controller = controllerWith({
-      deleteFile: async () => {
-        throw new Error("boom");
-      },
-    });
-    const { reply, statusCode } = createReply();
-
-    await controller.handleFileDelete(server, requestFor("a.txt"), reply);
-
-    expect(statusCode()).toBe(500);
-  });
-
-  // No delete-404 test: FileService.deleteFile swallows ENOENT/non-file and
-  // resolves (idempotent 204), so the 404 branch is unreachable for delete.
-});
 
 function uploadRequest(part: Record<string, unknown>) {
   return {
@@ -569,7 +472,7 @@ describe("FilesController multipart temp hardening", () => {
     await expectNoTmpLeak(created);
   });
 
-  it("commits only the last part when staged bytes sum over quota (no 413)", async () => {
+  it("commits last part without 413 when over quota", async () => {
     // Regression: only the last staged part is committed, so the transient
     // sum of staged bytes must never be compared against the cumulative
     // quota. Cap 4 bytes: "ab" (2) + "cde" (3) sums to 5 > 4, but each part
@@ -601,7 +504,7 @@ describe("FilesController multipart temp hardening", () => {
     await expectNoTmpLeak(created);
   });
 
-  it("unlinks all staged temps on invalid-path 400 with multiple files", async () => {
+  it("unlinks staged temps on invalid-path 400", async () => {
     let saveCalls = 0;
     const controller = createController(async ({ stream }) => {
       saveCalls += 1;
@@ -659,7 +562,7 @@ describe("FilesController multipart temp hardening", () => {
   });
 });
 
-describe("fileStoragePlugin registration", () => {
+describe("FilesController fileStoragePlugin registration", () => {
   it("registers without options (unbounded quota)", async () => {
     // Never construct a real FileService here: its production defaults point
     // at /files, which is not writable on CI. Assert the wiring instead.
@@ -711,7 +614,7 @@ describe("fileStoragePlugin registration", () => {
   });
 });
 
-describe("steelBrowserPlugin fileStorage normalization", () => {
+describe("FilesController steelBrowserPlugin fileStorage normalization", () => {
   it("normalizes deprecated-only maxSizePerSession to maxTotalBytes", async () => {
     // steel-browser-plugin.ts delegates to this single source; importing the
     // plugin itself would pull browser/CDP deps unavailable in unit tests.
@@ -727,7 +630,7 @@ describe("steelBrowserPlugin fileStorage normalization", () => {
     expect(config.fileStorage?.maxTotalBytes).toBe(77);
   });
 
-  it("prefers maxTotalBytes when both quota keys are set", async () => {
+  it("prefers maxTotalBytes over legacy key when both are set", async () => {
     const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
 
     const config = normalizeSteelBrowserFileStorage({
@@ -748,7 +651,7 @@ describe("steelBrowserPlugin fileStorage normalization", () => {
   });
 });
 
-describe("filesRoutes deprecated quota alias", () => {
+describe("FilesController filesRoutes deprecated quota alias", () => {
   it("honors deprecated maxSizePerSession for multipart fileSize limit", async () => {
     const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
     try {
@@ -775,7 +678,7 @@ describe("filesRoutes deprecated quota alias", () => {
   });
 });
 
-describe("resolveMaxTotalBytes validation", () => {
+describe("FilesController resolveMaxTotalBytes validation", () => {
   it("returns undefined when neither key is set", async () => {
     const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
 
@@ -801,7 +704,7 @@ describe("resolveMaxTotalBytes validation", () => {
   });
 });
 
-describe("resolveMaxTotalBytes legacy deprecation warning", () => {
+describe("FilesController resolveMaxTotalBytes legacy warning", () => {
   it("warns once across repeated legacy-only calls", async () => {
     vi.resetModules();
     const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
@@ -817,7 +720,7 @@ describe("resolveMaxTotalBytes legacy deprecation warning", () => {
     }
   });
 
-  it("stays silent when both keys are set, and when no quota is configured", async () => {
+  it("stays silent without legacy-only quota", async () => {
     vi.resetModules();
     const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -845,7 +748,7 @@ describe("resolveMaxTotalBytes legacy deprecation warning", () => {
     }
   });
 
-  it("invalid legacy throws without consuming the one-time warning flag", async () => {
+  it("throws on invalid legacy without consuming warning flag", async () => {
     vi.resetModules();
     const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -863,8 +766,8 @@ describe("resolveMaxTotalBytes legacy deprecation warning", () => {
   });
 });
 
-describe("steelBrowserPlugin fileStorage wiring", () => {
-  it("decorates normalized config and registers fileStoragePlugin from it (single resolve)", async () => {
+describe("FilesController steelBrowserPlugin fileStorage wiring", () => {
+  it("decorates config and registers fileStoragePlugin once", async () => {
     // Does not import steel-browser-plugin.ts itself: that module pulls
     // browser/CDP/puppeteer deps unavailable in unit tests. Instead replay
     // its exact two-line wiring (normalize once, derive register opts from
@@ -905,7 +808,7 @@ describe("steelBrowserPlugin fileStorage wiring", () => {
     }
   });
 
-  it("wiring preserves precedence and unbounded shape", async () => {
+  it("preserves precedence and unbounded shape", async () => {
     const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
 
     const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);

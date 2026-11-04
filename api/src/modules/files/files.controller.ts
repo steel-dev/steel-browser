@@ -18,11 +18,9 @@ import { attachmentContentDisposition } from "../../utils/content-disposition.js
 import { getErrors } from "../../utils/errors.js";
 
 // Thrown for every URL-fetch failure (blocked host/scheme, DNS failure,
-// non-200, redirect, timeout, network error). handleFileUpload maps these to
+// non-200, network error). handleFileUpload maps these to
 // 400: the caller supplied a bad URL, so it is never a 500.
 class InvalidFileUrlError extends Error {}
-
-const URL_FETCH_TIMEOUT_MS = 30_000;
 
 function isBlockedIPv4(ip: string): boolean {
   const parts = ip.split(".");
@@ -41,7 +39,7 @@ function isBlockedIPv4(ip: string): boolean {
   if (a === 127) return true; // 127.0.0.0/8 loopback
   if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local
   if (a === 0) return true; // 0.0.0.0/8
-  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT (RFC 6598)
+  // NOTE (quota-PR minimal blocklist): 100.64.0.0/10 CGNAT (RFC 6598) was split to the SSRF follow-up (ssrf-extras.split.md).
   return false;
 }
 
@@ -84,41 +82,10 @@ function isBlockedIp(ip: string): boolean {
   const tail = addr.slice(addr.lastIndexOf(":") + 1);
   if (tail.includes(".")) return true;
   if (isLoopbackOrUnspecifiedIPv6(addr)) return true; // loopback / unspecified
-  // Block IPv4-compatible IPv6 (::/96, deprecated RFC 4291) in any notation:
-  // ::7f00:1, ::a9fe:a9fe, 0:0:0:0:0:0:7f00:1, etc. First 96 bits zero.
-  // Dotted tails already returned true above; ::, ::1 already blocked.
-  let compatGroups: string[];
-  const compIdx = addr.indexOf("::");
-  if (compIdx !== -1) {
-    const left = compIdx === 0 ? [] : addr.slice(0, compIdx).split(":");
-    const right = compIdx + 2 >= addr.length ? [] : addr.slice(compIdx + 2).split(":");
-    const missing = 8 - (left.length + right.length);
-    if (missing < 0) return true;
-    compatGroups = [...left, ...Array<string>(missing).fill("0"), ...right];
-  } else {
-    compatGroups = addr.split(":");
-  }
-  if (compatGroups.length === 8 && compatGroups.slice(0, 6).every((g) => /^0+$/.test(g)))
-    return true;
-  const groups = addr.split(":");
-  // ::ffff:0:0/96 in fully expanded form (compressed forms start with
-  // "::ffff:" and are caught below).
-  if (
-    groups.length === 8 &&
-    groups.slice(0, 5).every((g) => /^0+$/.test(g)) &&
-    /^ffff$/i.test(groups[5])
-  ) {
-    return true;
-  }
-  if (addr.startsWith("::ffff:")) return true; // ::ffff:0:0/96 compressed
-  const first = groups[0];
-  if (first !== "") {
-    const v = Number.parseInt(first, 16);
-    if (Number.isInteger(v)) {
-      if (v >= 0xfc00 && v <= 0xfdff) return true; // fc00::/7 unique-local
-      if (v >= 0xfe80 && v <= 0xfebf) return true; // fe80::/10 link-local
-    }
-  }
+  // NOTE (quota-PR minimal blocklist): IPv4-compatible/mapped range checks
+  // (::/96), ::ffff:0:0/96, fc00::/7, and fe80::/10 were split out to the
+  // SSRF follow-up (see ssrf-extras.split.md at the repo root). Dotted tails
+  // stay denied above, as does loopback/unspecified.
   return false;
 }
 
@@ -283,7 +250,7 @@ export class FilesController {
         }
 
         // Any failure to fetch the remote URL (blocked host, DNS failure,
-        // redirect, non-200, timeout, network error) is a client error: the
+        // non-200, network error) is a client error: the
         // caller supplied the URL, so it maps to 400, never 500.
         let fetched: Awaited<ReturnType<typeof this.createStreamFromUrl>>;
         try {
@@ -357,7 +324,7 @@ export class FilesController {
   ): Promise<{ stream: Readable; contentType?: string; name: string; contentLength?: number }> {
     // ASSUMPTION: BLOCKLIST, not allowlist. Fetching a file from a URL is a
     // supported feature, so public internet hosts stay fetchable; only
-    // non-http(s) schemes and hosts resolving (in ANY DNS record) to
+    // non-http(s) schemes and hosts resolving to a blocked address
     // loopback, private, link-local, or reserved ranges — plus "localhost"
     // itself — are denied. An allowlist would break the URL-upload feature.
     let parsed: URL;
@@ -377,57 +344,26 @@ export class FilesController {
       throw new InvalidFileUrlError("URL host is not allowed");
     }
 
-    // Resolve every A/AAAA record and deny the URL if ANY record is
-    // non-public, then pin the outgoing connection to the first validated
-    // address with a custom lookup so DNS cannot rebind between validation
-    // and connect (no validate-then-connect TOCTOU hole).
-    let pinned: string;
-    let pinnedRecords: Array<{ address: string; family: number }> = [];
+    // Minimal pre-connect guard for the quota PR: literal-IP check plus a
+    // single DNS lookup. Resolving/checking ALL records, DNS pinning (TOCTOU
+    // fix), and the fetch timeout live in the SSRF follow-up
+    // (see ssrf-extras.split.md at the repo root).
     if (net.isIP(hostname) !== 0) {
       if (isBlockedIp(hostname)) {
         throw new InvalidFileUrlError("URL host is not allowed");
       }
-      pinned = hostname;
-      pinnedRecords = [{ address: pinned, family: net.isIP(pinned) }];
     } else {
-      let records: Array<{ address: string }>;
+      let address: string;
       try {
-        const result = await dnsLookup(hostname, { all: true });
-        records = (Array.isArray(result) ? result : [result]) as Array<{ address: string }>;
+        address = (await dnsLookup(hostname)).address;
       } catch {
         throw new InvalidFileUrlError("URL host could not be resolved");
       }
-      if (records.length === 0) {
-        throw new InvalidFileUrlError("URL host could not be resolved");
+      if (isBlockedIp(address)) {
+        throw new InvalidFileUrlError("URL host is not allowed");
       }
-      for (const record of records) {
-        if (isBlockedIp(record.address)) {
-          throw new InvalidFileUrlError("URL host is not allowed");
-        }
-      }
-      pinned = records[0].address;
-      pinnedRecords = records.map((r) => ({ address: r.address, family: net.isIP(r.address) }));
     }
-    const pinnedFamily = net.isIP(pinned);
-    const pinnedLookup = (_host: string, options: unknown, callback?: unknown): void => {
-      const done = (typeof options === "function" ? options : callback) as (
-        ...args: unknown[]
-      ) => void;
-      const wantAll =
-        typeof options === "object" &&
-        options !== null &&
-        (options as { all?: unknown }).all === true;
-      if (wantAll) {
-        done(
-          null,
-          pinnedRecords.length > 0 ? pinnedRecords : [{ address: pinned, family: pinnedFamily }],
-        );
-      } else {
-        done(null, pinned, pinnedFamily);
-      }
-    };
 
-    const signal = AbortSignal.timeout(URL_FETCH_TIMEOUT_MS);
     const get = (parsed.protocol === "https:" ? https.get : http.get) as typeof http.get;
 
     return new Promise((resolve, reject) => {
@@ -436,12 +372,7 @@ export class FilesController {
       };
       let request: ReturnType<typeof http.get>;
       try {
-        request = get(parsed, { lookup: pinnedLookup, signal }, (response) => {
-          if (signal.aborted) {
-            response.destroy();
-            fail("Fetching file timed out");
-            return;
-          }
+        request = get(parsed, {}, (response) => {
           // The stdlib never follows redirects on its own; reject every
           // non-200 (including 3xx that carry a Location header) instead
           // of chasing them.
@@ -472,7 +403,6 @@ export class FilesController {
             }
           }
 
-          signal.addEventListener("abort", () => response.destroy(), { once: true });
           resolve({
             stream: response,
             contentType,
@@ -485,28 +415,9 @@ export class FilesController {
         return;
       }
       request.on("error", (e: Error) => {
-        fail(signal.aborted ? "Fetching file timed out" : e.message);
+        fail(e.message);
       });
-      signal.addEventListener("abort", () => request.destroy(), { once: true });
     });
-  }
-
-  // Service read errors carry semantic status: "Invalid path" (failed
-  // traversal/symlink guard) is a client 400, missing/inaccessible/not-file
-  // is a 404. Anything else is a 500. Shared by download/head/delete so the
-  // three handlers cannot drift back to catch-all 500.
-  private fileAccessErrorStatus(message: string): 400 | 404 | null {
-    if (message === "Invalid path") {
-      return 400;
-    }
-    if (
-      message.startsWith("File not found:") ||
-      message.startsWith("File not found or inaccessible") ||
-      message.startsWith("Requested path is not a file")
-    ) {
-      return 404;
-    }
-    return null;
   }
 
   async handleFileDownload(
@@ -530,10 +441,6 @@ export class FilesController {
       return reply.send(stream);
     } catch (e: unknown) {
       const error = getErrors(e);
-      const status = this.fileAccessErrorStatus(error);
-      if (status !== null) {
-        return reply.code(status).send({ success: false, message: error });
-      }
       return reply.code(500).send({ success: false, message: error });
     }
   }
@@ -559,10 +466,6 @@ export class FilesController {
       return reply.code(200).send();
     } catch (e: unknown) {
       const error = getErrors(e);
-      const status = this.fileAccessErrorStatus(error);
-      if (status !== null) {
-        return reply.code(status).send({ success: false, message: error });
-      }
       return reply.code(500).send({ success: false, message: error });
     }
   }
@@ -602,10 +505,6 @@ export class FilesController {
       return reply.code(204).send();
     } catch (e: unknown) {
       const error = getErrors(e);
-      const status = this.fileAccessErrorStatus(error);
-      if (status !== null) {
-        return reply.code(status).send({ success: false, message: error });
-      }
       return reply.code(500).send({ success: false, message: error });
     }
   }

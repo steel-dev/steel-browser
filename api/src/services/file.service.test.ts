@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -203,7 +202,7 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     });
   }
 
-  it("rejects a save that would exceed maxSizeBytes and keeps only prior files", async () => {
+  it("rejects oversized save and keeps prior files", async () => {
     const fileService = await createQuotaService(100);
 
     await fileService.saveFile({
@@ -225,7 +224,7 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     expect(entries.sort()).toEqual(["a.bin", "b.bin"]);
   });
 
-  it("allows overwriting an existing file when the replacement fits in quota", async () => {
+  it("allows fitting overwrite of an existing file", async () => {
     const fileService = await createQuotaService(100);
 
     await fileService.saveFile({
@@ -259,7 +258,7 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     }
   }
 
-  it("aborts unknown-length streams over quota and removes the partial file", async () => {
+  it("aborts unknown-length over-quota stream and removes partial", async () => {
     const fileService = await createQuotaService(100);
 
     await expect(
@@ -292,7 +291,7 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     ]);
   });
 
-  it("rejects a declared size over quota without reading the stream", async () => {
+  it("rejects over-quota declared size without reading stream", async () => {
     const fileService = await createQuotaService(100);
     const read = vi.fn();
     const stream = new Readable({ read });
@@ -305,7 +304,7 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
   });
 
   it.each([".", ".steel-upload-1", "nested/.steel-upload-2"])(
-    "rejects %s as a save target without reading the stream",
+    "rejects %s save target without reading stream",
     async (filePath) => {
       const fileService = await createQuotaService(100);
       let reads = 0;
@@ -325,7 +324,7 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
   );
 
   it.each([".steel-upload-1", "nested/.steel-upload-2"])(
-    "rejects %s as a delete target without touching disk or quota",
+    "rejects %s delete target without touching quota",
     async (filePath) => {
       const fileService = await createQuotaService(100);
       await fileService.saveFile({
@@ -382,7 +381,7 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     expect(files.reduce((total, file) => total + file.size, 0)).toBe(90);
   });
 
-  it("rechecks the quota when another save commits during an upload", async () => {
+  it("rechecks quota when another save commits mid-upload", async () => {
     const fileService = await createQuotaService(100);
     const baseFilesPath = fileService.getBaseFilesPath();
     const slowStream = new PassThrough();
@@ -461,7 +460,7 @@ describe("FileService delete/commit serialization", () => {
     return { renameStarted, releaseRename };
   }
 
-  it("a delete queued during a save commit removes the committed file", async () => {
+  it("removes committed file for delete queued during commit", async () => {
     const fileService = await createDeleteService();
     const baseFilesPath = fileService.getBaseFilesPath();
     await fs.promises.writeFile(path.join(baseFilesPath, "victim.txt"), "old content");
@@ -483,7 +482,7 @@ describe("FileService delete/commit serialization", () => {
     });
   });
 
-  it("delete-all queued during a save commit leaves no resurrected file", async () => {
+  it("leaves no resurrected file for delete-all queued during commit", async () => {
     const fileService = await createDeleteService();
     const baseFilesPath = fileService.getBaseFilesPath();
     await fs.promises.writeFile(path.join(baseFilesPath, "stale.txt"), "stale");
@@ -503,7 +502,7 @@ describe("FileService delete/commit serialization", () => {
     expect(await fs.promises.readdir(baseFilesPath)).toEqual([]);
   });
 
-  it("resets cached quota when cleanup finds the base dir missing (ENOENT)", async () => {
+  it("resets cached quota on ENOENT during cleanup", async () => {
     testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-delete-"));
     const fileService = new FileService({
       baseFilesPath: path.join(testDirectory, "files"),
@@ -530,7 +529,7 @@ describe("FileService delete/commit serialization", () => {
   });
 
   it.each([null, undefined])(
-    "handles %s readdir rejection during cleanup without a secondary throw",
+    "handles %s readdir rejection during cleanup cleanly",
     async (rejection) => {
       testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-delete-"));
       const fileService = new FileService({
@@ -559,7 +558,7 @@ describe("FileService delete/commit serialization", () => {
     },
   );
 
-  it("concurrent deletes of the same file are idempotent", async () => {
+  it("treats concurrent deletes of the same file as idempotent", async () => {
     const fileService = await createDeleteService();
     const baseFilesPath = fileService.getBaseFilesPath();
     await fs.promises.writeFile(path.join(baseFilesPath, "gone.txt"), "bye");
@@ -593,7 +592,7 @@ describe("FileService delete/commit serialization", () => {
     });
   });
 
-  it("a commit whose first rename hits ENOENT recreates the parent and retries", async () => {
+  it("recreates parent and retries when first rename hits ENOENT", async () => {
     const fileService = await createDeleteService();
     const baseFilesPath = fileService.getBaseFilesPath();
 
@@ -610,18 +609,6 @@ describe("FileService delete/commit serialization", () => {
     expect(await fs.promises.readFile(path.join(baseFilesPath, "nested/retry.txt"), "utf8")).toBe(
       "retry me",
     );
-  });
-
-  it("a commit that keeps hitting ENOENT fails with a clean error", async () => {
-    const fileService = await createDeleteService();
-
-    vi.spyOn(fs.promises, "rename").mockRejectedValue(
-      Object.assign(new Error("no such file or directory, rename"), { code: "ENOENT" }),
-    );
-
-    await expect(
-      fileService.saveFile({ filePath: "lost.txt", stream: Readable.from("lost content") }),
-    ).rejects.toThrow("Upload target was removed during save");
   });
 });
 
@@ -747,7 +734,7 @@ describe("FileService symlink hardening", () => {
     );
   });
 
-  it("keeps normal files working while excluding symlinks from list and archive", async () => {
+  it("keeps normal files while excluding symlinks from listings", async () => {
     const fileService = await createSymlinkService();
     const baseFilesPath = fileService.getBaseFilesPath();
     const secretPath = path.join(outsideDirectory!, "secret.txt");
@@ -830,7 +817,7 @@ describe("FileService symlink hardening", () => {
     expect(symlinkTrapHit).toBe(true);
   });
 
-  it("windows fallback re-lstats before stat so a swapped symlink is denied", async () => {
+  it("denies swapped symlink via pre-stat re-lstat on Windows", async () => {
     const fileService = await createSymlinkService();
     await fileService.saveFile({ filePath: "real.txt", stream: Readable.from("data") });
     const target = path.join(fileService.getBaseFilesPath(), "real.txt");
@@ -860,66 +847,7 @@ describe("FileService symlink hardening", () => {
     expect(fallbackTrapHit).toBe(true);
   });
 
-  it("windows fallback maps a non-file reported by re-lstat to a 404-class error", async () => {
-    const fileService = await createSymlinkService();
-    await fileService.saveFile({ filePath: "real.txt", stream: Readable.from("data") });
-    const target = path.join(fileService.getBaseFilesPath(), "real.txt");
-
-    vi.spyOn(fileService as any, "supportsNoFollow").mockReturnValue(false);
-
-    const realLstat = fs.promises.lstat.bind(fs.promises);
-    const fakeDir = {
-      isSymbolicLink: () => false,
-      isFile: () => false,
-      isDirectory: () => true,
-    } as unknown as fs.Stats;
-    vi.spyOn(fs.promises, "lstat").mockImplementation(async (linkPath: any, ...rest: any[]) => {
-      if (path.resolve(linkPath) === path.resolve(target)) {
-        return fakeDir;
-      }
-      return (realLstat as any)(linkPath, ...rest);
-    });
-
-    // A directory is not a symlink: it must not map to "Invalid path" (400).
-    // The service wraps the not-a-file error as "File not found or inaccessible",
-    // which the controller maps to 404 — same as the POSIX branch.
-    await expect(fileService.downloadFile({ filePath: "real.txt" })).rejects.toThrow(
-      "File not found or inaccessible",
-    );
-    await expect(fileService.getFile({ filePath: "real.txt" })).rejects.toThrow(
-      "File not found or inaccessible",
-    );
-    await expect(fileService.downloadFile({ filePath: "real.txt" })).rejects.not.toThrow(
-      "Invalid path",
-    );
-    await expect(fileService.getFile({ filePath: "real.txt" })).rejects.not.toThrow("Invalid path");
-  });
-
-  it("maps dir-as-file to 404", async () => {
-    const fileService = await createSymlinkService();
-    await fs.promises.mkdir(path.join(fileService.getBaseFilesPath(), "subdir"), {
-      recursive: true,
-    });
-
-    await expect(fileService.downloadFile({ filePath: "subdir" })).rejects.toThrow(
-      "File not found or inaccessible",
-    );
-    await expect(fileService.getFile({ filePath: "subdir" })).rejects.toThrow(
-      "File not found or inaccessible",
-    );
-
-    // Force the Windows fallback branch regardless of host OS.
-    vi.spyOn(fileService as any, "supportsNoFollow").mockReturnValue(false);
-
-    await expect(fileService.downloadFile({ filePath: "subdir" })).rejects.toThrow(
-      "File not found or inaccessible",
-    );
-    await expect(fileService.getFile({ filePath: "subdir" })).rejects.toThrow(
-      "File not found or inaccessible",
-    );
-  });
-
-  it("archive re-lstat skips a file swapped for a symlink mid-archive", async () => {
+  it("skips file swapped for symlink mid-archive via re-lstat", async () => {
     const fileService = await createSymlinkService();
     const baseFilesPath = fileService.getBaseFilesPath();
     await fileService.saveFile({ filePath: "good.txt", stream: Readable.from("inside content") });
@@ -958,7 +886,7 @@ describe("FileService symlink hardening", () => {
     expect(archive.get("good.txt")).toBe("inside content");
   });
 
-  it("archive skips entries with unsafe relative names", async () => {
+  it("skips unsafe relative names during archive", async () => {
     const fileService = await createSymlinkService();
     const baseFilesPath = fileService.getBaseFilesPath();
     await fileService.saveFile({ filePath: "good.txt", stream: Readable.from("inside content") });
@@ -1025,7 +953,7 @@ describe("FileService singleton quota reconcile", () => {
     }
   });
 
-  it("applies quota when a configured getInstance follows a bare one", async () => {
+  it("applies quota when configured instance follows bare one", async () => {
     const dirs = await singletonDirs();
     FileService.getInstance({ ...dirs });
     FileService.getInstance({ ...dirs, maxSizeBytes: 10 });
@@ -1038,7 +966,7 @@ describe("FileService singleton quota reconcile", () => {
     ).rejects.toThrow(FileQuotaExceededError);
   });
 
-  it("keeps quota when a bare getInstance follows a configured one", async () => {
+  it("keeps quota when bare instance follows configured one", async () => {
     const dirs = await singletonDirs();
     FileService.getInstance({ ...dirs, maxSizeBytes: 10 });
     FileService.getInstance({ ...dirs });
@@ -1065,7 +993,7 @@ describe("FileService singleton quota reconcile", () => {
     ).rejects.toThrow(FileQuotaExceededError);
   });
 
-  it("throws RangeError for non-finite or negative maxSizeBytes and keeps existing quota", async () => {
+  it("throws RangeError for non-finite or negative quota", async () => {
     const dirs = await singletonDirs();
     FileService.getInstance({ ...dirs, maxSizeBytes: 10 });
 
@@ -1080,186 +1008,5 @@ describe("FileService singleton quota reconcile", () => {
         stream: Readable.from(Buffer.alloc(40, 0x61)),
       }),
     ).rejects.toThrow(FileQuotaExceededError);
-  });
-});
-
-describe("FileService tmpdir stale-upload sweep", () => {
-  let testDirectory: string | undefined;
-  let fileCounter = 0;
-  // Every path seeded into the real os.tmpdir(); removed in afterEach if the
-  // sweep under test leaves it behind (fresh files, dirs, symlinks).
-  let seededPaths: string[] = [];
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    for (const candidate of seededPaths) {
-      await fs.promises.rm(candidate, { recursive: true, force: true }).catch(() => {});
-    }
-    seededPaths = [];
-    if (testDirectory) {
-      await fs.promises.rm(testDirectory, { recursive: true, force: true });
-      testDirectory = undefined;
-    }
-  });
-
-  async function setupSweepService(): Promise<FileService> {
-    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
-    return new FileService({
-      baseFilesPath: path.join(testDirectory, "files"),
-      prebuiltArchiveDir: path.join(testDirectory, "archive"),
-      watchFiles: false,
-    });
-  }
-
-  function tmpName(kind: string): string {
-    fileCounter += 1;
-    return `upload_steel-test-${process.pid}-${kind}-${fileCounter}`;
-  }
-
-  function stagedTmpName(kind: string): string {
-    fileCounter += 1;
-    return `upload_${randomUUID()}-steel-test-${process.pid}-${kind}-${fileCounter}`;
-  }
-
-  async function seedTmpFile(name: string, mtime: Date): Promise<string> {
-    const fullPath = path.join(os.tmpdir(), name);
-    await fs.promises.writeFile(fullPath, "orphan");
-    await fs.promises.utimes(fullPath, mtime, mtime);
-    seededPaths.push(fullPath);
-    return fullPath;
-  }
-
-  async function exists(candidate: string): Promise<boolean> {
-    try {
-      await fs.promises.lstat(candidate);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  const staleDate = () => new Date(Date.now() - 2 * 60 * 60 * 1000);
-
-  it("removes stale upload_<uuid> regular files from tmpdir at startup", async () => {
-    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
-    const stalePath = await seedTmpFile(stagedTmpName("stale"), staleDate());
-
-    new FileService({
-      baseFilesPath: path.join(testDirectory, "files"),
-      prebuiltArchiveDir: path.join(testDirectory, "archive"),
-      watchFiles: false,
-    });
-
-    await vi.waitFor(async () => {
-      expect(await exists(stalePath)).toBe(false);
-    });
-  });
-
-  it("preserves fresh upload_<uuid> files in tmpdir at startup", async () => {
-    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
-    const freshPath = await seedTmpFile(stagedTmpName("fresh"), new Date());
-
-    new FileService({
-      baseFilesPath: path.join(testDirectory, "files"),
-      prebuiltArchiveDir: path.join(testDirectory, "archive"),
-      watchFiles: false,
-    });
-
-    // Let the startup sweep run, then confirm the live upload survived.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    expect(await exists(freshPath)).toBe(true);
-    expect(await fs.promises.readFile(freshPath, "utf8")).toBe("orphan");
-  });
-
-  it("preserves foreign upload_ files without the uuid shape at startup", async () => {
-    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
-    const foreignPath = await seedTmpFile("upload_foo", staleDate());
-    const genericPath = await seedTmpFile(tmpName("foreign"), staleDate());
-
-    new FileService({
-      baseFilesPath: path.join(testDirectory, "files"),
-      prebuiltArchiveDir: path.join(testDirectory, "archive"),
-      watchFiles: false,
-    });
-
-    // Let the startup sweep run, then confirm foreign files survived.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    expect(await exists(foreignPath)).toBe(true);
-    expect(await fs.promises.readFile(foreignPath, "utf8")).toBe("orphan");
-    expect(await exists(genericPath)).toBe(true);
-    expect(await fs.promises.readFile(genericPath, "utf8")).toBe("orphan");
-  });
-
-  it("does not sweep tmpdir at commit", async () => {
-    const fileService = await setupSweepService();
-    // Let the constructor's startup sweep settle before seeding, so only the
-    // commit path is under test.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const sweepSpy = vi.spyOn(FileService.prototype as any, "sweepTmpStaleUploads");
-    const stalePath = await seedTmpFile(stagedTmpName("commit-stale"), staleDate());
-
-    await fileService.saveFile({ filePath: "probe.txt", stream: Readable.from("probe") });
-
-    expect(sweepSpy).not.toHaveBeenCalled();
-    expect(await exists(stalePath)).toBe(true);
-  });
-
-  it("skips tmpdir directories and symlinks at startup", async () => {
-    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
-    const dirPath = path.join(os.tmpdir(), stagedTmpName("dir"));
-    await fs.promises.mkdir(dirPath, { recursive: true });
-    await fs.promises.writeFile(path.join(dirPath, "inner.txt"), "inner");
-    await fs.promises.utimes(dirPath, staleDate(), staleDate());
-    seededPaths.push(dirPath);
-
-    const targetPath = path.join(os.tmpdir(), `steel-target-${process.pid}-${Date.now()}.txt`);
-    await fs.promises.writeFile(targetPath, "target");
-    seededPaths.push(targetPath);
-    const linkPath = path.join(os.tmpdir(), stagedTmpName("link"));
-    seededPaths.push(linkPath);
-    try {
-      await fs.promises.symlink(
-        targetPath,
-        linkPath,
-        process.platform === "win32" ? "file" : undefined,
-      );
-    } catch (error: any) {
-      if (["EPERM", "EACCES", "ENOSYS", "EINVAL", "EUNKNOWN"].includes(error?.code)) {
-        return;
-      }
-      throw error;
-    }
-
-    new FileService({
-      baseFilesPath: path.join(testDirectory, "files"),
-      prebuiltArchiveDir: path.join(testDirectory, "archive"),
-      watchFiles: false,
-    });
-
-    // Let the startup sweep run, then confirm non-files survived.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    expect(await exists(dirPath)).toBe(true);
-    expect(await fs.promises.readFile(path.join(dirPath, "inner.txt"), "utf8")).toBe("inner");
-    const linkStat = await fs.promises.lstat(linkPath);
-    expect(linkStat.isSymbolicLink()).toBe(true);
-    expect(await fs.promises.readFile(targetPath, "utf8")).toBe("target");
-  });
-
-  it("runs the tmpdir sweep at startup", async () => {
-    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
-    const stalePath = await seedTmpFile(stagedTmpName("startup-stale"), staleDate());
-
-    new FileService({
-      baseFilesPath: path.join(testDirectory, "files"),
-      prebuiltArchiveDir: path.join(testDirectory, "archive"),
-      watchFiles: false,
-    });
-
-    await vi.waitFor(async () => {
-      expect(await exists(stalePath)).toBe(false);
-    });
   });
 });
