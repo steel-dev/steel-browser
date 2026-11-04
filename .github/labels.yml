@@ -89,6 +89,10 @@
   color: "17becf"
   description: "Related to testing infrastructure"
 
+- name: "github-actions"
+  color: "000000"
+  description: "Related to GitHub workflows and repository config"
+
 # Status labels
 - name: "status: blocked"
   color: "b60205"
