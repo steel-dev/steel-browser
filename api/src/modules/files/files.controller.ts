@@ -528,9 +528,9 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
   ) {
-    try {
-      const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath();
+    const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath();
 
+    try {
       const stats = await fs.promises.stat(prebuiltArchivePath);
       if (stats.isFile()) {
         server.log.info(`Serving prebuilt archive: ${prebuiltArchivePath}`);
