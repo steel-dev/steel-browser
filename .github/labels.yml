@@ -1,5 +1,6 @@
 # GitHub Labels Configuration for Steel Browser
-# This file can be used with the github-labels CLI tool to sync labels
+# .github/workflows/sync-labels.yml syncs these labels to the repo when this file changes on main.
+# The sync overwrites colors and descriptions edited in the GitHub UI. It never deletes labels.
 
 # Type labels
 - name: "bug"
