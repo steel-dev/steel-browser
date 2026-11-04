@@ -262,7 +262,7 @@ Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) an
 
 ### Security Issues
 
-Please don't report security vulnerabilities in public issues. Email security@steel.dev instead.
+Please don't report security vulnerabilities in public issues. Email security@steel.dev instead. See our [security policy](SECURITY.md) for details.
 
 ## 🌟 Good First Issues
 
@@ -292,6 +292,8 @@ Looking for ways to contribute? Check out issues labeled:
 ## 🤝 Community Guidelines
 
 ### Code of Conduct
+
+This project follows our [Code of Conduct](CODE_OF_CONDUCT.md). By taking part, you agree to follow it.
 
 We are committed to providing a welcoming and inclusive environment for all contributors. Please:
 
