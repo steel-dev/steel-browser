@@ -1,0 +1,53 @@
+name: Question
+description: Ask a question about using Steel Browser
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For real-time help, our [Discord server](https://discord.gg/steel-dev) is usually faster.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before asking
+      options:
+        - label: I checked the [documentation](https://docs.steel.dev/).
+          required: true
+        - label: I searched [existing issues](https://github.com/steel-dev/steel-browser/issues).
+          required: true
+        - label: I looked at the [Steel Cookbook](https://github.com/steel-dev/steel-cookbook) for examples.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: attempts
+    attributes:
+      label: What have you tried?
+      description: What you did and what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code
+      description: A minimal snippet, in a fenced code block.
+  - type: input
+    id: version
+    attributes:
+      label: Steel Browser version
+      description: Release tag, image tag, or commit SHA.
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run Steel Browser?
+      options:
+        - Docker image
+        - Docker Compose
+        - From source
+        - Railway
+        - Render
+        - Steel Cloud
+        - Other

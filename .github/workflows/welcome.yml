@@ -20,7 +20,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           issue-message: |
             Thanks for opening your first issue! 🎉 
-            Please check our [Contributing Guide](CONTRIBUTING.md) and [Troubleshooting Guide](docs/TROUBLESHOOTING.md).
+            Please check our [Contributing Guide](https://github.com/steel-dev/steel-browser/blob/main/CONTRIBUTING.md) and [Troubleshooting Guide](https://github.com/steel-dev/steel-browser/blob/main/docs/TROUBLESHOOTING.md).
           pr-message: |
             Thanks for your first contribution! 🚀 
-            Please ensure you've followed our [Contributing Guidelines](CONTRIBUTING.md).
+            Please ensure you've followed our [Contributing Guidelines](https://github.com/steel-dev/steel-browser/blob/main/CONTRIBUTING.md).

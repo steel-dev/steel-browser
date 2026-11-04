@@ -1,7 +1,7 @@
 <br />
 <p align="center">
 <a href="https://steel.dev">
-  <img src="images/steel-logo.svg" alt="Steel Logo" width="72">
+  <img src=".github/assets/steel-logo.svg" alt="Steel Logo" width="72">
 </a>
 </p>
 
@@ -37,7 +37,7 @@
 </h4>
 
 <p align="center">
-  <img src="images/demo.gif" alt="Steel Demo" width="800">
+  <img src=".github/assets/demo.gif" alt="Steel Demo" width="800">
 </p>
 
 ## ✨ Highlights
@@ -63,7 +63,7 @@ If you love open-source, AI, and dev tools, [we're hiring across the stack](http
 
 ### Make sure to give us a star ⭐
 
-<img width="200" alt="Start us on Github!" src="images/star_img.png">
+<img width="200" alt="Start us on Github!" src=".github/assets/star_img.png">
 
 ## 🛠️ Getting Started
 
@@ -89,6 +89,9 @@ The simplest way to deploy/run a Steel browser instance locally is to run the pr
 # Pull and run the Docker image
 docker run -p 3000:3000 -p 9223:9223 ghcr.io/steel-dev/steel-browser
 ```
+
+> [!WARNING]
+> Ports 3000 and 9223 have no authentication. Don't expose them to the public internet or other untrusted networks. See [SECURITY.md](SECURITY.md).
 
 This will start the Steel browser server on port 3000 (http://localhost:3000) and the UI at http://localhost:3000/ui. The 9223 port is used for the console debugger.
 
