@@ -10,7 +10,7 @@ import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 
 const apiUrl = process.env.STEEL_API_URL ?? "http://localhost:3000";
 const uiUrl = process.env.STEEL_UI_URL ?? "http://localhost:5173";
-const output = fileURLToPath(new URL("../../images/demo.gif", import.meta.url));
+const output = fileURLToPath(new URL("../../.github/assets/demo.gif", import.meta.url));
 const video = `${tmpdir()}/steel-demo.webm` as const;
 const backdrop = `${tmpdir()}/steel-demo.png` as const;
 const canvas = { width: 1680, height: 1150 };
