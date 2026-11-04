@@ -491,6 +491,24 @@ export class FilesController {
     });
   }
 
+  // Service read errors carry semantic status: "Invalid path" (failed
+  // traversal/symlink guard) is a client 400, missing/inaccessible/not-file
+  // is a 404. Anything else is a 500. Shared by download/head/delete so the
+  // three handlers cannot drift back to catch-all 500.
+  private fileAccessErrorStatus(message: string): 400 | 404 | null {
+    if (message === "Invalid path") {
+      return 400;
+    }
+    if (
+      message.startsWith("File not found:") ||
+      message.startsWith("File not found or inaccessible") ||
+      message.startsWith("Requested path is not a file")
+    ) {
+      return 404;
+    }
+    return null;
+  }
+
   async handleFileDownload(
     server: FastifyInstance,
     request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>,
@@ -512,6 +530,10 @@ export class FilesController {
       return reply.send(stream);
     } catch (e: unknown) {
       const error = getErrors(e);
+      const status = this.fileAccessErrorStatus(error);
+      if (status !== null) {
+        return reply.code(status).send({ success: false, message: error });
+      }
       return reply.code(500).send({ success: false, message: error });
     }
   }
@@ -537,6 +559,10 @@ export class FilesController {
       return reply.code(200).send();
     } catch (e: unknown) {
       const error = getErrors(e);
+      const status = this.fileAccessErrorStatus(error);
+      if (status !== null) {
+        return reply.code(status).send({ success: false, message: error });
+      }
       return reply.code(500).send({ success: false, message: error });
     }
   }
@@ -576,6 +602,10 @@ export class FilesController {
       return reply.code(204).send();
     } catch (e: unknown) {
       const error = getErrors(e);
+      const status = this.fileAccessErrorStatus(error);
+      if (status !== null) {
+        return reply.code(status).send({ success: false, message: error });
+      }
       return reply.code(500).send({ success: false, message: error });
     }
   }

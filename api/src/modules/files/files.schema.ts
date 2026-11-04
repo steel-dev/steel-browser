@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 const FileUploadRequest = z.object({
-  file: z.any().describe("The file to upload (binary) or URL string to download from"),
+  file: z
+    .any()
+    .describe(
+      "The file to upload (binary) or URL string to download from. At most 5 binary parts per request, last wins; URL strings bypass the per-file fileSize limit (cumulative quota + 30s fetch timeout only).",
+    ),
   path: z.string().optional().describe("Path to the file in the storage system"),
 });
 

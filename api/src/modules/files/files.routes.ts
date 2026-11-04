@@ -28,7 +28,7 @@ async function routes(server: FastifyInstance) {
         operationId: "upload_file",
         summary: "Upload a file",
         description:
-          "Uploads a file to a session via `multipart/form-data` with a `file` field that accepts either binary data or a URL string to download from, and an optional `path` field for the file storage path. Files live in a shared store-wide bucket; :sessionId is decorative and does not isolate files per session.",
+          "Uploads a file to a session via `multipart/form-data` with a `file` field that accepts either binary data or a URL string to download from, and an optional `path` field for the file storage path. At most 5 `file` parts per request; the last staged binary part wins (earlier staged parts are discarded and never count toward quota). 413 when the part count is exceeded, when a binary part exceeds the per-file `fileSize` limit, or when the cumulative store quota is exceeded. Transient cost is up to 5 x per-file `fileSize` in os.tmpdir() (each binary part staged, only last committed); URL uploads bypass the per-file `fileSize` limit and are bound only by the cumulative quota and the 30s fetch timeout (shared store-wide bucket).",
         tags: ["Files"],
         consumes: ["multipart/form-data"],
         body: $ref("FileUploadRequest"),
@@ -52,8 +52,7 @@ async function routes(server: FastifyInstance) {
       schema: {
         operationId: "head_file",
         summary: "Head a file",
-        description:
-          "Head a file from a session. Files live in a shared store-wide bucket; :sessionId is decorative and does not isolate files per session.",
+        description: "Head a file from a session.",
         tags: ["Files"],
       },
     },
@@ -67,8 +66,7 @@ async function routes(server: FastifyInstance) {
       schema: {
         operationId: "download_file",
         summary: "Download a file",
-        description:
-          "Download a file from a session. Files live in a shared store-wide bucket; :sessionId is decorative and does not isolate files per session.",
+        description: "Download a file from a session.",
         tags: ["Files"],
       },
     },
@@ -104,8 +102,7 @@ async function routes(server: FastifyInstance) {
       schema: {
         operationId: "delete_file",
         summary: "Delete a file",
-        description:
-          "Delete a file from a session. Files live in a shared store-wide bucket; :sessionId is decorative and does not isolate files per session.",
+        description: "Delete a file from a session.",
         tags: ["Files"],
         response: {
           204: {

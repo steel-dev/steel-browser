@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -859,7 +860,7 @@ describe("FileService symlink hardening", () => {
     expect(fallbackTrapHit).toBe(true);
   });
 
-  it("windows fallback rejects a non-file reported by re-lstat", async () => {
+  it("windows fallback maps a non-file reported by re-lstat to a 404-class error", async () => {
     const fileService = await createSymlinkService();
     await fileService.saveFile({ filePath: "real.txt", stream: Readable.from("data") });
     const target = path.join(fileService.getBaseFilesPath(), "real.txt");
@@ -879,10 +880,43 @@ describe("FileService symlink hardening", () => {
       return (realLstat as any)(linkPath, ...rest);
     });
 
+    // A directory is not a symlink: it must not map to "Invalid path" (400).
+    // The service wraps the not-a-file error as "File not found or inaccessible",
+    // which the controller maps to 404 — same as the POSIX branch.
     await expect(fileService.downloadFile({ filePath: "real.txt" })).rejects.toThrow(
+      "File not found or inaccessible",
+    );
+    await expect(fileService.getFile({ filePath: "real.txt" })).rejects.toThrow(
+      "File not found or inaccessible",
+    );
+    await expect(fileService.downloadFile({ filePath: "real.txt" })).rejects.not.toThrow(
       "Invalid path",
     );
-    await expect(fileService.getFile({ filePath: "real.txt" })).rejects.toThrow("Invalid path");
+    await expect(fileService.getFile({ filePath: "real.txt" })).rejects.not.toThrow("Invalid path");
+  });
+
+  it("maps a real dir-as-file to a 404-class error on POSIX and Windows branches", async () => {
+    const fileService = await createSymlinkService();
+    await fs.promises.mkdir(path.join(fileService.getBaseFilesPath(), "subdir"), {
+      recursive: true,
+    });
+
+    await expect(fileService.downloadFile({ filePath: "subdir" })).rejects.toThrow(
+      "File not found or inaccessible",
+    );
+    await expect(fileService.getFile({ filePath: "subdir" })).rejects.toThrow(
+      "File not found or inaccessible",
+    );
+
+    // Force the Windows fallback branch regardless of host OS.
+    vi.spyOn(fileService as any, "supportsNoFollow").mockReturnValue(false);
+
+    await expect(fileService.downloadFile({ filePath: "subdir" })).rejects.toThrow(
+      "File not found or inaccessible",
+    );
+    await expect(fileService.getFile({ filePath: "subdir" })).rejects.toThrow(
+      "File not found or inaccessible",
+    );
   });
 
   it("archive re-lstat skips a file swapped for a symlink mid-archive", async () => {
@@ -1046,5 +1080,186 @@ describe("FileService singleton quota reconcile", () => {
         stream: Readable.from(Buffer.alloc(40, 0x61)),
       }),
     ).rejects.toThrow(FileQuotaExceededError);
+  });
+});
+
+describe("FileService tmpdir stale-upload sweep", () => {
+  let testDirectory: string | undefined;
+  let fileCounter = 0;
+  // Every path seeded into the real os.tmpdir(); removed in afterEach if the
+  // sweep under test leaves it behind (fresh files, dirs, symlinks).
+  let seededPaths: string[] = [];
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    for (const candidate of seededPaths) {
+      await fs.promises.rm(candidate, { recursive: true, force: true }).catch(() => {});
+    }
+    seededPaths = [];
+    if (testDirectory) {
+      await fs.promises.rm(testDirectory, { recursive: true, force: true });
+      testDirectory = undefined;
+    }
+  });
+
+  async function setupSweepService(): Promise<FileService> {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
+    return new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+    });
+  }
+
+  function tmpName(kind: string): string {
+    fileCounter += 1;
+    return `upload_steel-test-${process.pid}-${kind}-${fileCounter}`;
+  }
+
+  function stagedTmpName(kind: string): string {
+    fileCounter += 1;
+    return `upload_${randomUUID()}-steel-test-${process.pid}-${kind}-${fileCounter}`;
+  }
+
+  async function seedTmpFile(name: string, mtime: Date): Promise<string> {
+    const fullPath = path.join(os.tmpdir(), name);
+    await fs.promises.writeFile(fullPath, "orphan");
+    await fs.promises.utimes(fullPath, mtime, mtime);
+    seededPaths.push(fullPath);
+    return fullPath;
+  }
+
+  async function exists(candidate: string): Promise<boolean> {
+    try {
+      await fs.promises.lstat(candidate);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const staleDate = () => new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+  it("removes stale upload_<uuid> regular files from tmpdir at startup", async () => {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
+    const stalePath = await seedTmpFile(stagedTmpName("stale"), staleDate());
+
+    new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+    });
+
+    await vi.waitFor(async () => {
+      expect(await exists(stalePath)).toBe(false);
+    });
+  });
+
+  it("preserves fresh upload_<uuid> files in tmpdir at startup", async () => {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
+    const freshPath = await seedTmpFile(stagedTmpName("fresh"), new Date());
+
+    new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+    });
+
+    // Let the startup sweep run, then confirm the live upload survived.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(await exists(freshPath)).toBe(true);
+    expect(await fs.promises.readFile(freshPath, "utf8")).toBe("orphan");
+  });
+
+  it("preserves foreign upload_ files without the uuid shape at startup", async () => {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
+    const foreignPath = await seedTmpFile("upload_foo", staleDate());
+    const genericPath = await seedTmpFile(tmpName("foreign"), staleDate());
+
+    new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+    });
+
+    // Let the startup sweep run, then confirm foreign files survived.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(await exists(foreignPath)).toBe(true);
+    expect(await fs.promises.readFile(foreignPath, "utf8")).toBe("orphan");
+    expect(await exists(genericPath)).toBe(true);
+    expect(await fs.promises.readFile(genericPath, "utf8")).toBe("orphan");
+  });
+
+  it("does not sweep tmpdir at commit", async () => {
+    const fileService = await setupSweepService();
+    // Let the constructor's startup sweep settle before seeding, so only the
+    // commit path is under test.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const sweepSpy = vi.spyOn(FileService.prototype as any, "sweepTmpStaleUploads");
+    const stalePath = await seedTmpFile(stagedTmpName("commit-stale"), staleDate());
+
+    await fileService.saveFile({ filePath: "probe.txt", stream: Readable.from("probe") });
+
+    expect(sweepSpy).not.toHaveBeenCalled();
+    expect(await exists(stalePath)).toBe(true);
+  });
+
+  it("skips tmpdir directories and symlinks at startup", async () => {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
+    const dirPath = path.join(os.tmpdir(), stagedTmpName("dir"));
+    await fs.promises.mkdir(dirPath, { recursive: true });
+    await fs.promises.writeFile(path.join(dirPath, "inner.txt"), "inner");
+    await fs.promises.utimes(dirPath, staleDate(), staleDate());
+    seededPaths.push(dirPath);
+
+    const targetPath = path.join(os.tmpdir(), `steel-target-${process.pid}-${Date.now()}.txt`);
+    await fs.promises.writeFile(targetPath, "target");
+    seededPaths.push(targetPath);
+    const linkPath = path.join(os.tmpdir(), stagedTmpName("link"));
+    seededPaths.push(linkPath);
+    try {
+      await fs.promises.symlink(
+        targetPath,
+        linkPath,
+        process.platform === "win32" ? "file" : undefined,
+      );
+    } catch (error: any) {
+      if (["EPERM", "EACCES", "ENOSYS", "EINVAL", "EUNKNOWN"].includes(error?.code)) {
+        return;
+      }
+      throw error;
+    }
+
+    new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+    });
+
+    // Let the startup sweep run, then confirm non-files survived.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(await exists(dirPath)).toBe(true);
+    expect(await fs.promises.readFile(path.join(dirPath, "inner.txt"), "utf8")).toBe("inner");
+    const linkStat = await fs.promises.lstat(linkPath);
+    expect(linkStat.isSymbolicLink()).toBe(true);
+    expect(await fs.promises.readFile(targetPath, "utf8")).toBe("target");
+  });
+
+  it("runs the tmpdir sweep at startup", async () => {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-tmp-sweep-"));
+    const stalePath = await seedTmpFile(stagedTmpName("startup-stale"), staleDate());
+
+    new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+    });
+
+    await vi.waitFor(async () => {
+      expect(await exists(stalePath)).toBe(false);
+    });
   });
 });

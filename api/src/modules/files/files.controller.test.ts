@@ -122,6 +122,118 @@ describe("FilesController download headers", () => {
   });
 });
 
+function controllerWith(
+  overrides: Partial<Record<"downloadFile" | "getFile" | "deleteFile", () => Promise<unknown>>>,
+) {
+  return new FilesController({
+    downloadFile: async () => ({
+      stream: Readable.from([]),
+      size: 0,
+      lastModified: new Date(0),
+    }),
+    getFile: async () => ({ size: 0, lastModified: new Date(0) }),
+    deleteFile: async () => {},
+    ...overrides,
+  } as unknown as FileService);
+}
+
+describe("FilesController file error mapping", () => {
+  it.each([
+    ["Invalid path", 400],
+    ["File not found: a.txt", 404],
+    ["File not found or inaccessible: a.txt", 404],
+    ["Requested path is not a file: a.txt", 404],
+  ])("maps download reject %j to %i", async (message, status) => {
+    const controller = controllerWith({
+      downloadFile: async () => {
+        throw new Error(message);
+      },
+    });
+    const { reply, statusCode, body } = createReply();
+
+    await controller.handleFileDownload(server, requestFor("a.txt"), reply);
+
+    expect(statusCode()).toBe(status);
+    expect(body()).toMatchObject({ success: false, message });
+  });
+
+  it("maps unknown download errors to 500", async () => {
+    const controller = controllerWith({
+      downloadFile: async () => {
+        throw new Error("boom");
+      },
+    });
+    const { reply, statusCode, body } = createReply();
+
+    await controller.handleFileDownload(server, requestFor("a.txt"), reply);
+
+    expect(statusCode()).toBe(500);
+    expect(body()).toMatchObject({ success: false, message: "boom" });
+  });
+
+  it.each([
+    ["Invalid path", 400],
+    ["File not found: a.txt", 404],
+    ["File not found or inaccessible: a.txt", 404],
+    ["Requested path is not a file: a.txt", 404],
+  ])("maps head reject %j to %i", async (message, status) => {
+    const controller = controllerWith({
+      getFile: async () => {
+        throw new Error(message);
+      },
+    });
+    const { reply, statusCode, body } = createReply();
+
+    await controller.handleFileHead(server, requestFor("a.txt"), reply);
+
+    expect(statusCode()).toBe(status);
+    expect(body()).toMatchObject({ success: false, message });
+  });
+
+  it("maps unknown head errors to 500", async () => {
+    const controller = controllerWith({
+      getFile: async () => {
+        throw new Error("boom");
+      },
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileHead(server, requestFor("a.txt"), reply);
+
+    expect(statusCode()).toBe(500);
+  });
+
+  it("maps delete Invalid path to 400", async () => {
+    const controller = controllerWith({
+      deleteFile: async () => {
+        throw new Error("Invalid path");
+      },
+    });
+    const { reply, statusCode, body } = createReply();
+
+    await controller.handleFileDelete(server, requestFor("../evil"), reply);
+
+    expect(statusCode()).toBe(400);
+    expect(body()).toMatchObject({ success: false });
+  });
+
+  it("maps unknown delete errors to 500", async () => {
+    const controller = controllerWith({
+      deleteFile: async () => {
+        throw new Error("boom");
+      },
+    });
+    const { reply, statusCode } = createReply();
+
+    await controller.handleFileDelete(server, requestFor("a.txt"), reply);
+
+    expect(statusCode()).toBe(500);
+  });
+
+  // No delete-404 test: FileService.deleteFile swallows ENOENT/non-file and
+  // resolves (idempotent 204), so the 404 branch is unreachable for delete.
+});
+
 function uploadRequest(part: Record<string, unknown>) {
   return {
     isMultipart: () => true,
