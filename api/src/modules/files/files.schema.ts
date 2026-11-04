@@ -3,6 +3,7 @@ import { z } from "zod";
 const FileUploadRequest = z.object({
   file: z
     .any()
+    .optional()
     .describe(
       "The file to upload (binary) or URL string to download from. At most 5 binary parts per request, last wins; URL strings bypass the per-file fileSize limit (cumulative quota + 30s fetch timeout only).",
     ),

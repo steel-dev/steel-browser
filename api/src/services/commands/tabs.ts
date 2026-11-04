@@ -363,6 +363,11 @@ export class Tab {
     return chain;
   }
 
+  parentOf(session: CDPSession): { session: CDPSession; frameId: string } | undefined {
+    const link = this.links.get(session.id());
+    return link ? { session: link.parent, frameId: link.frameId } : undefined;
+  }
+
   sessionByKey(key: string): CDPSession | undefined {
     if (this.closed) {
       return undefined;

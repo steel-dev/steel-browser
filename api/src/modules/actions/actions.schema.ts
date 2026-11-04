@@ -20,7 +20,7 @@ const ScrapeRequest = z.object({
 });
 
 const ScrapeResponse = z.object({
-  content: z.record(z.nativeEnum(ScrapeFormat), z.any()),
+  content: z.partialRecord(z.nativeEnum(ScrapeFormat), z.any()),
   metadata: z.object({
     title: z.string().optional(),
     language: z.string().optional(),

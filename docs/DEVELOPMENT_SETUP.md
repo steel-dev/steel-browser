@@ -13,7 +13,7 @@ This guide provides comprehensive instructions for setting up a Steel Browser de
 
 ### Required Software
 
-#### 1. Node.js (Version 22+)
+#### 1. Node.js (22.22.2+, 24.15+, or 26+)
 
 **Linux/macOS:**
 ```bash
@@ -35,7 +35,7 @@ brew install node@22
 **Windows:**
 ```powershell
 # Using Chocolatey
-choco install nodejs --version=22.0.0
+choco install nodejs --version=22.23.4
 
 # Or download from https://nodejs.org/
 ```

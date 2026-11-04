@@ -14,7 +14,7 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   CDP_REDIRECT_PORT: z.string().optional().default("9222"),
   CDP_DOMAIN: z.string().optional(),
   PROXY_URL: z.string().optional(),
@@ -22,70 +22,70 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((val) => (val ? JSON.parse(val) : {}))
-    .pipe(z.record(z.string()).optional().default({})),
+    .pipe(z.record(z.string(), z.string()).optional().default({})),
   KILL_TIMEOUT: z.string().optional().default("0"),
   CHROME_EXECUTABLE_PATH: z.string().optional(),
   CHROME_HEADLESS: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("true"),
+    .prefault("true"),
   DISPLAY: z.string().optional().default(":10"),
   ENABLE_CDP_LOGGING: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   LOG_CUSTOM_EMIT_EVENTS: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   ENABLE_VERBOSE_LOGGING: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   DEFAULT_TIMEZONE: z.string().optional(),
   TIMEZONE_SERVICE_URL: z.string().optional(),
   SKIP_FINGERPRINT_INJECTION: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   CHROME_ARGS: z
     .string()
     .optional()
     .transform((val) => (val ? val.split(" ").map((arg) => arg.trim()) : []))
-    .default(""),
+    .prefault(""),
   FILTER_CHROME_ARGS: z
     .string()
     .optional()
     .transform((val) => (val ? val.split(" ").map((arg) => arg.trim()) : []))
-    .default(""),
+    .prefault(""),
   DEBUG_CHROME_PROCESS: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   PROXY_INTERNAL_BYPASS: z.string().optional(),
   CHROME_USER_DATA_DIR: z.string().optional(),
   LOG_STORAGE_ENABLED: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   LOG_STORAGE_PATH: z.string().optional(),
   DISABLE_CHROME_SANDBOX: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
   ENABLE_COMMANDS_API: z
     .string()
     .optional()
     .transform((val) => val === "true" || val === "1")
-    .default("false"),
+    .prefault("false"),
 });
 
 export const env = envSchema.parse(process.env);
