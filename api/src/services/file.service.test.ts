@@ -108,7 +108,7 @@ describe("FileService session archives", () => {
     const archive = unzipFiles(await fs.promises.readFile(archivePath));
 
     expect(concurrentArchivePath).toBe(archivePath);
-    expect([...archive.entries()]).toEqual([
+    expect([...archive.entries()].sort((a, b) => a[0].localeCompare(b[0]))).toEqual([
       ["subdir/zip2.txt", "zip content 2"],
       ["zip1.txt", "zip content 1"],
     ]);
@@ -149,7 +149,11 @@ describe("FileService session archives", () => {
     releaseRename();
 
     const [archivePath] = await archiveRequests;
-    expect([...unzipFiles(await fs.promises.readFile(archivePath)).entries()]).toEqual([
+    expect(
+      [...unzipFiles(await fs.promises.readFile(archivePath)).entries()].sort((a, b) =>
+        a[0].localeCompare(b[0]),
+      ),
+    ).toEqual([
       ["nested/zip2.txt", "zip content 2"],
       ["zip1.txt", "zip content 1"],
     ]);
