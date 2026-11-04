@@ -26,6 +26,7 @@ import type { CommandEngine } from "./services/commands/engine.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
+import { normalizeSteelBrowserFileStorage } from "./utils/file-quota.js";
 import { SessionService } from "./services/session.service.js";
 import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.interface.js";
 
@@ -71,7 +72,11 @@ export interface SteelBrowserConfig {
 }
 
 const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
-  fastify.decorate("steelBrowserConfig", opts);
+  // Central normalization (single source in utils/file-quota.ts): deprecated
+  // `maxSizePerSession` maps to `maxTotalBytes`, which wins when both are set.
+  // Exact input shape is preserved when no quota is configured.
+  const steelBrowserConfig = normalizeSteelBrowserFileStorage(opts);
+  fastify.decorate("steelBrowserConfig", steelBrowserConfig);
   // Plugins
   await fastify.register(fastifyView, {
     engine: {
@@ -82,7 +87,7 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(requestLogger);
   await fastify.register(openAPIPlugin);
   await fastify.register(fileStoragePlugin, {
-    maxTotalBytes: opts.fileStorage?.maxTotalBytes ?? opts.fileStorage?.maxSizePerSession,
+    maxTotalBytes: steelBrowserConfig.fileStorage?.maxTotalBytes,
   });
   await fastify.register(browserInstancePlugin);
   await fastify.register(seleniumPlugin);

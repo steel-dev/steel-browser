@@ -16,6 +16,7 @@ import { v4 as uuidv4 } from "uuid";
 import { FileQuotaExceededError, FileService } from "../../services/file.service.js";
 import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
+import { resolveMaxTotalBytes } from "../../utils/file-quota.js";
 
 // Thrown for every URL-fetch failure (blocked host/scheme, DNS failure,
 // non-200, redirect, timeout, network error). handleFileUpload maps these to
@@ -130,7 +131,7 @@ export class FilesController {
     }
 
     const normalized = path.normalize(filePath);
-    if (normalized === ".." || normalized.startsWith(`..${path.sep}`)) {
+    if (normalized.split(path.sep).includes("..")) {
       return false;
     }
 
@@ -157,9 +158,9 @@ export class FilesController {
     // (FileService enforces committed bytes; this guards transient staged
     // bytes before they reach the service). Single global cumulative bucket
     // shared across all sessions, NOT isolated per session.
-    const maxTotalBytes: number | undefined =
-      server.steelBrowserConfig?.fileStorage?.maxTotalBytes ??
-      server.steelBrowserConfig?.fileStorage?.maxSizePerSession;
+    const maxTotalBytes: number | undefined = resolveMaxTotalBytes(
+      server.steelBrowserConfig?.fileStorage,
+    );
 
     try {
       if (!request.isMultipart()) {
@@ -289,11 +290,26 @@ export class FilesController {
           return reply.code(400).send({ success: false, message });
         }
         const { stream, contentLength } = fetched;
-        saveFileResult = await this.fileService.saveFile({
-          filePath: finalPath,
-          stream,
-          size: contentLength,
-        });
+        try {
+          saveFileResult = await this.fileService.saveFile({
+            filePath: finalPath,
+            stream,
+            size: contentLength,
+          });
+        } catch (e: unknown) {
+          try {
+            stream.destroy();
+          } catch {}
+          if (e instanceof FileQuotaExceededError) throw e;
+          if (
+            typeof (e as { statusCode?: unknown })?.statusCode === "number" &&
+            (e as { statusCode: number }).statusCode === 413
+          ) {
+            throw e;
+          }
+          const message = e instanceof Error ? e.message : "Failed to fetch file from URL";
+          return reply.code(400).send({ success: false, message });
+        }
       }
 
       if (!saveFileResult) {
@@ -353,9 +369,9 @@ export class FilesController {
     }
 
     // Resolve every A/AAAA record and deny the URL if ANY record is
-    // non-public, then pin the outgoing connection to a validated address
-    // with a custom lookup so DNS cannot rebind between validation and
-    // connect (no validate-then-connect TOCTOU hole).
+    // non-public, then pin the outgoing connection to the first validated
+    // address with a custom lookup so DNS cannot rebind between validation
+    // and connect (no validate-then-connect TOCTOU hole).
     let pinned: string;
     if (net.isIP(hostname) !== 0) {
       if (isBlockedIp(hostname)) {
@@ -490,19 +506,24 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>,
     reply: FastifyReply,
   ) {
-    const { size, lastModified } = await this.fileService.getFile({
-      filePath: request.params["*"],
-    });
+    try {
+      const { size, lastModified } = await this.fileService.getFile({
+        filePath: request.params["*"],
+      });
 
-    const name = request.params["*"].split("/").pop() || "downloaded-file";
+      const name = request.params["*"].split("/").pop() || "downloaded-file";
 
-    reply
-      .header("Content-Length", size)
-      .header("Last-Modified", lastModified.toISOString())
-      .header("Content-Type", mime.lookup(request.params["*"]) || "application/octet-stream")
-      .header("Content-Disposition", attachmentContentDisposition(name));
+      reply
+        .header("Content-Length", size)
+        .header("Last-Modified", lastModified.toISOString())
+        .header("Content-Type", mime.lookup(request.params["*"]) || "application/octet-stream")
+        .header("Content-Disposition", attachmentContentDisposition(name));
 
-    return reply.code(200).send();
+      return reply.code(200).send();
+    } catch (e: unknown) {
+      const error = getErrors(e);
+      return reply.code(500).send({ success: false, message: error });
+    }
   }
 
   async handleFileList(
@@ -563,9 +584,9 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
   ) {
-    const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath();
-
     try {
+      const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath();
+
       const stats = await fs.promises.stat(prebuiltArchivePath);
       if (stats.isFile()) {
         server.log.info(`Serving prebuilt archive: ${prebuiltArchivePath}`);

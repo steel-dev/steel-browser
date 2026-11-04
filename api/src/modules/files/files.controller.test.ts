@@ -133,6 +133,10 @@ function uploadRequest(part: Record<string, unknown>) {
 }
 
 describe("FilesController quota enforcement", () => {
+  beforeEach(() => {
+    resetTempTracking();
+  });
+
   it("maps FileQuotaExceededError to 413", async () => {
     const controller = createController(async ({ stream }) => {
       // Swallow the lazy-open error: the controller unlinks the temp file
@@ -148,8 +152,14 @@ describe("FilesController quota enforcement", () => {
       uploadRequest({ fieldname: "file", type: "file", file: Readable.from("hello") }),
       reply,
     );
+    const { created, unlinked } = trackedTemps();
 
     expect(statusCode()).toBe(413);
+    // Quota 413 must still unlink the staged temp: exactly 1 staged, all
+    // unlinked, none left on disk.
+    expect(new Set(created).size).toBe(1);
+    expect(new Set(unlinked)).toEqual(new Set(created));
+    await expectNoTmpLeak(created);
   });
 
   it("passes the staged upload size to saveFile", async () => {
@@ -362,9 +372,9 @@ function fieldPart(fieldname: string, value: string) {
   return { fieldname, type: "field", value };
 }
 
-function cappedServer(maxSizePerSession: number) {
+function cappedServer(maxTotalBytes: number) {
   return {
-    steelBrowserConfig: { fileStorage: { maxSizePerSession } },
+    steelBrowserConfig: { fileStorage: { maxTotalBytes } },
   } as unknown as FastifyInstance;
 }
 
@@ -539,7 +549,236 @@ describe("fileStoragePlugin registration", () => {
     };
     await fileStoragePlugin(fastify as unknown as FastifyInstance, {});
 
-    expect(spy).toHaveBeenCalledWith({ maxSizeBytes: undefined });
+    expect(spy).toHaveBeenCalledWith({});
     spy.mockRestore();
+  });
+
+  it("forwards deprecated maxSizePerSession as maxSizeBytes", async () => {
+    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
+    const fastify = {
+      log: { info: () => {} },
+      decorate: (_key: string, _value: unknown) => {},
+    };
+    await fileStoragePlugin(fastify as unknown as FastifyInstance, { maxSizePerSession: 77 });
+
+    expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 77 });
+    spy.mockRestore();
+  });
+
+  it("prefers maxTotalBytes when both quota keys are set", async () => {
+    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
+    const fastify = {
+      log: { info: () => {} },
+      decorate: (_key: string, _value: unknown) => {},
+    };
+    await fileStoragePlugin(fastify as unknown as FastifyInstance, {
+      maxTotalBytes: 100,
+      maxSizePerSession: 77,
+    });
+
+    expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 100 });
+    spy.mockRestore();
+  });
+});
+
+function legacyServer(maxSizePerSession: number) {
+  return {
+    steelBrowserConfig: { fileStorage: { maxSizePerSession } },
+  } as unknown as FastifyInstance;
+}
+
+describe("FilesController deprecated quota alias", () => {
+  beforeEach(() => {
+    resetTempTracking();
+  });
+
+  it("honors deprecated maxSizePerSession for staged-bytes cap", async () => {
+    let saveCalls = 0;
+    const controller = createController(async ({ stream }) => {
+      saveCalls += 1;
+      stream.on("error", () => {});
+      stream.destroy();
+      return { path: "stub", size: 0, lastModified: new Date(0) };
+    });
+    const { reply, statusCode } = createReply();
+
+    // Cap 4 bytes via legacy key: "ab" (2) fits, "cde" (3) pushes total to 5 > 4.
+    await controller.handleFileUpload(
+      legacyServer(4),
+      uploadRequestMulti([filePart("ab"), filePart("cde")]),
+      reply,
+    );
+    const { created, unlinked } = trackedTemps();
+
+    expect(statusCode()).toBe(413);
+    expect(saveCalls).toBe(0);
+    expect(new Set(created).size).toBe(2);
+    expect(new Set(unlinked)).toEqual(new Set(created));
+    await expectNoTmpLeak(created);
+  });
+});
+
+describe("steelBrowserPlugin fileStorage normalization", () => {
+  it("normalizes deprecated-only maxSizePerSession to maxTotalBytes", async () => {
+    // steel-browser-plugin.ts delegates to this single source; importing the
+    // plugin itself would pull browser/CDP deps unavailable in unit tests.
+    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
+
+    const config = normalizeSteelBrowserFileStorage({
+      fileStorage: { maxSizePerSession: 77 } as {
+        maxTotalBytes?: number;
+        maxSizePerSession?: number;
+      },
+    });
+
+    expect(config.fileStorage?.maxTotalBytes).toBe(77);
+  });
+
+  it("prefers maxTotalBytes when both quota keys are set", async () => {
+    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
+
+    const config = normalizeSteelBrowserFileStorage({
+      fileStorage: { maxTotalBytes: 100, maxSizePerSession: 77 },
+    });
+
+    expect(config.fileStorage?.maxTotalBytes).toBe(100);
+  });
+
+  it("preserves exact shape when no quota is configured", async () => {
+    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
+
+    const input: Record<string, unknown> = {};
+    const config = normalizeSteelBrowserFileStorage(input) as Record<string, unknown>;
+
+    expect(config).toBe(input);
+    expect("fileStorage" in config).toBe(false);
+  });
+});
+
+describe("filesRoutes deprecated quota alias", () => {
+  it("honors deprecated maxSizePerSession for multipart fileSize limit", async () => {
+    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
+    try {
+      let capturedFileSize: unknown;
+      const mockServer = {
+        steelBrowserConfig: { fileStorage: { maxSizePerSession: 12345 } },
+        register: async (_plugin: unknown, opts?: { limits?: { fileSize?: unknown } }) => {
+          if (capturedFileSize === undefined && opts?.limits?.fileSize !== undefined) {
+            capturedFileSize = opts.limits.fileSize;
+          }
+        },
+        post: () => {},
+        head: () => {},
+        get: () => {},
+        delete: () => {},
+      };
+      const { default: routes } = await import("./files.routes.js");
+      await routes(mockServer as unknown as FastifyInstance);
+
+      expect(capturedFileSize).toBe(12345);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("resolveMaxTotalBytes validation", () => {
+  it("returns undefined when neither key is set", async () => {
+    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
+
+    expect(resolveMaxTotalBytes(undefined)).toBeUndefined();
+    expect(resolveMaxTotalBytes({})).toBeUndefined();
+  });
+
+  it("keeps 0 as a valid quota", async () => {
+    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
+
+    expect(resolveMaxTotalBytes({ maxTotalBytes: 0 })).toBe(0);
+    expect(resolveMaxTotalBytes({ maxSizePerSession: 0 })).toBe(0);
+  });
+
+  it("throws RangeError on NaN, Infinity, and negative quotas", async () => {
+    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
+
+    expect(() => resolveMaxTotalBytes({ maxTotalBytes: NaN })).toThrow(RangeError);
+    expect(() => resolveMaxTotalBytes({ maxTotalBytes: Infinity })).toThrow(RangeError);
+    expect(() => resolveMaxTotalBytes({ maxTotalBytes: -1 })).toThrow(RangeError);
+    expect(() => resolveMaxTotalBytes({ maxSizePerSession: NaN })).toThrow(RangeError);
+    expect(() => resolveMaxTotalBytes({ maxSizePerSession: -5 })).toThrow(RangeError);
+  });
+});
+
+describe("steelBrowserPlugin fileStorage wiring", () => {
+  it("decorates normalized config and registers fileStoragePlugin from it (single resolve)", async () => {
+    // Does not import steel-browser-plugin.ts itself: that module pulls
+    // browser/CDP/puppeteer deps unavailable in unit tests. Instead replay
+    // its exact two-line wiring (normalize once, derive register opts from
+    // the decorated config) and assert end-to-end forwarding.
+    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
+
+    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
+    try {
+      const decorated: unknown[] = [];
+      const mockFastify = {
+        log: { info: () => {} },
+        decorate: (key: string, value: unknown) => {
+          decorated.push(value);
+        },
+      };
+
+      // Deprecated-only input: normalize maps to maxTotalBytes.
+      const cfg = normalizeSteelBrowserFileStorage({
+        fileStorage: { maxSizePerSession: 77 } as {
+          maxTotalBytes?: number;
+          maxSizePerSession?: number;
+        },
+      });
+      (mockFastify as { decorate: (k: string, v: unknown) => void }).decorate(
+        "steelBrowserConfig",
+        cfg,
+      );
+      await fileStoragePlugin(mockFastify as unknown as FastifyInstance, {
+        maxTotalBytes: cfg.fileStorage?.maxTotalBytes,
+      });
+
+      expect(
+        (decorated[0] as { fileStorage?: { maxTotalBytes?: number } }).fileStorage?.maxTotalBytes,
+      ).toBe(77);
+      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 77 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("wiring preserves precedence and unbounded shape", async () => {
+    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
+
+    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
+    try {
+      const mockFastify = {
+        log: { info: () => {} },
+        decorate: (_key: string, _value: unknown) => {},
+      };
+
+      const both = normalizeSteelBrowserFileStorage({
+        fileStorage: { maxTotalBytes: 100, maxSizePerSession: 77 },
+      });
+      await fileStoragePlugin(mockFastify as unknown as FastifyInstance, {
+        maxTotalBytes: both.fileStorage?.maxTotalBytes,
+      });
+      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 100 });
+
+      spy.mockClear();
+      const empty = normalizeSteelBrowserFileStorage(
+        {} as { fileStorage?: { maxTotalBytes?: number; maxSizePerSession?: number } },
+      );
+      await fileStoragePlugin(mockFastify as unknown as FastifyInstance, {
+        maxTotalBytes: empty.fileStorage?.maxTotalBytes,
+      });
+      // Stale-{} guard: unbounded stays {} so a bare call never clobbers quota.
+      expect(spy).toHaveBeenCalledWith({});
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

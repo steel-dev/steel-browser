@@ -319,6 +319,46 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     },
   );
 
+  it.each([".steel-upload-1", "nested/.steel-upload-2"])(
+    "rejects %s as a delete target without touching disk or quota",
+    async (filePath) => {
+      const fileService = await createQuotaService(100);
+      await fileService.saveFile({
+        filePath: "a.bin",
+        stream: Readable.from(Buffer.alloc(60, 0x61)),
+      });
+
+      // Seed a staging orphan directly on disk (mirrors a crash leftover;
+      // saveFile itself can never create it at this path via the API guard).
+      const baseFilesPath = fileService.getBaseFilesPath();
+      const stagingAbsPath = path.join(baseFilesPath, filePath);
+      await fs.promises.mkdir(path.dirname(stagingAbsPath), { recursive: true });
+      await fs.promises.writeFile(stagingAbsPath, Buffer.alloc(10, 0x62));
+      const unlinkSpy = vi.spyOn(fs.promises, "unlink");
+
+      await expect(fileService.deleteFile({ filePath })).rejects.toThrow("Invalid path");
+
+      // Staging file survives untouched and no unlink was attempted.
+      expect(unlinkSpy).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+      expect(await fs.promises.readFile(stagingAbsPath)).toEqual(Buffer.alloc(10, 0x62));
+
+      // Quota accounting is unchanged: 60 bytes still committed, so a further
+      // 50 bytes must still exceed the 100-byte limit. A buggy delete that
+      // unlinked the 10-byte staging file would have decremented the counter
+      // to 50 and wrongly allowed this save.
+      await expect(
+        fileService.saveFile({
+          filePath: "b.bin",
+          stream: Readable.from(Buffer.alloc(50, 0x63)),
+        }),
+      ).rejects.toThrow(FileQuotaExceededError);
+      expect((await fileService.listFiles()).reduce((total, file) => total + file.size, 0)).toBe(
+        60,
+      );
+    },
+  );
+
   it("holds the quota across concurrent saves", async () => {
     const fileService = await createQuotaService(100);
 
@@ -433,9 +473,9 @@ describe("FileService delete/commit serialization", () => {
     releaseRename();
 
     await expect(Promise.all([savePromise, deletePromise])).resolves.toBeDefined();
-    await expect(
-      fs.promises.stat(path.join(baseFilesPath, "victim.txt")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.promises.stat(path.join(baseFilesPath, "victim.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("delete-all queued during a save commit leaves no resurrected file", async () => {
@@ -457,6 +497,62 @@ describe("FileService delete/commit serialization", () => {
     await expect(Promise.all([savePromise, cleanupPromise])).resolves.toBeDefined();
     expect(await fs.promises.readdir(baseFilesPath)).toEqual([]);
   });
+
+  it("resets cached quota when cleanup finds the base dir missing (ENOENT)", async () => {
+    testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-delete-"));
+    const fileService = new FileService({
+      baseFilesPath: path.join(testDirectory, "files"),
+      prebuiltArchiveDir: path.join(testDirectory, "archive"),
+      watchFiles: false,
+      maxSizeBytes: 100,
+    });
+
+    await fileService.saveFile({
+      filePath: "a.bin",
+      stream: Readable.from(Buffer.alloc(60, 0x61)),
+    });
+    // External removal: base dir is gone, so the cleanup rm-loop hits ENOENT.
+    await fs.promises.rm(fileService.getBaseFilesPath(), { recursive: true, force: true });
+
+    await expect(fileService.cleanupFiles()).resolves.toBeUndefined();
+
+    // Quota cache was reset to 0: 60 bytes now fits (60 + 60 would exceed 100 without reset).
+    const result = await fileService.saveFile({
+      filePath: "b.bin",
+      stream: Readable.from(Buffer.alloc(60, 0x62)),
+    });
+    expect(result.size).toBe(60);
+  });
+
+  it.each([null, undefined])(
+    "handles %s readdir rejection during cleanup without a secondary throw",
+    async (rejection) => {
+      testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-delete-"));
+      const fileService = new FileService({
+        baseFilesPath: path.join(testDirectory, "files"),
+        prebuiltArchiveDir: path.join(testDirectory, "archive"),
+        watchFiles: false,
+        maxSizeBytes: 100,
+      });
+
+      await fileService.saveFile({
+        filePath: "a.bin",
+        stream: Readable.from(Buffer.alloc(60, 0x61)),
+      });
+
+      vi.spyOn(fs.promises, "readdir").mockImplementation(() => Promise.reject(rejection));
+      await expect(fileService.cleanupFiles()).resolves.toBeUndefined();
+      vi.restoreAllMocks();
+
+      // Non-ENOENT failure leaves the cached quota intact: 60 + 50 still exceeds 100.
+      await expect(
+        fileService.saveFile({
+          filePath: "b.bin",
+          stream: Readable.from(Buffer.alloc(50, 0x63)),
+        }),
+      ).rejects.toThrow(FileQuotaExceededError);
+    },
+  );
 
   it("concurrent deletes of the same file are idempotent", async () => {
     const fileService = await createDeleteService();
@@ -699,8 +795,10 @@ describe("FileService symlink hardening", () => {
       isFile: () => false,
       isDirectory: () => false,
     } as unknown as fs.Stats;
+    let symlinkTrapHit = false;
     vi.spyOn(fs.promises, "lstat").mockImplementation(async (linkPath: any, ...rest: any[]) => {
-      if (linkPath === target) {
+      if (path.resolve(linkPath) === path.resolve(target)) {
+        symlinkTrapHit = true;
         return fakeLink;
       }
       return (realLstat as any)(linkPath, ...rest);
@@ -714,6 +812,9 @@ describe("FileService symlink hardening", () => {
     );
     await expect(fileService.getFile({ filePath: "real.txt" })).rejects.toThrow("Invalid path");
     await expect(fileService.deleteFile({ filePath: "real.txt" })).rejects.toThrow("Invalid path");
+    // Guard against silent fall-through: proves the rejections above came from
+    // the mocked symlink branch, not another "Invalid path" path.
+    expect(symlinkTrapHit).toBe(true);
   });
 });
 
@@ -778,6 +879,23 @@ describe("FileService singleton quota reconcile", () => {
     // Mirrors fileStoragePlugin called with {}: { maxSizeBytes: undefined }.
     FileService.getInstance({ ...dirs, maxSizeBytes: undefined });
 
+    await expect(
+      FileService.getInstance().saveFile({
+        filePath: "big.bin",
+        stream: Readable.from(Buffer.alloc(40, 0x61)),
+      }),
+    ).rejects.toThrow(FileQuotaExceededError);
+  });
+
+  it("throws RangeError for non-finite or negative maxSizeBytes and keeps existing quota", async () => {
+    const dirs = await singletonDirs();
+    FileService.getInstance({ ...dirs, maxSizeBytes: 10 });
+
+    for (const invalid of [NaN, Infinity, -Infinity, -1]) {
+      expect(() => FileService.getInstance({ ...dirs, maxSizeBytes: invalid })).toThrow(RangeError);
+    }
+
+    // Quota must remain intact after every rejected reconcile attempt.
     await expect(
       FileService.getInstance().saveFile({
         filePath: "big.bin",

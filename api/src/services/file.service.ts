@@ -104,8 +104,8 @@ export class FileService {
    * Singleton accessor with quota reconcile: the first call fixes
    * construction-time state (paths, watcher), but a later call carrying an
    * explicit numeric maxSizeBytes updates the live quota (last-wins). Bare
-   * calls — no key, or undefined (e.g. the file-storage plugin passing
-   * `maxSizeBytes: options?.maxSizePerSession` through when unset) — keep the
+   * calls — no key (e.g. the file-storage plugin passing `{}` through when
+   * unset) — keep the
    * existing quota, so call order between configured and bare callers cannot
    * silently drop (or resurrect) the limit. Non-numeric values (including
    * null, which FileServiceOptions does not accept) never clobber.
@@ -116,7 +116,7 @@ export class FileService {
     if (!FileService.instance) {
       FileService.instance = new FileService(options);
     } else if (typeof options.maxSizeBytes === "number") {
-      FileService.instance.maxSizeBytes = options.maxSizeBytes;
+      FileService.instance.maxSizeBytes = normalizeQuota(options.maxSizeBytes);
     }
     return FileService.instance;
   }
@@ -443,7 +443,10 @@ export class FileService {
     }
     const oldSize = await this.getRegularFileSize(excludedPath);
     const used = this.committedBytes - oldSize;
-    return used < 0 ? 0 : used;
+    if (used < 0) {
+      return this.getUsedBytes(excludedPath);
+    }
+    return used;
   }
 
   /**
@@ -862,6 +865,12 @@ export class FileService {
   public async deleteFile({ filePath }: { filePath: string }): Promise<void> {
     await this.ensureBaseDir();
     const safeFilePath = this.getSafeFilePath(filePath);
+    if (
+      safeFilePath === this.baseFilesPath ||
+      path.basename(safeFilePath).startsWith(UPLOAD_TEMP_PREFIX)
+    ) {
+      throw new Error("Invalid path");
+    }
 
     // Serialized with save commits and cleanups so this delete cannot land
     // between another operation's check and its act (or vice versa).
@@ -985,11 +994,14 @@ export class FileService {
         `[FileService cleanupFiles] Cleared contents of directory: ${this.baseFilesPath}`,
       );
     } catch (err: any) {
-      if (err.code !== "ENOENT") {
+      if (err?.code !== "ENOENT") {
         console.error(
           `[FileService cleanupFiles] Error cleaning directory ${this.baseFilesPath}:`,
           err,
         );
+      } else {
+        this.committedBytes = 0;
+        this.committedBytesReady = true;
       }
     }
     console.log(`[FileService cleanupFiles] Files cleaned. Creating empty archive.`);

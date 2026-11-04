@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { FileService } from "../services/file.service.js";
+import { resolveMaxTotalBytes } from "../utils/file-quota.js";
 
 export interface FileStoragePluginOptions {
   /**
@@ -20,11 +21,10 @@ const fileStoragePlugin: FastifyPluginAsync<FileStoragePluginOptions> = async (
   options,
 ) => {
   fastify.log.info("Registering file service");
+  const rawQuota = resolveMaxTotalBytes(options);
   fastify.decorate(
     "fileService",
-    FileService.getInstance({
-      maxSizeBytes: options?.maxTotalBytes ?? options?.maxSizePerSession,
-    }),
+    FileService.getInstance(rawQuota === undefined ? {} : { maxSizeBytes: rawQuota }),
   );
 };
 

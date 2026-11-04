@@ -106,12 +106,12 @@ interface SessionConfig {
 
 ### 4. File Storage Service (`api/src/services/file.service.ts`)
 
-Handles file operations with session-scoped storage:
+Handles file operations with a single global cumulative storage bucket:
 
 - **Upload Management**: Handles multipart file uploads
 - **Download Coordination**: Manages browser downloads
-- **Storage Isolation**: Session-scoped file storage
-- **Cleanup**: Automatic file cleanup on session end
+- **Storage Isolation**: Single global cumulative bucket shared across all sessions (per-session isolation is future work)
+- **Cleanup**: `cleanupFiles` clears the entire store
 
 ## 🔌 Plugin Architecture Deep Dive
 
@@ -181,19 +181,20 @@ await fastify.register(steelBrowserPlugin, {
   fileStorage: { maxTotalBytes: 100 * MB }
 });
 
-// NOTE: `maxTotalBytes` is a single global cumulative bucket shared across
-// all sessions, NOT isolated per session. `maxSizePerSession` remains as a
-// deprecated backward-compatible alias (`maxTotalBytes ?? maxSizePerSession`).
-// True per-session isolation (per-session subdirs + lifecycle scoping) is
-// future work: FileService is currently a store-wide singleton with one
-// baseFilesPath, sessionId is decorative in routes/types, and cleanupFiles
-// wipes the whole store.
-
 // Individual plugins
 await fastify.register(browserInstancePlugin);
 await fastify.register(sessionPlugin);
 await fastify.register(fileStoragePlugin);
 ```
+
+> NOTE: `maxTotalBytes` is a single global cumulative bucket shared
+> across all sessions, NOT isolated per session.
+> `maxSizePerSession` remains as a deprecated backward-compatible alias
+> (`maxTotalBytes ?? maxSizePerSession`).
+> True per-session isolation (per-session subdirs + lifecycle scoping)
+> is future work: FileService is currently a store-wide singleton with
+> one baseFilesPath, sessionId is decorative in routes/types, and
+> cleanupFiles wipes the whole store.
 
 ### Route Organization
 
@@ -277,7 +278,7 @@ context.setDefaultTimeout(30000);
 
 - **Memory**: Browser process memory limits
 - **CPU**: Process CPU throttling
-- **Storage**: Session-scoped file storage limits
+- **Storage**: Global cumulative file storage quota
 - **Network**: Request rate limiting and proxy support
 
 ## 📊 Performance Considerations
