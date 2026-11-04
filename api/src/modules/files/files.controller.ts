@@ -42,6 +42,7 @@ function isBlockedIPv4(ip: string): boolean {
   if (a === 127) return true; // 127.0.0.0/8 loopback
   if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local
   if (a === 0) return true; // 0.0.0.0/8
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT (RFC 6598)
   return false;
 }
 
@@ -84,6 +85,22 @@ function isBlockedIp(ip: string): boolean {
   const tail = addr.slice(addr.lastIndexOf(":") + 1);
   if (tail.includes(".")) return true;
   if (isLoopbackOrUnspecifiedIPv6(addr)) return true; // loopback / unspecified
+  // Block IPv4-compatible IPv6 (::/96, deprecated RFC 4291) in any notation:
+  // ::7f00:1, ::a9fe:a9fe, 0:0:0:0:0:0:7f00:1, etc. First 96 bits zero.
+  // Dotted tails already returned true above; ::, ::1 already blocked.
+  let compatGroups: string[];
+  const compIdx = addr.indexOf("::");
+  if (compIdx !== -1) {
+    const left = compIdx === 0 ? [] : addr.slice(0, compIdx).split(":");
+    const right = compIdx + 2 >= addr.length ? [] : addr.slice(compIdx + 2).split(":");
+    const missing = 8 - (left.length + right.length);
+    if (missing < 0) return true;
+    compatGroups = [...left, ...Array<string>(missing).fill("0"), ...right];
+  } else {
+    compatGroups = addr.split(":");
+  }
+  if (compatGroups.length === 8 && compatGroups.slice(0, 6).every((g) => /^0+$/.test(g)))
+    return true;
   const groups = addr.split(":");
   // ::ffff:0:0/96 in fully expanded form (compressed forms start with
   // "::ffff:" and are caught below).
@@ -131,7 +148,11 @@ export class FilesController {
     }
 
     const normalized = path.normalize(filePath);
-    if (normalized.split(path.sep).includes("..")) {
+    if (
+      normalized === "." ||
+      normalized.startsWith("." + path.sep) ||
+      normalized.split(path.sep).includes("..")
+    ) {
       return false;
     }
 
@@ -302,6 +323,12 @@ export class FilesController {
           } catch {}
           if (e instanceof FileQuotaExceededError) throw e;
           if (
+            (e as { code?: string })?.code === "ENOSPC" ||
+            (e as { code?: string })?.code === "EACCES"
+          ) {
+            throw e;
+          }
+          if (
             typeof (e as { statusCode?: unknown })?.statusCode === "number" &&
             (e as { statusCode: number }).statusCode === 413
           ) {
@@ -373,11 +400,13 @@ export class FilesController {
     // address with a custom lookup so DNS cannot rebind between validation
     // and connect (no validate-then-connect TOCTOU hole).
     let pinned: string;
+    let pinnedRecords: Array<{ address: string; family: number }> = [];
     if (net.isIP(hostname) !== 0) {
       if (isBlockedIp(hostname)) {
         throw new InvalidFileUrlError("URL host is not allowed");
       }
       pinned = hostname;
+      pinnedRecords = [{ address: pinned, family: net.isIP(pinned) }];
     } else {
       let records: Array<{ address: string }>;
       try {
@@ -395,6 +424,7 @@ export class FilesController {
         }
       }
       pinned = records[0].address;
+      pinnedRecords = records.map((r) => ({ address: r.address, family: net.isIP(r.address) }));
     }
     const pinnedFamily = net.isIP(pinned);
     const pinnedLookup = (_host: string, options: unknown, callback?: unknown): void => {
@@ -406,7 +436,10 @@ export class FilesController {
         options !== null &&
         (options as { all?: unknown }).all === true;
       if (wantAll) {
-        done(null, [{ address: pinned, family: pinnedFamily }]);
+        done(
+          null,
+          pinnedRecords.length > 0 ? pinnedRecords : [{ address: pinned, family: pinnedFamily }],
+        );
       } else {
         done(null, pinned, pinnedFamily);
       }

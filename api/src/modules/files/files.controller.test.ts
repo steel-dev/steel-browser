@@ -543,41 +543,50 @@ describe("fileStoragePlugin registration", () => {
     // Never construct a real FileService here: its production defaults point
     // at /files, which is not writable on CI. Assert the wiring instead.
     const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    const fastify = {
-      log: { info: () => {} },
-      decorate: (_key: string, _value: unknown) => {},
-    };
-    await fileStoragePlugin(fastify as unknown as FastifyInstance, {});
+    try {
+      const fastify = {
+        log: { info: () => {} },
+        decorate: (_key: string, _value: unknown) => {},
+      };
+      await fileStoragePlugin(fastify as unknown as FastifyInstance, {});
 
-    expect(spy).toHaveBeenCalledWith({});
-    spy.mockRestore();
+      expect(spy).toHaveBeenCalledWith({});
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("forwards deprecated maxSizePerSession as maxSizeBytes", async () => {
     const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    const fastify = {
-      log: { info: () => {} },
-      decorate: (_key: string, _value: unknown) => {},
-    };
-    await fileStoragePlugin(fastify as unknown as FastifyInstance, { maxSizePerSession: 77 });
+    try {
+      const fastify = {
+        log: { info: () => {} },
+        decorate: (_key: string, _value: unknown) => {},
+      };
+      await fileStoragePlugin(fastify as unknown as FastifyInstance, { maxSizePerSession: 77 });
 
-    expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 77 });
-    spy.mockRestore();
+      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 77 });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("prefers maxTotalBytes when both quota keys are set", async () => {
     const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    const fastify = {
-      log: { info: () => {} },
-      decorate: (_key: string, _value: unknown) => {},
-    };
-    await fileStoragePlugin(fastify as unknown as FastifyInstance, {
-      maxTotalBytes: 100,
-      maxSizePerSession: 77,
-    });
+    try {
+      const fastify = {
+        log: { info: () => {} },
+        decorate: (_key: string, _value: unknown) => {},
+      };
+      await fileStoragePlugin(fastify as unknown as FastifyInstance, {
+        maxTotalBytes: 100,
+        maxSizePerSession: 77,
+      });
 
-    expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 100 });
-    spy.mockRestore();
+      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 100 });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

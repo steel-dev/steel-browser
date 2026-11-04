@@ -26,7 +26,7 @@ export function resolveMaxTotalBytes(fileStorage?: FileStorageQuotaConfig): numb
  */
 export function normalizeSteelBrowserFileStorage<
   T extends { fileStorage?: FileStorageQuotaConfig },
->(opts: T): T {
+>(opts: T): T & { fileStorage?: FileStorageQuotaConfig } {
   const resolved = resolveMaxTotalBytes(opts.fileStorage);
   if (resolved === undefined) return opts;
   return {

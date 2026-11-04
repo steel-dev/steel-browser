@@ -564,14 +564,19 @@ export class FileService {
       await this.assertSafeResolved(safeFilePath);
 
       const usedBytes = await this.getPreCheckUsedBytes(safeFilePath);
+      const committedAtStart = this.committedBytesReady ? this.committedBytes : null;
       const incomingHint = Number.isFinite(size) && (size as number) >= 0 ? (size as number) : 0;
       this.checkQuota(usedBytes + this.inFlightBytes, incomingHint);
 
       const quotaGuard = new Transform({
         transform: (chunk: Buffer, _encoding, callback) => {
           try {
+            const delta =
+              committedAtStart !== null && this.committedBytesReady
+                ? Math.max(0, this.committedBytes - committedAtStart)
+                : 0;
             this.checkQuota(
-              usedBytes + this.inFlightBytes - heldBytes,
+              usedBytes + delta + this.inFlightBytes - heldBytes,
               receivedBytes + chunk.length,
             );
           } catch (error) {
@@ -652,9 +657,9 @@ export class FileService {
           this.committedBytes = recheckBase + stats.size;
           this.committedBytesReady = true;
         }
+        releaseHeldBytes();
       });
       tempFilePath = null;
-      releaseHeldBytes();
 
       console.log(`File saved: ${safeFilePath}, Size: ${file.size}`);
       this.scheduleArchiveCreation();
@@ -683,6 +688,12 @@ export class FileService {
   }): Promise<{ stream: Readable } & File> {
     await this.ensureBaseDir();
     const safeFilePath = this.getSafeFilePath(filePath);
+    if (
+      safeFilePath === this.baseFilesPath ||
+      path.basename(safeFilePath).startsWith(UPLOAD_TEMP_PREFIX)
+    ) {
+      throw new Error("Invalid path");
+    }
 
     try {
       await this.assertSafeResolved(safeFilePath);
@@ -696,9 +707,6 @@ export class FileService {
         } catch (openError: any) {
           if (openError?.code === "ELOOP" || openError?.code === "EMLINK") {
             throw new Error("Invalid path");
-          }
-          if (openError?.code === "ENOENT") {
-            throw new Error(`File not found: ${safeFilePath}`);
           }
           throw openError;
         }
@@ -743,7 +751,7 @@ export class FileService {
       if (error?.code === "ELOOP" || error?.code === "EMLINK") {
         throw new Error("Invalid path");
       }
-      if (error.code === "ENOENT") {
+      if (error?.code === "ENOENT" || error?.message?.startsWith("File not found:")) {
         throw new Error(`File not found: ${safeFilePath}`);
       }
       console.error(`[FileService] Error accessing file ${safeFilePath} for download:`, error);
@@ -754,6 +762,12 @@ export class FileService {
   public async getFile({ filePath }: { filePath: string }): Promise<File> {
     await this.ensureBaseDir();
     const safeFilePath = this.getSafeFilePath(filePath);
+    if (
+      safeFilePath === this.baseFilesPath ||
+      path.basename(safeFilePath).startsWith(UPLOAD_TEMP_PREFIX)
+    ) {
+      throw new Error("Invalid path");
+    }
 
     try {
       await this.assertSafeResolved(safeFilePath);
@@ -767,9 +781,6 @@ export class FileService {
         } catch (openError: any) {
           if (openError?.code === "ELOOP" || openError?.code === "EMLINK") {
             throw new Error("Invalid path");
-          }
-          if (openError?.code === "ENOENT") {
-            throw new Error(`File not found: ${safeFilePath}`);
           }
           throw openError;
         }
@@ -799,7 +810,7 @@ export class FileService {
       if (error?.code === "ELOOP" || error?.code === "EMLINK") {
         throw new Error("Invalid path");
       }
-      if (error.code === "ENOENT") {
+      if (error?.code === "ENOENT" || error?.message?.startsWith("File not found:")) {
         throw new Error(`File not found: ${safeFilePath}`);
       }
       console.error(`[FileService] Error accessing file ${safeFilePath} for getFile:`, error);

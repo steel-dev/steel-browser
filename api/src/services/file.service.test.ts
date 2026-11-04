@@ -764,14 +764,22 @@ describe("FileService symlink hardening", () => {
     }
     expect(Buffer.concat(chunks).toString("utf8")).toBe("inside content");
 
-    if (!(await trySymlink(secretPath, path.join(baseFilesPath, "link.txt"), fileLinkType))) {
-      return;
-    }
+    const hasFileLink = await trySymlink(
+      secretPath,
+      path.join(baseFilesPath, "link.txt"),
+      fileLinkType,
+    );
 
     const outsideSubDir = path.join(outsideDirectory!, "realdir");
     await fs.promises.mkdir(outsideSubDir, { recursive: true });
     await fs.promises.writeFile(path.join(outsideSubDir, "evil.txt"), "outside dir secret");
-    if (!(await trySymlink(outsideSubDir, path.join(baseFilesPath, "sub"), dirLinkType))) {
+    const hasDirLink = await trySymlink(
+      outsideSubDir,
+      path.join(baseFilesPath, "sub"),
+      dirLinkType,
+    );
+
+    if (!hasFileLink && !hasDirLink) {
       return;
     }
 

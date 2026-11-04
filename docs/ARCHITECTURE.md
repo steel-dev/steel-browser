@@ -187,7 +187,8 @@ await fastify.register(sessionPlugin);
 await fastify.register(fileStoragePlugin);
 ```
 
-> NOTE: `maxTotalBytes` is a single global cumulative bucket shared
+> [!NOTE]
+> `maxTotalBytes` is a single global cumulative bucket shared
 > across all sessions, NOT isolated per session.
 > `maxSizePerSession` remains as a deprecated backward-compatible alias
 > (`maxTotalBytes ?? maxSizePerSession`).
