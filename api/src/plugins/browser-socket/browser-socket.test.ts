@@ -176,7 +176,10 @@ describe("upgrade handler hardening", () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     // The L49 error listener absorbed every reset.
-    expect(fastify.log.debug).toHaveBeenCalledWith(expect.anything(), "Upgrade socket error");
+    expect(fastify.log.debug).toHaveBeenCalledWith(
+      expect.anything(),
+      "Upgrade socket error",
+    );
 
     const valid = fakeSocket();
     await upgrade({ url: "/cdp?ok=1", headers: {} }, valid, Buffer.alloc(0));
