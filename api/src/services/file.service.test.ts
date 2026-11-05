@@ -244,6 +244,18 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
     const entries = await fs.promises.readdir(fileService.getBaseFilesPath());
     expect(entries).toHaveLength(3);
   });
+
+  it("denies any positive bytes when maxSizeBytes is 0", async () => {
+    const fileService = await createQuotaService(0);
+
+    await expect(
+      fileService.saveFile({
+        filePath: "a.bin",
+        stream: Readable.from(Buffer.alloc(1, 0x61)),
+      }),
+    ).rejects.toThrow(FileQuotaExceededError);
+    expect(await fs.promises.readdir(fileService.getBaseFilesPath())).toEqual([]);
+  });
 });
 
 describe("FileService delete/commit serialization", () => {

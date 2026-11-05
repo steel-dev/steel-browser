@@ -187,7 +187,7 @@ await fastify.register(sessionPlugin);
 await fastify.register(fileStoragePlugin);
 ```
 
-File quota is process-wide: `maxTotalBytes` caps the store-wide cumulative bytes on the `FileService` singleton (`maxSizePerSession` is a deprecated alias); per-session in practice because session files are removed on cleanup. When unset, the cumulative quota is unbounded while the multipart per-file `fileSize` limit still falls back to 100MB.
+File quota is process-wide: `maxTotalBytes` caps the store-wide cumulative bytes on the `FileService` singleton (`maxSizePerSession` is a deprecated alias); per-session in practice because session files are removed on cleanup. When unset, the cumulative quota is unbounded while the multipart per-file `fileSize` limit still falls back to 100MB. A quota of `0` is a valid deny-all: any upload with positive bytes is rejected.
 
 ### Route Organization
 
