@@ -116,6 +116,56 @@ function isBlockedIp(ip: string): boolean {
   return false;
 }
 
+function ipv4ToInt(ip: string): number {
+  const [a, b, c, d] = ip.split(".").map(Number);
+  return (((a * 256 + b) * 256 + c) * 256 + d) >>> 0;
+}
+
+function parseIPv4Cidr(entry: string): { network: number; mask: number } | null {
+  const slash = entry.indexOf("/");
+  if (slash === -1) return null;
+  const addr = entry.slice(0, slash);
+  const prefix = entry.slice(slash + 1);
+  if (net.isIP(addr) !== 4) return null;
+  if (!/^\d{1,2}$/.test(prefix)) return null;
+  const bits = Number(prefix);
+  if (bits < 0 || bits > 32) return null;
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return { network: (ipv4ToInt(addr) & mask) >>> 0, mask };
+}
+
+// Opt-in escape hatch for the default-deny guard below
+// (fileStorage.urlAllowlist): explicitly permitted hosts skip the blocklist.
+// An entry is a hostname ("localhost"), an IPv4 literal ("127.0.0.1"), or
+// an IPv4 CIDR ("10.0.0.0/8"), matched case-insensitively against the URL
+// hostname and (for the DNS branch) the resolved address. IPv6 literals
+// match exactly; IPv6 CIDRs are not supported. Malformed or non-string
+// entries permit nothing (fail closed).
+function isAllowlistedHost(value: string, allowlist: readonly string[]): boolean {
+  const normalized = value.toLowerCase();
+  for (const rawEntry of allowlist) {
+    if (typeof rawEntry !== "string") continue;
+    const entry = rawEntry
+      .trim()
+      .toLowerCase()
+      .replace(/\.$/, "")
+      .replace(/^\[|\]$/g, "");
+    if (entry === "") continue;
+    const cidr = parseIPv4Cidr(entry);
+    if (cidr !== null) {
+      if (
+        net.isIP(normalized) === 4 &&
+        (ipv4ToInt(normalized) & cidr.mask) >>> 0 === cidr.network
+      ) {
+        return true;
+      }
+      continue;
+    }
+    if (entry === normalized) return true;
+  }
+  return false;
+}
+
 export class FilesController {
   constructor(private fileService: FileService) {}
 
@@ -281,7 +331,10 @@ export class FilesController {
         // caller supplied the URL, so it maps to 400, never 500.
         let fetched: Awaited<ReturnType<typeof this.createStreamFromUrl>>;
         try {
-          fetched = await this.createStreamFromUrl(fileUrl);
+          fetched = await this.createStreamFromUrl(
+            fileUrl,
+            server.steelBrowserConfig?.fileStorage?.urlAllowlist,
+          );
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : "Failed to fetch file from URL";
           return reply.code(400).send({ success: false, message });
@@ -348,12 +401,15 @@ export class FilesController {
 
   private async createStreamFromUrl(
     url: string,
+    urlAllowlist?: string[],
   ): Promise<{ stream: Readable; contentType?: string; name: string; contentLength?: number }> {
-    // ASSUMPTION: BLOCKLIST, not allowlist. Fetching a file from a URL is a
-    // supported feature, so public internet hosts stay fetchable; only
-    // non-http(s) schemes and hosts resolving to a blocked address
-    // loopback, private, link-local, or reserved ranges — plus "localhost"
-    // itself — are denied. An allowlist would break the URL-upload feature.
+    // Default-deny for loopback/intranet fetch targets: hosts resolving to a
+    // blocked address (loopback, private, link-local, or reserved ranges) —
+    // plus "localhost" itself — are denied unless explicitly opted back in
+    // via fileStorage.urlAllowlist (hostnames, IPv4 literals, or IPv4
+    // CIDRs; self-hosted escape hatch, empty by default). Public internet
+    // hosts stay fetchable. The allowlist never widens schemes (http/https
+    // only) and never permits redirect chasing (non-200 still rejected).
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -367,7 +423,11 @@ export class FilesController {
       .toLowerCase()
       .replace(/\.$/, "")
       .replace(/^\[|\]$/g, "");
-    if (hostname === "localhost") {
+    const allowlist: readonly string[] = urlAllowlist ?? [];
+    // An explicitly permitted host skips the blocklist gates (but not the
+    // scheme check above): the operator opted it back in.
+    const hostnameAllowed = isAllowlistedHost(hostname, allowlist);
+    if (!hostnameAllowed && hostname === "localhost") {
       throw new InvalidFileUrlError("URL host is not allowed");
     }
 
@@ -376,17 +436,19 @@ export class FilesController {
     // fix), and the fetch timeout live in the SSRF follow-up
     // (see ssrf-extras.split.md at the repo root).
     if (net.isIP(hostname) !== 0) {
-      if (isBlockedIp(hostname)) {
+      if (!hostnameAllowed && isBlockedIp(hostname)) {
         throw new InvalidFileUrlError("URL host is not allowed");
       }
-    } else {
+    } else if (!hostnameAllowed) {
       let address: string;
       try {
         address = (await dnsLookup(hostname)).address;
       } catch {
         throw new InvalidFileUrlError("URL host could not be resolved");
       }
-      if (isBlockedIp(address)) {
+      // A hostname outside the allowlist may still resolve to an allowlisted
+      // address (e.g. an intranet name inside an allowlisted CIDR).
+      if (!isAllowlistedHost(address, allowlist) && isBlockedIp(address)) {
         throw new InvalidFileUrlError("URL host is not allowed");
       }
     }

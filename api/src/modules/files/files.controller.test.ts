@@ -10,9 +10,10 @@ import { FilesController } from "./files.controller.js";
 // Records every staged temp path and every unlinked path through a
 // passthrough mock of "fs" (ESM namespaces are frozen, so vi.spyOn on
 // fs.* throws). Real behavior is preserved; only the paths are recorded.
-const { stagedPaths, unlinkedPaths } = vi.hoisted(() => ({
+const { stagedPaths, unlinkedPaths, dnsLookupAddress } = vi.hoisted(() => ({
   stagedPaths: [] as string[],
   unlinkedPaths: [] as string[],
+  dnsLookupAddress: { address: null as string | null },
 }));
 
 vi.mock("fs", async (importOriginal) => {
@@ -29,6 +30,23 @@ vi.mock("fs", async (importOriginal) => {
         unlinkedPaths.push(String(args[0]));
         return (actual.promises.unlink as (...a: never[]) => Promise<void>)(...args);
       },
+    },
+  };
+});
+
+// Controllable dns.promises.lookup: tests set dnsLookupAddress.address to
+// stub one resolution; null delegates to the real lookup. The allowlist
+// suite uses it to resolve an intranet hostname into an allowlisted CIDR
+// without any network.
+vi.mock("dns/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("dns/promises")>();
+  return {
+    ...actual,
+    lookup: (...args: unknown[]) => {
+      if (dnsLookupAddress.address !== null) {
+        return Promise.resolve({ address: dnsLookupAddress.address, family: 4 });
+      }
+      return (actual.lookup as (...a: unknown[]) => unknown)(...args);
     },
   };
 });
@@ -508,6 +526,224 @@ describe("FilesController URL SSRF blocklist", () => {
       expect(getSpy).toHaveBeenCalled();
       expect(saveCalls).toBe(1);
       expect(statusCode()).toBe(200);
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+});
+
+function serverWithAllowlist(urlAllowlist: string[]) {
+  return {
+    steelBrowserConfig: { fileStorage: { urlAllowlist } },
+  } as unknown as FastifyInstance;
+}
+
+describe("FilesController URL SSRF allowlist", () => {
+  beforeEach(() => {
+    dnsLookupAddress.address = null;
+  });
+
+  it("fetches allowlisted localhost by name", async () => {
+    // Case-insensitive hostname entry opts localhost back in: the name gate
+    // and the DNS pre-check are skipped, so http.get answers 200 and
+    // saveFile runs. Without the allowlist read this 400s instead.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 4, lastModified: new Date(0) };
+      });
+      const { reply, statusCode } = createReply();
+
+      await controller.handleFileUpload(
+        serverWithAllowlist(["LOCALHOST"]),
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://localhost:8080/file.bin",
+        }),
+        reply,
+      );
+
+      expect(getSpy).toHaveBeenCalled();
+      expect(saveCalls).toBe(1);
+      expect(statusCode()).toBe(200);
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it("fetches loopback literals inside an allowlisted CIDR", async () => {
+    // 127.0.0.1 sits in 127.0.0.0/8, so the literal-IP gate lets it through
+    // to the 200 mock.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 4, lastModified: new Date(0) };
+      });
+      const { reply, statusCode } = createReply();
+
+      await controller.handleFileUpload(
+        serverWithAllowlist(["127.0.0.0/8"]),
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://127.0.0.1:1/tiny.bin",
+        }),
+        reply,
+      );
+
+      expect(getSpy).toHaveBeenCalled();
+      expect(saveCalls).toBe(1);
+      expect(statusCode()).toBe(200);
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it("fetches hostnames resolving into an allowlisted CIDR", async () => {
+    // The hostname itself is not allowlisted, but it resolves (stubbed DNS)
+    // to 10.1.2.3 inside 10.0.0.0/8, so the DNS-branch gate permits it.
+    dnsLookupAddress.address = "10.1.2.3";
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 4, lastModified: new Date(0) };
+      });
+      const { reply, statusCode } = createReply();
+
+      await controller.handleFileUpload(
+        serverWithAllowlist(["10.0.0.0/8"]),
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://internal.example.com/file.bin",
+        }),
+        reply,
+      );
+
+      expect(getSpy).toHaveBeenCalled();
+      expect(saveCalls).toBe(1);
+      expect(statusCode()).toBe(200);
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it("still rejects intranet hosts outside the allowlist without connecting", async () => {
+    // 192.168.1.1 is neither allowlisted by name nor inside 10.0.0.0/8, so
+    // default-deny holds even with a non-empty allowlist. http.get answers
+    // 200, so a bypassed gate would fetch instead of 400.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
+
+      await controller.handleFileUpload(
+        serverWithAllowlist(["10.0.0.0/8"]),
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://192.168.1.1/file.bin",
+        }),
+        reply,
+      );
+
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it("rejects loopback outside a /32 allowlist entry", async () => {
+    // Precision guard against over-permitting: 127.0.0.1 is not in
+    // 127.0.0.2/32, so it stays denied and unfetched.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
+
+      await controller.handleFileUpload(
+        serverWithAllowlist(["127.0.0.2/32"]),
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://127.0.0.1:1/tiny.bin",
+        }),
+        reply,
+      );
+
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it("ignores malformed allowlist entries (fail closed)", async () => {
+    // Garbage entries permit nothing: 127.0.0.1 stays denied and unfetched.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
+
+      await controller.handleFileUpload(
+        serverWithAllowlist(["not a cidr", "", "127.0.0.1/33"]),
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://127.0.0.1:1/tiny.bin",
+        }),
+        reply,
+      );
+
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
     } finally {
       getSpy.mockRestore();
     }
