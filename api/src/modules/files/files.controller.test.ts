@@ -762,6 +762,42 @@ describe("FilesController URL SSRF allowlist", () => {
     }
   });
 
+  it("rejects leading-zero CIDR prefixes (fail closed)", async () => {
+    // "127.0.0.2/00" must not parse as /0 (allow-all): 127.0.0.1 stays
+    // denied and unfetched.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
+
+      await controller.handleFileUpload(
+        serverWithAllowlist(["127.0.0.2/00"]),
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://127.0.0.1:1/tiny.bin",
+        }),
+        reply,
+      );
+
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
   it("ignores malformed allowlist entries (fail closed)", async () => {
     // Garbage entries permit nothing: 127.0.0.1 stays denied and unfetched.
     const getSpy = mockHttpGetSuccess();

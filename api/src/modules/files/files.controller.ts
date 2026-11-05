@@ -127,7 +127,7 @@ function parseIPv4Cidr(entry: string): { network: number; mask: number } | null 
   const addr = entry.slice(0, slash);
   const prefix = entry.slice(slash + 1);
   if (net.isIP(addr) !== 4) return null;
-  if (!/^\d{1,2}$/.test(prefix)) return null;
+  if (!/^(0|[1-9]\d?)$/.test(prefix)) return null;
   const bits = Number(prefix);
   if (bits < 0 || bits > 32) return null;
   const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
