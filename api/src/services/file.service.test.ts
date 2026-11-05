@@ -118,15 +118,25 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
   });
 
   it("rejects over-quota declared size without reading stream", async () => {
+    // #422: declared size over remaining budget rejects without reading the
+    // stream. 60 bytes stored (40 remaining); a 50-byte declaration fits an
+    // empty 100-byte quota but exceeds the remaining budget.
     const fileService = await createQuotaService(100);
+    await fileService.saveFile({
+      filePath: "a.bin",
+      stream: Readable.from(Buffer.alloc(60, 0x61)),
+    });
+
     const read = vi.fn();
     const stream = new Readable({ read });
 
-    await expect(fileService.saveFile({ filePath: "big.bin", stream, size: 101 })).rejects.toThrow(
+    await expect(fileService.saveFile({ filePath: "big.bin", stream, size: 50 })).rejects.toThrow(
       FileQuotaExceededError,
     );
+    // Producer untouched: nothing read, stream destroyed on rejection.
     expect(read).not.toHaveBeenCalled();
     expect(stream.destroyed).toBe(true);
+    expect((await fileService.listFiles()).reduce((total, file) => total + file.size, 0)).toBe(60);
   });
 
   it.each([".", ".steel-upload-1", "nested/.steel-upload-2"])(
@@ -190,21 +200,34 @@ describe("FileService cumulative quota (maxSizeBytes)", () => {
   );
 
   it("holds the quota across concurrent saves", async () => {
+    // #422: 2x60MB concurrent vs 100MB quota -> exactly one 413, committed
+    // total <=100MB. Scaled to 2x60B vs 100B (same 0.6 ratio per upload) so
+    // the test stays fast without 60MB buffers. Each upload alone fits; both
+    // together (120B) cannot, so exactly one must fail regardless of
+    // interleaving (in-flight guard mid-stream or serialized commit recheck).
     const fileService = await createQuotaService(100);
 
     const results = await Promise.allSettled(
-      Array.from({ length: 10 }, (_, index) =>
+      ["concurrent-a.bin", "concurrent-b.bin"].map((filePath) =>
         fileService.saveFile({
-          filePath: `file-${index}.bin`,
-          stream: Readable.from(delayedChunks(9, 10)),
+          filePath,
+          stream: Readable.from(delayedChunks(6, 10)),
         }),
       ),
     );
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const reasons = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toBeInstanceOf(FileQuotaExceededError);
+
     expect(await fs.promises.readdir(fileService.getBaseFilesPath())).toHaveLength(1);
     const files = await fileService.listFiles();
-    expect(files.reduce((total, file) => total + file.size, 0)).toBe(90);
+    const total = files.reduce((sum, file) => sum + file.size, 0);
+    expect(total).toBeLessThanOrEqual(100);
+    expect(total).toBe(60);
   });
 
   it("rechecks quota when another save commits mid-upload", async () => {
