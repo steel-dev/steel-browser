@@ -277,6 +277,54 @@ describe("FilesController quota enforcement", () => {
       getSpy.mockRestore();
     }
   });
+
+  it("maps a URL-branch quota rejection to 413", async () => {
+    // Oversized remote Content-Length (100 MiB + 1 over a 100 MiB quota):
+    // the 413-stub proves the controller rethrows FileQuotaExceededError
+    // from the URL save path instead of remapping it to 400.
+    const oversized = 100 * 1024 * 1024 + 1;
+    const getSpy = vi.spyOn(http, "get").mockImplementation(((
+      _url: unknown,
+      _opts: unknown,
+      cb: unknown,
+    ) => {
+      const res = Object.assign(Readable.from(["tiny"]), {
+        statusCode: 200,
+        headers: {
+          "content-length": String(oversized),
+          "content-type": "application/octet-stream",
+        },
+      });
+      (cb as (r: unknown) => void)(res);
+      return { on: () => ({}), destroy: () => {} };
+    }) as never);
+    try {
+      let declaredSize: number | undefined;
+      const controller = createController(async ({ stream, size }) => {
+        stream.on("error", () => {});
+        stream.destroy();
+        declaredSize = size;
+        throw new FileQuotaExceededError(0, oversized, 100 * 1024 * 1024);
+      });
+      const { reply, statusCode, body } = createReply();
+
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://93.184.216.34/big.bin",
+        }),
+        reply,
+      );
+
+      expect(declaredSize).toBe(oversized);
+      expect(statusCode()).toBe(413);
+      expect(body()).toMatchObject({ success: false });
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
 });
 
 describe("FilesController URL SSRF blocklist", () => {
