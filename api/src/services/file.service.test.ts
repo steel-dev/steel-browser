@@ -266,7 +266,7 @@ describe("FileService delete/commit serialization", () => {
     });
   }
 
-  async function gateRenameOnce() {
+  async function gateRenameOnce(baseFilesPath: string, fileName: string) {
     const rename = fs.promises.rename.bind(fs.promises);
     let releaseRename!: () => void;
     const renameReleased = new Promise<void>((resolve) => {
@@ -276,11 +276,19 @@ describe("FileService delete/commit serialization", () => {
     const renameStarted = new Promise<void>((resolve) => {
       signalRenameStarted = resolve;
     });
+    let gated = false;
 
-    vi.spyOn(fs.promises, "rename").mockImplementationOnce(async (oldPath, newPath) => {
-      signalRenameStarted();
-      await renameReleased;
-      await rename(oldPath, newPath);
+    // Scope the gate to this test's commit rename only: foreign renames pass
+    // straight through. A global mockImplementationOnce can be consumed by a
+    // debounced archive rename from an earlier test's FileService instance,
+    // which both defuses the gate and parks the archive rename mid-test.
+    vi.spyOn(fs.promises, "rename").mockImplementation(async (oldPath, newPath) => {
+      if (!gated && String(newPath) === path.join(baseFilesPath, fileName)) {
+        gated = true;
+        signalRenameStarted();
+        await renameReleased;
+      }
+      return rename(oldPath as string, newPath as string);
     });
 
     return { renameStarted, releaseRename };
@@ -291,7 +299,7 @@ describe("FileService delete/commit serialization", () => {
     const baseFilesPath = fileService.getBaseFilesPath();
     await fs.promises.writeFile(path.join(baseFilesPath, "victim.txt"), "old content");
 
-    const { renameStarted, releaseRename } = await gateRenameOnce();
+    const { renameStarted, releaseRename } = await gateRenameOnce(baseFilesPath, "victim.txt");
     const savePromise = fileService.saveFile({
       filePath: "victim.txt",
       stream: Readable.from("new content"),
@@ -313,7 +321,7 @@ describe("FileService delete/commit serialization", () => {
     const baseFilesPath = fileService.getBaseFilesPath();
     await fs.promises.writeFile(path.join(baseFilesPath, "stale.txt"), "stale");
 
-    const { renameStarted, releaseRename } = await gateRenameOnce();
+    const { renameStarted, releaseRename } = await gateRenameOnce(baseFilesPath, "fresh.txt");
     const savePromise = fileService.saveFile({
       filePath: "fresh.txt",
       stream: Readable.from("fresh content"),
@@ -422,18 +430,20 @@ describe("FileService delete/commit serialization", () => {
     const fileService = await createDeleteService();
     const baseFilesPath = fileService.getBaseFilesPath();
 
-    // Defuse the debounced archive before mocking rename: a pending 500ms
-    // fire would consume the mockImplementationOnce below and reject
-    // through the fire-and-forget debounce (unhandled rejection, exit 1).
-    const internals = fileService as unknown as {
-      debouncedCreateArchive: { cancel(): void };
-      waitForArchiveToFinish(): Promise<void>;
-    };
-    internals.debouncedCreateArchive.cancel();
-    await internals.waitForArchiveToFinish();
-
-    vi.spyOn(fs.promises, "rename").mockImplementationOnce(async () => {
-      throw Object.assign(new Error("no such file or directory, rename"), { code: "ENOENT" });
+    // Scope the fault to this test's commit rename only: foreign renames
+    // (e.g. a debounced archive rename from an earlier test's instance) pass
+    // through to the real rename instead of consuming a global once-mock and
+    // rejecting through the fire-and-forget debounce (unhandled rejection,
+    // exit 1). No cross-test defuse is needed.
+    const realRename = fs.promises.rename.bind(fs.promises);
+    const commitDest = path.join(baseFilesPath, "nested", "retry.txt");
+    let faulted = false;
+    vi.spyOn(fs.promises, "rename").mockImplementation(async (oldPath, newPath) => {
+      if (!faulted && String(newPath) === commitDest) {
+        faulted = true;
+        throw Object.assign(new Error("no such file or directory, rename"), { code: "ENOENT" });
+      }
+      return realRename(oldPath as string, newPath as string);
     });
 
     const result = await fileService.saveFile({

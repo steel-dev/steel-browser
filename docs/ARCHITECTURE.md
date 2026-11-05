@@ -178,7 +178,7 @@ Steel Browser uses Fastify's plugin architecture for modular API design:
 ```typescript
 // Main plugin registration
 await fastify.register(steelBrowserPlugin, {
-  fileStorage: { maxSizePerSession: 100 * MB }
+  fileStorage: { maxTotalBytes: 100 * MB }
 });
 
 // Individual plugins
@@ -186,6 +186,8 @@ await fastify.register(browserInstancePlugin);
 await fastify.register(sessionPlugin);
 await fastify.register(fileStoragePlugin);
 ```
+
+File quota is process-wide: `maxTotalBytes` caps the store-wide cumulative bytes on the `FileService` singleton (`maxSizePerSession` is a deprecated alias); per-session in practice because session files are removed on cleanup. When unset, the cumulative quota is unbounded while the multipart per-file `fileSize` limit still falls back to 100MB.
 
 ### Route Organization
 

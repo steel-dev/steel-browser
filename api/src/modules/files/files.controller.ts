@@ -46,27 +46,36 @@ function isBlockedIPv4(ip: string): boolean {
 // Numeric compare so every textual form of loopback/unspecified is caught
 // (::1, 0::1, 0:0:0:0:0:0:0:1, ::, ::0, 0::0, ...), not just the two
 // compressed spellings. addr must already be lowercased with any %zone cut.
-function isLoopbackOrUnspecifiedIPv6(addr: string): boolean {
+function expandIPv6HexGroups(addr: string): number[] | null {
   let groups: string[];
   const compression = addr.indexOf("::");
   if (compression !== -1) {
-    if (addr.indexOf("::", compression + 2) !== -1) return false;
+    if (addr.indexOf("::", compression + 2) !== -1) return null;
     const left = compression === 0 ? [] : addr.slice(0, compression).split(":");
     const right = compression + 2 >= addr.length ? [] : addr.slice(compression + 2).split(":");
-    if (left.includes("") || right.includes("")) return false;
+    if (left.includes("") || right.includes("")) return null;
     const missing = 8 - (left.length + right.length);
-    if (missing < 0) return false;
+    if (missing < 0) return null;
     groups = [...left, ...Array<string>(missing).fill("0"), ...right];
   } else {
     groups = addr.split(":");
-    if (groups.length !== 8) return false;
+    if (groups.length !== 8) return null;
   }
-  if (groups.length !== 8) return false;
+  if (groups.length !== 8) return null;
   const nums: number[] = [];
   for (const g of groups) {
-    if (!/^[0-9a-f]{1,4}$/.test(g)) return false;
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
     nums.push(Number.parseInt(g, 16));
   }
+  return nums;
+}
+
+// Numeric compare so every textual form of loopback/unspecified is caught
+// (::1, 0::1, 0:0:0:0:0:0:0:1, ::, ::0, 0::0, ...), not just the two
+// compressed spellings. addr must already be lowercased with any %zone cut.
+function isLoopbackOrUnspecifiedIPv6(addr: string): boolean {
+  const nums = expandIPv6HexGroups(addr);
+  if (nums === null) return false;
   if (nums.every((n) => n === 0)) return true; // :: and equivalents
   if (nums.slice(0, 7).every((n) => n === 0) && nums[7] === 1) return true; // ::1 equivalents
   return false;
@@ -82,8 +91,26 @@ function isBlockedIp(ip: string): boolean {
   const tail = addr.slice(addr.lastIndexOf(":") + 1);
   if (tail.includes(".")) return true;
   if (isLoopbackOrUnspecifiedIPv6(addr)) return true; // loopback / unspecified
-  // NOTE (quota-PR minimal blocklist): IPv4-compatible/mapped range checks
-  // (::/96), ::ffff:0:0/96, fc00::/7, and fe80::/10 were split out to the
+  // Hex twin of the dotted mapped form: ::ffff:7f00:1 names the same host
+  // as the denied ::ffff:127.0.0.1, so expand first and run the same IPv4
+  // blocklist on the embedded last 32 bits. Only the mapped prefix
+  // ::ffff:0:0/96 denotes an IPv4 address; other hex tails stay native IPv6.
+  const nums = expandIPv6HexGroups(addr);
+  if (
+    nums !== null &&
+    nums[0] === 0 &&
+    nums[1] === 0 &&
+    nums[2] === 0 &&
+    nums[3] === 0 &&
+    nums[4] === 0 &&
+    nums[5] === 0xffff
+  ) {
+    const hi = nums[6];
+    const lo = nums[7];
+    return isBlockedIPv4(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`);
+  }
+  // NOTE (quota-PR minimal blocklist): IPv4-compatible range checks
+  // (::/96), fc00::/7, and fe80::/10 were split out to the
   // SSRF follow-up (see ssrf-extras.split.md at the repo root). Dotted tails
   // stay denied above, as does loopback/unspecified.
   return false;

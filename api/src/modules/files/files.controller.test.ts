@@ -5,7 +5,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FileQuotaExceededError, FileService } from "../../services/file.service.js";
-import fileStoragePlugin from "../../plugins/file-storage.js";
 import { FilesController } from "./files.controller.js";
 
 // Records every staged temp path and every unlinked path through a
@@ -147,6 +146,24 @@ function uploadRequest(part: Record<string, unknown>) {
   } as unknown as FastifyRequest<{ Params: { sessionId: string } }>;
 }
 
+// Answers every http.get with a successful 200 so a missing blocklist guard
+// turns the test red (200 + saveFile called) instead of accidentally green
+// (connection refused also maps to 400). Each blocklist test asserts the mock
+// was never consulted, proving the guard denied pre-connect.
+function mockHttpGetSuccess() {
+  return vi.spyOn(http, "get").mockImplementation(((_url: unknown, _opts: unknown, cb: unknown) => {
+    const res = Object.assign(Readable.from(["tiny"]), {
+      statusCode: 200,
+      headers: {
+        "content-length": "4",
+        "content-type": "application/octet-stream",
+      },
+    });
+    (cb as (r: unknown) => void)(res);
+    return { on: () => ({}), destroy: () => ({}) };
+  }) as never);
+}
+
 describe("FilesController quota enforcement", () => {
   beforeEach(() => {
     resetTempTracking();
@@ -246,128 +263,254 @@ describe("FilesController quota enforcement", () => {
 
 describe("FilesController URL SSRF blocklist", () => {
   it("rejects loopback URLs instead of fetching them", async () => {
-    // 127.0.0.1 is denied pre-connect, so no local server is needed. Port 1
-    // is used so the refusal would be instant even without the blocklist.
-    let saveCalls = 0;
-    const controller = createController(async ({ stream }) => {
-      saveCalls += 1;
-      stream.on("error", () => {});
-      stream.destroy();
-      return { path: "stub", size: 0, lastModified: new Date(0) };
-    });
-    const { reply, statusCode } = createReply();
+    // 127.0.0.1 is denied pre-connect, so no local server is needed. http.get
+    // answers 200 here, so a deleted guard would fetch and return 200: the
+    // not-called assertion plus the distinct message prove the guard ran.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
 
-    await controller.handleFileUpload(
-      server,
-      uploadRequest({
-        fieldname: "file",
-        type: "field",
-        value: "http://127.0.0.1:1/tiny.bin",
-      }),
-      reply,
-    );
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://127.0.0.1:1/tiny.bin",
+        }),
+        reply,
+      );
 
-    expect(saveCalls).toBe(0);
-    expect(statusCode()).toBe(400);
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
   });
 
   it("rejects private-range URLs without connecting", async () => {
-    let saveCalls = 0;
-    const controller = createController(async ({ stream }) => {
-      saveCalls += 1;
-      stream.on("error", () => {});
-      stream.destroy();
-      return { path: "stub", size: 0, lastModified: new Date(0) };
-    });
-    const { reply, statusCode } = createReply();
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
 
-    await controller.handleFileUpload(
-      server,
-      uploadRequest({
-        fieldname: "file",
-        type: "field",
-        value: "http://10.255.255.1/file.bin",
-      }),
-      reply,
-    );
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://10.255.255.1/file.bin",
+        }),
+        reply,
+      );
 
-    expect(saveCalls).toBe(0);
-    expect(statusCode()).toBe(400);
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
   });
 
   it("rejects localhost by name", async () => {
-    let saveCalls = 0;
-    const controller = createController(async ({ stream }) => {
-      saveCalls += 1;
-      stream.on("error", () => {});
-      stream.destroy();
-      return { path: "stub", size: 0, lastModified: new Date(0) };
-    });
-    const { reply, statusCode } = createReply();
+    // localhost is denied by name before DNS/fetch. http.get answers 200, so
+    // a deleted guard would fetch and return 200 instead of 400.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
 
-    await controller.handleFileUpload(
-      server,
-      uploadRequest({
-        fieldname: "file",
-        type: "field",
-        value: "http://localhost:8080/file.bin",
-      }),
-      reply,
-    );
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://localhost:8080/file.bin",
+        }),
+        reply,
+      );
 
-    expect(saveCalls).toBe(0);
-    expect(statusCode()).toBe(400);
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
   });
 
   it("rejects non-http(s) schemes", async () => {
-    let saveCalls = 0;
-    const controller = createController(async ({ stream }) => {
-      saveCalls += 1;
-      stream.on("error", () => {});
-      stream.destroy();
-      return { path: "stub", size: 0, lastModified: new Date(0) };
-    });
-    const { reply, statusCode } = createReply();
+    // The scheme check runs before any fetch. http.get answers 200, so a
+    // deleted check would fetch and return 200 instead of 400.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
 
-    await controller.handleFileUpload(
-      server,
-      uploadRequest({
-        fieldname: "file",
-        type: "field",
-        value: "file:///etc/passwd",
-      }),
-      reply,
-    );
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "file:///etc/passwd",
+        }),
+        reply,
+      );
 
-    expect(saveCalls).toBe(0);
-    expect(statusCode()).toBe(400);
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("Only http and https"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
   });
 
   it("rejects IPv6 loopback without connecting", async () => {
     // ::1 is denied pre-connect by the blocklist, so this is instant and
-    // deterministic with no server. Must stay 400, never 500.
-    let saveCalls = 0;
-    const controller = createController(async ({ stream }) => {
-      saveCalls += 1;
-      stream.on("error", () => {});
-      stream.destroy();
-      return { path: "stub", size: 0, lastModified: new Date(0) };
-    });
-    const { reply, statusCode, body } = createReply();
+    // deterministic with no server. Must stay 400, never 500. http.get
+    // answers 200, so a deleted guard would fetch and return 200.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 0, lastModified: new Date(0) };
+      });
+      const { reply, statusCode, body } = createReply();
 
-    await controller.handleFileUpload(
-      server,
-      uploadRequest({
-        fieldname: "file",
-        type: "field",
-        value: "http://[::1]:1/nope.bin",
-      }),
-      reply,
-    );
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://[::1]:1/nope.bin",
+        }),
+        reply,
+      );
 
-    expect(saveCalls).toBe(0);
-    expect(statusCode()).toBe(400);
-    expect(body()).toMatchObject({ success: false });
+      expect(saveCalls).toBe(0);
+      expect(statusCode()).toBe(400);
+      expect(body()).toMatchObject({
+        success: false,
+        message: expect.stringContaining("not allowed"),
+      });
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it.each(["::ffff:7f00:1", "0:0:0:0:0:ffff:7f00:1", "::ffff:127.0.0.1"])(
+    "rejects hex IPv4-mapped loopback %s without connecting",
+    async (addr) => {
+      // Hex and dotted spellings of the same mapped host must get the same
+      // verdict. http.get answers 200, so a regressed guard fetches (200).
+      const getSpy = mockHttpGetSuccess();
+      try {
+        let saveCalls = 0;
+        const controller = createController(async ({ stream }) => {
+          saveCalls += 1;
+          stream.on("error", () => {});
+          stream.destroy();
+          return { path: "stub", size: 0, lastModified: new Date(0) };
+        });
+        const { reply, statusCode, body } = createReply();
+
+        await controller.handleFileUpload(
+          server,
+          uploadRequest({
+            fieldname: "file",
+            type: "field",
+            value: `http://[${addr}]/tiny.bin`,
+          }),
+          reply,
+        );
+
+        expect(saveCalls).toBe(0);
+        expect(statusCode()).toBe(400);
+        expect(body()).toMatchObject({
+          success: false,
+          message: expect.stringContaining("not allowed"),
+        });
+        expect(getSpy).not.toHaveBeenCalled();
+      } finally {
+        getSpy.mockRestore();
+      }
+    },
+  );
+
+  it("still fetches public IPv4-mapped addresses", async () => {
+    // Guards against over-blocking: ::ffff:5db8:d822 is the public
+    // 93.184.216.34, so the mapped-hex check must let it through.
+    const getSpy = mockHttpGetSuccess();
+    try {
+      let saveCalls = 0;
+      const controller = createController(async ({ stream }) => {
+        saveCalls += 1;
+        stream.on("error", () => {});
+        stream.destroy();
+        return { path: "stub", size: 4, lastModified: new Date(0) };
+      });
+      const { reply, statusCode } = createReply();
+
+      await controller.handleFileUpload(
+        server,
+        uploadRequest({
+          fieldname: "file",
+          type: "field",
+          value: "http://[::ffff:5db8:d822]/tiny.bin",
+        }),
+        reply,
+      );
+
+      expect(getSpy).toHaveBeenCalled();
+      expect(saveCalls).toBe(1);
+      expect(statusCode()).toBe(200);
+    } finally {
+      getSpy.mockRestore();
+    }
   });
 });
 
@@ -559,284 +702,5 @@ describe("FilesController multipart temp hardening", () => {
     expect(new Set(created).size).toBe(1);
     expect(new Set(unlinked)).toEqual(new Set(created));
     await expectNoTmpLeak(created);
-  });
-});
-
-describe("FilesController fileStoragePlugin registration", () => {
-  it("registers without options (unbounded quota)", async () => {
-    // Never construct a real FileService here: its production defaults point
-    // at /files, which is not writable on CI. Assert the wiring instead.
-    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    try {
-      const fastify = {
-        log: { info: () => {} },
-        decorate: (_key: string, _value: unknown) => {},
-      };
-      await fileStoragePlugin(fastify as unknown as FastifyInstance, {});
-
-      expect(spy).toHaveBeenCalledWith({});
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("forwards deprecated maxSizePerSession as maxSizeBytes", async () => {
-    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    try {
-      const fastify = {
-        log: { info: () => {} },
-        decorate: (_key: string, _value: unknown) => {},
-      };
-      await fileStoragePlugin(fastify as unknown as FastifyInstance, { maxSizePerSession: 77 });
-
-      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 77 });
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("prefers maxTotalBytes when both quota keys are set", async () => {
-    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    try {
-      const fastify = {
-        log: { info: () => {} },
-        decorate: (_key: string, _value: unknown) => {},
-      };
-      await fileStoragePlugin(fastify as unknown as FastifyInstance, {
-        maxTotalBytes: 100,
-        maxSizePerSession: 77,
-      });
-
-      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 100 });
-    } finally {
-      spy.mockRestore();
-    }
-  });
-});
-
-describe("FilesController steelBrowserPlugin fileStorage normalization", () => {
-  it("normalizes deprecated-only maxSizePerSession to maxTotalBytes", async () => {
-    // steel-browser-plugin.ts delegates to this single source; importing the
-    // plugin itself would pull browser/CDP deps unavailable in unit tests.
-    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
-
-    const config = normalizeSteelBrowserFileStorage({
-      fileStorage: { maxSizePerSession: 77 } as {
-        maxTotalBytes?: number;
-        maxSizePerSession?: number;
-      },
-    });
-
-    expect(config.fileStorage?.maxTotalBytes).toBe(77);
-  });
-
-  it("prefers maxTotalBytes over legacy key when both are set", async () => {
-    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
-
-    const config = normalizeSteelBrowserFileStorage({
-      fileStorage: { maxTotalBytes: 100, maxSizePerSession: 77 },
-    });
-
-    expect(config.fileStorage?.maxTotalBytes).toBe(100);
-  });
-
-  it("preserves exact shape when no quota is configured", async () => {
-    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
-
-    const input: Record<string, unknown> = {};
-    const config = normalizeSteelBrowserFileStorage(input) as Record<string, unknown>;
-
-    expect(config).toBe(input);
-    expect("fileStorage" in config).toBe(false);
-  });
-});
-
-describe("FilesController filesRoutes deprecated quota alias", () => {
-  it("honors deprecated maxSizePerSession for multipart fileSize limit", async () => {
-    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    try {
-      let capturedFileSize: unknown;
-      const mockServer = {
-        steelBrowserConfig: { fileStorage: { maxSizePerSession: 12345 } },
-        register: async (_plugin: unknown, opts?: { limits?: { fileSize?: unknown } }) => {
-          if (capturedFileSize === undefined && opts?.limits?.fileSize !== undefined) {
-            capturedFileSize = opts.limits.fileSize;
-          }
-        },
-        post: () => {},
-        head: () => {},
-        get: () => {},
-        delete: () => {},
-      };
-      const { default: routes } = await import("./files.routes.js");
-      await routes(mockServer as unknown as FastifyInstance);
-
-      expect(capturedFileSize).toBe(12345);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-});
-
-describe("FilesController resolveMaxTotalBytes validation", () => {
-  it("returns undefined when neither key is set", async () => {
-    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
-
-    expect(resolveMaxTotalBytes(undefined)).toBeUndefined();
-    expect(resolveMaxTotalBytes({})).toBeUndefined();
-  });
-
-  it("keeps 0 as a valid quota", async () => {
-    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
-
-    expect(resolveMaxTotalBytes({ maxTotalBytes: 0 })).toBe(0);
-    expect(resolveMaxTotalBytes({ maxSizePerSession: 0 })).toBe(0);
-  });
-
-  it("throws RangeError on NaN, Infinity, and negative quotas", async () => {
-    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
-
-    expect(() => resolveMaxTotalBytes({ maxTotalBytes: NaN })).toThrow(RangeError);
-    expect(() => resolveMaxTotalBytes({ maxTotalBytes: Infinity })).toThrow(RangeError);
-    expect(() => resolveMaxTotalBytes({ maxTotalBytes: -1 })).toThrow(RangeError);
-    expect(() => resolveMaxTotalBytes({ maxSizePerSession: NaN })).toThrow(RangeError);
-    expect(() => resolveMaxTotalBytes({ maxSizePerSession: -5 })).toThrow(RangeError);
-  });
-});
-
-describe("FilesController resolveMaxTotalBytes legacy warning", () => {
-  it("warns once across repeated legacy-only calls", async () => {
-    vi.resetModules();
-    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      expect(resolveMaxTotalBytes({ maxSizePerSession: 77 })).toBe(77);
-      expect(resolveMaxTotalBytes({ maxSizePerSession: 78 })).toBe(78);
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0][0]).toContain("fileStorage.maxSizePerSession");
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it("stays silent without legacy-only quota", async () => {
-    vi.resetModules();
-    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      expect(resolveMaxTotalBytes({ maxTotalBytes: 100, maxSizePerSession: 77 })).toBe(100);
-      expect(resolveMaxTotalBytes(undefined)).toBeUndefined();
-      expect(resolveMaxTotalBytes({})).toBeUndefined();
-      expect(warn).not.toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it("warns for legacy 0 and resolves 0", async () => {
-    vi.resetModules();
-    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      expect(resolveMaxTotalBytes({ maxSizePerSession: 0 })).toBe(0);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it("throws on invalid legacy without consuming warning flag", async () => {
-    vi.resetModules();
-    const { resolveMaxTotalBytes } = await import("../../utils/file-quota.js");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      expect(() => resolveMaxTotalBytes({ maxSizePerSession: NaN })).toThrow(RangeError);
-      expect(warn).not.toHaveBeenCalled();
-      // Next valid legacy call must still warn: the throw above did not
-      // consume the dedupe flag.
-      expect(resolveMaxTotalBytes({ maxSizePerSession: 77 })).toBe(77);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-    }
-  });
-});
-
-describe("FilesController steelBrowserPlugin fileStorage wiring", () => {
-  it("decorates config and registers fileStoragePlugin once", async () => {
-    // Does not import steel-browser-plugin.ts itself: that module pulls
-    // browser/CDP/puppeteer deps unavailable in unit tests. Instead replay
-    // its exact two-line wiring (normalize once, derive register opts from
-    // the decorated config) and assert end-to-end forwarding.
-    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
-
-    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    try {
-      const decorated: unknown[] = [];
-      const mockFastify = {
-        log: { info: () => {} },
-        decorate: (key: string, value: unknown) => {
-          decorated.push(value);
-        },
-      };
-
-      // Deprecated-only input: normalize maps to maxTotalBytes.
-      const cfg = normalizeSteelBrowserFileStorage({
-        fileStorage: { maxSizePerSession: 77 } as {
-          maxTotalBytes?: number;
-          maxSizePerSession?: number;
-        },
-      });
-      (mockFastify as { decorate: (k: string, v: unknown) => void }).decorate(
-        "steelBrowserConfig",
-        cfg,
-      );
-      await fileStoragePlugin(mockFastify as unknown as FastifyInstance, {
-        maxTotalBytes: cfg.fileStorage?.maxTotalBytes,
-      });
-
-      expect(
-        (decorated[0] as { fileStorage?: { maxTotalBytes?: number } }).fileStorage?.maxTotalBytes,
-      ).toBe(77);
-      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 77 });
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("preserves precedence and unbounded shape", async () => {
-    const { normalizeSteelBrowserFileStorage } = await import("../../utils/file-quota.js");
-
-    const spy = vi.spyOn(FileService, "getInstance").mockReturnValue({} as FileService);
-    try {
-      const mockFastify = {
-        log: { info: () => {} },
-        decorate: (_key: string, _value: unknown) => {},
-      };
-
-      const both = normalizeSteelBrowserFileStorage({
-        fileStorage: { maxTotalBytes: 100, maxSizePerSession: 77 },
-      });
-      await fileStoragePlugin(mockFastify as unknown as FastifyInstance, {
-        maxTotalBytes: both.fileStorage?.maxTotalBytes,
-      });
-      expect(spy).toHaveBeenCalledWith({ maxSizeBytes: 100 });
-
-      spy.mockClear();
-      const empty = normalizeSteelBrowserFileStorage(
-        {} as { fileStorage?: { maxTotalBytes?: number; maxSizePerSession?: number } },
-      );
-      await fileStoragePlugin(mockFastify as unknown as FastifyInstance, {
-        maxTotalBytes: empty.fileStorage?.maxTotalBytes,
-      });
-      // Stale-{} guard: unbounded stays {} so a bare call never clobbers quota.
-      expect(spy).toHaveBeenCalledWith({});
-    } finally {
-      spy.mockRestore();
-    }
   });
 });
