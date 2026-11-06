@@ -106,12 +106,11 @@ interface SessionConfig {
 
 ### 4. File Storage Service (`api/src/services/file.service.ts`)
 
-Handles file operations with session-scoped storage:
+Handles file operations with process-wide storage (FileService singleton):
 
 - **Upload Management**: Handles multipart file uploads
 - **Download Coordination**: Manages browser downloads
-- **Storage Isolation**: Session-scoped file storage
-- **Cleanup**: Automatic file cleanup on session end
+- **Storage Isolation**: Process-wide file storage (FileService singleton); per-session files removed on cleanup- **Cleanup**: Automatic file cleanup on session end
 
 ## 🔌 Plugin Architecture Deep Dive
 
