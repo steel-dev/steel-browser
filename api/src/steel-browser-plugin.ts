@@ -26,6 +26,7 @@ import type { CommandEngine } from "./services/commands/engine.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
+import { normalizeSteelBrowserFileStorage } from "./utils/file-quota.js";
 import { SessionService } from "./services/session.service.js";
 import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.interface.js";
 
@@ -48,7 +49,17 @@ declare module "fastify" {
 
 export interface SteelBrowserConfig {
   fileStorage?: {
+    /** Store-wide cumulative bucket (bytes), shared across all sessions. */
+    maxTotalBytes?: number;
+    /** @deprecated Use `maxTotalBytes`; alias `maxTotalBytes ?? maxSizePerSession`, warns once when legacy-only. */
     maxSizePerSession?: number;
+   /**
+ * Opt-in allowlist for URL-uploads blocked by default SSRF guards.
+ * Hostnames, IPv4 literals, and IPv4 CIDRs match case-insensitively.
+ * IPv6 literals match exactly (CIDRs unsupported); invalid entries permit nothing.
+ * Empty or unset keeps default-deny; public hosts unaffected.
+ */
+    urlAllowlist?: string[];
   };
   customWsHandlers?: WebSocketHandler[];
   logging?: {
@@ -60,7 +71,9 @@ export interface SteelBrowserConfig {
 }
 
 const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
-  fastify.decorate("steelBrowserConfig", opts);
+  // Normalize legacy-only fileStorage to maxTotalBytes (warns once).
+  const steelBrowserConfig = normalizeSteelBrowserFileStorage(opts);
+  fastify.decorate("steelBrowserConfig", steelBrowserConfig);
   // Plugins
   await fastify.register(fastifyView, {
     engine: {
@@ -70,7 +83,9 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   });
   await fastify.register(requestLogger);
   await fastify.register(openAPIPlugin);
-  await fastify.register(fileStoragePlugin);
+  await fastify.register(fileStoragePlugin, {
+    maxTotalBytes: steelBrowserConfig.fileStorage?.maxTotalBytes,
+  });
   await fastify.register(browserInstancePlugin);
   await fastify.register(seleniumPlugin);
   await fastify.register(browserWebSocket, {

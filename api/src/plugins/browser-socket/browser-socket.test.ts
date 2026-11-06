@@ -61,7 +61,8 @@ function fakeSocket() {
   return sock;
 }
 
-const BAD_REQUEST_400 = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+const BAD_REQUEST_400 =
+  "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
 describe("upgrade handler hardening", () => {
   it("rejects a malformed target with a framed 400 and never invokes the handler", async () => {
