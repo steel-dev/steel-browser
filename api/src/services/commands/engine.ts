@@ -9,7 +9,13 @@ import {
   type CommandRequest,
   type DialogAnswer,
 } from "./commands.js";
-import { describeDialog, openDialog, type Dialog, type DialogHandler } from "./dialogs.js";
+import {
+  answerRoute,
+  describeDialog,
+  openDialog,
+  type Dialog,
+  type DialogHandler,
+} from "./dialogs.js";
 import { statusFor, type RequestErrorCode } from "./errors.js";
 import {
   crashedTab,
@@ -401,7 +407,7 @@ export class CommandEngine {
       );
     }
     active.records.bump();
-    return ok({ answered: describeDialog(dialog) });
+    return ok({ answered: describeDialog(dialog), next: active.records.issue() });
   }
 
   private async respond(
@@ -666,8 +672,10 @@ export class CommandEngine {
     const error = {
       code: "dialog_pending",
       message: dialog
-        ? `Tab ${dialog.tab} shows ${dialog.type} dialog ${dialog.id}: "${dialog.message}". Answer it with the dialog command.`
-        : "A dialog opened and blocked the page. Answer it with the dialog command.",
+        ? `Tab ${dialog.tab} shows ${dialog.type} dialog ${dialog.id}: "${
+            dialog.message
+          }". Answer it with ${answerRoute(active.id, dialog.id)}.`
+        : "A dialog opened and blocked the page. Answer the dialog in this response.",
     };
     if (!command) {
       return { error };

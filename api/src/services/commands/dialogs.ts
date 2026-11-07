@@ -36,6 +36,10 @@ export function openDialog(
   };
 }
 
+export function answerRoute(sessionId: string, dialogId: string): string {
+  return `POST /v1/sessions/${sessionId}/commands/dialogs/${dialogId}/answer`;
+}
+
 export function describeDialog(dialog: Dialog) {
   return {
     id: dialog.id,

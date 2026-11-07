@@ -40,11 +40,31 @@ const failures = {
   500: $ref("CommandRequestError"),
 };
 
+function parseJson(
+  _request: FastifyRequest,
+  body: string,
+  done: (error: Error | null, body?: unknown) => void,
+) {
+  if (body === "") {
+    done(null, undefined);
+    return;
+  }
+  try {
+    done(null, JSON.parse(body));
+  } catch (error) {
+    done(Object.assign(error as Error, { statusCode: 400 }), undefined);
+  }
+}
+
 async function routes(server: FastifyInstance) {
   const engine = server.commandEngine;
   if (!engine) {
     return;
   }
+  server.removeContentTypeParser("application/json");
+  server.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) =>
+    parseJson(request, body as string, done),
+  );
   const schema = requestJsonSchema();
 
   server.get(

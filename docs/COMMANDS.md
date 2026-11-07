@@ -64,7 +64,7 @@ Send a random `Idempotency-Key` header to make retries safe. A request with a ke
 | Field | Meaning |
 |---|---|
 | `next` | Send it as `after` in your next request. Valid for an hour. |
-| `epochChanged` | Sent when the request has `after`. `true` when, since that `after`, another execution or a dialog answer changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
+| `epochChanged` | Set when the execution ran with `after`. `true` when, since that `after`, another execution or a dialog answer changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
 | `page` | The tab the execution used, with its URL and title. |
 | `execution` | `id`, `state`, `effect`, `replayed`, and `ran` (commands started). `error` says why an execution ended early. |
 | `results` | One entry per command that ran: `command`, `ok`, `effect`, the fields of that command, and `error` (`code`, `message`, `reason`) when it failed. |
@@ -159,7 +159,7 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 ## Dialogs
 
 - The engine never answers a dialog on its own. This holds for every type: `alert`, `confirm`, `prompt`, and `beforeunload`.
-- An open dialog shows in the response's `dialog`. Answer with `POST /v1/sessions/{sessionId}/commands/dialogs/d-1/answer` and `{ "action": "accept", "text": "..." }`, or `"dismiss"`. `text` answers a prompt. The response is `{ "answered": { ... } }`, the dialog with its answer. The answer runs right away, outside the queue. Until then, commands on that tab fail with `dialog_pending`. Another client, such as a CDP client, can answer it too. If it answers first, the answer returns `dialog_not_pending`.
+- An open dialog shows in the response's `dialog`. Answer with `POST /v1/sessions/{sessionId}/commands/dialogs/d-1/answer` and `{ "action": "accept", "text": "..." }`, or `"dismiss"`. `text` answers a prompt. The response is `{ "answered": { ... }, "next": "op_..." }`: the dialog with its answer, and a `next` to send as `after`, so your own answer does not count as a change. The answer runs right away, outside the queue. Until then, commands on that tab fail with `dialog_pending`. Another client, such as a CDP client, can answer it too. If it answers first, the answer returns `dialog_not_pending`.
 - If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Answer the dialog and click again.
 - If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after you answer the dialog. Send it again if you still need it.
 - A dialog that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.

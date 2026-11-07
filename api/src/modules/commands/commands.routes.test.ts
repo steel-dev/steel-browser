@@ -129,8 +129,19 @@ describe.skipIf(!chrome)("commands route", () => {
     expect(answered.statusCode).toBe(200);
     expect(answered.json()).toEqual({
       answered: expect.objectContaining({ id, accepted: true, by: "command" }),
+      next: expect.stringMatching(/^op_/),
     });
     expect(commandsSchemas.CommandDialogResponse.safeParse(answered.json()).success).toBe(true);
+    const later = await post("live", {
+      commands: { command: "tab", action: "list" },
+      after: answered.json().next,
+    });
+    expect(later.json()).toMatchObject({ epochChanged: false });
+    const before = await post("live", {
+      commands: { command: "snapshot" },
+      after: clicked.json().next,
+    });
+    expect(before.json()).toMatchObject({ epochChanged: true });
     const again = await app.inject({
       method: "POST",
       url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
@@ -166,6 +177,19 @@ describe.skipIf(!chrome)("commands route", () => {
     });
     expect(cancelled.statusCode).toBe(200);
     expect(cancelled.json()).toMatchObject({ execution: { id, state: "completed" } });
+    const typed = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
+      headers: { "content-type": "application/json" },
+    });
+    expect(typed.statusCode, typed.body).toBe(200);
+    const empty = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      headers: { "content-type": "application/json" },
+    });
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json()).toMatchObject({ error: { code: "invalid_request" } });
     const unknown = await app.inject({
       method: "GET",
       url: "/v1/sessions/live/commands/executions/x-999999",

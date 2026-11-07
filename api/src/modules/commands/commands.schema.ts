@@ -154,6 +154,9 @@ export const CommandResponse = z.object({
 const CommandDialogResponse = z
   .object({
     answered: Dialog.describe("The dialog that was answered."),
+    next: z
+      .string()
+      .describe("Send it as after in the next request, so the answer does not count as a change."),
   })
   .describe("Response to a dialog answer.");
 
