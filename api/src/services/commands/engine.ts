@@ -1,12 +1,13 @@
 import type { Browser, Protocol } from "puppeteer-core";
 import {
+  answerSchema,
   commandHash,
-  isControl,
   isMutating,
   requestSchema,
   scopedKey,
   type Command,
   type CommandRequest,
+  type DialogAnswer,
 } from "./commands.js";
 import { describeDialog, openDialog, type Dialog, type DialogHandler } from "./dialogs.js";
 import { statusFor, type RequestErrorCode } from "./errors.js";
@@ -27,7 +28,6 @@ import {
   Counters,
   DEFAULT_ENGINE_LIMITS,
   KEPT_DOWNLOADS,
-  KEPT_EVENTS,
   STEP_MS,
   type EngineHost,
   type EngineLimits,
@@ -37,8 +37,6 @@ import { handleGroup } from "./targets.js";
 import { OpenDialogs, type Tab } from "./tabs.js";
 
 export type { EngineHost, EngineLimits } from "./session.js";
-
-const EVENTS_PER_RESPONSE = 100;
 
 const BLOCKED_GRACE_MS = 200;
 
@@ -94,7 +92,7 @@ export class CommandEngine {
       {
         dialogOpened: (tab, event) => this.dialogOpened(active, tab, event),
         dialogClosed: (tab, event) => this.dialogClosed(active, tab, event),
-        downloadStarted: (tab, event) => {
+        downloadStarted: (_tab, event) => {
           active.downloads.set(event.guid, {
             file: event.suggestedFilename,
             url: event.url,
@@ -107,39 +105,20 @@ export class CommandEngine {
             }
             active.downloads.delete(guid);
           }
-          this.record(active, "download", tab.id, {
-            file: event.suggestedFilename,
-            url: event.url,
-            state: "started",
-          });
         },
-        downloadProgress: (tab, event) => {
+        downloadProgress: (_tab, event) => {
           const download = active.downloads.get(event.guid);
           if (event.state === "inProgress" || !download || download.state) {
             return;
           }
           download.state = event.state;
           download.bytes = event.receivedBytes;
-          this.record(active, "download", tab.id, {
-            file: download.file,
-            url: download.url,
-            state: event.state,
-            bytes: event.receivedBytes,
-          });
         },
-        navigated: (tab, url, sameDocument) =>
-          this.record(active, "navigation", tab.id, {
-            url,
-            ...(sameDocument ? { sameDocument } : {}),
-          }),
-        opened: (tab, opener) =>
-          this.record(active, "tab_opened", tab.id, opener ? { opener: opener.id } : {}),
         closed: (tab) => {
           const dialog = openDialogOn(active, tab.id);
           if (dialog) {
-            this.finishDialog(active, dialog, false, undefined, dialog.by ?? "closed");
+            this.finishDialog(dialog, false, undefined, dialog.by ?? "closed");
           }
-          this.record(active, "tab_closed", tab.id, {});
         },
       },
       this.counters,
@@ -209,18 +188,60 @@ export class CommandEngine {
     try {
       return await this.dispatch(request);
     } catch (error) {
-      return ok({ error: errorInfo(error) });
+      return internal(error, request.idempotencyKey !== undefined || carriesAfter(request.body));
     }
+  }
+
+  executionStatus(sessionId: string, id: string): Promise<EngineResponse> {
+    return this.control(sessionId, (active, deadline) => this.status(active, id, deadline));
+  }
+
+  cancelExecution(sessionId: string, id: string): Promise<EngineResponse> {
+    return this.control(sessionId, (active, deadline) => this.cancel(active, id, deadline));
+  }
+
+  answerDialog(sessionId: string, dialogId: string, body: unknown): Promise<EngineResponse> {
+    return this.control(sessionId, async (active) => {
+      const parsed = answerSchema.safeParse(body);
+      return parsed.success
+        ? this.answerOpen(active, dialogId, parsed.data)
+        : invalid(parsed.error.issues);
+    });
+  }
+
+  private async control(
+    sessionId: string,
+    run: (active: ActiveSession, deadline: number) => Promise<EngineResponse>,
+  ): Promise<EngineResponse> {
+    try {
+      const deadline = this.now() + this.limits.responseDeadlineMs;
+      const active = this.live(sessionId);
+      if (!active) {
+        return ended(sessionId);
+      }
+      active.records.sweep();
+      return await run(active, deadline);
+    } catch (error) {
+      return internal(error, true);
+    }
+  }
+
+  private live(sessionId: string): ActiveSession | null {
+    const active = this.active;
+    if (!active || active.id !== sessionId) {
+      return null;
+    }
+    if (this.host.released(active.id)) {
+      this.sessionEnded();
+      return null;
+    }
+    return active;
   }
 
   private async dispatch(request: EngineRequest): Promise<EngineResponse> {
     const deadline = this.now() + this.limits.responseDeadlineMs;
-    const active = this.active;
-    if (!active || active.id !== request.sessionId) {
-      return ended(request.sessionId);
-    }
-    if (this.host.released(active.id)) {
-      this.sessionEnded();
+    const active = this.live(request.sessionId);
+    if (!active) {
       return ended(request.sessionId);
     }
     const key = request.idempotencyKey;
@@ -232,22 +253,10 @@ export class CommandEngine {
     }
     const parsed = requestSchema.safeParse(request.body);
     if (!parsed.success) {
-      return failure(
-        "invalid_request",
-        parsed.error.issues
-          .map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`)
-          .join("; "),
-      );
+      return invalid(parsed.error.issues);
     }
-    const body = parsed.data;
     active.records.sweep();
-    if (body.commands.some(isControl)) {
-      if (body.commands.length > 1) {
-        return failure("invalid_request", "Send a control command on its own.");
-      }
-      return this.control(active, body.commands[0], deadline, body.eventsAfter);
-    }
-    return this.submit(active, key, body, deadline);
+    return this.submit(active, key, parsed.data, deadline);
   }
 
   private async submit(
@@ -275,7 +284,7 @@ export class CommandEngine {
       if (headerKey && live(records.byKey(headerKey)) !== existing) {
         records.link(headerKey, existing);
       }
-      return this.respond(active, existing, deadline, true, body.eventsAfter);
+      return this.respond(active, existing, deadline, true);
     }
     if (records.full()) {
       records.relieve();
@@ -313,32 +322,13 @@ export class CommandEngine {
       cancelled: false,
     });
     void this.pump(active);
-    return this.respond(active, execution, deadline, false, body.eventsAfter);
-  }
-
-  private async control(
-    active: ActiveSession,
-    command: Command,
-    deadline: number,
-    eventsAfter?: string,
-  ): Promise<EngineResponse> {
-    switch (command.command) {
-      case "status":
-        return this.status(active, command.execution, deadline, eventsAfter);
-      case "cancel":
-        return this.cancel(active, command.execution, deadline, eventsAfter);
-      case "dialog":
-        return this.answerDialog(active, command, eventsAfter);
-      default:
-        return failure("invalid_request", `${command.command} is not a control command.`);
-    }
+    return this.respond(active, execution, deadline, false);
   }
 
   private async status(
     active: ActiveSession,
     id: string,
     deadline: number,
-    eventsAfter?: string,
   ): Promise<EngineResponse> {
     const execution = active.records.get(id);
     if (!execution) {
@@ -348,14 +338,13 @@ export class CommandEngine {
     if (active.ended) {
       return ended(active.id);
     }
-    return ok(await this.envelope(active, execution, false, eventsAfter));
+    return ok(await this.envelope(active, execution, false));
   }
 
   private async cancel(
     active: ActiveSession,
     id: string,
     deadline: number,
-    eventsAfter?: string,
   ): Promise<EngineResponse> {
     const execution = active.records.get(id);
     if (!execution) {
@@ -386,39 +375,33 @@ export class CommandEngine {
     if (active.ended) {
       return ended(active.id);
     }
-    return ok(await this.envelope(active, execution, false, eventsAfter));
+    return ok(await this.envelope(active, execution, false));
   }
 
-  private async answerDialog(
+  private async answerOpen(
     active: ActiveSession,
-    command: Extract<Command, { command: "dialog" }>,
-    eventsAfter?: string,
+    id: string,
+    answer: DialogAnswer,
   ): Promise<EngineResponse> {
-    const dialog = active.dialogs.get(command.dialog);
+    const dialog = active.dialogs.get(id);
     if (!dialog || !dialog.open) {
       return failure(
         "dialog_not_pending",
-        `Dialog ${command.dialog} is not open.`,
+        `Dialog ${id} is not open.`,
         dialog ? { dialog: describeDialog(dialog) } : {},
       );
     }
-    await this.answer(active, dialog, command.action === "accept", command.text, "command");
+    await this.answer(active, dialog, answer.action === "accept", answer.text, "command");
     if (dialog.open) {
       dialog.by = undefined;
-      return ok({
-        error: {
-          code: "internal_error",
-          message: `Dialog ${dialog.id} did not close. It is still open, so answer it again.`,
-        },
-        dialog: describeDialog(dialog),
-      });
+      return internal(
+        new Error(`Dialog ${dialog.id} did not close. It is still open, so answer it again.`),
+        true,
+        { dialog: describeDialog(dialog) },
+      );
     }
     active.records.bump();
-    return ok({
-      answered: describeDialog(dialog),
-      epoch: active.records.epoch,
-      ...(eventsAfter !== undefined ? { events: this.eventsSince(active, eventsAfter) } : {}),
-    });
+    return ok({ answered: describeDialog(dialog) });
   }
 
   private async respond(
@@ -426,7 +409,6 @@ export class CommandEngine {
     execution: Execution,
     deadline: number,
     replayed: boolean,
-    eventsAfter?: string,
   ): Promise<EngineResponse> {
     await this.settle(active, execution, deadline);
     if (active.ended) {
@@ -444,7 +426,7 @@ export class CommandEngine {
       );
     }
     execution.next ??= active.records.issue(execution);
-    return ok(await this.envelope(active, execution, replayed, eventsAfter));
+    return ok(await this.envelope(active, execution, replayed));
   }
 
   private async settle(active: ActiveSession, execution: Execution, deadline: number) {
@@ -467,7 +449,6 @@ export class CommandEngine {
     active: ActiveSession,
     execution: Execution,
     replayed: boolean,
-    eventsAfter?: string,
   ): Promise<Record<string, unknown>> {
     if (isFinal(execution.state) && execution.page === undefined) {
       execution.page = (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
@@ -477,7 +458,6 @@ export class CommandEngine {
       : (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
     return {
       ...(execution.next ? { next: execution.next } : {}),
-      epoch: active.records.epoch,
       ...(execution.epochChanged !== undefined ? { epochChanged: execution.epochChanged } : {}),
       page,
       execution: {
@@ -492,45 +472,7 @@ export class CommandEngine {
       ...dialogNote(active, execution.tab ? active.tabs.get(execution.tab) : undefined),
       ...(execution.observe ? { observe: execution.observe } : {}),
       ...(execution.bodyExpired ? { bodyExpired: true } : {}),
-      ...(eventsAfter !== undefined ? { events: this.eventsSince(active, eventsAfter) } : {}),
     };
-  }
-
-  private eventsSince(active: ActiveSession, cursor: string) {
-    const requested = Number(cursor.slice(2));
-    const stale = requested > active.eventSequence;
-    const after = stale ? 0 : requested;
-    const pending = active.events.filter((event) => event.id > after);
-    const items = pending.slice(0, EVENTS_PER_RESPONSE);
-    const oldest = active.events[0]?.id ?? active.eventSequence + 1;
-    const last = pending.length > items.length ? items[items.length - 1].id : active.eventSequence;
-    return {
-      cursor: `c-${Math.max(last, after)}`,
-      items: items.map(({ id, ...event }) => ({ id: `c-${id}`, ...event })),
-      ...(stale || (after < oldest - 1 && after < active.eventSequence) ? { truncated: true } : {}),
-      ...(pending.length > items.length ? { more: true } : {}),
-    };
-  }
-
-  private record(
-    active: ActiveSession,
-    type: string,
-    tab: string,
-    fields: Record<string, unknown>,
-  ) {
-    if (this.active !== active) {
-      return;
-    }
-    active.events.push({
-      id: ++active.eventSequence,
-      type,
-      tab,
-      at: new Date(this.now()).toISOString(),
-      ...fields,
-    });
-    if (active.events.length > KEPT_EVENTS) {
-      active.events.splice(0, active.events.length - KEPT_EVENTS);
-    }
   }
 
   private async pump(active: ActiveSession) {
@@ -595,7 +537,7 @@ export class CommandEngine {
       if (!result) {
         return;
       }
-      execution.results.push(result);
+      execution.results.push({ command: command.command, ...result });
       execution.effect = combine(execution.results);
       if (!result.ok) {
         break;
@@ -736,6 +678,7 @@ export class CommandEngine {
   private interrupted(job: Job, error: ErrorInfo) {
     if (job.current && !isFinal(job.execution.state)) {
       job.execution.results.push({
+        command: job.current.command,
         ok: false,
         effect: job.touched ? "unknown" : "none",
         error,
@@ -876,20 +819,13 @@ export class CommandEngine {
     if (!dialog) {
       return;
     }
-    this.finishDialog(
-      active,
-      dialog,
-      event.result,
-      event.userInput || undefined,
-      dialog.by ?? "client",
-    );
+    this.finishDialog(dialog, event.result, event.userInput || undefined, dialog.by ?? "client");
     if (tab.holding()) {
       void tab.release().catch(() => undefined);
     }
   }
 
   private finishDialog(
-    active: ActiveSession,
     dialog: Dialog,
     accepted: boolean,
     text: string | undefined,
@@ -899,7 +835,6 @@ export class CommandEngine {
     dialog.text = text;
     dialog.by = by;
     this.closeDialog(dialog);
-    this.record(active, "dialog", dialog.tab, { dialog: describeDialog(dialog) });
   }
 
   private async answer(
@@ -950,6 +885,35 @@ export class CommandEngine {
 
 function ok(body: Record<string, unknown>): EngineResponse {
   return { status: 200, headers: {}, body };
+}
+
+function internal(
+  error: unknown,
+  retry: boolean,
+  fields: Record<string, unknown> = {},
+): EngineResponse {
+  return {
+    status: 500,
+    headers: { "x-should-retry": String(retry) },
+    body: {
+      ...fields,
+      error: { code: "internal_error", message: (error as Error)?.message ?? String(error) },
+    },
+  };
+}
+
+function invalid(issues: { path: PropertyKey[]; message: string }[]): EngineResponse {
+  return failure(
+    "invalid_request",
+    issues
+      .map((issue) => `${issue.path.map(String).join(".") || "body"}: ${issue.message}`)
+      .join("; "),
+  );
+}
+
+function carriesAfter(body: unknown): boolean {
+  const after = (body as { after?: unknown } | null)?.after;
+  return typeof after === "string" && after.length > 0;
 }
 
 function failure(

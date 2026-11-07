@@ -9,9 +9,12 @@ The API is experimental and off by default. Start the server with `ENABLE_COMMAN
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/sessions/{sessionId}/commands` | Run commands in the session |
-| `GET` | `/v1/sessions/{sessionId}/commands/schema` | JSON Schema of the request body (`version: 1`) |
+| `GET` | `/v1/sessions/{sessionId}/commands/executions/{executionId}` | Wait for an execution and return it |
+| `POST` | `/v1/sessions/{sessionId}/commands/executions/{executionId}/cancel` | Stop an execution |
+| `POST` | `/v1/sessions/{sessionId}/commands/dialogs/{dialogId}/answer` | Answer an open dialog |
+| `GET` | `/v1/sessions/{sessionId}/commands/schema` | JSON Schema of the request body (`version: 2`) |
 
-`sessionId` is the session this server is running. `POST /v1/sessions` returns it. A request for another session gets `410 session_ended`. The session also ends when the browser crashes or when the server ends it for a security reason, such as a `file://` request. The server then starts a fresh browser with default settings, without the session's proxy or extensions, so create a new session to go on. When a release starts, commands get `410` right away. Both routes are also described in the OpenAPI document at `/documentation`.
+`sessionId` is the session this server is running. `POST /v1/sessions` returns it. A request for another session gets `410 session_ended`. The session also ends when the browser crashes or when the server ends it for a security reason, such as a `file://` request. The server then starts a fresh browser with default settings, without the session's proxy or extensions, so create a new session to go on. When a release starts, commands get `410` right away. The routes are also described in the OpenAPI document at `/documentation`.
 
 ## Example
 
@@ -29,12 +32,11 @@ curl -X POST http://localhost:3000/v1/sessions/$SESSION_ID/commands \
 ```json
 {
   "next": "op_3cvyhx9ub0",
-  "epoch": 1,
   "page": { "tab": "t1", "url": "https://example.com/", "title": "Example Domain" },
   "execution": { "id": "x-1", "state": "completed", "effect": "applied", "replayed": false, "ran": 2 },
   "results": [
-    { "ok": true, "effect": "applied", "url": "https://example.com/" },
-    { "ok": true, "effect": "none", "snapshotId": "s-1", "snapshot": "- link \"Learn more\" [ref=e1]" }
+    { "command": "navigate", "ok": true, "effect": "applied", "url": "https://example.com/" },
+    { "command": "snapshot", "ok": true, "effect": "none", "snapshotId": "s-1", "snapshot": "- link \"Learn more\" [ref=e1]" }
   ]
 }
 ```
@@ -50,11 +52,10 @@ Then act on the ref:
 | Field | Meaning |
 |---|---|
 | `commands` | One command, or an array of up to 50. They run in order and stop at the first failure. Commands that already ran are not undone. |
-| `after` | The `next` value from your last response. The response sets `epochChanged: true` if another client changed the session in between. A retried request with the same `after` and commands runs only once, even if its `Idempotency-Key` changed. |
+| `after` | The `next` value from your last response. The response sets `epochChanged: true` if the session changed in between. A retried request with the same `after` and commands runs only once, even if its `Idempotency-Key` changed. |
 | `observe` | `{ "mode": "snapshot" }` returns a snapshot after the commands. `"diff"` returns a unified diff against the last snapshot of the tab, or against `base` (a snapshot id). It takes the snapshot options below, and `tab` when several tabs are open and the commands did not pick one. |
-| `eventsAfter` | `c-0` the first time, then the last `events.cursor`. The response lists navigations, opened and closed tabs, dialogs, and downloads since then. |
 
-Fields that are not listed here, or that a command does not take, are refused with `400 invalid_request`. A typo in `after` would otherwise turn off duplicate protection without notice.
+Fields that are not listed here, or that a command does not take, are refused with `400 invalid_request`. A typo in `after` would otherwise turn off duplicate protection without notice. So are arguments that do not fit together, such as a `wait` with two conditions, `get attr` without `attribute`, a key name the engine does not know, or a ref with `frame`. The whole request is refused before any command runs.
 
 Send a random `Idempotency-Key` header to make retries safe. A request with a key that was already used returns the stored result (`replayed: true`) for at least an hour, even after its `after` expires. The same key with different commands gets `422 key_conflict`. Large result bodies, such as snapshot text and screenshot data, are kept for 10 minutes. A replay after that returns the rest of the result with `bodyExpired: true`. Starting a session again, even with the same id, starts with no stored results. Ids keep counting across sessions while the server runs, so refs, tab ids, execution ids, and dialog ids from an earlier session never point at anything new. The first tab of a session is not always `t1`.
 
@@ -63,17 +64,16 @@ Send a random `Idempotency-Key` header to make retries safe. A request with a ke
 | Field | Meaning |
 |---|---|
 | `next` | Send it as `after` in your next request. Valid for an hour. |
-| `epoch`, `epochChanged` | `epoch` goes up when an execution or a `dialog` answer changes the page, when a quick action runs on the session's tabs, or when the browser restarts. |
+| `epochChanged` | Sent when the request has `after`. `true` when, since that `after`, another execution or a dialog answer changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
 | `page` | The tab the execution used, with its URL and title. |
 | `execution` | `id`, `state`, `effect`, `replayed`, and `ran` (commands started). `error` says why an execution ended early. |
-| `results` | One entry per command that ran: `ok`, `effect`, command fields, and `error` (`code`, `message`, `reason`) when it failed. |
+| `results` | One entry per command that ran: `command`, `ok`, `effect`, the fields of that command, and `error` (`code`, `message`, `reason`) when it failed. |
 | `observe` | `snapshotId` with `snapshot`, or `diff`. A diff without a usable base returns the full snapshot with `full: true`. If the snapshot fails, `observe` is `{ "error": { ... } }` and the commands' results stay as they are. |
 | `dialog` | A dialog that is open on the tab and waits for an answer. |
-| `events` | `cursor`, `items`, and `more` when there are more than 100. |
 
 `effect` tells what happened to the page: `none` (nothing changed), `applied` (the page changed), or `unknown` (it may have changed, for example after a timeout during input). When an execution is cancelled or runs out of time, the running command stops before its next input, so `effect: none` means nothing changed. A click or drag that already pressed the mouse button still lets it go, and its effect is `unknown`. The page has 10 seconds to take each input. If it takes longer, the command fails with `timeout`, and a pressed button or key is still let go.
 
-Executions run one at a time per session. The response waits up to 20 seconds. A longer execution keeps running and the response shows `state: "running"`. Wait for it with `{ "command": "status", "execution": "x-1" }`, or stop it with `cancel`. An execution stops after 60 seconds. `navigate` waits up to 15 seconds for the page to load. Up to 16 executions can wait in the queue.
+Executions run one at a time per session. The response waits up to 20 seconds. A longer execution keeps running and the response shows `state: "running"`. Wait for it with `GET /v1/sessions/{sessionId}/commands/executions/x-1`, which also waits up to 20 seconds, or stop it with `POST /v1/sessions/{sessionId}/commands/executions/x-1/cancel`. Both return the execution in the same shape as a run, and both work while other executions run or wait. An execution stops after 60 seconds. `navigate` waits up to 15 seconds for the page to load. Up to 16 executions can wait in the queue.
 
 Cancelling stops a page load in progress and keeps the tab. If a command still does not stop 2 seconds after a cancel, or 15 seconds after a timeout, the engine stops the page's scripts, including those in frames. If the command had already sent input to the page, the engine then closes the tab, and as a last resort ends the session. A command that has not sent input yet, such as a snapshot, is left behind instead, and the tab stays open.
 
@@ -120,7 +120,7 @@ Password fields, and fields and editable regions that the browser hides with `-w
 | `navigate` | `url`, `tab` | Only `http`, `https`, and `about:blank`. A URL without a scheme gets `https://`. |
 | `back`, `forward`, `reload` | `tab` | `navigated: false` when there is no history entry. A history step that only moves a frame does not wait for the page to load. |
 | `snapshot` | `tab`, `interactive`, `compact`, `depth` | Returns `snapshotId` and `snapshot`. |
-| `find` | `by`, `value`, `name`, `exact`, `tab`, `frame` | Returns `count` and refs for up to 50 matches. `by` is a locator kind. `name` works only with `by: role`. |
+| `find` | `target`, `tab`, `frame` | Returns `count` and refs for up to 50 matches. `target` is a CSS selector or a locator, not a ref. With `nth`, it returns that one match. |
 | `click`, `dblclick`, `hover` | `target` | Uses the mouse. See [Clicking](#clicking). A disabled element fails with `not_actionable` (`disabled`). |
 | `focus` | `target` | |
 | `type` | `target`, `text`, `clear`, `delay` | Types the text one key press at a time, so pages see `keydown` and `keyup` for each character. It types after the current content, or at the cursor when the field already has focus. Line breaks (`\n` or `\r\n`) and tabs are sent as Enter and Tab. `clear` replaces the current content. Read-only and disabled fields fail with `not_actionable` (`read_only`, `disabled`), and so do inputs that take no text, such as checkboxes (`not_editable`). Date and time fields take the value as `fill` does. Other focusable elements, such as custom widgets that read keys, get the same key presses. If a dialog opens partway, typing stops and the command fails with `dialog_pending` (`during_type`), saying how many characters it typed. |
@@ -140,11 +140,6 @@ Password fields, and fields and editable regions that the browser hides with `-w
 | `pdf` | `tab`, `landscape`, `printBackground` | Returns base64 `data`. Needs headless Chrome. |
 | `eval` | `script`, `timeout`, `tab` | Runs JavaScript in the page and returns `value`, the result as JSON. It waits for a promise to settle. The default timeout is 10 seconds and the most is 50 seconds. A script that throws fails with `script_error`. A result of more than 100,000 characters of JSON fails with `invalid_argument` (`too_large`). Secret values in the result are hidden, as elsewhere, but this only guards against accidents: a script can read and change anything on the page. |
 | `tab` | `action` (`list`, `new`, `close`), `tab`, `url` | The last tab cannot be closed. |
-| `status` | `execution` | Waits for an execution and returns it. |
-| `cancel` | `execution` | Stops an execution. |
-| `dialog` | `dialog`, `action` (`accept`, `dismiss`), `text` | Answers an open dialog. The response is `answered` (the dialog) and `epoch`, not an execution. |
-
-`status`, `cancel`, and `dialog` run right away, outside the queue. Send them alone.
 
 ## Clicking
 
@@ -164,7 +159,7 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 ## Dialogs
 
 - The engine never answers a dialog on its own. This holds for every type: `alert`, `confirm`, `prompt`, and `beforeunload`.
-- An open dialog shows in the response's `dialog`. Answer with `{ "command": "dialog", "dialog": "d-1", "action": "accept", "text": "..." }`. Until then, commands on that tab fail with `dialog_pending`. Another client, such as a CDP client, can answer it too. If it answers first, the `dialog` command returns `dialog_not_pending`.
+- An open dialog shows in the response's `dialog`. Answer with `POST /v1/sessions/{sessionId}/commands/dialogs/d-1/answer` and `{ "action": "accept", "text": "..." }`, or `"dismiss"`. `text` answers a prompt. The response is `{ "answered": { ... } }`, the dialog with its answer. The answer runs right away, outside the queue. Until then, commands on that tab fail with `dialog_pending`. Another client, such as a CDP client, can answer it too. If it answers first, the answer returns `dialog_not_pending`.
 - If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Answer the dialog and click again.
 - If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after you answer the dialog. Send it again if you still need it.
 - A dialog that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
@@ -175,7 +170,7 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 
 ## Quick actions
 
-`/v1/scrape`, `/v1/screenshot`, `/v1/pdf`, `/v1/search`, `/v1/sessions/scrape`, `/v1/sessions/screenshot`, and `/v1/sessions/pdf` use the same tabs, so they take turns with commands. They return `409` while commands are running or waiting to run. A commands request that arrives while one of them is still running waits until it finishes. A quick action raises `epoch`, so the next request with `after` gets `epochChanged: true`. Pass `proxyUrl` to run them in a separate browser context.
+`/v1/scrape`, `/v1/screenshot`, `/v1/pdf`, `/v1/search`, `/v1/sessions/scrape`, `/v1/sessions/screenshot`, and `/v1/sessions/pdf` use the same tabs, so they take turns with commands. They return `409` while commands are running or waiting to run. A commands request that arrives while one of them is still running waits until it finishes. A quick action counts as a change, so the next request with `after` gets `epochChanged: true`. Pass `proxyUrl` to run them in a separate browser context.
 
 ## Errors
 
@@ -187,9 +182,10 @@ Request errors have no execution. The body is `{ "error": { "code": ..., "messag
 | 410 | `session_ended` |
 | 422 | `key_conflict`, `invalid_operation_token`, `unknown_execution`, `dialog_not_pending` |
 | 429 | `queue_full`, `expired`, `records_full` |
+| 500 | `internal_error` |
 
 `invalid_operation_token` means the engine no longer knows your `after`, for example because it is older than an hour or the session holds too many records. The response carries a fresh `next`. If you sent the same commands before, check the page first, because they may have run.
 
-An unexpected error inside the engine returns `200` with `{ "error": { "code": "internal_error", ... } }` and no execution. It never uses `5xx`, because clients retry `5xx` on their own. A `dialog` command whose dialog does not close also returns this, with the dialog that is still open in `dialog`.
+An unexpected error inside the engine returns `500` with `{ "error": { "code": "internal_error", ... } }` and no execution. The commands may have run, so the response carries `x-should-retry: false` when the request had neither an `Idempotency-Key` nor `after`, and `x-should-retry: true` otherwise. Steel's SDKs follow this header. A dialog answer whose dialog does not close also returns this, with `x-should-retry: true` and the dialog that is still open in `dialog`.
 
 Command errors appear in `results[i].error`. The codes are `stale_ref`, `not_actionable`, `dialog_pending`, `element_not_found`, `invalid_argument`, `tab_not_found`, `tab_crashed`, `frame_not_found`, `tab_required`, `forbidden_url`, `forbidden_file`, `navigation_failed`, `download_failed`, `script_error`, `timeout`, `cancelled`, `session_ended`, `browser_restarted`, `unknown_command`, and `internal_error`. `reason` adds detail, for example `covered`, `offscreen`, `no_box`, `before_click`, `disabled`, `ambiguous`, `not_editable`, `read_only`, `not_focusable`, `not_checkable`, `disabled_option`, `detached`, `content_changed`, `unverified`, `missing`, or `not_frame`.

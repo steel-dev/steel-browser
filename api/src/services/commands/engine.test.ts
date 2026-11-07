@@ -22,6 +22,7 @@ import {
   type EngineOptions,
   type EngineResponse,
 } from "./engine.js";
+import { CommandResult } from "../../modules/commands/commands.schema.js";
 import { PREPARE_EDIT } from "./forms.js";
 import { Tab } from "./tabs.js";
 
@@ -38,7 +39,6 @@ interface Result {
 
 interface Envelope {
   next?: string;
-  epoch: number;
   epochChanged?: boolean;
   page: { tab: string; url: string; title: string } | null;
   execution: {
@@ -946,10 +946,62 @@ describe.skipIf(!chrome)("command engine", () => {
     return target.handle({ sessionId: SESSION, idempotencyKey: key, body });
   }
 
+  function described(body: Envelope): Envelope {
+    for (const result of body.results ?? []) {
+      const parsed = CommandResult.safeParse(result);
+      expect(parsed.success, `${JSON.stringify(result)} ${parsed.error?.message ?? ""}`).toBe(true);
+    }
+    return body;
+  }
+
   async function run(commands: unknown, extra: Record<string, unknown> = {}, target = engine) {
     const response = await send({ commands, ...extra }, undefined, target);
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    return response.body as unknown as Envelope;
+    return described(response.body as unknown as Envelope);
+  }
+
+  async function refused(commands: unknown, message?: string) {
+    const response = await send({ commands });
+    expect(response.status, JSON.stringify(commands)).toBe(400);
+    if (message) {
+      expect((response.body as { error: { message: string } }).error.message).toContain(message);
+    }
+  }
+
+  async function okBody(pending: Promise<EngineResponse>): Promise<Envelope> {
+    const response = await pending;
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    return described(response.body as unknown as Envelope);
+  }
+
+  async function changedSince(next: string | undefined, target = engine) {
+    return (await run({ command: "tab", action: "list" }, { after: next }, target)).epochChanged;
+  }
+
+  function waitFor(id: string, target = engine): Promise<Envelope> {
+    return okBody(target.executionStatus(SESSION, id));
+  }
+
+  function halt(id: string, target = engine): Promise<Envelope> {
+    return okBody(target.cancelExecution(SESSION, id));
+  }
+
+  function reply(
+    dialog: string,
+    action = "accept",
+    extra: Record<string, unknown> = {},
+    target = engine,
+  ): Promise<EngineResponse> {
+    return target.answerDialog(SESSION, dialog, { action, ...extra });
+  }
+
+  function answerWith(
+    dialog: string,
+    action = "accept",
+    extra: Record<string, unknown> = {},
+    target = engine,
+  ): Promise<Envelope> {
+    return okBody(reply(dialog, action, extra, target));
   }
 
   async function open(path: string, target = engine) {
@@ -970,7 +1022,7 @@ describe.skipIf(!chrome)("command engine", () => {
 
   async function finished(id: string, target = engine): Promise<Envelope> {
     for (let attempt = 0; attempt < 20; attempt++) {
-      const body = await run({ command: "status", execution: id }, {}, target);
+      const body = await waitFor(id, target);
       if (!["queued", "running"].includes(body.execution.state)) {
         return body;
       }
@@ -1142,7 +1194,7 @@ describe.skipIf(!chrome)("command engine", () => {
     test("keeps every ref a find returns when there are more than the ref limit", async () => {
       const small = create({ limits: { maxRefs: 5 } });
       await open("/many-buttons", small);
-      const found = await run({ command: "find", by: "role", value: "button" }, {}, small);
+      const found = await run({ command: "find", target: { role: "button" } }, {}, small);
       const matches = found.results[0].matches as Array<{ ref: string; name: string }>;
       expect(matches).toHaveLength(8);
       const clicked = await run({ command: "click", target: matches[0].ref }, {}, small);
@@ -1153,7 +1205,7 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("keeps a ref that find returned for a hidden element once it shows", async () => {
       await open("/hidden-later");
-      const found = await run({ command: "find", by: "css", value: "#later" });
+      const found = await run({ command: "find", target: { css: "#later" } });
       const ref = (found.results[0].matches as Array<{ ref: string }>)[0].ref;
       await page.evaluate(() => (document.getElementById("later")!.style.display = ""));
       const clicked = await run({ command: "click", target: ref });
@@ -1491,14 +1543,14 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("reports the scroll before a click that something covers", async () => {
       await open("/covered-far");
-      const before = (await run({ command: "tab", action: "list" })).epoch;
+      const before = await run({ command: "tab", action: "list" });
       const body = await run({ command: "click", target: "#far" });
       expect(body.results[0]).toMatchObject({
         ok: false,
         effect: "applied",
         error: { code: "not_actionable", reason: "covered" },
       });
-      expect(body.epoch).toBeGreaterThan(before);
+      expect(await changedSince(before.next)).toBe(true);
     });
 
     test("refuses to click a covered element", async () => {
@@ -1673,18 +1725,18 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("envelope and records", () => {
-    test("returns next, epoch, page, and the execution", async () => {
+    test("returns next, page, and the execution", async () => {
       const body = await open("/basic");
       expect(body.next).toMatch(/^op_[a-z0-9]{10}$/);
       expect(body).toMatchObject({
-        epoch: 1,
         page: { tab: "t1", url: `${base}/basic`, title: "Basic" },
         execution: { state: "completed", effect: "applied", replayed: false, ran: 1 },
-        results: [{ ok: true, effect: "applied", url: `${base}/basic` }],
+        results: [{ command: "navigate", ok: true, effect: "applied", url: `${base}/basic` }],
       });
       expect(body).not.toHaveProperty("epochChanged");
+      expect(body).not.toHaveProperty("epoch");
       const read = await run({ command: "snapshot" });
-      expect(read.epoch).toBe(1);
+      expect(read.results[0]).toMatchObject({ command: "snapshot", ok: true });
       expect(read.next).not.toBe(body.next);
     });
 
@@ -1782,7 +1834,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const fresh = await run({ command: "snapshot" }, { after: stale.next });
       expect(fresh.epochChanged).toBe(false);
       const own = await run({ command: "navigate", url: `${base}/basic` }, { after: fresh.next });
-      expect(own).toMatchObject({ epochChanged: false, epoch: 3 });
+      expect(own.epochChanged).toBe(false);
       const after = await run({ command: "snapshot" }, { after: own.next });
       expect(after.epochChanged).toBe(false);
     });
@@ -1804,16 +1856,20 @@ describe.skipIf(!chrome)("command engine", () => {
     });
 
     test("answers status for an unknown execution with 422", async () => {
-      const response = await send({ commands: { command: "status", execution: "x-99" } });
+      const response = await engine.executionStatus(SESSION, "x-99");
       expect(response.status).toBe(422);
       expect(response.body).toMatchObject({ error: { code: "unknown_execution" } });
     });
 
-    test("refuses a control command mixed into a batch", async () => {
-      const response = await send({
-        commands: [{ command: "snapshot" }, { command: "status", execution: "x-1" }],
-      });
-      expect(response.status).toBe(400);
+    test("refuses status, cancel, and dialog as commands", async () => {
+      for (const command of [
+        { command: "status", execution: "x-1" },
+        { command: "cancel", execution: "x-1" },
+        { command: "dialog", dialog: "d-1", action: "accept" },
+      ]) {
+        const response = await send({ commands: [{ command: "snapshot" }, command] });
+        expect(response.status, JSON.stringify(command)).toBe(400);
+      }
     });
 
     test("drops large bodies after their retention but keeps the summary", async () => {
@@ -1875,6 +1931,7 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("ends an execution that runs past the time limit", async () => {
       const short = create({ limits: { executionLimitMs: 400 } });
+      const start = await run({ command: "tab", action: "list" }, {}, short);
       const body = await run({ command: "navigate", url: `${base}/slow?ms=1200` }, {}, short);
       expect(body.execution).toMatchObject({
         state: "timeout",
@@ -1882,7 +1939,7 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "timeout" },
       });
       expect(body.results[0]).toMatchObject({ ok: false, effect: "unknown" });
-      expect(body.epoch).toBe(1);
+      expect(await changedSince(start.next, short)).toBe(true);
       const next = await run({ command: "snapshot" }, {}, short);
       expect(next.execution.state).toBe("completed");
       short.sessionEnded();
@@ -2093,11 +2150,7 @@ describe.skipIf(!chrome)("command engine", () => {
           quick,
         );
         await sleep(100);
-        const cancelling = send(
-          { commands: { command: "cancel", execution: "x-1" } },
-          undefined,
-          quick,
-        );
+        const cancelling = quick.cancelExecution(SESSION, "x-1");
         const next = await run({ command: "navigate", url: `${base}/slow?ms=800` }, {}, quick);
         await clicking;
         await cancelling;
@@ -2115,7 +2168,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const body = await press("Down");
       expect(body.results[0]).toMatchObject({ ok: true });
       expect(body.dialog).toMatchObject({ type: "alert", message: "down" });
-      await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      await answerWith(body.dialog!.id, "accept");
       for (let attempt = 0; attempt < 20 && (await page.title()) !== "clicked"; attempt++) {
         await sleep(100);
       }
@@ -2253,7 +2306,6 @@ describe.skipIf(!chrome)("command engine", () => {
         body: { commands: { command: "tab", action: "list" } },
       });
       expect(response.body).toMatchObject({
-        epoch: 0,
         results: [{ tabs: [{ url: `${base}/basic` }] }],
       });
       const listed = (response.body as unknown as Envelope).results[0].tabs as Array<{
@@ -2378,6 +2430,7 @@ describe.skipIf(!chrome)("command engine", () => {
 
   describe("policy", () => {
     test("refuses file and script urls", async () => {
+      let next = (await run({ command: "tab", action: "list" })).next;
       for (const url of ["file:///etc/passwd", "javascript:alert(1)", "chrome://settings"]) {
         const body = await run({ command: "navigate", url });
         expect(body.results[0], url).toMatchObject({
@@ -2386,7 +2439,9 @@ describe.skipIf(!chrome)("command engine", () => {
           error: { code: "forbidden_url", reason: "protocol" },
         });
         expect(body.execution).toMatchObject({ state: "failed", effect: "none" });
-        expect(body.epoch).toBe(0);
+        const check = await run({ command: "tab", action: "list" }, { after: next });
+        expect(check.epochChanged, url).toBe(false);
+        next = check.next;
       }
     });
 
@@ -2624,11 +2679,7 @@ describe.skipIf(!chrome)("command engine", () => {
         ok: false,
         error: { code: "dialog_pending" },
       });
-      const answered = await run(
-        { command: "dialog", dialog: body.dialog!.id, action: "accept" },
-        {},
-        fresh,
-      );
+      const answered = await answerWith(body.dialog!.id, "accept", {}, fresh);
       expect(answered.answered).toMatchObject({ accepted: true });
       fresh.sessionEnded();
     });
@@ -2842,7 +2893,7 @@ describe.skipIf(!chrome)("command engine", () => {
       try {
         const typed = await run({ command: "type", target: { label: "Trap" }, text: "x" });
         expect(typed.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
-        await run({ command: "dialog", dialog: typed.dialog!.id, action: "accept" });
+        await answerWith(typed.dialog!.id, "accept");
         armed = true;
         const clicked = await run({ command: "click", target: button });
         expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({ ok: true });
@@ -2900,7 +2951,7 @@ describe.skipIf(!chrome)("command engine", () => {
       });
       const blocked = await run({ command: "snapshot" });
       expect(blocked.results[0]).toMatchObject({ error: { code: "dialog_pending" } });
-      const answered = await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      const answered = await answerWith(body.dialog!.id, "accept");
       expect(answered).toMatchObject({ answered: { accepted: true, by: "command" } });
       expect(await page.title()).toBe("alerted");
     });
@@ -2925,11 +2976,11 @@ describe.skipIf(!chrome)("command engine", () => {
       expect((await run({ command: "tab", action: "list" })).results[0]).toMatchObject({
         ok: true,
       });
-      const answered = await run({ command: "dialog", dialog: id, action: "accept" });
+      const answered = await answerWith(id, "accept");
       expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
       expect(await page.title()).toBe("confirm true");
       expect((await run({ command: "snapshot" })).results[0]).toMatchObject({ ok: true });
-      const again = await send({ commands: { command: "dialog", dialog: id, action: "accept" } });
+      const again = await reply(id, "accept");
       expect(again.status).toBe(422);
       expect(again.body).toMatchObject({
         error: { code: "dialog_not_pending" },
@@ -2960,14 +3011,15 @@ describe.skipIf(!chrome)("command engine", () => {
       } as never);
       let failed: EngineResponse;
       try {
-        failed = await send({ commands: { command: "dialog", dialog: id, action: "accept" } });
+        failed = await reply(id, "accept");
       } finally {
         spy.mockRestore();
       }
-      expect(failed.status).toBe(200);
+      expect(failed.status).toBe(500);
+      expect(failed.headers).toEqual({ "x-should-retry": "true" });
       expect(failed.body).toMatchObject({ error: { code: "internal_error" }, dialog: { id } });
       expect(failed.body).not.toHaveProperty("epoch");
-      const answered = await run({ command: "dialog", dialog: id, action: "accept" });
+      const answered = await answerWith(id, "accept");
       expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
       expect(await page.title()).toBe("confirm true");
     });
@@ -2976,7 +3028,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const body = await run({ command: "navigate", url: `${base}/confirm-load` });
       expect(body.results[0]).toMatchObject({ error: { code: "dialog_pending" } });
       await sleep(1500);
-      await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      await answerWith(body.dialog!.id, "accept");
       for (let attempt = 0; attempt < 20 && (await page.title()) !== "loaded"; attempt++) {
         await sleep(100);
       }
@@ -2992,7 +3044,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const waited = await run({ command: "wait", ms: 2000 }, {}, quick);
       expect(Date.now() - started).toBeLessThan(1800);
       expect(waited.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
-      await run({ command: "dialog", dialog: waited.dialog!.id, action: "accept" }, {}, quick);
+      await answerWith(waited.dialog!.id, "accept", {}, quick);
       await page.evaluate(() => (window as unknown as { arm: (ms: number) => void }).arm(30));
       const observed = await run(
         { command: "wait", ms: 30 },
@@ -3002,7 +3054,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const pending =
         observed.dialog ?? (await run({ command: "tab", action: "list" }, {}, quick)).dialog;
       expect(pending).toBeDefined();
-      await run({ command: "dialog", dialog: pending!.id, action: "accept" }, {}, quick);
+      await answerWith(pending!.id, "accept", {}, quick);
       expect((await run({ command: "tab", action: "list" }, {}, quick)).execution.state).toBe(
         "completed",
       );
@@ -3017,7 +3069,7 @@ describe.skipIf(!chrome)("command engine", () => {
         target: { role: "button", name: "Go" },
       });
       expect(pressed.dialog).toMatchObject({ type: "confirm" });
-      await run({ command: "dialog", dialog: pressed.dialog!.id, action: "accept" });
+      await answerWith(pressed.dialog!.id, "accept");
       for (let attempt = 0; attempt < 20 && !(await held()).keyUp; attempt++) {
         await sleep(100);
       }
@@ -3027,12 +3079,7 @@ describe.skipIf(!chrome)("command engine", () => {
     test("counts a dialog answer as a change", async () => {
       await open("/dialogs");
       const clicked = await press("Confirm");
-      const answered = await run({
-        command: "dialog",
-        dialog: clicked.dialog!.id,
-        action: "accept",
-      });
-      expect(answered.epoch).toBeGreaterThan(clicked.epoch);
+      await answerWith(clicked.dialog!.id, "accept");
       const later = await run({ command: "tab", action: "list" }, { after: clicked.next });
       expect(later.epochChanged).toBe(true);
     });
@@ -3052,7 +3099,7 @@ describe.skipIf(!chrome)("command engine", () => {
     test("fills a prompt with the answer text", async () => {
       await open("/dialogs");
       const clicked = await press("Prompt");
-      await run({ command: "dialog", dialog: clicked.dialog!.id, action: "accept", text: "jun" });
+      await answerWith(clicked.dialog!.id, "accept", { text: "jun" });
       expect(await page.title()).toBe("prompt jun");
     });
 
@@ -3062,7 +3109,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await sleep(500);
       const blocked = await run({ command: "snapshot" });
       expect(blocked.results[0]).toMatchObject({ error: { code: "dialog_pending" } });
-      await run({ command: "dialog", dialog: blocked.dialog!.id, action: "dismiss" });
+      await answerWith(blocked.dialog!.id, "dismiss");
       expect(await page.title()).toBe("later false");
     });
 
@@ -3073,7 +3120,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const body = await run({ command: "wait", text: "Never shows up", timeout: 5000 });
       expect(Date.now() - started).toBeLessThan(2500);
       expect(body.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
-      await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      await answerWith(body.dialog!.id, "accept");
       expect(await page.title()).toBe("later true");
     });
 
@@ -3081,7 +3128,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/dialogs");
       const clicked = await press("Hold");
       expect(clicked.dialog).toMatchObject({ type: "confirm", message: "Down?" });
-      await run({ command: "dialog", dialog: clicked.dialog!.id, action: "accept" });
+      await answerWith(clicked.dialog!.id, "accept");
       await sleep(200);
       expect(await page.title()).toBe("clicked after true");
     });
@@ -3103,7 +3150,7 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(mixed.status).toBe(400);
       const stale = await send({ commands: { command: "snapshot" }, after: "op_unknown" });
       expect(stale.status).toBe(422);
-      const unknown = await send({ commands: { command: "status", execution: "x-9" } });
+      const unknown = await engine.executionStatus(SESSION, "x-9");
       expect(unknown.status).toBe(422);
     });
 
@@ -3118,9 +3165,7 @@ describe.skipIf(!chrome)("command engine", () => {
     });
 
     test("answers 422 for a dialog it does not know", async () => {
-      const response = await send({
-        commands: { command: "dialog", dialog: "d-9", action: "accept" },
-      });
+      const response = await reply("d-9", "accept");
       expect(response.status).toBe(422);
       expect(response.body).toMatchObject({ error: { code: "dialog_not_pending" } });
     });
@@ -3132,7 +3177,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const alerting = await run({ command: "snapshot", tab: alerted });
       expect(alerting.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
       expect(alerting.dialog).toMatchObject({ tab: alerted, type: "alert" });
-      await run({ command: "dialog", dialog: alerting.dialog!.id, action: "accept" });
+      await answerWith(alerting.dialog!.id, "accept");
       const after = await run({ command: "wait", text: "after alert", tab: alerted });
       expect(after.results[0]).toMatchObject({ ok: true });
       await run({ command: "click", target: refOf(text, 'button "Confirm popup"') });
@@ -3140,7 +3185,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const pending = await run({ command: "snapshot", tab: confirming });
       expect(pending.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
       expect(pending.dialog).toMatchObject({ tab: confirming, type: "confirm", message: "early?" });
-      await run({ command: "dialog", dialog: pending.dialog!.id, action: "accept" });
+      await answerWith(pending.dialog!.id, "accept");
       const answered = await run({ command: "wait", text: "confirm true", tab: confirming });
       expect(answered.results[0]).toMatchObject({ ok: true });
     });
@@ -3149,7 +3194,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await run({ command: "click", target: { role: "button", name: "Touch" } });
       const clicked = await run({ command: "click", target: { role: "link", name: "Away" } });
       expect(clicked.dialog).toMatchObject({ type: "beforeunload" });
-      await run({ command: "dialog", dialog: clicked.dialog!.id, action: "dismiss" });
+      await answerWith(clicked.dialog!.id, "dismiss");
       const started = Date.now();
       const waited = await run({ command: "wait", load: "load", timeout: 5000 });
       expect(waited.results[0]).toMatchObject({ ok: true });
@@ -3163,7 +3208,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const left = await run({ command: "navigate", url: `${base}/basic` });
       expect(left.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
       expect(left.dialog).toMatchObject({ type: "beforeunload" });
-      await run({ command: "dialog", dialog: left.dialog!.id, action: "accept" });
+      await answerWith(left.dialog!.id, "accept");
       const title = () => page.title().catch(() => "");
       for (let attempt = 0; attempt < 20 && (await title()) !== "Basic"; attempt++) {
         await sleep(100);
@@ -3180,7 +3225,7 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "dialog_pending", reason: "before_click" },
       });
       expect(first.dialog).toMatchObject({ type: "confirm", message: "Hover?" });
-      await run({ command: "dialog", dialog: first.dialog!.id, action: "accept" });
+      await answerWith(first.dialog!.id, "accept");
       const second = await run({ command: "click", target: { text: "Hover trap" } });
       expect(second.results[0]).toMatchObject({ ok: true });
       expect(await page.title()).toBe("trap clicked");
@@ -3195,7 +3240,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const id = pending.dialog!.id;
       const closed = await run({ command: "tab", action: "close", tab: confirming });
       expect(closed.results[0]).toMatchObject({ ok: true });
-      const answer = await send({ commands: { command: "dialog", dialog: id, action: "accept" } });
+      const answer = await reply(id, "accept");
       expect(answer.status).toBe(422);
       expect(answer.body).toMatchObject({
         error: { code: "dialog_not_pending" },
@@ -3262,7 +3307,7 @@ describe.skipIf(!chrome)("command engine", () => {
       try {
         const clicking = run({ command: "click", target: ref });
         await reached;
-        const cancelling = run({ command: "cancel", execution: "x-3" });
+        const cancelling = halt("x-3");
         await sleep(100);
         go();
         expect((await cancelling).execution).toMatchObject({ state: "cancelled" });
@@ -3304,7 +3349,7 @@ describe.skipIf(!chrome)("command engine", () => {
       try {
         const scrolling = run({ command: "scroll", direction: "down", amount: 500 });
         await reached;
-        const cancelling = run({ command: "cancel", execution: "x-2" });
+        const cancelling = halt("x-2");
         await sleep(100);
         go();
         expect((await cancelling).execution).toMatchObject({ state: "cancelled" });
@@ -3380,7 +3425,7 @@ describe.skipIf(!chrome)("command engine", () => {
           await sleep(100);
         }
         await sleep(300);
-        const cancelled = await run({ command: "cancel", execution: "x-3" }, {}, quick);
+        const cancelled = await halt("x-3", quick);
         expect(cancelled.execution.state).toBe("cancelled");
         await running;
         expect(endedByEngine).toBe(0);
@@ -3404,11 +3449,7 @@ describe.skipIf(!chrome)("command engine", () => {
           {},
           quick,
         );
-        const cancelling = send(
-          { commands: { command: "cancel", execution: stuck.execution.id } },
-          undefined,
-          quick,
-        );
+        const cancelling = quick.cancelExecution(SESSION, stuck.execution.id);
         await sleep(1000);
         releasing = true;
         await cancelling;
@@ -3434,7 +3475,7 @@ describe.skipIf(!chrome)("command engine", () => {
           quick,
         );
         await sleep(500);
-        const cancelled = await run({ command: "cancel", execution: "x-3" }, {}, quick);
+        const cancelled = await halt("x-3", quick);
         expect(cancelled.execution.state).toBe("cancelled");
         expect(cancelled.page).toMatchObject({ tab: "t1", title: "Basic" });
         await running;
@@ -3471,7 +3512,7 @@ describe.skipIf(!chrome)("command engine", () => {
       try {
         const snapping = run({ command: "snapshot" }, {}, quick);
         await sleep(300);
-        const cancelled = await run({ command: "cancel", execution: "x-2" }, {}, quick);
+        const cancelled = await halt("x-2", quick);
         expect(cancelled.execution.state).toBe("cancelled");
         await snapping;
         expect(endedByEngine).toBe(0);
@@ -3492,7 +3533,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const clicking = run({ command: "click", target: refOf(text, 'button "Spin"') }, {}, quick);
       await sleep(300);
       const id = "x-3";
-      const cancelled = await run({ command: "cancel", execution: id }, {}, quick);
+      const cancelled = await halt(id, quick);
       expect(cancelled.execution).toMatchObject({ id, state: "cancelled" });
       expect((await clicking).execution.state).toBe("cancelled");
       expect(endedByEngine).toBe(0);
@@ -3520,7 +3561,7 @@ describe.skipIf(!chrome)("command engine", () => {
           const running = await run(command, {}, quick);
           expect(running.execution.state, JSON.stringify(command)).toBe("running");
           const started = Date.now();
-          await run({ command: "cancel", execution: running.execution.id }, {}, quick);
+          await halt(running.execution.id, quick);
           const done = await finished(running.execution.id, quick);
           expect(done.execution.state).toBe("cancelled");
           expect(Date.now() - started).toBeLessThan(3000);
@@ -3552,11 +3593,7 @@ describe.skipIf(!chrome)("command engine", () => {
           quick,
         );
         const started = Date.now();
-        const cancelled = await run(
-          { command: "cancel", execution: spinning.execution.id },
-          {},
-          quick,
-        );
+        const cancelled = await halt(spinning.execution.id, quick);
         expect(cancelled.execution.state).toBe("cancelled");
         expect(Date.now() - started).toBeLessThan(5000);
         quick.sessionEnded();
@@ -3577,11 +3614,7 @@ describe.skipIf(!chrome)("command engine", () => {
           {},
           quick,
         );
-        const cancelling = send(
-          { commands: { command: "cancel", execution: stuck.execution.id } },
-          undefined,
-          quick,
-        );
+        const cancelling = quick.cancelExecution(SESSION, stuck.execution.id);
         await sleep(1000);
         quick.prepare("s2");
         quick.browserReady();
@@ -3598,7 +3631,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await sleep(50);
       const queued = send({ commands: { command: "snapshot" } });
       await sleep(50);
-      const cancelled = await run({ command: "cancel", execution: "x-2" });
+      const cancelled = await halt("x-2");
       expect(cancelled.execution).toMatchObject({ state: "cancelled", effect: "none", ran: 0 });
       expect(((await queued).body as unknown as Envelope).execution.state).toBe("cancelled");
       expect((await slow).execution.state).toBe("completed");
@@ -3613,7 +3646,7 @@ describe.skipIf(!chrome)("command engine", () => {
         const running = await run(command, {}, quick);
         expect(running.execution.state).toBe("running");
         const started = Date.now();
-        await run({ command: "cancel", execution: running.execution.id }, {}, quick);
+        await halt(running.execution.id, quick);
         const done = await finished(running.execution.id, quick);
         expect(done.execution.state).toBe("cancelled");
         expect(Date.now() - started).toBeLessThan(8000);
@@ -3632,7 +3665,7 @@ describe.skipIf(!chrome)("command engine", () => {
     test("ends running work and old refs, then opens the queue again", async () => {
       await open("/basic");
       const ref = refOf(await snapshot(), 'button "Save"');
-      const before = (await run({ command: "tab", action: "list" })).epoch;
+      const before = await run({ command: "tab", action: "list" });
       const replacement = await puppeteer.launch({
         executablePath: chrome,
         headless: true,
@@ -3646,12 +3679,12 @@ describe.skipIf(!chrome)("command engine", () => {
         expect((await slow).body).toMatchObject({
           execution: { state: "failed", effect: "unknown", error: { code: "browser_restarted" } },
         });
-        const waiting = send({ commands: { command: "tab", action: "list" } });
+        const waiting = send({ commands: { command: "tab", action: "list" }, after: before.next });
         engine.browserLaunched(replacement);
         engine.browserReady();
         const listed = (await waiting).body as unknown as Envelope;
         expect(listed.results[0].tabs).toEqual([expect.objectContaining({ tab: "t2" })]);
-        expect(listed.epoch).toBeGreaterThan(before);
+        expect(listed.epochChanged).toBe(true);
         expect(await click(ref)).toMatchObject({
           ok: false,
           error: { code: "stale_ref", reason: "browser_restarted" },
@@ -3677,15 +3710,11 @@ describe.skipIf(!chrome)("command engine", () => {
         const response = await send({ commands });
         expect(response.status, JSON.stringify(commands)).toBe(400);
       }
-      for (const command of [
+      await refused(
         { command: "wait", text: "Save", state: "hidden" },
-        { command: "find", by: "text", value: "Save", name: "Close" },
-      ]) {
-        expect((await run(command)).results[0], JSON.stringify(command)).toMatchObject({
-          ok: false,
-          error: { code: "invalid_argument" },
-        });
-      }
+        "state works only with target",
+      );
+      await refused({ command: "find", target: { text: "Save", name: "Close" } });
       expect(await page.title()).toBe("Locators");
     });
 
@@ -3731,11 +3760,11 @@ describe.skipIf(!chrome)("command engine", () => {
     test("finds elements and gives them the refs a snapshot would", async () => {
       await open("/locators");
       const cases: Array<[Record<string, unknown>, string, string]> = [
-        [{ by: "label", value: "email address" }, "textbox", "Email address"],
-        [{ by: "placeholder", value: "Search" }, "textbox", ""],
-        [{ by: "alt", value: "Company logo", exact: true }, "image", "Company logo"],
-        [{ by: "text", value: "terms" }, "generic", ""],
-        [{ by: "role", value: "button", name: "item" }, "button", "Item"],
+        [{ target: { label: "email address" } }, "textbox", "Email address"],
+        [{ target: { placeholder: "Search" } }, "textbox", ""],
+        [{ target: { alt: "Company logo", exact: true } }, "image", "Company logo"],
+        [{ target: { text: "terms" } }, "generic", ""],
+        [{ target: { role: "button", name: "item" } }, "button", "Item"],
       ];
       for (const [query, role, name] of cases) {
         const result = (await run({ command: "find", ...query })).results[0];
@@ -3746,15 +3775,36 @@ describe.skipIf(!chrome)("command engine", () => {
           expect(first.name).toBe(name);
         }
       }
-      const items = (await run({ command: "find", by: "role", value: "button", name: "Item" }))
+      const items = (await run({ command: "find", target: { role: "button", name: "Item" } }))
         .results[0];
       expect(items.count).toBe(2);
       const refs = (items.matches as Array<{ ref: string }>).map((match) => match.ref);
       const text = await snapshot();
       expect(text).toContain(`button "Item" [ref=${refs[0]}]`);
       expect(text).toContain(`button "Item" [ref=${refs[1]}]`);
+      const second = (
+        await run({ command: "find", target: { role: "button", name: "Item", nth: -1 } })
+      ).results[0];
+      expect(second).toMatchObject({ count: 1, matches: [{ ref: refs[1] }] });
+      const css = (await run({ command: "find", target: "button" })).results[0];
+      expect(css.count).toBeGreaterThanOrEqual(2);
       expect(await click(refs[1])).toMatchObject({ ok: true });
       expect(await page.title()).toBe("second");
+    });
+
+    test("refuses a batch with a bad command before running any of it", async () => {
+      await open("/counter");
+      const add = { command: "click", target: { role: "button", name: "Add" } };
+      await refused([add, { command: "wait", text: "Added", url: "*/counter" }], "commands.1");
+      await refused([add, { command: "get", what: "attr", target: "button" }], "attribute name");
+      await refused([add, { command: "get", what: "count", target: "e1" }], "a CSS selector");
+      await refused([add, { command: "find", target: "@e1" }], "find needs a locator");
+      await refused([add, { command: "click", target: "e1", frame: "iframe" }], "knows its frame");
+      await refused([add, { command: "drag", source: "ref=e1", target: "#x", frame: "iframe" }]);
+      await refused([add, { command: "keyup", key: "Control+Shift" }], "keyup takes one key");
+      expect(await count()).toBeUndefined();
+      expect((await run(add)).results[0]).toMatchObject({ command: "click", ok: true });
+      expect(await count()).toBe(1);
     });
 
     test("reports a locator without a match and a bad selector", async () => {
@@ -3975,9 +4025,10 @@ describe.skipIf(!chrome)("command engine", () => {
         (await run({ command: "click", target: { text: "Inner" }, frame: "h1" })).results[0],
       ).toMatchObject({ ok: false, error: { code: "frame_not_found" } });
       const ref = refOf(await snapshot(), "Iframe");
-      expect(
-        (await run({ command: "click", target: { text: "Inner" }, frame: [ref] })).results[0],
-      ).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+      await refused(
+        { command: "click", target: { text: "Inner" }, frame: [ref] },
+        "already names its frame",
+      );
       await open("/consent");
       expect(
         (await run({ command: "click", target: { text: "Inner" }, frame: "iframe" })).results[0],
@@ -4014,7 +4065,9 @@ describe.skipIf(!chrome)("command engine", () => {
       await run({ command: "dblclick", target: { text: "Double" } });
       expect(await page.title()).toBe("double");
       const focused = await run({ command: "focus", target: { label: "Focus target" } });
-      expect(focused).toMatchObject({ results: [{ ok: true, effect: "applied" }], epoch: 4 });
+      expect(focused).toMatchObject({
+        results: [{ command: "focus", ok: true, effect: "applied" }],
+      });
       expect(await page.title()).toBe("focused");
     });
 
@@ -4035,13 +4088,13 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("reports the scroll that an element screenshot needs", async () => {
       await open("/far-element");
-      const before = (await run({ command: "tab", action: "list" })).epoch;
+      const before = await run({ command: "tab", action: "list" });
       const scrolled = await run({ command: "screenshot", target: "#far" });
       expect(scrolled.results[0]).toMatchObject({ ok: true, effect: "applied" });
-      expect(scrolled.epoch).toBeGreaterThan(before);
+      expect(await changedSince(before.next)).toBe(true);
       const again = await run({ command: "screenshot", target: "#far" });
       expect(again.results[0]).toMatchObject({ ok: true, effect: "none" });
-      expect(again.epoch).toBe(scrolled.epoch);
+      expect(await changedSince(scrolled.next)).toBe(false);
     });
 
     test("captures the parts of an element below the viewport", async () => {
@@ -4188,12 +4241,10 @@ describe.skipIf(!chrome)("command engine", () => {
       await run({ command: "type", target: { label: "First" }, text: "a\tb" });
       expect(await value('[aria-label="First"]')).toBe("a");
       expect(await value('[aria-label="Second"]')).toBe("b");
-      const unknown = await run({ command: "press", key: "Hyper+q", target: { label: "First" } });
-      expect(unknown.results[0]).toMatchObject({
-        ok: false,
-        effect: "none",
-        error: { code: "invalid_argument" },
-      });
+      await refused(
+        { command: "press", key: "Hyper+q", target: { label: "First" } },
+        "is not a key name",
+      );
       await run({ command: "press", key: "F2" });
       expect(await page.evaluate(() => (window as unknown as { keys: string[] }).keys)).toContain(
         "F2",
@@ -4508,8 +4559,7 @@ describe.skipIf(!chrome)("command engine", () => {
       };
       expect(box.width).toBeGreaterThan(0);
       expect(box.height).toBeGreaterThan(0);
-      const missing = await run({ command: "get", what: "text" });
-      expect(missing.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+      await refused({ command: "get", what: "text" }, "get text needs a target");
     });
 
     test("answers is visible, enabled, and checked", async () => {
@@ -4562,8 +4612,7 @@ describe.skipIf(!chrome)("command engine", () => {
         effect: "none",
         error: { code: "timeout", reason: "wait" },
       });
-      const both = await run({ command: "wait", text: "Ready", ms: 10 });
-      expect(both.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+      await refused({ command: "wait", text: "Ready", ms: 10 }, "exactly one of");
     });
 
     test("finds text inside open shadow roots", async () => {
@@ -4609,7 +4658,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const started = (await send({ commands: { command: "wait", ms: 5000 } }, undefined, quick))
         .body as unknown as Envelope;
       expect(started.execution.state).toBe("running");
-      await run({ command: "cancel", execution: started.execution.id }, {}, quick);
+      await halt(started.execution.id, quick);
       const body = await finished(started.execution.id, quick);
       expect(body.results[0]).toMatchObject({ ok: false, error: { code: "cancelled" } });
       quick.sessionEnded();
@@ -4707,10 +4756,8 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("needs a point for mouse input", async () => {
       await open("/pad");
-      const fresh = await run({ command: "mouse", action: "click", x: 5 });
-      expect(fresh.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
-      const nowhere = await run({ command: "mouse", action: "wheel", deltaY: 10 });
-      expect(nowhere.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+      await refused({ command: "mouse", action: "click", x: 5 }, "Pass x and y together");
+      await refused({ command: "mouse", action: "wheel", deltaY: 10 }, "mouse wheel needs x and y");
     });
 
     test("holds keys down until keyup and applies held modifiers", async () => {
@@ -4731,8 +4778,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const events = await log();
       expect(events).toContain("click 30 30 0 0 true 0");
       expect(events).toContain("click 40 40 0 0 false 0");
-      const chord = await run({ command: "keydown", key: "Shift+a" });
-      expect(chord.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+      await refused({ command: "keydown", key: "Shift+a" }, "keydown takes one key");
     });
 
     test("runs a script in the page and returns its value", async () => {
@@ -4747,7 +4793,7 @@ describe.skipIf(!chrome)("command engine", () => {
       });
       expect(later.results[0].value).toEqual({ a: [1, "x"] });
       const nothing = await run({ command: "eval", script: "void 0" });
-      expect(nothing.results[0]).toEqual({ ok: true, effect: "applied" });
+      expect(nothing.results[0]).toEqual({ command: "eval", ok: true, effect: "applied" });
       const thrown = await run({ command: "eval", script: "throw new Error('boom')" });
       expect(thrown.results[0]).toMatchObject({ ok: false, error: { code: "script_error" } });
       expect(thrown.results[0].error!.message).toContain("boom");
@@ -4786,7 +4832,7 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "dialog_pending", reason: "during_script" },
       });
       expect(body.dialog).toMatchObject({ type: "alert", message: "from script" });
-      await run({ command: "dialog", dialog: body.dialog!.id, action: "accept" });
+      await answerWith(body.dialog!.id, "accept");
       expect((await run({ command: "eval", script: "1" })).results[0]).toMatchObject({ value: 1 });
     });
   });
@@ -4921,22 +4967,6 @@ describe.skipIf(!chrome)("command engine", () => {
       short.sessionEnded();
     });
 
-    test("reports the first navigation of a popup", async () => {
-      await open("/opener");
-      const start = await run({ command: "tab", action: "list" }, { eventsAfter: "c-0" });
-      const cursor = (start as unknown as { events: { cursor: string } }).events.cursor;
-      await run({ command: "click", target: refOf(await snapshot(), 'button "Open"') });
-      const popup = await tabWith("/basic");
-      await sleep(300);
-      const later = (await run(
-        { command: "tab", action: "list" },
-        { eventsAfter: cursor },
-      )) as unknown as { events: { items: Array<Record<string, unknown>> } };
-      expect(later.events.items, JSON.stringify(later.events.items)).toContainEqual(
-        expect.objectContaining({ type: "navigation", tab: popup, url: `${base}/basic` }),
-      );
-    });
-
     test("refuses old refs and tabs after other sessions ran in between", async () => {
       await open("/basic");
       const ref = refOf(await snapshot(), 'button "Save"');
@@ -4959,24 +4989,6 @@ describe.skipIf(!chrome)("command engine", () => {
       });
     });
 
-    test("keeps the event cursor going when the same session starts again", async () => {
-      await open("/basic");
-      await run({ command: "navigate", url: `${base}/counter` });
-      const before = await run({ command: "tab", action: "list" }, { eventsAfter: "c-0" });
-      const old = (before as unknown as { events: { cursor: string } }).events.cursor;
-      engine.prepare(SESSION);
-      engine.browserReady();
-      await run({ command: "navigate", url: `${base}/basic` });
-      const later = (await run(
-        { command: "tab", action: "list" },
-        { eventsAfter: old },
-      )) as unknown as { events: { cursor: string; items: Array<Record<string, unknown>> } };
-      expect(later.events.items, JSON.stringify(later.events)).toContainEqual(
-        expect.objectContaining({ type: "navigation", url: `${base}/basic` }),
-      );
-      expect(later.events.cursor).not.toBe(old);
-    });
-
     test("refuses old refs and execution ids after the same session starts again", async () => {
       await open("/basic");
       const ref = refOf(await snapshot(), 'button "Save"');
@@ -4990,7 +5002,7 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "stale_ref" },
       });
       expect(await count()).toBeUndefined();
-      const status = await send({ commands: { command: "status", execution: "x-2" } });
+      const status = await engine.executionStatus(SESSION, "x-2");
       expect(status.status, JSON.stringify(status.body)).toBe(422);
     });
 
@@ -5025,59 +5037,6 @@ describe.skipIf(!chrome)("command engine", () => {
       });
     });
 
-    test("reports navigations, tabs, dialogs, and downloads after a cursor", async () => {
-      const setup = await browser.target().createCDPSession();
-      onTestFinished(() => setup.detach());
-      await setup.send("Browser.setDownloadBehavior", {
-        behavior: "allow",
-        downloadPath: downloads,
-        eventsEnabled: true,
-      });
-      const start = await run({ command: "tab", action: "list" }, { eventsAfter: "c-0" });
-      const cursor = (start as unknown as { events: { cursor: string } }).events.cursor;
-      await open("/opener");
-      await run({ command: "click", target: refOf(await snapshot(), 'button "Open"') });
-      await sleep(300);
-      await run({ command: "tab", action: "close", tab: "t2" });
-      await open("/dialogs");
-      const alerted = await run({
-        command: "click",
-        target: refOf(await snapshot(), 'button "Alert"'),
-      });
-      await run({ command: "dialog", dialog: alerted.dialog!.id, action: "accept" });
-      await open("/download");
-      await run({ command: "click", target: { text: "Get report" } });
-      await sleep(500);
-      const later = (await run(
-        { command: "tab", action: "list" },
-        { eventsAfter: cursor },
-      )) as unknown as {
-        events: { cursor: string; items: Array<Record<string, unknown>> };
-      };
-      const types = later.events.items.map((item) => `${item.type}:${item.tab}`);
-      expect(types).toContain("navigation:t1");
-      expect(later.events.items).toContainEqual(
-        expect.objectContaining({ type: "tab_opened", tab: "t2", opener: "t1" }),
-      );
-      expect(types).toContain("tab_closed:t2");
-      expect(later.events.items).toContainEqual(
-        expect.objectContaining({
-          type: "dialog",
-          dialog: expect.objectContaining({ type: "alert", accepted: true }),
-        }),
-      );
-      expect(later.events.items).toContainEqual(
-        expect.objectContaining({ type: "download", file: "report.txt", state: "completed" }),
-      );
-      const again = (await run(
-        { command: "tab", action: "list" },
-        { eventsAfter: later.events.cursor },
-      )) as unknown as {
-        events: { items: unknown[] };
-      };
-      expect(again.events.items).toEqual([]);
-    });
-
     test("hides secrets in find results, errors, text, html, and clickable text", async () => {
       await open("/secret-paths");
       const text = (await snapshot()) + (await snapshot({ interactive: true }));
@@ -5085,7 +5044,7 @@ describe.skipIf(!chrome)("command engine", () => {
         expect(text, text).not.toContain(secret);
       }
       expect(text).toMatch(/"Open" \[ref=e\d+\] clickable/);
-      const found = await run({ command: "find", by: "role", value: "button" });
+      const found = await run({ command: "find", target: { role: "button" } });
       expect(JSON.stringify(found.results[0])).not.toContain("9876");
       const mismatch = await run({
         command: "click",
@@ -5165,7 +5124,7 @@ describe.skipIf(!chrome)("command engine", () => {
       });
       expect(mismatch.results[0].error!.message).toContain("PIN");
       expect(mismatch.results[0].error!.message).not.toContain("qzv");
-      const found = await run({ command: "find", by: "role", value: "button" });
+      const found = await run({ command: "find", target: { role: "button" } });
       expect(found.results[0]).toMatchObject({ matches: [{ name: "PIN ••••••••" }] });
       await open("/secret-shadow-cover");
       const covered = await run({ command: "click", target: { text: "Under" } });
@@ -5208,7 +5167,7 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("hides a short secret in find results", async () => {
       await open("/short-secret");
-      const found = await run({ command: "find", by: "role", value: "button" });
+      const found = await run({ command: "find", target: { role: "button" } });
       expect(found.results[0]).toMatchObject({ matches: [{ name: "PIN ••••••••" }] });
     });
 

@@ -114,31 +114,104 @@ describe.skipIf(!chrome)("commands route", () => {
       commands: { command: "click", target: { role: "button", name: "Ask" } },
     });
     expect(commandsSchemas.CommandResponse.safeParse(clicked.json()).success).toBe(true);
-    const answered = await post("live", {
-      commands: { command: "dialog", dialog: clicked.json().dialog.id, action: "accept" },
+    const id = clicked.json().dialog.id;
+    const invalid = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
+      payload: { action: "maybe" },
+    });
+    expect(invalid.statusCode).toBe(400);
+    const answered = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
+      payload: { action: "accept" },
     });
     expect(answered.statusCode).toBe(200);
-    expect(answered.json()).toMatchObject({ answered: { accepted: true, by: "command" } });
+    expect(answered.json()).toEqual({
+      answered: expect.objectContaining({ id, accepted: true, by: "command" }),
+    });
     expect(commandsSchemas.CommandDialogResponse.safeParse(answered.json()).success).toBe(true);
-    const spec = app.swagger() as {
-      paths: Record<string, { post: { responses: Record<string, any> } }>;
+    const again = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
+      payload: { action: "accept" },
+    });
+    expect(again.statusCode).toBe(422);
+    expect(again.json()).toMatchObject({ error: { code: "dialog_not_pending" } });
+    const spec = app.swagger() as unknown as {
+      paths: Record<string, Record<string, { responses: Record<string, any> }>>;
     };
-    const ok = spec.paths["/v1/sessions/{sessionId}/commands"].post.responses["200"];
-    expect(
-      ok.content["application/json"].schema.anyOf.map((schema: { $ref: string }) => schema.$ref),
-    ).toEqual([
+    const ok = (path: string, method: string) =>
+      spec.paths[path][method].responses["200"].content["application/json"].schema.$ref;
+    expect(ok("/v1/sessions/{sessionId}/commands", "post")).toBe(
       "#/components/schemas/CommandResponse",
+    );
+    expect(ok("/v1/sessions/{sessionId}/commands/dialogs/{dialogId}/answer", "post")).toBe(
       "#/components/schemas/CommandDialogResponse",
-    ]);
+    );
+  });
+
+  test("reads and cancels executions on their own routes", async () => {
+    const listed = await post("live", { commands: { command: "tab", action: "list" } });
+    const id = listed.json().execution.id;
+    const status = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/live/commands/executions/${id}`,
+    });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({ execution: { id, state: "completed" } });
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
+    });
+    expect(cancelled.statusCode).toBe(200);
+    expect(cancelled.json()).toMatchObject({ execution: { id, state: "completed" } });
+    const unknown = await app.inject({
+      method: "GET",
+      url: "/v1/sessions/live/commands/executions/x-999999",
+    });
+    expect(unknown.statusCode).toBe(422);
+    expect(unknown.json()).toMatchObject({ error: { code: "unknown_execution" } });
+    const ended = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/old/commands/executions/${id}/cancel`,
+    });
+    expect(ended.statusCode).toBe(410);
+  });
+
+  test("answers an internal error with 500 and says whether a retry is safe", async () => {
+    const engine = app.commandEngine!;
+    const spy = vi
+      .spyOn(engine as unknown as { dispatch(): Promise<unknown> }, "dispatch")
+      .mockRejectedValue(new Error("Fixture failure"));
+    try {
+      const bare = await post("live", { commands: { command: "snapshot" } });
+      expect(bare.statusCode).toBe(500);
+      expect(bare.headers["x-should-retry"]).toBe("false");
+      expect(bare.json()).toEqual({
+        error: { code: "internal_error", message: "Fixture failure" },
+      });
+      const keyed = await post(
+        "live",
+        { commands: { command: "snapshot" } },
+        { "idempotency-key": "route-500" },
+      );
+      expect(keyed.headers["x-should-retry"]).toBe("true");
+      const after = await post("live", { commands: { command: "snapshot" }, after: "op_x" });
+      expect(after.headers["x-should-retry"]).toBe("true");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("publishes the request schema", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/sessions/live/commands/schema" });
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.version).toBe(1);
+    expect(body.version).toBe(2);
     expect(JSON.stringify(body.schema)).toContain('"navigate"');
-    expect(JSON.stringify(body.schema)).toContain('"eventsAfter"');
+    expect(JSON.stringify(body.schema)).not.toContain('"eventsAfter"');
+    expect(JSON.stringify(body.schema)).not.toContain('"status"');
   });
 
   test("lets quick actions run between commands and reports them as a change", async () => {

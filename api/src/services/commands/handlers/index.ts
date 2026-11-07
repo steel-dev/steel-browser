@@ -113,6 +113,9 @@ async function dispatch(ctx: Context, command: Command): Promise<CommandResult> 
     case "tab":
       return await tab(ctx, command);
     default:
-      throw new CommandError("unknown_command", `${command.command} cannot run here.`);
+      throw new CommandError(
+        "unknown_command",
+        `${(command as { command: string }).command} cannot run here.`,
+      );
   }
 }
