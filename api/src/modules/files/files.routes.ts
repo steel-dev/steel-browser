@@ -2,6 +2,7 @@ import fastifyMultipart from "@fastify/multipart";
 import { FastifyInstance, FastifyRequest } from "fastify";
 import { $ref } from "../../plugins/schemas.js";
 import { FileService } from "../../services/file.service.js";
+import { resolveMaxTotalBytes } from "../../utils/file-quota.js";
 import { MB } from "../../utils/size.js";
 import { FilesController } from "./files.controller.js";
 
@@ -10,7 +11,8 @@ async function routes(server: FastifyInstance) {
 
   await server.register(fastifyMultipart, {
     limits: {
-      fileSize: server.steelBrowserConfig.fileStorage?.maxSizePerSession ?? 100 * MB,
+      fileSize: resolveMaxTotalBytes(server.steelBrowserConfig?.fileStorage) ?? 100 * MB,
+      files: FilesController.MAX_FILE_PARTS_PER_REQUEST,
     },
     attachFieldsToBody: false,
   });
