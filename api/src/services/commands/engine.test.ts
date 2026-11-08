@@ -2980,16 +2980,18 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
       expect(await page.title()).toBe("confirm true");
       expect((await run({ command: "snapshot" })).results[0]).toMatchObject({ ok: true });
+      const first = (answered as unknown as { next: string }).next;
+      expect(first).toMatch(/^op_/);
       const replayed = await answerWith(id, "accept");
       expect(replayed).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-      expect((replayed as unknown as { next: string }).next).toMatch(/^op_/);
-      const later = await run(
-        { command: "tab", action: "list" },
-        {
-          after: (replayed as unknown as { next: string }).next,
-        },
-      );
-      expect(later.epochChanged).toBe(false);
+      expect((replayed as unknown as { next: string }).next).toBe(first);
+      const quiet = await run({ command: "tab", action: "list" }, { after: first });
+      expect(quiet.epochChanged).toBe(false);
+      await run({ command: "eval", script: "document.title = 'changed'" });
+      const again = await answerWith(id, "accept");
+      expect((again as unknown as { next: string }).next).toBe(first);
+      const changed = await run({ command: "snapshot" }, { after: first });
+      expect(changed.epochChanged).toBe(true);
       const other = await reply(id, "dismiss");
       expect(other.status).toBe(422);
       expect(other.body).toMatchObject({

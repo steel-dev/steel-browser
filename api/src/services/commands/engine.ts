@@ -391,7 +391,7 @@ export class CommandEngine {
   ): Promise<EngineResponse> {
     const dialog = active.dialogs.get(id);
     if (dialog && !dialog.open && sameAnswer(dialog, answer)) {
-      return ok({ answered: describeDialog(dialog), next: active.records.issue() });
+      return ok({ answered: describeDialog(dialog), next: dialog.next ?? active.records.issue() });
     }
     if (!dialog || !dialog.open) {
       return failure(
@@ -417,7 +417,7 @@ export class CommandEngine {
         { dialog: describeDialog(dialog) },
       );
     }
-    return ok({ answered: describeDialog(dialog), next: active.records.issue() });
+    return ok({ answered: describeDialog(dialog), next: dialog.next ?? active.records.issue() });
   }
 
   private async respond(
@@ -840,6 +840,7 @@ export class CommandEngine {
     this.finishDialog(dialog, event.result, event.userInput || undefined, dialog.by ?? "client");
     if (dialog.by === "command") {
       active.records.bump();
+      dialog.next = active.records.issue();
     }
     if (tab.holding()) {
       void tab.release().catch(() => undefined);

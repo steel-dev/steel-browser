@@ -14,6 +14,7 @@ export interface Dialog {
   accepted?: boolean;
   text?: string;
   by?: DialogHandler;
+  next?: string;
   closed: Promise<void>;
   close: () => void;
 }
