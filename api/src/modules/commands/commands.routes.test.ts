@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { CDPService } from "../../services/cdp/cdp.service.js";
-import type { EngineHost } from "../../services/commands/engine.js";
+import type { CommandEngine, EngineHost } from "../../services/commands/engine.js";
 import { ShutdownReason, type BasePlugin } from "../../services/cdp/plugins/core/base-plugin.js";
 import type { SessionService } from "../../services/session.service.js";
 import type { BrowserLauncherOptions } from "../../types/browser.js";
@@ -288,6 +288,34 @@ describe.skipIf(!chrome)("commands route", () => {
     expect((await post("live", list)).statusCode).toBe(200);
     await plugin.onShutdown(ShutdownReason.MODE_SWITCH);
     expect((await post("live", list)).statusCode).toBe(410);
+  });
+});
+
+describe("commands body parsing", () => {
+  test("answers bodies it cannot read in the commands error shape", async () => {
+    const app = Fastify();
+    app.decorate("commandEngine", {
+      handle: async () => ({ status: 200, headers: {}, body: {} }),
+    } as unknown as CommandEngine);
+    await app.register(commandsRoutes, { prefix: "/v1" });
+    const broken = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      headers: { "content-type": "application/json" },
+      payload: "{nope",
+    });
+    expect(broken.statusCode).toBe(400);
+    expect(broken.json()).toMatchObject({ error: { code: "invalid_request" } });
+    expect(broken.json().error.message).not.toBe("");
+    const csv = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      headers: { "content-type": "text/csv" },
+      payload: "a,b",
+    });
+    expect(csv.statusCode).toBe(415);
+    expect(csv.json()).toMatchObject({ error: { code: "invalid_request" } });
+    await app.close();
   });
 });
 

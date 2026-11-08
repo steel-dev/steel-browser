@@ -179,6 +179,7 @@ Request errors have no execution. The body is `{ "error": { "code": ..., "messag
 | Status | Codes |
 |---|---|
 | 400 | `invalid_request` |
+| 415 | `invalid_request` (the body is not JSON) |
 | 410 | `session_ended` |
 | 422 | `key_conflict`, `invalid_operation_token`, `unknown_execution`, `dialog_not_pending` |
 | 429 | `queue_full`, `expired`, `records_full` |

@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { COMMANDS_API_VERSION, requestJsonSchema } from "../../services/commands/commands.js";
 import { CommandEngine, type EngineResponse } from "../../services/commands/engine.js";
 import { CommandsPlugin } from "../../services/commands/plugin.js";
@@ -61,6 +61,13 @@ async function routes(server: FastifyInstance) {
   if (!engine) {
     return;
   }
+  server.setErrorHandler<FastifyError>(async (error, _request, reply) => {
+    const status = error.statusCode ?? 500;
+    if (status >= 500) {
+      throw error;
+    }
+    return reply.code(status).send({ error: { code: "invalid_request", message: error.message } });
+  });
   server.removeContentTypeParser("application/json");
   server.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) =>
     parseJson(request, body as string, done),
