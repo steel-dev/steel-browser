@@ -10,8 +10,5 @@ contact_links:
     url: https://github.com/steel-dev/steel-cookbook
     about: Browse code examples and common use cases
   - name: 🔒 Security Issues
-    url: mailto:security@steel.dev
-    about: Please report security vulnerabilities privately via email
-  - name: 🤖 Automated Issue Creation
-    url: https://github.com/steel-dev/steel-browser/issues/new/choose
-    about: Use our templates for better issue tracking 
+    url: https://github.com/steel-dev/steel-browser/security/policy
+    about: Please report security vulnerabilities privately, not in a public issue

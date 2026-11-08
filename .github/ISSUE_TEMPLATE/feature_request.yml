@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest an idea for Steel Browser
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please search [existing issues](https://github.com/steel-dev/steel-browser/issues) first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Steel Browser to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other approaches you have tried.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - API
+        - Sessions
+        - CDP and browser
+        - Plugins
+        - UI
+        - Docker and deployment
+        - Docs
+        - Other
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Would you like to work on this?
+      options:
+        - Yes, I'd like to work on this
+        - Yes, with guidance from maintainers
+        - No, but I'd be happy to test it
+        - No, just suggesting the idea

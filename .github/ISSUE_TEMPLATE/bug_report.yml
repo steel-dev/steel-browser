@@ -1,0 +1,87 @@
+name: Bug report
+description: Report something in Steel Browser that doesn't work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please search [existing issues](https://github.com/steel-dev/steel-browser/issues) first.
+
+        Found a security issue? Don't open a public issue. Follow our [security policy](https://github.com/steel-dev/steel-browser/security/policy) instead.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug and any error messages you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the bug.
+      placeholder: |
+        1. Start Steel Browser with `docker run -p 3000:3000 -p 9223:9223 ghcr.io/steel-dev/steel-browser`
+        2. Create a session with `POST /v1/sessions`
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Steel Browser version
+      description: Release tag, image tag, or commit SHA.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run Steel Browser?
+      options:
+        - Docker image
+        - Docker Compose
+        - From source
+        - Railway
+        - Render
+        - Steel Cloud
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: How do you connect to it?
+      multiple: true
+      options:
+        - REST API
+        - Node SDK
+        - Python SDK
+        - Puppeteer
+        - Playwright
+        - Selenium
+        - Other
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        OS and CPU architecture:
+        Docker version:
+        Node.js version (from source only):
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste the relevant API or container logs. Remove secrets such as API keys and proxy credentials.
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, links, or anything else that helps.
