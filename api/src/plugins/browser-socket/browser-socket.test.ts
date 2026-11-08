@@ -61,7 +61,8 @@ function fakeSocket() {
   return sock;
 }
 
-const BAD_REQUEST_400 = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+const BAD_REQUEST_400 =
+  "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
 describe("upgrade handler hardening", () => {
   it("rejects a malformed target with a framed 400 and never invokes the handler", async () => {
@@ -75,7 +76,7 @@ describe("upgrade handler hardening", () => {
     expect(sock.endedWith).toBe(BAD_REQUEST_400);
     expect(fastify.cdpService.proxyWebSocket).not.toHaveBeenCalled();
     expect(fastify.log.warn).toHaveBeenCalledWith(
-      { url: "//[/x" },
+      { path: "//[/x" },
       "Rejecting invalid upgrade target",
     );
     // Log hygiene: upgrade notice only fires after the params guard passes.
@@ -92,10 +93,24 @@ describe("upgrade handler hardening", () => {
     await upgrade({ url: longBad, headers: {} }, sock, Buffer.alloc(0));
     await vi.waitFor(() => expect(sock.destroy).toHaveBeenCalled());
 
-    const loggedUrl = (fastify.log.warn.mock.calls[0]?.[0] as any)?.url;
-    expect(typeof loggedUrl).toBe("string");
-    expect(loggedUrl.length).toBeLessThanOrEqual(200);
+    const loggedPath = (fastify.log.warn.mock.calls[0]?.[0] as any)?.path;
+    expect(typeof loggedPath).toBe("string");
+    expect(loggedPath.length).toBeLessThanOrEqual(200);
     expect(sock.endedWith).toBe(BAD_REQUEST_400);
+  });
+
+  it("logs only the path of a rejected target, never its query string", async () => {
+    const fastify = makeFastify();
+    const upgrade = await upgradeHandlerFor(fastify);
+    const sock = fakeSocket();
+
+    await upgrade({ url: "//[/x?apiKey=secret&token=secret", headers: {} }, sock, Buffer.alloc(0));
+
+    expect(fastify.log.warn).toHaveBeenCalledWith(
+      { path: "//[/x" },
+      "Rejecting invalid upgrade target",
+    );
+    expect(JSON.stringify(fastify.log.warn.mock.calls)).not.toContain("secret");
   });
 
   it("skips the 400 write when the socket is already gone", async () => {
@@ -108,6 +123,17 @@ describe("upgrade handler hardening", () => {
     await upgrade({ url: "//[/x", headers: {} }, sock, Buffer.alloc(0));
     expect(sock.end).not.toHaveBeenCalled();
     expect(fastify.log.warn).toHaveBeenCalled();
+  });
+
+  it("destroys a socket that is still open but no longer writable", async () => {
+    const fastify = makeFastify();
+    const upgrade = await upgradeHandlerFor(fastify);
+    const sock = fakeSocket();
+    sock.writable = false;
+
+    await upgrade({ url: "//[/x", headers: {} }, sock, Buffer.alloc(0));
+    expect(sock.end).not.toHaveBeenCalled();
+    expect(sock.destroy).toHaveBeenCalled();
   });
 
   it("writes the 400 over a real socket for a malformed target", async () => {
@@ -174,11 +200,7 @@ describe("upgrade handler hardening", () => {
     }
     await new Promise((resolve) => setImmediate(resolve));
 
-    // The L49 error listener absorbed every reset.
-    expect(fastify.log.debug).toHaveBeenCalledWith(
-      expect.anything(),
-      "Upgrade socket error",
-    );
+    expect(fastify.log.debug).toHaveBeenCalledWith(expect.anything(), "Upgrade socket error");
 
     const valid = fakeSocket();
     await upgrade({ url: "/cdp?ok=1", headers: {} }, valid, Buffer.alloc(0));
