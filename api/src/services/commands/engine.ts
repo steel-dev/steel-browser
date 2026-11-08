@@ -1,21 +1,13 @@
 import type { Browser, Protocol } from "puppeteer-core";
 import {
-  answerSchema,
   commandHash,
   isMutating,
   requestSchema,
   scopedKey,
   type Command,
   type CommandRequest,
-  type DialogAnswer,
 } from "./commands.js";
-import {
-  answerRoute,
-  describeDialog,
-  openDialog,
-  type Dialog,
-  type DialogHandler,
-} from "./dialogs.js";
+import { DIALOG_HINT, openDialog, type Dialog } from "./dialogs.js";
 import { statusFor, type RequestErrorCode } from "./errors.js";
 import {
   crashedTab,
@@ -28,6 +20,7 @@ import {
   type Context,
 } from "./handlers/index.js";
 import {
+  DIALOG_GONE,
   deprecationHeader,
   legacyControlSchema,
   upgradeLegacy,
@@ -130,7 +123,7 @@ export class CommandEngine {
         closed: (tab) => {
           const dialog = openDialogOn(active, tab.id);
           if (dialog) {
-            this.finishDialog(dialog, false, undefined, dialog.by ?? "closed");
+            this.closeDialog(dialog);
           }
         },
       },
@@ -213,15 +206,6 @@ export class CommandEngine {
     return this.control(sessionId, (active, deadline) => this.cancel(active, id, deadline));
   }
 
-  answerDialog(sessionId: string, dialogId: string, body: unknown): Promise<EngineResponse> {
-    return this.control(sessionId, async (active) => {
-      const parsed = answerSchema.safeParse(body);
-      return parsed.success
-        ? this.answerOpen(active, dialogId, parsed.data)
-        : invalid(parsed.error.issues);
-    });
-  }
-
   private async control(
     sessionId: string,
     run: (active: ActiveSession, deadline: number) => Promise<EngineResponse>,
@@ -275,6 +259,9 @@ export class CommandEngine {
     legacy: LegacyRequest,
     deadline: number,
   ): Promise<EngineResponse> {
+    if (legacy.forms.includes("dialog")) {
+      return failure("invalid_request", DIALOG_GONE);
+    }
     if (legacy.mixed) {
       return failure("invalid_request", "Send a control command on its own.");
     }
@@ -306,11 +293,6 @@ export class CommandEngine {
         return this.status(active, control.execution, deadline);
       case "cancel":
         return this.cancel(active, control.execution, deadline);
-      case "dialog":
-        return this.answerOpen(active, control.dialog, {
-          action: control.action,
-          ...(control.text !== undefined ? { text: control.text } : {}),
-        });
     }
   }
 
@@ -433,37 +415,6 @@ export class CommandEngine {
     return ok(await this.envelope(active, execution, false));
   }
 
-  private async answerOpen(
-    active: ActiveSession,
-    id: string,
-    answer: DialogAnswer,
-  ): Promise<EngineResponse> {
-    const dialog = active.dialogs.get(id);
-    if (!dialog) {
-      return failure("dialog_not_pending", `Dialog ${id} is not open.`);
-    }
-    if (dialog.open) {
-      await this.answer(active, dialog, answer.action === "accept", answer.text);
-      if (active.ended) {
-        return ended(active.id);
-      }
-      if (dialog.open) {
-        return internal(
-          new Error(`Dialog ${dialog.id} did not close. It is still open, so answer it again.`),
-          true,
-          { dialog: describeDialog(dialog) },
-        );
-      }
-    }
-    if (!sameAnswer(dialog, answer)) {
-      return failure("dialog_not_pending", `Dialog ${id} is not open.`, {
-        dialog: describeDialog(dialog),
-      });
-    }
-    dialog.next ??= active.records.issue();
-    return ok({ answered: describeDialog(dialog), next: dialog.next, epoch: active.records.epoch });
-  }
-
   private async respond(
     active: ActiveSession,
     execution: Execution,
@@ -517,6 +468,7 @@ export class CommandEngine {
       ? execution.page ?? null
       : (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
     return {
+      id: execution.id,
       ...(execution.next ? { next: execution.next } : {}),
       epoch: active.records.epoch,
       ...(execution.epochChanged !== undefined ? { epochChanged: execution.epochChanged } : {}),
@@ -727,10 +679,8 @@ export class CommandEngine {
     const error = {
       code: "dialog_pending",
       message: dialog
-        ? `Tab ${dialog.tab} shows ${dialog.type} dialog ${dialog.id}: "${
-            dialog.message
-          }". Answer it with ${answerRoute(active.id, dialog.id)}.`
-        : "A dialog opened and blocked the page. Answer the dialog in this response.",
+        ? `Tab ${dialog.tab} shows ${dialog.type} dialog ${dialog.id}: "${dialog.message}". ${DIALOG_HINT}`
+        : `A dialog opened and blocked the page. ${DIALOG_HINT}`,
     };
     if (!command) {
       return { error };
@@ -882,50 +832,10 @@ export class CommandEngine {
     if (!dialog) {
       return;
     }
-    this.finishDialog(dialog, event.result, event.userInput || undefined, dialog.by ?? "client");
-    if (dialog.by === "command" || dialog.answering > 0) {
-      active.records.bump();
-      dialog.next = active.records.issue();
-    }
+    this.closeDialog(dialog);
     if (tab.holding()) {
       void tab.release().catch(() => undefined);
     }
-  }
-
-  private finishDialog(
-    dialog: Dialog,
-    accepted: boolean,
-    text: string | undefined,
-    by: DialogHandler,
-  ) {
-    dialog.accepted = accepted;
-    dialog.text = text;
-    dialog.by = by;
-    this.closeDialog(dialog);
-  }
-
-  private async answer(
-    active: ActiveSession,
-    dialog: Dialog,
-    accept: boolean,
-    text: string | undefined,
-  ) {
-    const promptText =
-      dialog.type === "prompt" && accept ? text ?? dialog.defaultPrompt ?? "" : undefined;
-    dialog.answering++;
-    const sent =
-      (await active.tabs
-        .get(dialog.tab)
-        ?.answerDialog(accept, promptText)
-        .then(
-          () => true,
-          () => false,
-        )) ?? false;
-    dialog.answering--;
-    if (sent) {
-      dialog.by = "command";
-    }
-    await within(dialog.closed, STEP_MS);
   }
 
   private remember(active: ActiveSession, dialog: Dialog) {
@@ -942,7 +852,6 @@ export class CommandEngine {
 
   private closeDialog(dialog: Dialog) {
     dialog.open = false;
-    dialog.close();
   }
 
   private closeDialogs(active: ActiveSession) {
@@ -979,18 +888,6 @@ function invalid(issues: { path: PropertyKey[]; message: string }[]): EngineResp
     issues
       .map((issue) => `${issue.path.map(String).join(".") || "body"}: ${issue.message}`)
       .join("; "),
-  );
-}
-
-function sameAnswer(dialog: Dialog, answer: DialogAnswer): boolean {
-  const accept = answer.action === "accept";
-  if (dialog.by !== "command" || dialog.accepted !== accept) {
-    return false;
-  }
-  return (
-    !accept ||
-    dialog.type !== "prompt" ||
-    (dialog.text ?? "") === (answer.text ?? dialog.defaultPrompt ?? "")
   );
 }
 

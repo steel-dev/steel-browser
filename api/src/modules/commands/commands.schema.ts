@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { answerSchema, publishedRequestSchema } from "../../services/commands/commands.js";
+import { publishedRequestSchema } from "../../services/commands/commands.js";
 
 const Effect = z
   .enum(["none", "applied", "unknown"])
@@ -17,9 +17,6 @@ const Dialog = z.object({
   type: z.enum(["alert", "confirm", "prompt", "beforeunload"]),
   message: z.string(),
   defaultPrompt: z.string().optional(),
-  accepted: z.boolean().optional(),
-  text: z.string().optional(),
-  by: z.enum(["command", "client", "closed"]).optional(),
 });
 
 const resultBase = {
@@ -29,7 +26,9 @@ const resultBase = {
 };
 
 const interrupts = {
-  dialog: Dialog.optional().describe("A dialog that the command opened. It waits for an answer."),
+  dialog: Dialog.optional().describe(
+    "A dialog that the command opened. It blocks the tab until it closes.",
+  ),
   loading: z
     .boolean()
     .optional()
@@ -114,6 +113,11 @@ export const CommandResult = z
   .describe("Result of one command, with the fields of that command.");
 
 export const CommandResponse = z.object({
+  id: z
+    .string()
+    .describe(
+      "The id of this execution. Use it in GET /v1/sessions/{sessionId}/commands/{executionId} and POST /v1/sessions/{sessionId}/commands/{executionId}/cancel.",
+    ),
   next: z.string().optional().describe("Send it as after in the next request."),
   epochChanged: z
     .boolean()
@@ -147,18 +151,11 @@ export const CommandResponse = z.object({
     })
     .partial()
     .optional(),
-  dialog: Dialog.optional().describe("A dialog that is open on the tab and waits for an answer."),
+  dialog: Dialog.optional().describe(
+    "A dialog that is open on the tab and blocks it until it closes.",
+  ),
   bodyExpired: z.boolean().optional(),
 });
-
-const CommandDialogResponse = z
-  .object({
-    answered: Dialog.describe("The dialog that was answered."),
-    next: z
-      .string()
-      .describe("Send it as after in the next request, so the answer does not count as a change."),
-  })
-  .describe("Response to a dialog answer.");
 
 const CommandRequestError = z
   .object({
@@ -173,9 +170,7 @@ const CommandsSchemaResponse = z.object({
 
 export const commandsSchemas = {
   CommandRequest: publishedRequestSchema,
-  CommandDialogAnswer: answerSchema,
   CommandResponse,
-  CommandDialogResponse,
   CommandRequestError,
   CommandsSchemaResponse,
 };

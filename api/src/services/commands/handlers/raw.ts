@@ -70,7 +70,7 @@ export async function mouse(
         if (opened && count < clicks) {
           throw new CommandError(
             "dialog_pending",
-            `A dialog opened after ${count} of ${clicks} clicks. Answer it, then click again.`,
+            `A dialog opened after ${count} of ${clicks} clicks. Close it, then click again.`,
             "during_click",
             "applied",
           );

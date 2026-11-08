@@ -677,7 +677,7 @@ export async function sendOrDialog(
 function dialogBefore(action: "click" | "drag"): CommandError {
   return new CommandError(
     "dialog_pending",
-    `A dialog opened when the mouse moved onto the element, before the ${action}. Answer the dialog in this response, then ${action} again.`,
+    `A dialog opened when the mouse moved onto the element, before the ${action}. Close it, then ${action} again.`,
     `before_${action}`,
     "applied",
   );

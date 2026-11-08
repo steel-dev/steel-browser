@@ -1,5 +1,5 @@
 import type { Page } from "puppeteer-core";
-import { answerRoute, describeDialog, type Dialog } from "../dialogs.js";
+import { DIALOG_HINT, describeDialog, type Dialog } from "../dialogs.js";
 import { CommandError } from "../errors.js";
 import type { InputContext, Watch } from "../pointer.js";
 import { isFinal } from "../records.js";
@@ -62,10 +62,8 @@ export function usable(ctx: Context, tab: Tab, crashed = false): Tab {
   throw new CommandError(
     "dialog_pending",
     dialog
-      ? `Tab ${tab.id} shows ${dialog.type} dialog ${dialog.id}: "${
-          dialog.message
-        }". Answer it with ${answerRoute(ctx.active.id, dialog.id)}, then send the command again.`
-      : `Tab ${tab.id} shows a dialog. Answer it, then send the command again.`,
+      ? `Tab ${tab.id} shows ${dialog.type} dialog ${dialog.id}: "${dialog.message}". ${DIALOG_HINT} Then send the command again.`
+      : `Tab ${tab.id} shows a dialog. ${DIALOG_HINT} Then send the command again.`,
   );
 }
 

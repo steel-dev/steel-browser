@@ -140,7 +140,7 @@ async function routes(server: FastifyInstance) {
   );
 
   server.get(
-    "/sessions/:sessionId/commands/executions/:executionId",
+    "/sessions/:sessionId/commands/:executionId",
     {
       schema: {
         operationId: "get_command_execution",
@@ -163,7 +163,7 @@ async function routes(server: FastifyInstance) {
   );
 
   server.post(
-    "/sessions/:sessionId/commands/executions/:executionId/cancel",
+    "/sessions/:sessionId/commands/:executionId/cancel",
     {
       schema: {
         operationId: "cancel_command_execution",
@@ -182,31 +182,6 @@ async function routes(server: FastifyInstance) {
       send(
         reply,
         await engine.cancelExecution(request.params.sessionId, request.params.executionId),
-      ),
-  );
-
-  server.post(
-    "/sessions/:sessionId/commands/dialogs/:dialogId/answer",
-    {
-      schema: {
-        operationId: "answer_command_dialog",
-        summary: "Answer a dialog",
-        description:
-          "Accepts or dismisses an open JavaScript dialog. The engine never answers a dialog on its own.",
-        tags: ["Commands"],
-        body: $ref("CommandDialogAnswer"),
-        response: { 200: $ref("CommandDialogResponse"), ...failures },
-      },
-      validatorCompiler: () => (value) => ({ value }),
-      serializerCompiler: () => (data) => JSON.stringify(data),
-    },
-    async (
-      request: FastifyRequest<{ Params: { sessionId: string; dialogId: string } }>,
-      reply: FastifyReply,
-    ) =>
-      send(
-        reply,
-        await engine.answerDialog(request.params.sessionId, request.params.dialogId, request.body),
       ),
   );
 }

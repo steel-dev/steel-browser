@@ -986,22 +986,30 @@ describe.skipIf(!chrome)("command engine", () => {
     return okBody(target.cancelExecution(SESSION, id));
   }
 
-  function reply(
-    dialog: string,
-    action = "accept",
-    extra: Record<string, unknown> = {},
-    target = engine,
-  ): Promise<EngineResponse> {
-    return target.answerDialog(SESSION, dialog, { action, ...extra });
+  function engineDialogs(target = engine) {
+    return (
+      target as unknown as {
+        active: {
+          tabs: {
+            get(
+              id: string,
+            ):
+              | { client: { send(method: string, params: object): Promise<unknown> } | null }
+              | undefined;
+          };
+          dialogs: Map<string, { open: boolean }>;
+        };
+      }
+    ).active;
   }
 
-  function answerWith(
-    dialog: string,
-    action = "accept",
-    extra: Record<string, unknown> = {},
-    target = engine,
-  ): Promise<Envelope> {
-    return okBody(reply(dialog, action, extra, target));
+  async function closeDialog(dialog: { id: string; tab: string }, accept = true, target = engine) {
+    const active = engineDialogs(target);
+    await active.tabs.get(dialog.tab)!.client!.send("Page.handleJavaScriptDialog", { accept });
+    for (let attempt = 0; attempt < 40 && active.dialogs.get(dialog.id)?.open; attempt++) {
+      await sleep(50);
+    }
+    expect(active.dialogs.get(dialog.id)?.open).toBe(false);
   }
 
   async function open(path: string, target = engine) {
@@ -1728,6 +1736,7 @@ describe.skipIf(!chrome)("command engine", () => {
     test("returns next, page, and the execution", async () => {
       const body = await open("/basic");
       expect(body.next).toMatch(/^op_[a-z0-9]{10}$/);
+      expect((body as unknown as { id: string }).id).toBe(body.execution.id);
       expect(body).toMatchObject({
         page: { tab: "t1", url: `${base}/basic`, title: "Basic" },
         execution: { state: "completed", effect: "applied", replayed: false, ran: 1 },
@@ -1861,11 +1870,10 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(response.body).toMatchObject({ error: { code: "unknown_execution" } });
     });
 
-    test("refuses status, cancel, and dialog sent with other commands", async () => {
+    test("refuses status and cancel sent with other commands", async () => {
       for (const command of [
         { command: "status", execution: "x-1" },
         { command: "cancel", execution: "x-1" },
-        { command: "dialog", dialog: "d-1", action: "accept" },
       ]) {
         const response = await send({ commands: [{ command: "snapshot" }, command] });
         expect(response.status, JSON.stringify(command)).toBe(400);
@@ -2172,7 +2180,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const body = await press("Down");
       expect(body.results[0]).toMatchObject({ ok: true });
       expect(body.dialog).toMatchObject({ type: "alert", message: "down" });
-      await answerWith(body.dialog!.id, "accept");
+      await closeDialog(body.dialog!);
       for (let attempt = 0; attempt < 20 && (await page.title()) !== "clicked"; attempt++) {
         await sleep(100);
       }
@@ -2683,8 +2691,7 @@ describe.skipIf(!chrome)("command engine", () => {
         ok: false,
         error: { code: "dialog_pending" },
       });
-      const answered = await answerWith(body.dialog!.id, "accept", {}, fresh);
-      expect(answered.answered).toMatchObject({ accepted: true });
+      await closeDialog(body.dialog!, true, fresh);
       fresh.sessionEnded();
     });
 
@@ -2897,7 +2904,7 @@ describe.skipIf(!chrome)("command engine", () => {
       try {
         const typed = await run({ command: "type", target: { label: "Trap" }, text: "x" });
         expect(typed.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
-        await answerWith(typed.dialog!.id, "accept");
+        await closeDialog(typed.dialog!);
         armed = true;
         const clicked = await run({ command: "click", target: button });
         expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({ ok: true });
@@ -2946,7 +2953,7 @@ describe.skipIf(!chrome)("command engine", () => {
       ).toBe("");
     });
 
-    test("leaves an alert open until the dialog command answers it", async () => {
+    test("leaves an alert open until a client closes it", async () => {
       await open("/dialogs");
       const body = await press("Alert");
       expect(body).toMatchObject({
@@ -2955,12 +2962,11 @@ describe.skipIf(!chrome)("command engine", () => {
       });
       const blocked = await run({ command: "snapshot" });
       expect(blocked.results[0]).toMatchObject({ error: { code: "dialog_pending" } });
-      const answered = await answerWith(body.dialog!.id, "accept");
-      expect(answered).toMatchObject({ answered: { accepted: true, by: "command" } });
+      await closeDialog(body.dialog!);
       expect(await page.title()).toBe("alerted");
     });
 
-    test("leaves a confirm open until the dialog command answers it", async () => {
+    test("leaves a confirm open until a client closes it", async () => {
       await open("/dialogs");
       const clicked = await press("Confirm");
       expect(clicked).toMatchObject({
@@ -2976,181 +2982,21 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "dialog_pending" },
       });
       expect(blocked.results[0].error!.message).toContain(id);
+      expect(blocked.results[0].error!.message).toContain("live view");
       expect(blocked.dialog).toMatchObject({ id });
       expect((await run({ command: "tab", action: "list" })).results[0]).toMatchObject({
         ok: true,
       });
-      const answered = await answerWith(id, "accept");
-      expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
+      await closeDialog(clicked.dialog!);
       expect(await page.title()).toBe("confirm true");
       expect((await run({ command: "snapshot" })).results[0]).toMatchObject({ ok: true });
-      const first = (answered as unknown as { next: string }).next;
-      expect(first).toMatch(/^op_/);
-      const replayed = await answerWith(id, "accept");
-      expect(replayed).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-      expect((replayed as unknown as { next: string }).next).toBe(first);
-      const quiet = await run({ command: "tab", action: "list" }, { after: first });
-      expect(quiet.epochChanged).toBe(false);
-      await run({ command: "eval", script: "document.title = 'changed'" });
-      const again = await answerWith(id, "accept");
-      expect((again as unknown as { next: string }).next).toBe(first);
-      const changed = await run({ command: "snapshot" }, { after: first });
-      expect(changed.epochChanged).toBe(true);
-      const other = await reply(id, "dismiss");
-      expect(other.status).toBe(422);
-      expect(other.body).toMatchObject({
-        error: { code: "dialog_not_pending" },
-        dialog: { id, accepted: true },
-      });
-    });
-
-    test("answers a retry of an answer whose dialog closed late", async () => {
-      await open("/dialogs");
-      const clicked = await press("Confirm");
-      const id = clicked.dialog!.id;
-      const target = engine as unknown as { dialogClosed: (...args: unknown[]) => void };
-      const original = target.dialogClosed.bind(engine);
-      const late = vi.spyOn(target, "dialogClosed").mockImplementation((...args: unknown[]) => {
-        setTimeout(() => original(...args), 1500);
-      });
-      let failed: EngineResponse;
-      try {
-        failed = await reply(id, "accept");
-      } finally {
-        late.mockRestore();
-      }
-      expect(failed.status).toBe(500);
-      expect(failed.headers).toEqual({ "x-should-retry": "true" });
-      for (let attempt = 0; attempt < 30 && (await page.title()) !== "confirm true"; attempt++) {
-        await sleep(100);
-      }
-      await sleep(1600);
-      const retried = await answerWith(id, "accept");
-      expect(retried).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-      const later = await run({ command: "tab", action: "list" }, { after: clicked.next });
-      expect(later.epochChanged).toBe(true);
-    });
-
-    test("reports a dialog answer that did not go through", async () => {
-      await open("/dialogs");
-      const clicked = await press("Confirm");
-      const id = clicked.dialog!.id;
-      const original = CdpCDPSession.prototype.send;
-      const spy = vi.spyOn(CdpCDPSession.prototype, "send").mockImplementation(async function (
-        this: CdpCDPSession,
-        method: string,
-        params?: unknown,
-        options?: unknown,
-      ) {
-        if (method === "Page.handleJavaScriptDialog") {
-          throw new Error("Fixture failure");
-        }
-        return (original as (...args: unknown[]) => Promise<unknown>).call(
-          this,
-          method,
-          params,
-          options,
-        );
-      } as never);
-      let failed: EngineResponse;
-      try {
-        failed = await reply(id, "accept");
-      } finally {
-        spy.mockRestore();
-      }
-      expect(failed.status).toBe(500);
-      expect(failed.headers).toEqual({ "x-should-retry": "true" });
-      expect(failed.body).toMatchObject({ error: { code: "internal_error" }, dialog: { id } });
-      expect(failed.body).not.toHaveProperty("epoch");
-      const answered = await answerWith(id, "accept");
-      expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-      expect(await page.title()).toBe("confirm true");
-    });
-
-    test("refuses the answer that lost to a different answer sent at the same time", async () => {
-      await open("/dialogs");
-      const clicked = await press("Confirm");
-      const id = clicked.dialog!.id;
-      const [accepted, dismissed] = await Promise.all([reply(id, "accept"), reply(id, "dismiss")]);
-      expect(accepted.status).toBe(200);
-      expect(accepted.body).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-      expect(dismissed.status).toBe(422);
-      expect(dismissed.body).toMatchObject({
-        error: { code: "dialog_not_pending" },
-        dialog: { id, accepted: true, by: "command" },
-      });
-      expect(await page.title()).toBe("confirm true");
-    });
-
-    test("gives the same answer sent twice at the same time one next", async () => {
-      await open("/dialogs");
-      const clicked = await press("Confirm");
-      const id = clicked.dialog!.id;
-      const [first, second] = await Promise.all([
-        answerWith(id, "accept"),
-        answerWith(id, "accept"),
-      ]);
-      expect(first).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-      expect(second).toEqual(first);
-    });
-
-    test("does not credit the command with a dialog that a CDP client closed first", async () => {
-      await open("/dialogs");
-      const clicked = await press("Confirm");
-      const id = clicked.dialog!.id;
-      const original = CdpCDPSession.prototype.send;
-      let answered = false;
-      const spy = vi.spyOn(CdpCDPSession.prototype, "send").mockImplementation(async function (
-        this: CdpCDPSession,
-        method: string,
-        params?: unknown,
-        options?: unknown,
-      ) {
-        const call = (original as (...args: unknown[]) => Promise<unknown>).bind(this);
-        if (method === "Page.handleJavaScriptDialog" && !answered) {
-          answered = true;
-          await call(method, { accept: false }, options);
-          throw new Error("No dialog is showing");
-        }
-        return call(method, params, options);
-      } as never);
-      let answer: EngineResponse;
-      try {
-        answer = await reply(id, "accept");
-      } finally {
-        spy.mockRestore();
-      }
-      expect(answer.status).toBe(422);
-      expect(answer.body).toMatchObject({
-        error: { code: "dialog_not_pending" },
-        dialog: { id, accepted: false, by: "client" },
-      });
-      expect(await page.title()).toBe("confirm false");
-    });
-
-    test("answers session_ended when the session ends while an answer waits", async () => {
-      await open("/dialogs");
-      const clicked = await press("Confirm");
-      const id = clicked.dialog!.id;
-      const target = engine as unknown as { dialogClosed: (...args: unknown[]) => void };
-      const silent = vi.spyOn(target, "dialogClosed").mockImplementation(() => undefined);
-      try {
-        const answering = reply(id, "accept");
-        await sleep(200);
-        engine.sessionEnded();
-        const answer = await answering;
-        expect(answer.status).toBe(410);
-        expect(answer.body).toMatchObject({ error: { code: "session_ended" } });
-      } finally {
-        silent.mockRestore();
-      }
     });
 
     test("keeps loading a page after a dialog that opened during navigate", async () => {
       const body = await run({ command: "navigate", url: `${base}/confirm-load` });
       expect(body.results[0]).toMatchObject({ error: { code: "dialog_pending" } });
       await sleep(1500);
-      await answerWith(body.dialog!.id, "accept");
+      await closeDialog(body.dialog!);
       for (let attempt = 0; attempt < 20 && (await page.title()) !== "loaded"; attempt++) {
         await sleep(100);
       }
@@ -3166,7 +3012,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const waited = await run({ command: "wait", ms: 2000 }, {}, quick);
       expect(Date.now() - started).toBeLessThan(1800);
       expect(waited.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
-      await answerWith(waited.dialog!.id, "accept", {}, quick);
+      await closeDialog(waited.dialog!, true, quick);
       await page.evaluate(() => (window as unknown as { arm: (ms: number) => void }).arm(30));
       const observed = await run(
         { command: "wait", ms: 30 },
@@ -3176,7 +3022,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const pending =
         observed.dialog ?? (await run({ command: "tab", action: "list" }, {}, quick)).dialog;
       expect(pending).toBeDefined();
-      await answerWith(pending!.id, "accept", {}, quick);
+      await closeDialog(pending!, true, quick);
       expect((await run({ command: "tab", action: "list" }, {}, quick)).execution.state).toBe(
         "completed",
       );
@@ -3191,19 +3037,11 @@ describe.skipIf(!chrome)("command engine", () => {
         target: { role: "button", name: "Go" },
       });
       expect(pressed.dialog).toMatchObject({ type: "confirm" });
-      await answerWith(pressed.dialog!.id, "accept");
+      await closeDialog(pressed.dialog!);
       for (let attempt = 0; attempt < 20 && !(await held()).keyUp; attempt++) {
         await sleep(100);
       }
       expect(await held()).toMatchObject({ keyUp: true });
-    });
-
-    test("counts a dialog answer as a change", async () => {
-      await open("/dialogs");
-      const clicked = await press("Confirm");
-      await answerWith(clicked.dialog!.id, "accept");
-      const later = await run({ command: "tab", action: "list" }, { after: clicked.next });
-      expect(later.epochChanged).toBe(true);
     });
 
     test("says how much it typed when a dialog stops typing", async () => {
@@ -3218,20 +3056,13 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(body.dialog).toMatchObject({ type: "confirm" });
     });
 
-    test("fills a prompt with the answer text", async () => {
-      await open("/dialogs");
-      const clicked = await press("Prompt");
-      await answerWith(clicked.dialog!.id, "accept", { text: "jun" });
-      expect(await page.title()).toBe("prompt jun");
-    });
-
     test("leaves a confirm that opens outside an execution for the agent", async () => {
       await open("/dialogs");
       expect((await press("Later")).execution.state).toBe("completed");
       await sleep(500);
       const blocked = await run({ command: "snapshot" });
       expect(blocked.results[0]).toMatchObject({ error: { code: "dialog_pending" } });
-      await answerWith(blocked.dialog!.id, "dismiss");
+      await closeDialog(blocked.dialog!, false);
       expect(await page.title()).toBe("later false");
     });
 
@@ -3242,7 +3073,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const body = await run({ command: "wait", text: "Never shows up", timeout: 5000 });
       expect(Date.now() - started).toBeLessThan(2500);
       expect(body.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
-      await answerWith(body.dialog!.id, "accept");
+      await closeDialog(body.dialog!);
       expect(await page.title()).toBe("later true");
     });
 
@@ -3250,7 +3081,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/dialogs");
       const clicked = await press("Hold");
       expect(clicked.dialog).toMatchObject({ type: "confirm", message: "Down?" });
-      await answerWith(clicked.dialog!.id, "accept");
+      await closeDialog(clicked.dialog!);
       await sleep(200);
       expect(await page.title()).toBe("clicked after true");
     });
@@ -3286,11 +3117,6 @@ describe.skipIf(!chrome)("command engine", () => {
       ).resolves.toBeDefined();
     });
 
-    test("answers 422 for a dialog it does not know", async () => {
-      const response = await reply("d-9", "accept");
-      expect(response.status).toBe(422);
-      expect(response.body).toMatchObject({ error: { code: "dialog_not_pending" } });
-    });
     test("reports dialogs that open as a tab starts", async () => {
       await open("/popups");
       const text = await snapshot();
@@ -3299,7 +3125,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const alerting = await run({ command: "snapshot", tab: alerted });
       expect(alerting.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
       expect(alerting.dialog).toMatchObject({ tab: alerted, type: "alert" });
-      await answerWith(alerting.dialog!.id, "accept");
+      await closeDialog(alerting.dialog!);
       const after = await run({ command: "wait", text: "after alert", tab: alerted });
       expect(after.results[0]).toMatchObject({ ok: true });
       await run({ command: "click", target: refOf(text, 'button "Confirm popup"') });
@@ -3307,7 +3133,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const pending = await run({ command: "snapshot", tab: confirming });
       expect(pending.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
       expect(pending.dialog).toMatchObject({ tab: confirming, type: "confirm", message: "early?" });
-      await answerWith(pending.dialog!.id, "accept");
+      await closeDialog(pending.dialog!);
       const answered = await run({ command: "wait", text: "confirm true", tab: confirming });
       expect(answered.results[0]).toMatchObject({ ok: true });
     });
@@ -3316,7 +3142,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await run({ command: "click", target: { role: "button", name: "Touch" } });
       const clicked = await run({ command: "click", target: { role: "link", name: "Away" } });
       expect(clicked.dialog).toMatchObject({ type: "beforeunload" });
-      await answerWith(clicked.dialog!.id, "dismiss");
+      await closeDialog(clicked.dialog!, false);
       const started = Date.now();
       const waited = await run({ command: "wait", load: "load", timeout: 5000 });
       expect(waited.results[0]).toMatchObject({ ok: true });
@@ -3330,7 +3156,7 @@ describe.skipIf(!chrome)("command engine", () => {
       const left = await run({ command: "navigate", url: `${base}/basic` });
       expect(left.results[0]).toMatchObject({ ok: false, error: { code: "dialog_pending" } });
       expect(left.dialog).toMatchObject({ type: "beforeunload" });
-      await answerWith(left.dialog!.id, "accept");
+      await closeDialog(left.dialog!);
       const title = () => page.title().catch(() => "");
       for (let attempt = 0; attempt < 20 && (await title()) !== "Basic"; attempt++) {
         await sleep(100);
@@ -3347,7 +3173,7 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "dialog_pending", reason: "before_click" },
       });
       expect(first.dialog).toMatchObject({ type: "confirm", message: "Hover?" });
-      await answerWith(first.dialog!.id, "accept");
+      await closeDialog(first.dialog!);
       const second = await run({ command: "click", target: { text: "Hover trap" } });
       expect(second.results[0]).toMatchObject({ ok: true });
       expect(await page.title()).toBe("trap clicked");
@@ -3360,14 +3186,10 @@ describe.skipIf(!chrome)("command engine", () => {
       const confirming = await tabWith("popup-confirm");
       const pending = await run({ command: "snapshot", tab: confirming });
       const id = pending.dialog!.id;
+      expect(engineDialogs().dialogs.get(id)?.open).toBe(true);
       const closed = await run({ command: "tab", action: "close", tab: confirming });
       expect(closed.results[0]).toMatchObject({ ok: true });
-      const answer = await reply(id, "accept");
-      expect(answer.status).toBe(422);
-      expect(answer.body).toMatchObject({
-        error: { code: "dialog_not_pending" },
-        dialog: { id, accepted: false },
-      });
+      expect(engineDialogs().dialogs.get(id)?.open).toBe(false);
     });
   });
 
@@ -3397,25 +3219,24 @@ describe.skipIf(!chrome)("command engine", () => {
       quick.sessionEnded();
     });
 
-    test("answers a dialog with a dialog command", async () => {
+    test("refuses the dialog command and leaves the dialog open", async () => {
       await open("/dialogs");
       const clicked = await press("Confirm");
       const id = clicked.dialog!.id;
-      const response = await send({
-        commands: [{ command: "dialog", dialog: id, action: "accept" }],
-      });
-      expect(response.status).toBe(200);
-      expect(response.headers).toMatchObject({ "x-steel-deprecated": "dialog" });
-      expect(response.body).toMatchObject({
-        answered: { id, accepted: true, by: "command" },
-        next: expect.stringMatching(/^op_/),
-        epoch: expect.any(Number),
-      });
+      for (const commands of [
+        [{ command: "dialog", dialog: id, action: "accept" }],
+        [{ command: "snapshot" }, { command: "dialog", dialog: id, action: "accept" }],
+      ]) {
+        const response = await send({ commands });
+        expect(response.status).toBe(400);
+        expect(response.headers).toMatchObject({ "x-steel-deprecated": "dialog" });
+        expect((response.body as { error: { message: string } }).error.message).toContain(
+          "live view",
+        );
+      }
+      expect(engineDialogs().dialogs.get(id)?.open).toBe(true);
+      await closeDialog(clicked.dialog!);
       expect(await page.title()).toBe("confirm true");
-      const again = await send({
-        commands: [{ command: "dialog", dialog: id, action: "accept" }],
-      });
-      expect(again.body).toMatchObject({ next: (response.body as { next: string }).next });
     });
 
     test("reads find by and value as a target", async () => {
@@ -5041,7 +4862,7 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "dialog_pending", reason: "during_script" },
       });
       expect(body.dialog).toMatchObject({ type: "alert", message: "from script" });
-      await answerWith(body.dialog!.id, "accept");
+      await closeDialog(body.dialog!);
       expect((await run({ command: "eval", script: "1" })).results[0]).toMatchObject({ value: 1 });
     });
   });

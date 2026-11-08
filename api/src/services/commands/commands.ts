@@ -311,15 +311,6 @@ export const publishedRequestSchema = requestSchema.extend({
   commands: z.union([commandSchema, commandList]),
 });
 
-export const answerSchema = z
-  .object({
-    action: z.enum(["accept", "dismiss"]),
-    text: z.string().optional(),
-  })
-  .strict();
-
-export type DialogAnswer = z.infer<typeof answerSchema>;
-
 export const COMMANDS_API_VERSION = 1;
 
 export function requestJsonSchema() {

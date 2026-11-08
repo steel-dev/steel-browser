@@ -1,5 +1,5 @@
 import type { Command } from "../commands.js";
-import { answerRoute } from "../dialogs.js";
+import { DIALOG_HINT } from "../dialogs.js";
 import { CommandError } from "../errors.js";
 import type { CommandResult } from "../records.js";
 import { SECRET_VALUES, secretMask } from "../secrets.js";
@@ -72,10 +72,8 @@ export async function evaluate(
     throw new CommandError(
       "dialog_pending",
       dialog
-        ? `A dialog opened while the script ran: ${dialog.type} dialog ${
-            dialog.id
-          }. Answer it with ${answerRoute(ctx.active.id, dialog.id)}.`
-        : "A dialog opened while the script ran. Answer the dialog in this response.",
+        ? `A dialog opened while the script ran: ${dialog.type} dialog ${dialog.id}. ${DIALOG_HINT}`
+        : `A dialog opened while the script ran. ${DIALOG_HINT}`,
       "during_script",
       "applied",
     );

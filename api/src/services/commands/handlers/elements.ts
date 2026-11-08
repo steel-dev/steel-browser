@@ -126,7 +126,7 @@ export async function write(
     if (prepared.end && (await pressKey(context, session, "End"))) {
       throw new CommandError(
         "dialog_pending",
-        "A dialog opened before typing started. Answer it, then type again.",
+        "A dialog opened before typing started. Close it, then type again.",
         "during_type",
         "applied",
       );

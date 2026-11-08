@@ -106,7 +106,7 @@ describe.skipIf(!chrome)("commands route", () => {
     });
   });
 
-  test("answers a dialog in the documented shape", async () => {
+  test("reports a dialog and has no route to answer it", async () => {
     await page.setContent(
       `<button onclick="document.title = String(confirm('Sure?'))">Ask</button>`,
     );
@@ -115,48 +115,19 @@ describe.skipIf(!chrome)("commands route", () => {
     });
     expect(commandsSchemas.CommandResponse.safeParse(clicked.json()).success).toBe(true);
     const id = clicked.json().dialog.id;
-    const invalid = await app.inject({
-      method: "POST",
-      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
-      payload: { action: "maybe" },
-    });
-    expect(invalid.statusCode).toBe(400);
-    const answered = await app.inject({
+    const answer = await app.inject({
       method: "POST",
       url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
       payload: { action: "accept" },
     });
-    expect(answered.statusCode).toBe(200);
-    expect(answered.json()).toEqual({
-      answered: expect.objectContaining({ id, accepted: true, by: "command" }),
-      next: expect.stringMatching(/^op_/),
-      epoch: expect.any(Number),
-    });
-    expect(commandsSchemas.CommandDialogResponse.safeParse(answered.json()).success).toBe(true);
-    const later = await post("live", {
-      commands: { command: "tab", action: "list" },
-      after: answered.json().next,
-    });
-    expect(later.json()).toMatchObject({ epochChanged: false });
-    const before = await post("live", {
-      commands: { command: "snapshot" },
-      after: clicked.json().next,
-    });
-    expect(before.json()).toMatchObject({ epochChanged: true });
-    const again = await app.inject({
-      method: "POST",
-      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
-      payload: { action: "accept" },
-    });
-    expect(again.statusCode).toBe(200);
-    expect(again.json()).toMatchObject({ answered: { id, accepted: true, by: "command" } });
-    const other = await app.inject({
-      method: "POST",
-      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
-      payload: { action: "dismiss" },
-    });
-    expect(other.statusCode).toBe(422);
-    expect(other.json()).toMatchObject({ error: { code: "dialog_not_pending" } });
+    expect(answer.statusCode).toBe(404);
+    await (
+      page as unknown as {
+        _client(): { send(method: string, params?: object): Promise<unknown> };
+      }
+    )
+      ._client()
+      .send("Page.handleJavaScriptDialog", { accept: true });
     const spec = app.swagger() as unknown as {
       paths: Record<string, Record<string, { responses: Record<string, any> }>>;
     };
@@ -165,9 +136,10 @@ describe.skipIf(!chrome)("commands route", () => {
     expect(ok("/v1/sessions/{sessionId}/commands", "post")).toBe(
       "#/components/schemas/CommandResponse",
     );
-    expect(ok("/v1/sessions/{sessionId}/commands/dialogs/{dialogId}/answer", "post")).toBe(
-      "#/components/schemas/CommandDialogResponse",
+    expect(ok("/v1/sessions/{sessionId}/commands/{executionId}", "get")).toBe(
+      "#/components/schemas/CommandResponse",
     );
+    expect(Object.keys(spec.paths).filter((path) => path.includes("dialogs"))).toEqual([]);
   });
 
   test("reads and cancels executions on their own routes", async () => {
@@ -175,19 +147,19 @@ describe.skipIf(!chrome)("commands route", () => {
     const id = listed.json().execution.id;
     const status = await app.inject({
       method: "GET",
-      url: `/v1/sessions/live/commands/executions/${id}`,
+      url: `/v1/sessions/live/commands/${id}`,
     });
     expect(status.statusCode).toBe(200);
-    expect(status.json()).toMatchObject({ execution: { id, state: "completed" } });
+    expect(status.json()).toMatchObject({ id, execution: { id, state: "completed" } });
     const cancelled = await app.inject({
       method: "POST",
-      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
+      url: `/v1/sessions/live/commands/${id}/cancel`,
     });
     expect(cancelled.statusCode).toBe(200);
     expect(cancelled.json()).toMatchObject({ execution: { id, state: "completed" } });
     const typed = await app.inject({
       method: "POST",
-      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
+      url: `/v1/sessions/live/commands/${id}/cancel`,
       headers: { "content-type": "application/json" },
     });
     expect(typed.statusCode, typed.body).toBe(200);
@@ -200,13 +172,13 @@ describe.skipIf(!chrome)("commands route", () => {
     expect(empty.json()).toMatchObject({ error: { code: "invalid_request" } });
     const unknown = await app.inject({
       method: "GET",
-      url: "/v1/sessions/live/commands/executions/x-999999",
+      url: "/v1/sessions/live/commands/x-999999",
     });
     expect(unknown.statusCode).toBe(422);
     expect(unknown.json()).toMatchObject({ error: { code: "unknown_execution" } });
     const ended = await app.inject({
       method: "POST",
-      url: `/v1/sessions/old/commands/executions/${id}/cancel`,
+      url: `/v1/sessions/old/commands/${id}/cancel`,
     });
     expect(ended.statusCode).toBe(410);
   });

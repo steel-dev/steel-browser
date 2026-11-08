@@ -222,16 +222,6 @@ export class Tab {
     };
   }
 
-  async answerDialog(accept: boolean, text?: string) {
-    if (!this.client) {
-      throw new CommandError("tab_not_found", `Tab ${this.id} is not ready.`);
-    }
-    await this.client.send("Page.handleJavaScriptDialog", {
-      accept,
-      ...(text !== undefined ? { promptText: text } : {}),
-    });
-  }
-
   async terminate() {
     const sessions = new Set(
       [this.client, ...this.sessions()].filter(

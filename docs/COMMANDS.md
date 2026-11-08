@@ -9,9 +9,8 @@ The API is experimental and off by default. Start the server with `ENABLE_COMMAN
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/sessions/{sessionId}/commands` | Run commands in the session |
-| `GET` | `/v1/sessions/{sessionId}/commands/executions/{executionId}` | Wait for an execution and return it |
-| `POST` | `/v1/sessions/{sessionId}/commands/executions/{executionId}/cancel` | Stop an execution |
-| `POST` | `/v1/sessions/{sessionId}/commands/dialogs/{dialogId}/answer` | Answer an open dialog |
+| `GET` | `/v1/sessions/{sessionId}/commands/{id}` | Wait for an execution and return it |
+| `POST` | `/v1/sessions/{sessionId}/commands/{id}/cancel` | Stop an execution |
 | `GET` | `/v1/sessions/{sessionId}/commands/schema` | JSON Schema of the request body (`version: 1`) |
 
 `sessionId` is the session this server is running. `POST /v1/sessions` returns it. A request for another session gets `410 session_ended`. The session also ends when the browser crashes or when the server ends it for a security reason, such as a `file://` request. The server then starts a fresh browser with default settings, without the session's proxy or extensions, so create a new session to go on. When a release starts, commands get `410` right away. The routes are also described in the OpenAPI document at `/documentation`.
@@ -31,6 +30,7 @@ curl -X POST http://localhost:3000/v1/sessions/$SESSION_ID/commands \
 
 ```json
 {
+  "id": "x-1",
   "next": "op_3cvyhx9ub0",
   "page": { "tab": "t1", "url": "https://example.com/", "title": "Example Domain" },
   "execution": { "id": "x-1", "state": "completed", "effect": "applied", "replayed": false, "ran": 2 },
@@ -63,17 +63,18 @@ Send a random `Idempotency-Key` header to make retries safe. A request with a ke
 
 | Field | Meaning |
 |---|---|
+| `id` | The execution's id, the same as `execution.id`. Use it in `GET .../commands/{id}` and `POST .../commands/{id}/cancel`. |
 | `next` | Send it as `after` in your next request. Valid for an hour. |
-| `epochChanged` | Set when the execution ran with `after`. `true` when, since that `after`, another execution or a dialog answer changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
+| `epochChanged` | Set when the execution ran with `after`. `true` when, since that `after`, another execution changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
 | `page` | The tab the execution used, with its URL and title. |
 | `execution` | `id`, `state`, `effect`, `replayed`, and `ran` (commands started). `error` says why an execution ended early. |
 | `results` | One entry per command that ran: `command`, `ok`, `effect`, the fields of that command, and `error` (`code`, `message`, `reason`) when it failed. |
 | `observe` | `snapshotId` with `snapshot`, or `diff`. A diff without a usable base returns the full snapshot with `full: true`. If the snapshot fails, `observe` is `{ "error": { ... } }` and the commands' results stay as they are. |
-| `dialog` | A dialog that is open on the tab and waits for an answer. |
+| `dialog` | A dialog that is open on the tab and blocks it until it closes. |
 
 `effect` tells what happened to the page: `none` (nothing changed), `applied` (the page changed), or `unknown` (it may have changed, for example after a timeout during input). When an execution is cancelled or runs out of time, the running command stops before its next input, so `effect: none` means nothing changed. A click or drag that already pressed the mouse button still lets it go, and its effect is `unknown`. The page has 10 seconds to take each input. If it takes longer, the command fails with `timeout`, and a pressed button or key is still let go.
 
-Executions run one at a time per session. The response waits up to 20 seconds. A longer execution keeps running and the response shows `state: "running"`. Wait for it with `GET /v1/sessions/{sessionId}/commands/executions/x-1`, which also waits up to 20 seconds, or stop it with `POST /v1/sessions/{sessionId}/commands/executions/x-1/cancel`. Both return the execution in the same shape as a run, and both work while other executions run or wait. An execution stops after 60 seconds. `navigate` waits up to 15 seconds for the page to load. Up to 16 executions can wait in the queue.
+Executions run one at a time per session. The response waits up to 20 seconds. A longer execution keeps running and the response shows `state: "running"`. Wait for it with `GET /v1/sessions/{sessionId}/commands/x-1`, which also waits up to 20 seconds, or stop it with `POST /v1/sessions/{sessionId}/commands/x-1/cancel`. Both return the execution in the same shape as a run, and both work while other executions run or wait. An execution stops after 60 seconds. `navigate` waits up to 15 seconds for the page to load. Up to 16 executions can wait in the queue.
 
 Cancelling stops a page load in progress and keeps the tab. If a command still does not stop 2 seconds after a cancel, or 15 seconds after a timeout, the engine stops the page's scripts, including those in frames. If the command had already sent input to the page, the engine then closes the tab, and as a last resort ends the session. A command that has not sent input yet, such as a snapshot, is left behind instead, and the tab stays open.
 
@@ -158,14 +159,14 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 
 ## Dialogs
 
-- The engine never answers a dialog on its own. This holds for every type: `alert`, `confirm`, `prompt`, and `beforeunload`.
-- An open dialog shows in the response's `dialog`. Answer with `POST /v1/sessions/{sessionId}/commands/dialogs/d-1/answer` and `{ "action": "accept", "text": "..." }`, or `"dismiss"`. `text` answers a prompt. The response is `{ "answered": { ... }, "next": "op_..." }`: the dialog with its answer, and a `next` to send as `after`, so your own answer does not count as a change. The answer runs right away, outside the queue. Until then, commands on that tab fail with `dialog_pending`. Another client, such as a CDP client, can answer it too. If it answers first, the answer returns `dialog_not_pending`.
-- If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Answer the dialog and click again.
-- If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after you answer the dialog. Send it again if you still need it.
+- Neither the engine nor commands answer a dialog. This holds for every type: `alert`, `confirm`, `prompt`, and `beforeunload`.
+- An open dialog shows in the response's `dialog`. Until it closes, commands on that tab fail with `dialog_pending`. Close it in the live view, with a CDP client, or by closing the tab with `{ "command": "tab", "action": "close", "tab": "t1" }`. Commands on the tab work again as soon as it closes.
+- If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Close the dialog and click again.
+- If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after the dialog closes. Send it again if you still need it.
 - A dialog that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
 - If a dialog opens while a mouse button or key is down, also one held with `mouse` `down` or `keydown`, the engine lets it go once the dialog closes. A click still completes. A Space press on a button can lose its click, because the dialog takes focus from the page.
-- When a tab closes, its open dialog closes with it. Answering that dialog afterwards returns `dialog_not_pending`.
-- A dialog that opened before the session started, such as one left open by an earlier session, shows in `dialog`. Commands on its tab fail with `dialog_pending` until you answer it.
+- When a tab closes, its open dialog closes with it.
+- A dialog that opened before the session started, such as one left open by an earlier session, shows in `dialog`. Commands on its tab fail with `dialog_pending` until it closes.
 - Dialogs that a new tab shows while it loads, such as a popup that calls `alert()` right away, follow the same rules.
 
 ## Quick actions
@@ -182,13 +183,13 @@ Request errors have no execution. The body is `{ "error": { "code": ..., "messag
 | 413 | `invalid_request` (the body is too large) |
 | 415 | `invalid_request` (the body is not JSON) |
 | 410 | `session_ended` |
-| 422 | `key_conflict`, `invalid_operation_token`, `unknown_execution`, `dialog_not_pending` |
+| 422 | `key_conflict`, `invalid_operation_token`, `unknown_execution` |
 | 429 | `queue_full`, `expired`, `records_full` |
 | 500 | `internal_error` |
 
 `invalid_operation_token` means the engine no longer knows your `after`, for example because it is older than an hour or the session holds too many records. The response carries a fresh `next`. If you sent the same commands before, check the page first, because they may have run.
 
-An unexpected error inside the engine returns `500` with `{ "error": { "code": "internal_error", ... } }` and no execution. The commands may have run, so the response carries `x-should-retry: false` when the request had neither an `Idempotency-Key` nor `after`, and `x-should-retry: true` otherwise. Steel's SDKs follow this header. A dialog answer whose dialog does not close also returns this, with `x-should-retry: true` and the dialog that is still open in `dialog`. Sending the same answer again is safe: once the dialog has closed with that answer, the engine returns `answered` and the same `next` as the first answer, so a change made in between still shows in `epochChanged`. A different answer gets `dialog_not_pending`.
+An unexpected error inside the engine returns `500` with `{ "error": { "code": "internal_error", ... } }` and no execution. The commands may have run, so the response carries `x-should-retry: false` when the request had neither an `Idempotency-Key` nor `after`, and `x-should-retry: true` otherwise. Steel's SDKs follow this header.
 
 Command errors appear in `results[i].error`. The codes are `stale_ref`, `not_actionable`, `dialog_pending`, `element_not_found`, `invalid_argument`, `tab_not_found`, `tab_crashed`, `frame_not_found`, `tab_required`, `forbidden_url`, `forbidden_file`, `navigation_failed`, `download_failed`, `script_error`, `timeout`, `cancelled`, `session_ended`, `browser_restarted`, `unknown_command`, and `internal_error`. `reason` adds detail, for example `covered`, `offscreen`, `no_box`, `before_click`, `disabled`, `ambiguous`, `not_editable`, `read_only`, `not_focusable`, `not_checkable`, `disabled_option`, `detached`, `content_changed`, `unverified`, `missing`, or `not_frame`.
 
@@ -197,7 +198,8 @@ Command errors appear in `results[i].error`. The codes are `stale_ref`, `not_act
 The engine still accepts the older request forms for now, so older clients keep working. It reads them like this:
 
 - `eventsAfter` is ignored, and the response has no `events`.
-- `status`, `cancel`, and `dialog` sent as the only command run like `GET .../executions/x-1`, `POST .../executions/x-1/cancel`, and `POST .../dialogs/d-1/answer`. Sent with other commands, they return `400` with "Send a control command on its own."
+- `status` and `cancel` sent as the only command run like `GET .../commands/x-1` and `POST .../commands/x-1/cancel`. Sent with other commands, they return `400` with "Send a control command on its own."
+- `dialog` returns `400`, because commands no longer answer dialogs.
 - `find` with `by`, `value`, `name`, and `exact` reads them as `target`, so `{ "by": "role", "value": "button", "name": "Save" }` finds `{ "role": "button", "name": "Save" }`.
 
 Responses also carry `epoch`, a counter that goes up when the page changes, because older clients read it. A response to a request in an older form carries `x-steel-deprecated`, which lists the forms it used, such as `eventsAfter, status`. These forms and `epoch` will be removed later.
