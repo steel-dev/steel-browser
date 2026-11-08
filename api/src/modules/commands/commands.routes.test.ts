@@ -240,7 +240,7 @@ describe.skipIf(!chrome)("commands route", () => {
     const response = await app.inject({ method: "GET", url: "/v1/sessions/live/commands/schema" });
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.version).toBe(2);
+    expect(body.version).toBe(1);
     expect(JSON.stringify(body.schema)).toContain('"navigate"');
     expect(JSON.stringify(body.schema)).not.toContain('"eventsAfter"');
     expect(JSON.stringify(body.schema)).not.toContain('"status"');

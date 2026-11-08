@@ -3371,7 +3371,7 @@ describe.skipIf(!chrome)("command engine", () => {
     });
   });
 
-  describe("version 1 requests", () => {
+  describe("older request forms", () => {
     test("waits for and cancels an execution with status and cancel commands", async () => {
       const quick = create({ limits: { responseDeadlineMs: 300 } });
       const first = await run({ command: "navigate", url: `${base}/slow?ms=800` }, {}, quick);
@@ -3435,7 +3435,7 @@ describe.skipIf(!chrome)("command engine", () => {
       expect((byCss.body as unknown as Envelope).results[0].count).toBeGreaterThan(1);
     });
 
-    test("checks a control command the way version 1 did", async () => {
+    test("checks a control command the way it used to", async () => {
       const response = await send({ commands: [{ command: "status" }] });
       expect(response.status).toBe(400);
       expect((response.body as { error: { message: string } }).error.message).toContain(
@@ -3444,7 +3444,7 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(response.headers).toMatchObject({ "x-steel-deprecated": "status" });
     });
 
-    test("ignores eventsAfter and marks only version 1 requests", async () => {
+    test("ignores eventsAfter and marks only requests in older forms", async () => {
       const old = await send({
         eventsAfter: "c-3",
         commands: [{ command: "tab", action: "list" }],

@@ -12,7 +12,7 @@ The API is experimental and off by default. Start the server with `ENABLE_COMMAN
 | `GET` | `/v1/sessions/{sessionId}/commands/executions/{executionId}` | Wait for an execution and return it |
 | `POST` | `/v1/sessions/{sessionId}/commands/executions/{executionId}/cancel` | Stop an execution |
 | `POST` | `/v1/sessions/{sessionId}/commands/dialogs/{dialogId}/answer` | Answer an open dialog |
-| `GET` | `/v1/sessions/{sessionId}/commands/schema` | JSON Schema of the request body (`version: 2`) |
+| `GET` | `/v1/sessions/{sessionId}/commands/schema` | JSON Schema of the request body (`version: 1`) |
 
 `sessionId` is the session this server is running. `POST /v1/sessions` returns it. A request for another session gets `410 session_ended`. The session also ends when the browser crashes or when the server ends it for a security reason, such as a `file://` request. The server then starts a fresh browser with default settings, without the session's proxy or extensions, so create a new session to go on. When a release starts, commands get `410` right away. The routes are also described in the OpenAPI document at `/documentation`.
 
@@ -192,12 +192,12 @@ An unexpected error inside the engine returns `500` with `{ "error": { "code": "
 
 Command errors appear in `results[i].error`. The codes are `stale_ref`, `not_actionable`, `dialog_pending`, `element_not_found`, `invalid_argument`, `tab_not_found`, `tab_crashed`, `frame_not_found`, `tab_required`, `forbidden_url`, `forbidden_file`, `navigation_failed`, `download_failed`, `script_error`, `timeout`, `cancelled`, `session_ended`, `browser_restarted`, `unknown_command`, and `internal_error`. `reason` adds detail, for example `covered`, `offscreen`, `no_box`, `before_click`, `disabled`, `ambiguous`, `not_editable`, `read_only`, `not_focusable`, `not_checkable`, `disabled_option`, `detached`, `content_changed`, `unverified`, `missing`, or `not_frame`.
 
-## Version 1 requests
+## Older request forms
 
-The engine still accepts version 1 requests for now, so older clients keep working. It reads them like this:
+The engine still accepts the older request forms for now, so older clients keep working. It reads them like this:
 
 - `eventsAfter` is ignored, and the response has no `events`.
 - `status`, `cancel`, and `dialog` sent as the only command run like `GET .../executions/x-1`, `POST .../executions/x-1/cancel`, and `POST .../dialogs/d-1/answer`. Sent with other commands, they return `400` with "Send a control command on its own."
 - `find` with `by`, `value`, `name`, and `exact` reads them as `target`, so `{ "by": "role", "value": "button", "name": "Save" }` finds `{ "role": "button", "name": "Save" }`.
 
-Responses also carry `epoch`, a counter that goes up when the page changes, because version 1 clients read it. A response to a version 1 request carries `x-steel-deprecated`, which lists the forms it used, such as `eventsAfter, status`. These forms and `epoch` go away in a later version.
+Responses also carry `epoch`, a counter that goes up when the page changes, because older clients read it. A response to a request in an older form carries `x-steel-deprecated`, which lists the forms it used, such as `eventsAfter, status`. These forms and `epoch` will be removed later.

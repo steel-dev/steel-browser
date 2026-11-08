@@ -320,7 +320,7 @@ export const answerSchema = z
 
 export type DialogAnswer = z.infer<typeof answerSchema>;
 
-export const COMMANDS_API_VERSION = 2;
+export const COMMANDS_API_VERSION = 1;
 
 export function requestJsonSchema() {
   const ids = z.registry<{ id: string }>();
