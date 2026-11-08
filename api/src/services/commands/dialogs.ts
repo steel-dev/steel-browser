@@ -15,6 +15,7 @@ export interface Dialog {
   text?: string;
   by?: DialogHandler;
   next?: string;
+  answering: number;
   closed: Promise<void>;
   close: () => void;
 }
@@ -32,6 +33,7 @@ export function openDialog(
     message: event.message,
     defaultPrompt: event.defaultPrompt || undefined,
     open: true,
+    answering: 0,
     closed: promise,
     close: resolve,
   };

@@ -3063,6 +3063,85 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.title()).toBe("confirm true");
     });
 
+    test("refuses the answer that lost to a different answer sent at the same time", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      const [accepted, dismissed] = await Promise.all([reply(id, "accept"), reply(id, "dismiss")]);
+      expect(accepted.status).toBe(200);
+      expect(accepted.body).toMatchObject({ answered: { id, accepted: true, by: "command" } });
+      expect(dismissed.status).toBe(422);
+      expect(dismissed.body).toMatchObject({
+        error: { code: "dialog_not_pending" },
+        dialog: { id, accepted: true, by: "command" },
+      });
+      expect(await page.title()).toBe("confirm true");
+    });
+
+    test("gives the same answer sent twice at the same time one next", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      const [first, second] = await Promise.all([
+        answerWith(id, "accept"),
+        answerWith(id, "accept"),
+      ]);
+      expect(first).toMatchObject({ answered: { id, accepted: true, by: "command" } });
+      expect(second).toEqual(first);
+    });
+
+    test("does not credit the command with a dialog that a CDP client closed first", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      const original = CdpCDPSession.prototype.send;
+      let answered = false;
+      const spy = vi.spyOn(CdpCDPSession.prototype, "send").mockImplementation(async function (
+        this: CdpCDPSession,
+        method: string,
+        params?: unknown,
+        options?: unknown,
+      ) {
+        const call = (original as (...args: unknown[]) => Promise<unknown>).bind(this);
+        if (method === "Page.handleJavaScriptDialog" && !answered) {
+          answered = true;
+          await call(method, { accept: false }, options);
+          throw new Error("No dialog is showing");
+        }
+        return call(method, params, options);
+      } as never);
+      let answer: EngineResponse;
+      try {
+        answer = await reply(id, "accept");
+      } finally {
+        spy.mockRestore();
+      }
+      expect(answer.status).toBe(422);
+      expect(answer.body).toMatchObject({
+        error: { code: "dialog_not_pending" },
+        dialog: { id, accepted: false, by: "client" },
+      });
+      expect(await page.title()).toBe("confirm false");
+    });
+
+    test("answers session_ended when the session ends while an answer waits", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      const target = engine as unknown as { dialogClosed: (...args: unknown[]) => void };
+      const silent = vi.spyOn(target, "dialogClosed").mockImplementation(() => undefined);
+      try {
+        const answering = reply(id, "accept");
+        await sleep(200);
+        engine.sessionEnded();
+        const answer = await answering;
+        expect(answer.status).toBe(410);
+        expect(answer.body).toMatchObject({ error: { code: "session_ended" } });
+      } finally {
+        silent.mockRestore();
+      }
+    });
+
     test("keeps loading a page after a dialog that opened during navigate", async () => {
       const body = await run({ command: "navigate", url: `${base}/confirm-load` });
       expect(body.results[0]).toMatchObject({ error: { code: "dialog_pending" } });

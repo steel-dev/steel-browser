@@ -390,34 +390,29 @@ export class CommandEngine {
     answer: DialogAnswer,
   ): Promise<EngineResponse> {
     const dialog = active.dialogs.get(id);
-    if (dialog && !dialog.open && sameAnswer(dialog, answer)) {
-      return ok({ answered: describeDialog(dialog), next: dialog.next ?? active.records.issue() });
+    if (!dialog) {
+      return failure("dialog_not_pending", `Dialog ${id} is not open.`);
     }
-    if (!dialog || !dialog.open) {
-      return failure(
-        "dialog_not_pending",
-        `Dialog ${id} is not open.`,
-        dialog ? { dialog: describeDialog(dialog) } : {},
-      );
-    }
-    const sent = await this.answer(
-      active,
-      dialog,
-      answer.action === "accept",
-      answer.text,
-      "command",
-    );
     if (dialog.open) {
-      if (!sent) {
-        dialog.by = undefined;
+      await this.answer(active, dialog, answer.action === "accept", answer.text);
+      if (active.ended) {
+        return ended(active.id);
       }
-      return internal(
-        new Error(`Dialog ${dialog.id} did not close. It is still open, so answer it again.`),
-        true,
-        { dialog: describeDialog(dialog) },
-      );
+      if (dialog.open) {
+        return internal(
+          new Error(`Dialog ${dialog.id} did not close. It is still open, so answer it again.`),
+          true,
+          { dialog: describeDialog(dialog) },
+        );
+      }
     }
-    return ok({ answered: describeDialog(dialog), next: dialog.next ?? active.records.issue() });
+    if (!sameAnswer(dialog, answer)) {
+      return failure("dialog_not_pending", `Dialog ${id} is not open.`, {
+        dialog: describeDialog(dialog),
+      });
+    }
+    dialog.next ??= active.records.issue();
+    return ok({ answered: describeDialog(dialog), next: dialog.next });
   }
 
   private async respond(
@@ -838,7 +833,7 @@ export class CommandEngine {
       return;
     }
     this.finishDialog(dialog, event.result, event.userInput || undefined, dialog.by ?? "client");
-    if (dialog.by === "command") {
+    if (dialog.by === "command" || dialog.answering > 0) {
       active.records.bump();
       dialog.next = active.records.issue();
     }
@@ -864,14 +859,10 @@ export class CommandEngine {
     dialog: Dialog,
     accept: boolean,
     text: string | undefined,
-    by: DialogHandler,
   ) {
-    if (!dialog.open) {
-      return false;
-    }
-    dialog.by = by;
     const promptText =
       dialog.type === "prompt" && accept ? text ?? dialog.defaultPrompt ?? "" : undefined;
+    dialog.answering++;
     const sent =
       (await active.tabs
         .get(dialog.tab)
@@ -880,8 +871,11 @@ export class CommandEngine {
           () => true,
           () => false,
         )) ?? false;
+    dialog.answering--;
+    if (sent) {
+      dialog.by = "command";
+    }
     await within(dialog.closed, STEP_MS);
-    return sent;
   }
 
   private remember(active: ActiveSession, dialog: Dialog) {
