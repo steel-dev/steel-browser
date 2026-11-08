@@ -123,7 +123,7 @@ export const CommandResponse = z.object({
     .boolean()
     .optional()
     .describe(
-      "Whether another commands client, a dialog answer, a quick action, or a browser restart changed the session since after.",
+      "Whether another commands client, a quick action, or a browser restart changed the session since after.",
     ),
   page: z
     .object({ tab: z.string(), url: z.string(), title: z.string() })
