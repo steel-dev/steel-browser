@@ -27,6 +27,13 @@ import {
   watchBlocking,
   type Context,
 } from "./handlers/index.js";
+import {
+  deprecationHeader,
+  legacyControlSchema,
+  upgradeLegacy,
+  type LegacyControl,
+  type LegacyRequest,
+} from "./legacy.js";
 import { isFinal, type ErrorInfo, type Execution, type ExecutionState } from "./records.js";
 import { combine, errorInfo, within } from "./results.js";
 import {
@@ -257,12 +264,54 @@ export class CommandEngine {
         `Idempotency-Key must be 1 to ${MAX_IDEMPOTENCY_KEY} characters.`,
       );
     }
-    const parsed = requestSchema.safeParse(request.body);
+    const legacy = upgradeLegacy(request.body);
+    const response = await this.accept(active, key, legacy, deadline);
+    return { ...response, headers: { ...response.headers, ...deprecationHeader(legacy.forms) } };
+  }
+
+  private async accept(
+    active: ActiveSession,
+    key: string | undefined,
+    legacy: LegacyRequest,
+    deadline: number,
+  ): Promise<EngineResponse> {
+    if (legacy.mixed) {
+      return failure("invalid_request", "Send a control command on its own.");
+    }
+    if (legacy.control !== undefined) {
+      const control = legacyControlSchema.safeParse(legacy.control);
+      if (!control.success) {
+        return invalid(
+          control.error.issues.map((issue) => ({ ...issue, path: ["commands", 0, ...issue.path] })),
+        );
+      }
+      active.records.sweep();
+      return this.legacyControl(active, control.data, deadline);
+    }
+    const parsed = requestSchema.safeParse(legacy.body);
     if (!parsed.success) {
       return invalid(parsed.error.issues);
     }
     active.records.sweep();
     return this.submit(active, key, parsed.data, deadline);
+  }
+
+  private legacyControl(
+    active: ActiveSession,
+    control: LegacyControl,
+    deadline: number,
+  ): Promise<EngineResponse> {
+    switch (control.command) {
+      case "status":
+        return this.status(active, control.execution, deadline);
+      case "cancel":
+        return this.cancel(active, control.execution, deadline);
+      case "dialog":
+        return this.answerOpen(active, control.dialog, {
+          action: control.action,
+          ...(control.text !== undefined ? { text: control.text } : {}),
+        });
+    }
   }
 
   private async submit(
@@ -412,7 +461,7 @@ export class CommandEngine {
       });
     }
     dialog.next ??= active.records.issue();
-    return ok({ answered: describeDialog(dialog), next: dialog.next });
+    return ok({ answered: describeDialog(dialog), next: dialog.next, epoch: active.records.epoch });
   }
 
   private async respond(
@@ -469,6 +518,7 @@ export class CommandEngine {
       : (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
     return {
       ...(execution.next ? { next: execution.next } : {}),
+      epoch: active.records.epoch,
       ...(execution.epochChanged !== undefined ? { epochChanged: execution.epochChanged } : {}),
       page,
       execution: {

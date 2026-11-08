@@ -130,6 +130,7 @@ describe.skipIf(!chrome)("commands route", () => {
     expect(answered.json()).toEqual({
       answered: expect.objectContaining({ id, accepted: true, by: "command" }),
       next: expect.stringMatching(/^op_/),
+      epoch: expect.any(Number),
     });
     expect(commandsSchemas.CommandDialogResponse.safeParse(answered.json()).success).toBe(true);
     const later = await post("live", {

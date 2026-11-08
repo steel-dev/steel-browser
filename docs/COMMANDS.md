@@ -191,3 +191,13 @@ Request errors have no execution. The body is `{ "error": { "code": ..., "messag
 An unexpected error inside the engine returns `500` with `{ "error": { "code": "internal_error", ... } }` and no execution. The commands may have run, so the response carries `x-should-retry: false` when the request had neither an `Idempotency-Key` nor `after`, and `x-should-retry: true` otherwise. Steel's SDKs follow this header. A dialog answer whose dialog does not close also returns this, with `x-should-retry: true` and the dialog that is still open in `dialog`. Sending the same answer again is safe: once the dialog has closed with that answer, the engine returns `answered` and the same `next` as the first answer, so a change made in between still shows in `epochChanged`. A different answer gets `dialog_not_pending`.
 
 Command errors appear in `results[i].error`. The codes are `stale_ref`, `not_actionable`, `dialog_pending`, `element_not_found`, `invalid_argument`, `tab_not_found`, `tab_crashed`, `frame_not_found`, `tab_required`, `forbidden_url`, `forbidden_file`, `navigation_failed`, `download_failed`, `script_error`, `timeout`, `cancelled`, `session_ended`, `browser_restarted`, `unknown_command`, and `internal_error`. `reason` adds detail, for example `covered`, `offscreen`, `no_box`, `before_click`, `disabled`, `ambiguous`, `not_editable`, `read_only`, `not_focusable`, `not_checkable`, `disabled_option`, `detached`, `content_changed`, `unverified`, `missing`, or `not_frame`.
+
+## Version 1 requests
+
+The engine still accepts version 1 requests for now, so older clients keep working. It reads them like this:
+
+- `eventsAfter` is ignored, and the response has no `events`.
+- `status`, `cancel`, and `dialog` sent as the only command run like `GET .../executions/x-1`, `POST .../executions/x-1/cancel`, and `POST .../dialogs/d-1/answer`. Sent with other commands, they return `400` with "Send a control command on its own."
+- `find` with `by`, `value`, `name`, and `exact` reads them as `target`, so `{ "by": "role", "value": "button", "name": "Save" }` finds `{ "role": "button", "name": "Save" }`.
+
+Responses also carry `epoch`, a counter that goes up when the page changes, because version 1 clients read it. A response to a version 1 request carries `x-steel-deprecated`, which lists the forms it used, such as `eventsAfter, status`. These forms and `epoch` go away in a later version.

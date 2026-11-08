@@ -1734,7 +1734,7 @@ describe.skipIf(!chrome)("command engine", () => {
         results: [{ command: "navigate", ok: true, effect: "applied", url: `${base}/basic` }],
       });
       expect(body).not.toHaveProperty("epochChanged");
-      expect(body).not.toHaveProperty("epoch");
+      expect(body).toHaveProperty("epoch", expect.any(Number));
       const read = await run({ command: "snapshot" });
       expect(read.results[0]).toMatchObject({ command: "snapshot", ok: true });
       expect(read.next).not.toBe(body.next);
@@ -1861,7 +1861,7 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(response.body).toMatchObject({ error: { code: "unknown_execution" } });
     });
 
-    test("refuses status, cancel, and dialog as commands", async () => {
+    test("refuses status, cancel, and dialog sent with other commands", async () => {
       for (const command of [
         { command: "status", execution: "x-1" },
         { command: "cancel", execution: "x-1" },
@@ -1869,6 +1869,10 @@ describe.skipIf(!chrome)("command engine", () => {
       ]) {
         const response = await send({ commands: [{ command: "snapshot" }, command] });
         expect(response.status, JSON.stringify(command)).toBe(400);
+        expect(response.body).toMatchObject({
+          error: { code: "invalid_request", message: "Send a control command on its own." },
+        });
+        expect(response.headers).toMatchObject({ "x-steel-deprecated": command.command });
       }
     });
 
@@ -3364,6 +3368,93 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "dialog_not_pending" },
         dialog: { id, accepted: false },
       });
+    });
+  });
+
+  describe("version 1 requests", () => {
+    test("waits for and cancels an execution with status and cancel commands", async () => {
+      const quick = create({ limits: { responseDeadlineMs: 300 } });
+      const first = await run({ command: "navigate", url: `${base}/slow?ms=800` }, {}, quick);
+      expect(first.execution.state).toBe("running");
+      const id = first.execution.id;
+      const status = await send(
+        { eventsAfter: "c-0", commands: [{ command: "status", execution: id }] },
+        undefined,
+        quick,
+      );
+      expect(status.status).toBe(200);
+      expect(status.headers).toMatchObject({ "x-steel-deprecated": "eventsAfter, status" });
+      expect(status.body).toMatchObject({ execution: { id }, epoch: expect.any(Number) });
+      expect(status.body).not.toHaveProperty("events");
+      const cancel = await send(
+        { commands: { command: "cancel", execution: id } },
+        undefined,
+        quick,
+      );
+      expect(cancel.status).toBe(200);
+      expect(cancel.headers).toMatchObject({ "x-steel-deprecated": "cancel" });
+      expect(cancel.body).toMatchObject({ execution: { id }, epoch: expect.any(Number) });
+      quick.sessionEnded();
+    });
+
+    test("answers a dialog with a dialog command", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      const response = await send({
+        commands: [{ command: "dialog", dialog: id, action: "accept" }],
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers).toMatchObject({ "x-steel-deprecated": "dialog" });
+      expect(response.body).toMatchObject({
+        answered: { id, accepted: true, by: "command" },
+        next: expect.stringMatching(/^op_/),
+        epoch: expect.any(Number),
+      });
+      expect(await page.title()).toBe("confirm true");
+      const again = await send({
+        commands: [{ command: "dialog", dialog: id, action: "accept" }],
+      });
+      expect(again.body).toMatchObject({ next: (response.body as { next: string }).next });
+    });
+
+    test("reads find by and value as a target", async () => {
+      await open("/dialogs");
+      const byRole = await send({
+        commands: [{ command: "find", by: "role", value: "button", name: "Confirm" }],
+      });
+      expect(byRole.status).toBe(200);
+      expect(byRole.headers).toMatchObject({ "x-steel-deprecated": "find" });
+      const found = (byRole.body as unknown as Envelope).results[0];
+      expect(found).toMatchObject({ command: "find", ok: true });
+      expect(found.matches).toContainEqual(
+        expect.objectContaining({ role: "button", name: "Confirm" }),
+      );
+      const byCss = await send({ commands: { command: "find", by: "css", value: "button" } });
+      expect(byCss.status).toBe(200);
+      expect((byCss.body as unknown as Envelope).results[0].count).toBeGreaterThan(1);
+    });
+
+    test("checks a control command the way version 1 did", async () => {
+      const response = await send({ commands: [{ command: "status" }] });
+      expect(response.status).toBe(400);
+      expect((response.body as { error: { message: string } }).error.message).toContain(
+        "commands.0.execution",
+      );
+      expect(response.headers).toMatchObject({ "x-steel-deprecated": "status" });
+    });
+
+    test("ignores eventsAfter and marks only version 1 requests", async () => {
+      const old = await send({
+        eventsAfter: "c-3",
+        commands: [{ command: "tab", action: "list" }],
+      });
+      expect(old.status).toBe(200);
+      expect(old.headers).toMatchObject({ "x-steel-deprecated": "eventsAfter" });
+      expect(old.body).not.toHaveProperty("events");
+      const current = await send({ commands: [{ command: "tab", action: "list" }] });
+      expect(current.status).toBe(200);
+      expect(current.headers).not.toHaveProperty("x-steel-deprecated");
     });
   });
 
