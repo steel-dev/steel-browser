@@ -390,6 +390,9 @@ export class CommandEngine {
     answer: DialogAnswer,
   ): Promise<EngineResponse> {
     const dialog = active.dialogs.get(id);
+    if (dialog && !dialog.open && sameAnswer(dialog, answer)) {
+      return ok({ answered: describeDialog(dialog), next: active.records.issue() });
+    }
     if (!dialog || !dialog.open) {
       return failure(
         "dialog_not_pending",
@@ -397,16 +400,23 @@ export class CommandEngine {
         dialog ? { dialog: describeDialog(dialog) } : {},
       );
     }
-    await this.answer(active, dialog, answer.action === "accept", answer.text, "command");
+    const sent = await this.answer(
+      active,
+      dialog,
+      answer.action === "accept",
+      answer.text,
+      "command",
+    );
     if (dialog.open) {
-      dialog.by = undefined;
+      if (!sent) {
+        dialog.by = undefined;
+      }
       return internal(
         new Error(`Dialog ${dialog.id} did not close. It is still open, so answer it again.`),
         true,
         { dialog: describeDialog(dialog) },
       );
     }
-    active.records.bump();
     return ok({ answered: describeDialog(dialog), next: active.records.issue() });
   }
 
@@ -828,6 +838,9 @@ export class CommandEngine {
       return;
     }
     this.finishDialog(dialog, event.result, event.userInput || undefined, dialog.by ?? "client");
+    if (dialog.by === "command") {
+      active.records.bump();
+    }
     if (tab.holding()) {
       void tab.release().catch(() => undefined);
     }
@@ -853,16 +866,21 @@ export class CommandEngine {
     by: DialogHandler,
   ) {
     if (!dialog.open) {
-      return;
+      return false;
     }
     dialog.by = by;
     const promptText =
       dialog.type === "prompt" && accept ? text ?? dialog.defaultPrompt ?? "" : undefined;
-    await active.tabs
-      .get(dialog.tab)
-      ?.answerDialog(accept, promptText)
-      .catch(() => undefined);
+    const sent =
+      (await active.tabs
+        .get(dialog.tab)
+        ?.answerDialog(accept, promptText)
+        .then(
+          () => true,
+          () => false,
+        )) ?? false;
     await within(dialog.closed, STEP_MS);
+    return sent;
   }
 
   private remember(active: ActiveSession, dialog: Dialog) {
@@ -916,6 +934,18 @@ function invalid(issues: { path: PropertyKey[]; message: string }[]): EngineResp
     issues
       .map((issue) => `${issue.path.map(String).join(".") || "body"}: ${issue.message}`)
       .join("; "),
+  );
+}
+
+function sameAnswer(dialog: Dialog, answer: DialogAnswer): boolean {
+  const accept = answer.action === "accept";
+  if (dialog.by !== "command" || dialog.accepted !== accept) {
+    return false;
+  }
+  return (
+    !accept ||
+    dialog.type !== "prompt" ||
+    (dialog.text ?? "") === (answer.text ?? dialog.defaultPrompt ?? "")
   );
 }
 

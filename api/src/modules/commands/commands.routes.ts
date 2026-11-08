@@ -64,7 +64,10 @@ async function routes(server: FastifyInstance) {
   server.setErrorHandler<FastifyError>(async (error, _request, reply) => {
     const status = error.statusCode ?? 500;
     if (status >= 500) {
-      throw error;
+      return reply
+        .code(500)
+        .headers({ "x-should-retry": "false" })
+        .send({ error: { code: "internal_error", message: error.message } });
     }
     return reply.code(status).send({ error: { code: "invalid_request", message: error.message } });
   });

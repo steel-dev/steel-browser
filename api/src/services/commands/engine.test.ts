@@ -2980,12 +2980,49 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(answered).toMatchObject({ answered: { id, accepted: true, by: "command" } });
       expect(await page.title()).toBe("confirm true");
       expect((await run({ command: "snapshot" })).results[0]).toMatchObject({ ok: true });
-      const again = await reply(id, "accept");
-      expect(again.status).toBe(422);
-      expect(again.body).toMatchObject({
+      const replayed = await answerWith(id, "accept");
+      expect(replayed).toMatchObject({ answered: { id, accepted: true, by: "command" } });
+      expect((replayed as unknown as { next: string }).next).toMatch(/^op_/);
+      const later = await run(
+        { command: "tab", action: "list" },
+        {
+          after: (replayed as unknown as { next: string }).next,
+        },
+      );
+      expect(later.epochChanged).toBe(false);
+      const other = await reply(id, "dismiss");
+      expect(other.status).toBe(422);
+      expect(other.body).toMatchObject({
         error: { code: "dialog_not_pending" },
         dialog: { id, accepted: true },
       });
+    });
+
+    test("answers a retry of an answer whose dialog closed late", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      const target = engine as unknown as { dialogClosed: (...args: unknown[]) => void };
+      const original = target.dialogClosed.bind(engine);
+      const late = vi.spyOn(target, "dialogClosed").mockImplementation((...args: unknown[]) => {
+        setTimeout(() => original(...args), 1500);
+      });
+      let failed: EngineResponse;
+      try {
+        failed = await reply(id, "accept");
+      } finally {
+        late.mockRestore();
+      }
+      expect(failed.status).toBe(500);
+      expect(failed.headers).toEqual({ "x-should-retry": "true" });
+      for (let attempt = 0; attempt < 30 && (await page.title()) !== "confirm true"; attempt++) {
+        await sleep(100);
+      }
+      await sleep(1600);
+      const retried = await answerWith(id, "accept");
+      expect(retried).toMatchObject({ answered: { id, accepted: true, by: "command" } });
+      const later = await run({ command: "tab", action: "list" }, { after: clicked.next });
+      expect(later.epochChanged).toBe(true);
     });
 
     test("reports a dialog answer that did not go through", async () => {

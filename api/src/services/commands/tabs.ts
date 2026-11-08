@@ -96,7 +96,6 @@ export class Tab {
   private main: CDPSession | null = null;
   private client: CDPSession | null = null;
   private navigation: Navigation | null = null;
-  private navigations = 0;
   private dialogType: string | null = null;
   private readonly onDialogOpening = (event: Protocol.Page.JavascriptDialogOpeningEvent) => {
     this.dialogType = event.type;
@@ -125,7 +124,6 @@ export class Tab {
   };
   private readonly onFrameNavigated = (event: Protocol.Page.FrameNavigatedEvent) => {
     if (!event.frame.parentId) {
-      this.navigations++;
       this.crashed = false;
       if (this.navigation) {
         this.navigation.committed = true;

@@ -147,8 +147,15 @@ describe.skipIf(!chrome)("commands route", () => {
       url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
       payload: { action: "accept" },
     });
-    expect(again.statusCode).toBe(422);
-    expect(again.json()).toMatchObject({ error: { code: "dialog_not_pending" } });
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ answered: { id, accepted: true, by: "command" } });
+    const other = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
+      payload: { action: "dismiss" },
+    });
+    expect(other.statusCode).toBe(422);
+    expect(other.json()).toMatchObject({ error: { code: "dialog_not_pending" } });
     const spec = app.swagger() as unknown as {
       paths: Record<string, Record<string, { responses: Record<string, any> }>>;
     };
@@ -315,6 +322,27 @@ describe("commands body parsing", () => {
     });
     expect(csv.statusCode).toBe(415);
     expect(csv.json()).toMatchObject({ error: { code: "invalid_request" } });
+    await app.close();
+  });
+
+  test("answers an engine that throws in the commands error shape", async () => {
+    const app = Fastify();
+    app.decorate("commandEngine", {
+      handle: async () => {
+        throw new Error("Fixture failure");
+      },
+    } as unknown as CommandEngine);
+    await app.register(commandsRoutes, { prefix: "/v1" });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      payload: { commands: { command: "snapshot" } },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.headers["x-should-retry"]).toBe("false");
+    expect(response.json()).toEqual({
+      error: { code: "internal_error", message: "Fixture failure" },
+    });
     await app.close();
   });
 });
