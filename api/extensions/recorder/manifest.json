@@ -20,7 +20,8 @@
       ],
       "js": [
         "dist/inject.js"
-      ]
+      ],
+      "run_at": "document_start"
     }
   ]
 }
