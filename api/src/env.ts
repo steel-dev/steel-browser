@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { config } from "dotenv";
+import { parseChromeDisableGpu, parseChromeUseGl } from "./utils/chrome-gl.js";
 
 config();
 
-const envSchema = z.object({
+export const envSchema = z.object({
   NODE_ENV: z
     .enum(["test", "development", "staging", "production", "preview"])
     .default("development"),
@@ -58,6 +59,17 @@ const envSchema = z.object({
     .optional()
     .transform((val) => (val ? val.split(" ").map((arg) => arg.trim()) : []))
     .prefault(""),
+  // Self-host only. Unset keeps headed `--use-gl=swiftshader` and omits `--use-gl` when headless.
+  CHROME_USE_GL: z
+    .string()
+    .optional()
+    .transform((val) => parseChromeUseGl(val)),
+  // Self-host only. Unset keeps forcing `--disable-gpu`. Set to false on a GPU host.
+  CHROME_DISABLE_GPU: z
+    .string()
+    .optional()
+    .transform((val) => parseChromeDisableGpu(val))
+    .prefault("true"),
   FILTER_CHROME_ARGS: z
     .string()
     .optional()

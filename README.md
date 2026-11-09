@@ -159,6 +159,17 @@ npm run dev
 
 For more details on where this is checked look at [`api/src/utils/browser.ts`](./api/src/utils/browser.ts).
 
+#### Self-hosted GPU
+
+Chrome starts with software GL (`--disable-gpu`, and `--use-gl=swiftshader` for headed sessions). Leaving the variables unset keeps that default, including for Steel Cloud deployments that do not set them. On a self-hosted machine with a GPU, opt into hardware GL for every session on this deployment:
+
+```bash
+export CHROME_USE_GL=angle
+export CHROME_DISABLE_GPU=false
+```
+
+`CHROME_USE_GL` is Chrome's `--use-gl` value (`angle`, `egl`, `desktop`, or `swiftshader`). `CHROME_DISABLE_GPU` defaults to true and passes `--disable-gpu`; set it to `false` to leave that flag off. Hardware GL uses both. Pass the same variables with `docker run -e`, or set them in `.env` for Docker Compose. See [`.env.example`](./.env.example) and [`api/.env.example`](./api/.env.example). These are deployment settings. Session create options are unchanged.
+
 ## 🏄🏽‍♂️ Usage
 
 > If you're looking for quick examples on how to use Steel, check out the [Cookbook](https://github.com/steel-dev/steel-cookbook).
