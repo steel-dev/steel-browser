@@ -38,8 +38,6 @@ export interface TabEvents {
   dialogClosed(tab: Tab, event: Protocol.Page.JavascriptDialogClosedEvent): void;
   downloadStarted(tab: Tab, event: Protocol.Page.DownloadWillBeginEvent): void;
   downloadProgress(tab: Tab, event: Protocol.Page.DownloadProgressEvent): void;
-  navigated(tab: Tab, url: string, sameDocument: boolean): void;
-  opened(tab: Tab, opener: Tab | undefined): void;
   closed(tab: Tab): void;
 }
 
@@ -98,7 +96,6 @@ export class Tab {
   private main: CDPSession | null = null;
   private client: CDPSession | null = null;
   private navigation: Navigation | null = null;
-  private navigations = 0;
   private dialogType: string | null = null;
   private readonly onDialogOpening = (event: Protocol.Page.JavascriptDialogOpeningEvent) => {
     this.dialogType = event.type;
@@ -127,13 +124,11 @@ export class Tab {
   };
   private readonly onFrameNavigated = (event: Protocol.Page.FrameNavigatedEvent) => {
     if (!event.frame.parentId) {
-      this.navigations++;
       this.crashed = false;
       if (this.navigation) {
         this.navigation.committed = true;
         this.navigation.loaderId = event.frame.loaderId;
       }
-      this.events.navigated(this, event.frame.url + (event.frame.urlFragment ?? ""), false);
     }
   };
   private readonly onNavigatedWithinDocument = (
@@ -143,7 +138,6 @@ export class Tab {
       if (!this.navigation?.committed) {
         this.settle();
       }
-      this.events.navigated(this, event.url, true);
     }
   };
   private readonly onNavigationRequested = (event: Protocol.Page.FrameRequestedNavigationEvent) => {
@@ -181,35 +175,19 @@ export class Tab {
     private readonly events: TabEvents,
   ) {}
 
-  watch(client?: CDPSession, opened?: Protocol.Page.JavascriptDialogOpeningEvent, fresh = false) {
+  watch(client?: CDPSession, opened?: Protocol.Page.JavascriptDialogOpeningEvent) {
     if (client) {
       this.listen(client);
       if (opened) {
         this.onDialogOpening(opened);
       }
-      if (fresh) {
-        void this.catchUp(client);
-      }
       return;
     }
     void this.pending.then((page) => {
       if (page && !this.closed) {
-        const client = clientOf(page);
-        this.listen(client);
-        if (fresh) {
-          void this.catchUp(client);
-        }
+        this.listen(clientOf(page));
       }
     });
-  }
-
-  private async catchUp(client: CDPSession) {
-    const seen = this.navigations;
-    const history = await client.send("Page.getNavigationHistory").catch(() => null);
-    const url = history?.entries[history.currentIndex]?.url;
-    if (!this.closed && this.navigations === seen && url && url !== "about:blank") {
-      this.events.navigated(this, url, false);
-    }
   }
 
   get navigating(): boolean {
@@ -242,16 +220,6 @@ export class Tab {
     return () => {
       this.blockingListeners.delete(listener);
     };
-  }
-
-  async answerDialog(accept: boolean, text?: string) {
-    if (!this.client) {
-      throw new CommandError("tab_not_found", `Tab ${this.id} is not ready.`);
-    }
-    await this.client.send("Page.handleJavaScriptDialog", {
-      accept,
-      ...(text !== undefined ? { promptText: text } : {}),
-    });
   }
 
   async terminate() {
@@ -565,7 +533,7 @@ export class TabRegistry {
   private readonly tabs = new Map<string, Tab>();
   private readonly byTarget = new Map<string, Tab>();
   private readonly onCreated = (target: Target) => {
-    this.track(target, true);
+    this.track(target);
   };
   private readonly onDestroyed = (target: Target) => {
     this.untrack(targetIdOf(target));
@@ -677,7 +645,7 @@ export class TabRegistry {
       throw new CommandError("tab_not_found", "The browser is not ready.");
     }
     const page = await this.browser.newPage();
-    const tab = this.track(page.target(), true);
+    const tab = this.track(page.target());
     if (!tab) {
       throw new CommandError("tab_not_found", "The new tab closed before it could be used.");
     }
@@ -735,7 +703,7 @@ export class TabRegistry {
     return this.control;
   }
 
-  private track(target: Target, announce = false): Tab | undefined {
+  private track(target: Target): Tab | undefined {
     if (
       target.type() !== "page" ||
       target.browserContext() !== this.browser?.defaultBrowserContext()
@@ -766,12 +734,8 @@ export class TabRegistry {
     );
     this.tabs.set(tab.id, tab);
     this.byTarget.set(targetId, tab);
-    if (announce) {
-      const opener = target.opener();
-      this.events.opened(tab, opener ? this.byTarget.get(targetIdOf(opener)) : undefined);
-    }
     const client = sessionOf(target);
-    tab.watch(client, client ? this.dialogs.get(client.id()) : undefined, announce);
+    tab.watch(client, client ? this.dialogs.get(client.id()) : undefined);
     return tab;
   }
 

@@ -17,38 +17,114 @@ const Dialog = z.object({
   type: z.enum(["alert", "confirm", "prompt", "beforeunload"]),
   message: z.string(),
   defaultPrompt: z.string().optional(),
-  accepted: z.boolean().optional(),
-  text: z.string().optional(),
-  by: z.enum(["command", "client", "closed"]).optional(),
 });
 
-const CommandResult = z
-  .object({
-    ok: z.boolean(),
-    effect: Effect,
-    error: ErrorInfo.optional(),
-  })
-  .passthrough()
-  .describe(
-    "Result of one command. Commands add their own fields, such as snapshot, value, url, or loading.",
-  );
+const resultBase = {
+  ok: z.boolean(),
+  effect: Effect,
+  error: ErrorInfo.optional(),
+};
 
-const Events = z.object({
-  cursor: z.string(),
-  items: z.array(
-    z.object({ id: z.string(), type: z.string(), tab: z.string(), at: z.string() }).passthrough(),
+const interrupts = {
+  dialog: Dialog.optional().describe(
+    "A dialog that the command opened. It blocks the tab until it closes.",
   ),
-  more: z.boolean().optional(),
-  truncated: z.boolean().optional(),
-});
+  loading: z
+    .boolean()
+    .optional()
+    .describe("The command started a navigation that was still loading when it returned."),
+};
 
-const CommandResponse = z.object({
+const visited = {
+  navigated: z.boolean().optional().describe("False when there was no history entry."),
+  url: z.string().optional(),
+};
+
+const RESULT_FIELDS = {
+  navigate: { url: z.string().optional() },
+  back: visited,
+  forward: visited,
+  reload: { url: z.string().optional() },
+  snapshot: { snapshotId: z.string().optional(), snapshot: z.string().optional() },
+  click: interrupts,
+  dblclick: interrupts,
+  hover: { dialog: interrupts.dialog },
+  focus: {},
+  type: interrupts,
+  fill: interrupts,
+  press: interrupts,
+  keydown: interrupts,
+  keyup: interrupts,
+  mouse: interrupts,
+  select: {
+    selected: z.array(z.string()).optional().describe("The values of the selected options."),
+    ...interrupts,
+  },
+  check: { checked: z.boolean().optional(), ...interrupts },
+  uncheck: { checked: z.boolean().optional(), ...interrupts },
+  upload: { files: z.array(z.string()).optional(), ...interrupts },
+  drag: interrupts,
+  get: {
+    value: z
+      .unknown()
+      .optional()
+      .describe(
+        "A string for text, html, markdown, value, attr, title, and url. A number for count. { x, y, width, height } or null for box. A list of locators for locator.",
+      ),
+    masked: z.boolean().optional().describe("The value is a secret, so it is left out."),
+  },
+  is: { value: z.boolean().optional() },
+  wait: {
+    waited: z.enum(["ms", "target", "text", "url", "load", "download"]).optional(),
+    file: z.string().optional().describe("The downloaded file, for download."),
+    bytes: z.number().int().optional(),
+  },
+  screenshot: { format: z.enum(["png", "jpeg", "webp"]).optional(), data: z.string().optional() },
+  eval: {
+    value: z.unknown().optional().describe("The result of the script as JSON."),
+    ...interrupts,
+  },
+  pdf: { format: z.literal("pdf").optional(), data: z.string().optional() },
+  scroll: {
+    moved: z.boolean().optional(),
+    x: z.number().optional(),
+    y: z.number().optional(),
+  },
+  find: {
+    count: z.number().int().optional(),
+    matches: z.array(z.object({ ref: z.string(), role: z.string(), name: z.string() })).optional(),
+  },
+  tab: {
+    tabs: z.array(z.object({ tab: z.string(), url: z.string(), title: z.string() })).optional(),
+    tab: z.string().optional(),
+  },
+};
+
+type ResultName = keyof typeof RESULT_FIELDS;
+
+function resultOf<N extends ResultName>(name: N) {
+  return z.object({ command: z.literal(name), ...resultBase, ...RESULT_FIELDS[name] }).strict();
+}
+
+const RESULTS = (Object.keys(RESULT_FIELDS) as ResultName[]).map(resultOf);
+
+export const CommandResult = z
+  .discriminatedUnion("command", RESULTS as unknown as [z.ZodObject, ...z.ZodObject[]])
+  .describe("Result of one command, with the fields of that command.");
+
+export const CommandResponse = z.object({
+  id: z
+    .string()
+    .describe(
+      "The id of this execution. Use it in GET /v1/sessions/{sessionId}/commands/executions/{executionId} and POST /v1/sessions/{sessionId}/commands/executions/{executionId}/cancel.",
+    ),
   next: z.string().optional().describe("Send it as after in the next request."),
-  epoch: z.number().int().describe("Goes up when the page changes or the browser restarts."),
   epochChanged: z
     .boolean()
     .optional()
-    .describe("Whether another client changed the session since after."),
+    .describe(
+      "Whether another commands client, a quick action, or a browser restart changed the session since after.",
+    ),
   page: z
     .object({ tab: z.string(), url: z.string(), title: z.string() })
     .nullable()
@@ -75,18 +151,11 @@ const CommandResponse = z.object({
     })
     .partial()
     .optional(),
-  dialog: Dialog.optional().describe("A dialog that is open on the tab and waits for an answer."),
-  events: Events.optional(),
+  dialog: Dialog.optional().describe(
+    "A dialog that is open on the tab and blocks it until it closes.",
+  ),
   bodyExpired: z.boolean().optional(),
 });
-
-const CommandDialogResponse = z
-  .object({
-    answered: Dialog.describe("The dialog that the dialog command answered."),
-    epoch: z.number().int(),
-    events: Events.optional(),
-  })
-  .describe("Response to the dialog command.");
 
 const CommandRequestError = z
   .object({
@@ -102,7 +171,6 @@ const CommandsSchemaResponse = z.object({
 export const commandsSchemas = {
   CommandRequest: publishedRequestSchema,
   CommandResponse,
-  CommandDialogResponse,
   CommandRequestError,
   CommandsSchemaResponse,
 };

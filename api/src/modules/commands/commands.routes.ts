@@ -1,6 +1,6 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { COMMANDS_API_VERSION, requestJsonSchema } from "../../services/commands/commands.js";
-import { CommandEngine } from "../../services/commands/engine.js";
+import { CommandEngine, type EngineResponse } from "../../services/commands/engine.js";
 import { CommandsPlugin } from "../../services/commands/plugin.js";
 import { FileService } from "../../services/file.service.js";
 import { $ref } from "../../plugins/schemas.js";
@@ -29,11 +29,52 @@ export function createCommandEngine(server: FastifyInstance): CommandEngine {
   return engine;
 }
 
+function send(reply: FastifyReply, response: EngineResponse) {
+  return reply.code(response.status).headers(response.headers).send(response.body);
+}
+
+const failures = {
+  400: $ref("CommandRequestError"),
+  410: $ref("CommandRequestError"),
+  422: $ref("CommandRequestError"),
+  500: $ref("CommandRequestError"),
+};
+
+function parseJson(
+  _request: FastifyRequest,
+  body: string,
+  done: (error: Error | null, body?: unknown) => void,
+) {
+  if (body === "") {
+    done(null, undefined);
+    return;
+  }
+  try {
+    done(null, JSON.parse(body));
+  } catch (error) {
+    done(Object.assign(error as Error, { statusCode: 400 }), undefined);
+  }
+}
+
 async function routes(server: FastifyInstance) {
   const engine = server.commandEngine;
   if (!engine) {
     return;
   }
+  server.setErrorHandler<FastifyError>(async (error, _request, reply) => {
+    const status = error.statusCode ?? 500;
+    if (status >= 500) {
+      return reply
+        .code(500)
+        .headers({ "x-should-retry": "false" })
+        .send({ error: { code: "internal_error", message: error.message } });
+    }
+    return reply.code(status).send({ error: { code: "invalid_request", message: error.message } });
+  });
+  server.removeContentTypeParser("application/json");
+  server.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) =>
+    parseJson(request, body as string, done),
+  );
   const schema = requestJsonSchema();
 
   server.get(
@@ -77,13 +118,8 @@ async function routes(server: FastifyInstance) {
         },
         body: $ref("CommandRequest"),
         response: {
-          200: {
-            description: "The execution, or the answered dialog for the dialog command.",
-            anyOf: [$ref("CommandResponse"), $ref("CommandDialogResponse")],
-          },
-          400: $ref("CommandRequestError"),
-          410: $ref("CommandRequestError"),
-          422: $ref("CommandRequestError"),
+          200: $ref("CommandResponse"),
+          ...failures,
           429: $ref("CommandRequestError"),
         },
       },
@@ -92,13 +128,61 @@ async function routes(server: FastifyInstance) {
     },
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) => {
       const key = request.headers["idempotency-key"];
-      const response = await engine.handle({
-        sessionId: request.params.sessionId,
-        idempotencyKey: Array.isArray(key) ? key[0] : key,
-        body: request.body,
-      });
-      return reply.code(response.status).headers(response.headers).send(response.body);
+      return send(
+        reply,
+        await engine.handle({
+          sessionId: request.params.sessionId,
+          idempotencyKey: Array.isArray(key) ? key[0] : key,
+          body: request.body,
+        }),
+      );
     },
+  );
+
+  server.get(
+    "/sessions/:sessionId/commands/executions/:executionId",
+    {
+      schema: {
+        operationId: "get_command_execution",
+        summary: "Get a command execution",
+        description:
+          "Waits up to 20 seconds for an execution to finish and returns it. Use it when a run answered with state running.",
+        tags: ["Commands"],
+        response: { 200: $ref("CommandResponse"), ...failures },
+      },
+      serializerCompiler: () => (data) => JSON.stringify(data),
+    },
+    async (
+      request: FastifyRequest<{ Params: { sessionId: string; executionId: string } }>,
+      reply: FastifyReply,
+    ) =>
+      send(
+        reply,
+        await engine.executionStatus(request.params.sessionId, request.params.executionId),
+      ),
+  );
+
+  server.post(
+    "/sessions/:sessionId/commands/executions/:executionId/cancel",
+    {
+      schema: {
+        operationId: "cancel_command_execution",
+        summary: "Cancel a command execution",
+        description:
+          "Stops an execution. The running command stops before its next input, and commands that already ran are not undone.",
+        tags: ["Commands"],
+        response: { 200: $ref("CommandResponse"), ...failures },
+      },
+      serializerCompiler: () => (data) => JSON.stringify(data),
+    },
+    async (
+      request: FastifyRequest<{ Params: { sessionId: string; executionId: string } }>,
+      reply: FastifyReply,
+    ) =>
+      send(
+        reply,
+        await engine.cancelExecution(request.params.sessionId, request.params.executionId),
+      ),
   );
 }
 

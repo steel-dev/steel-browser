@@ -182,7 +182,7 @@ export async function typeText(
     if (opened && typed < characters.length) {
       throw new CommandError(
         "dialog_pending",
-        `A dialog opened after ${typed} of ${characters.length} characters. Answer it, then type the rest.`,
+        `A dialog opened after ${typed} of ${characters.length} characters. Close it, then type the rest.`,
         "during_type",
         "applied",
       );

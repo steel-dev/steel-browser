@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { toJsonSchema } from "../../utils/schema.js";
+import { chordStroke } from "./keyboard.js";
+import { parseRef } from "./refs.js";
 import { LOCATOR_KINDS, MAX_FRAME_DEPTH } from "./targets.js";
 
 const MAX_COMMANDS = 50;
@@ -180,10 +182,7 @@ export const commandSchema = z.discriminatedUnion("command", [
   }),
   strict({
     command: z.literal("find"),
-    by: z.enum(LOCATOR_KINDS),
-    value: filled,
-    name: filled.optional(),
-    exact: z.boolean().optional(),
+    target,
     tab,
     frame: frame.optional(),
   }),
@@ -193,19 +192,99 @@ export const commandSchema = z.discriminatedUnion("command", [
     tab,
     url: z.string().min(1).optional(),
   }),
-  strict({ command: z.literal("status"), execution: z.string().min(1) }),
-  strict({ command: z.literal("cancel"), execution: z.string().min(1) }),
-  strict({
-    command: z.literal("dialog"),
-    dialog: z.string().min(1),
-    action: z.enum(["accept", "dismiss"]),
-    text: z.string().optional(),
-  }),
 ]);
 
 export type Command = z.infer<typeof commandSchema>;
 
-const commandList = z.array(commandSchema).min(1).max(MAX_COMMANDS);
+const NEEDS_TARGET = new Set(["text", "html", "value", "attr", "count", "box", "locator"]);
+
+const WAIT_MODES = ["target", "text", "url", "load", "ms", "download"] as const;
+
+const POINTED = new Set(["move", "click", "wheel"]);
+
+function refIn(value: unknown): string | null {
+  return typeof value === "string" ? parseRef(value) : null;
+}
+
+function keyProblem(key: string, single?: string): string | undefined {
+  let modifiers: number;
+  try {
+    modifiers = chordStroke(key).modifiers;
+  } catch (error) {
+    return (error as Error).message;
+  }
+  return single && modifiers !== 0
+    ? `${single} takes one key. Hold each modifier with its own keydown.`
+    : undefined;
+}
+
+function frameProblem(command: Command): string | undefined {
+  const scoped = command as { target?: unknown; source?: unknown; frame?: unknown };
+  if (scoped.frame === undefined) {
+    return undefined;
+  }
+  const ref = refIn(scoped.target) ?? refIn(scoped.source);
+  if (ref) {
+    return `Ref ${ref} already knows its frame. Pass frame only with a locator.`;
+  }
+  const nested = Array.isArray(scoped.frame)
+    ? scoped.frame.map(refIn).find((value) => value !== null)
+    : undefined;
+  return nested
+    ? `Ref ${nested} already names its frame. Pass it alone as frame, not in a list.`
+    : undefined;
+}
+
+function commandProblem(command: Command): string | undefined {
+  const framed = frameProblem(command);
+  if (framed) {
+    return framed;
+  }
+  switch (command.command) {
+    case "find":
+      return refIn(command.target) ? "find needs a locator or a CSS selector." : undefined;
+    case "get":
+      if (command.target === undefined) {
+        return NEEDS_TARGET.has(command.what) ? `get ${command.what} needs a target.` : undefined;
+      }
+      if (command.what === "count" && refIn(command.target)) {
+        return "get count needs a locator or a CSS selector.";
+      }
+      return command.what === "attr" && !command.attribute
+        ? "get attr needs an attribute name."
+        : undefined;
+    case "wait":
+      if (WAIT_MODES.filter((mode) => command[mode] !== undefined).length !== 1) {
+        return "wait needs exactly one of target, text, url, load, ms, or download.";
+      }
+      return command.state !== undefined && command.target === undefined
+        ? "state works only with target."
+        : undefined;
+    case "mouse":
+      if ((command.x === undefined) !== (command.y === undefined)) {
+        return "Pass x and y together.";
+      }
+      return POINTED.has(command.action) && command.x === undefined
+        ? `mouse ${command.action} needs x and y.`
+        : undefined;
+    case "press":
+      return keyProblem(command.key);
+    case "keydown":
+    case "keyup":
+      return keyProblem(command.key, command.command);
+    default:
+      return undefined;
+  }
+}
+
+const checkedCommand = commandSchema.superRefine((command, ctx) => {
+  const problem = commandProblem(command);
+  if (problem) {
+    ctx.addIssue({ code: "custom", message: problem });
+  }
+});
+
+const commandList = z.array(checkedCommand).min(1).max(MAX_COMMANDS);
 
 export const requestSchema = z
   .object({
@@ -214,10 +293,6 @@ export const requestSchema = z
       (value) => (value === undefined || Array.isArray(value) ? value : [value]),
       commandList,
     ),
-    eventsAfter: z
-      .string()
-      .regex(/^c-\d+$/)
-      .optional(),
     observe: z
       .object({
         mode: z.enum(["none", "snapshot", "diff"]),
@@ -277,17 +352,11 @@ const MUTATING = new Set([
   "eval",
 ]);
 
-const CONTROL = new Set(["status", "cancel", "dialog"]);
-
 export function isMutating(command: Command): boolean {
   if (command.command === "tab") {
     return command.action !== "list";
   }
   return MUTATING.has(command.command);
-}
-
-export function isControl(command: Command): boolean {
-  return CONTROL.has(command.command);
 }
 
 export function commandHash(commands: Command[]): string {
