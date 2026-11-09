@@ -116,7 +116,7 @@ export const CommandResponse = z.object({
   id: z
     .string()
     .describe(
-      "The id of this execution. Use it in GET /v1/sessions/{sessionId}/commands/{executionId} and POST /v1/sessions/{sessionId}/commands/{executionId}/cancel.",
+      "The id of this execution. Use it in GET /v1/sessions/{sessionId}/commands/executions/{executionId} and POST /v1/sessions/{sessionId}/commands/executions/{executionId}/cancel.",
     ),
   next: z.string().optional().describe("Send it as after in the next request."),
   epochChanged: z

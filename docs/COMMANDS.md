@@ -9,8 +9,8 @@ The API is experimental and off by default. Start the server with `ENABLE_COMMAN
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/sessions/{sessionId}/commands` | Run commands in the session |
-| `GET` | `/v1/sessions/{sessionId}/commands/{id}` | Wait for an execution and return it |
-| `POST` | `/v1/sessions/{sessionId}/commands/{id}/cancel` | Stop an execution |
+| `GET` | `/v1/sessions/{sessionId}/commands/executions/{executionId}` | Wait for an execution and return it |
+| `POST` | `/v1/sessions/{sessionId}/commands/executions/{executionId}/cancel` | Stop an execution |
 | `GET` | `/v1/sessions/{sessionId}/commands/schema` | JSON Schema of the request body (`version: 1`) |
 
 `sessionId` is the session this server is running. `POST /v1/sessions` returns it. A request for another session gets `410 session_ended`. The session also ends when the browser crashes or when the server ends it for a security reason, such as a `file://` request. The server then starts a fresh browser with default settings, without the session's proxy or extensions, so create a new session to go on. When a release starts, commands get `410` right away. The routes are also described in the OpenAPI document at `/documentation`.
@@ -63,7 +63,7 @@ Send a random `Idempotency-Key` header to make retries safe. A request with a ke
 
 | Field | Meaning |
 |---|---|
-| `id` | The execution's id, the same as `execution.id`. Use it in `GET .../commands/{id}` and `POST .../commands/{id}/cancel`. |
+| `id` | The execution's id, the same as `execution.id`. Use it in `GET .../commands/executions/{executionId}` and `POST .../commands/executions/{executionId}/cancel`. |
 | `next` | Send it as `after` in your next request. Valid for an hour. |
 | `epochChanged` | Set when the execution ran with `after`. `true` when, since that `after`, another execution changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
 | `page` | The tab the execution used, with its URL and title. |
@@ -74,7 +74,7 @@ Send a random `Idempotency-Key` header to make retries safe. A request with a ke
 
 `effect` tells what happened to the page: `none` (nothing changed), `applied` (the page changed), or `unknown` (it may have changed, for example after a timeout during input). When an execution is cancelled or runs out of time, the running command stops before its next input, so `effect: none` means nothing changed. A click or drag that already pressed the mouse button still lets it go, and its effect is `unknown`. The page has 10 seconds to take each input. If it takes longer, the command fails with `timeout`, and a pressed button or key is still let go.
 
-Executions run one at a time per session. The response waits up to 20 seconds. A longer execution keeps running and the response shows `state: "running"`. Wait for it with `GET /v1/sessions/{sessionId}/commands/x-1`, which also waits up to 20 seconds, or stop it with `POST /v1/sessions/{sessionId}/commands/x-1/cancel`. Both return the execution in the same shape as a run, and both work while other executions run or wait. An execution stops after 60 seconds. `navigate` waits up to 15 seconds for the page to load. Up to 16 executions can wait in the queue.
+Executions run one at a time per session. The response waits up to 20 seconds. A longer execution keeps running and the response shows `state: "running"`. Wait for it with `GET /v1/sessions/{sessionId}/commands/executions/x-1`, which also waits up to 20 seconds, or stop it with `POST /v1/sessions/{sessionId}/commands/executions/x-1/cancel`. Both return the execution in the same shape as a run, and both work while other executions run or wait. An execution stops after 60 seconds. `navigate` waits up to 15 seconds for the page to load. Up to 16 executions can wait in the queue.
 
 Cancelling stops a page load in progress and keeps the tab. If a command still does not stop 2 seconds after a cancel, or 15 seconds after a timeout, the engine stops the page's scripts, including those in frames. If the command had already sent input to the page, the engine then closes the tab, and as a last resort ends the session. A command that has not sent input yet, such as a snapshot, is left behind instead, and the tab stays open.
 
@@ -198,7 +198,7 @@ Command errors appear in `results[i].error`. The codes are `stale_ref`, `not_act
 The engine still accepts the older request forms for now, so older clients keep working. It reads them like this:
 
 - `eventsAfter` is ignored, and the response has no `events`.
-- `status` and `cancel` sent as the only command run like `GET .../commands/x-1` and `POST .../commands/x-1/cancel`. Sent with other commands, they return `400` with "Send a control command on its own."
+- `status` and `cancel` sent as the only command run like `GET .../commands/executions/x-1` and `POST .../commands/executions/x-1/cancel`. Sent with other commands, they return `400` with "Send a control command on its own."
 - `dialog` returns `400`, because commands no longer answer dialogs.
 - `find` with `by`, `value`, `name`, and `exact` reads them as `target`, so `{ "by": "role", "value": "button", "name": "Save" }` finds `{ "role": "button", "name": "Save" }`.
 

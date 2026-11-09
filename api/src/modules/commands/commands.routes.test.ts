@@ -136,7 +136,7 @@ describe.skipIf(!chrome)("commands route", () => {
     expect(ok("/v1/sessions/{sessionId}/commands", "post")).toBe(
       "#/components/schemas/CommandResponse",
     );
-    expect(ok("/v1/sessions/{sessionId}/commands/{executionId}", "get")).toBe(
+    expect(ok("/v1/sessions/{sessionId}/commands/executions/{executionId}", "get")).toBe(
       "#/components/schemas/CommandResponse",
     );
     expect(Object.keys(spec.paths).filter((path) => path.includes("dialogs"))).toEqual([]);
@@ -147,19 +147,19 @@ describe.skipIf(!chrome)("commands route", () => {
     const id = listed.json().execution.id;
     const status = await app.inject({
       method: "GET",
-      url: `/v1/sessions/live/commands/${id}`,
+      url: `/v1/sessions/live/commands/executions/${id}`,
     });
     expect(status.statusCode).toBe(200);
     expect(status.json()).toMatchObject({ id, execution: { id, state: "completed" } });
     const cancelled = await app.inject({
       method: "POST",
-      url: `/v1/sessions/live/commands/${id}/cancel`,
+      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
     });
     expect(cancelled.statusCode).toBe(200);
     expect(cancelled.json()).toMatchObject({ execution: { id, state: "completed" } });
     const typed = await app.inject({
       method: "POST",
-      url: `/v1/sessions/live/commands/${id}/cancel`,
+      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
       headers: { "content-type": "application/json" },
     });
     expect(typed.statusCode, typed.body).toBe(200);
@@ -172,13 +172,13 @@ describe.skipIf(!chrome)("commands route", () => {
     expect(empty.json()).toMatchObject({ error: { code: "invalid_request" } });
     const unknown = await app.inject({
       method: "GET",
-      url: "/v1/sessions/live/commands/x-999999",
+      url: "/v1/sessions/live/commands/executions/x-999999",
     });
     expect(unknown.statusCode).toBe(422);
     expect(unknown.json()).toMatchObject({ error: { code: "unknown_execution" } });
     const ended = await app.inject({
       method: "POST",
-      url: `/v1/sessions/old/commands/${id}/cancel`,
+      url: `/v1/sessions/old/commands/executions/${id}/cancel`,
     });
     expect(ended.statusCode).toBe(410);
   });

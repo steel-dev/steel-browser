@@ -140,7 +140,7 @@ async function routes(server: FastifyInstance) {
   );
 
   server.get(
-    "/sessions/:sessionId/commands/:executionId",
+    "/sessions/:sessionId/commands/executions/:executionId",
     {
       schema: {
         operationId: "get_command_execution",
@@ -163,7 +163,7 @@ async function routes(server: FastifyInstance) {
   );
 
   server.post(
-    "/sessions/:sessionId/commands/:executionId/cancel",
+    "/sessions/:sessionId/commands/executions/:executionId/cancel",
     {
       schema: {
         operationId: "cancel_command_execution",
