@@ -34,7 +34,7 @@ const setupServer = async () => {
 
   await server.register(steelBrowserPlugin, {
     fileStorage: {
-      maxSizePerSession: 100 * MB,
+      maxTotalBytes: 100 * MB,
     },
   });
 
