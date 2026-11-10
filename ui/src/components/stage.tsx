@@ -119,7 +119,7 @@ export function Stage({
   return (
     <section className="stage" data-devtools={docked ? "open" : "closed"} aria-label="Live view">
       {session.debugUrl ? (
-        <LiveFrame url={session.debugUrl} />
+        <LiveFrame key={session.id} url={session.debugUrl} />
       ) : (
         <div className="player">
           <Notice title="No live view">
