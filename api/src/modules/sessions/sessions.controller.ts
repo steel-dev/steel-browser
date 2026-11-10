@@ -147,9 +147,10 @@ export const handleGetSessionStream = async (
   const { showControls, theme, interactive, pageId, pageIndex } = request.query;
 
   const singlePageMode = !!(pageId || pageIndex);
+  const sessionId = server.sessionService.activeSession.id;
 
-  // Construct WebSocket URL with page parameters if present
-  let wsUrl = getUrl("v1/sessions/cast", "ws");
+  // Construct WebSocket URL with the active session ID and page parameters if present
+  let wsUrl = getUrl(`v1/sessions/${encodeURIComponent(sessionId)}/cast`, "ws");
   if (pageId) {
     wsUrl += `?pageId=${encodeURIComponent(pageId)}`;
   } else if (pageIndex) {

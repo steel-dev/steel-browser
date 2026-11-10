@@ -72,6 +72,54 @@ describe("handleCastSession cleanup", () => {
     };
   });
 
+  it("rejects the old viewer URL that omits the session id", async () => {
+    const mockRequest = {
+      url: "/v1/sessions/cast?tabInfo=true",
+    };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await handleCastSession(
+        mockRequest as any,
+        mockSocket as any,
+        Buffer.alloc(0),
+        mockWss as any,
+        mockSessionService as any,
+        undefined,
+      );
+    } finally {
+      error.mockRestore();
+    }
+
+    expect(mockSocket.destroy).toHaveBeenCalledTimes(1);
+    expect(mockWss.handleUpgrade).not.toHaveBeenCalled();
+    expect(puppeteer.connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects a released or unknown session id", async () => {
+    const mockRequest = {
+      url: "/v1/sessions/released-session/cast?tabInfo=true",
+    };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await handleCastSession(
+        mockRequest as any,
+        mockSocket as any,
+        Buffer.alloc(0),
+        mockWss as any,
+        mockSessionService as any,
+        undefined,
+      );
+    } finally {
+      error.mockRestore();
+    }
+
+    expect(mockSocket.destroy).toHaveBeenCalledTimes(1);
+    expect(mockWss.handleUpgrade).not.toHaveBeenCalled();
+    expect(puppeteer.connect).not.toHaveBeenCalled();
+  });
+
   it("disconnects the browser when the requested pageId is not found", async () => {
     const mockRequest = {
       url: "/v1/sessions/session-abc/cast?pageId=invalid-nonexistent-page",

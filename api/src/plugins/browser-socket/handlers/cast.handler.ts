@@ -4,7 +4,9 @@ import { WebSocketHandler, WebSocketHandlerContext } from "../../../types/websoc
 import { handleCastSession } from "../casting.handler.js";
 
 export const castHandler: WebSocketHandler = {
-  path: "/v1/sessions/cast",
+  // Match /v1/sessions/<sessionId>/cast. Static routes such as
+  // /v1/sessions/logs are longer prefixes and take precedence.
+  path: "/v1/sessions/",
   handler: async (
     request: IncomingMessage,
     socket: Duplex,
