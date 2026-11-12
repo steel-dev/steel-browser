@@ -1119,6 +1119,25 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.title()).toBe("Close account");
     });
 
+    test("says when a string target is not a valid CSS selector", async () => {
+      await open("/basic");
+      const meant = await run({ command: "fill", target: "label=Name", value: "x" });
+      expect(meant.results[0]).toMatchObject({
+        ok: false,
+        effect: "none",
+        error: {
+          code: "invalid_argument",
+          message:
+            'The locator css="label=Name" is not a valid CSS selector. To find by label, use the locator {"label": "..."}.',
+        },
+      });
+      const broken = await run({ command: "click", target: "button[" });
+      expect(broken.results[0].error).toMatchObject({
+        code: "invalid_argument",
+        message: 'The locator css="button[" is not a valid CSS selector.',
+      });
+    });
+
     test("refuses a locator that matches several elements unless nth picks one", async () => {
       await open("/ambiguous");
       for (const target of [{ text: "Save" }, { role: "button", name: "Save" }]) {
@@ -2983,6 +3002,7 @@ describe.skipIf(!chrome)("command engine", () => {
       });
       expect(blocked.results[0].error!.message).toContain(id);
       expect(blocked.results[0].error!.message).toContain("live view");
+      expect(blocked.results[0].error!.message).toContain("open a new tab and close tab t1");
       expect(blocked.dialog).toMatchObject({ id });
       expect((await run({ command: "tab", action: "list" })).results[0]).toMatchObject({
         ok: true,
@@ -3177,6 +3197,24 @@ describe.skipIf(!chrome)("command engine", () => {
       const second = await run({ command: "click", target: { text: "Hover trap" } });
       expect(second.results[0]).toMatchObject({ ok: true });
       expect(await page.title()).toBe("trap clicked");
+    });
+
+    test("gets past a dialog on the only tab by opening a new tab", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      expect((await run({ command: "tab", action: "new" })).results[0]).toMatchObject({
+        ok: true,
+        tab: "t2",
+      });
+      expect((await run({ command: "tab", action: "close", tab: "t1" })).results[0]).toMatchObject({
+        ok: true,
+        tab: "t1",
+      });
+      expect(engineDialogs().dialogs.get(id)?.open).toBe(false);
+      expect((await run({ command: "navigate", url: `${base}/basic` })).results[0]).toMatchObject({
+        ok: true,
+      });
     });
 
     test("closes the dialog of a tab that closes", async () => {
@@ -4562,6 +4600,19 @@ describe.skipIf(!chrome)("command engine", () => {
         .results[0];
       expect(list.value).toContain("First point");
       expect(list.value).not.toContain("Release notes");
+    });
+
+    test("reads all of an element as Markdown", async () => {
+      await open("/article");
+      expect((await get("markdown", { target: { css: "h1" } })).value).toBe("# Release notes");
+      expect((await get("markdown", { target: { css: "article a" } })).value).toBe(
+        `[the docs](${base}/docs)`,
+      );
+      const article = (await get("markdown", { target: { css: "article" } })).value as string;
+      expect(article.startsWith("# Release notes\n\nThe engine now reads")).toBe(true);
+      expect(article).toContain(`[the docs](${base}/docs)`);
+      expect(article).toContain("- Second point");
+      expect(article).not.toContain("hunter2-secret");
     });
 
     async function get(what: string, extra: Record<string, unknown> = {}) {

@@ -50,10 +50,10 @@ const MAX_SCREENSHOT_HEIGHT = 16_384;
 const MARKDOWN_SOURCE = `function () {
   const element = this && this.nodeType === 1 ? this : null;
   const root = element || document.documentElement;
-  const inner = (${HTML}).call(root);
   return {
-    html: element ? "<" + element.localName + ">" + inner + "</" + element.localName + ">" : inner,
+    html: (${HTML}).call(root, element !== null),
     url: root.ownerDocument.location.href,
+    base: root.ownerDocument.baseURI,
   };
 }`;
 
@@ -61,12 +61,15 @@ const WHOLE_CONTENT = {
   debug: false,
   separateMarkdown: true,
   useAsync: false,
+  standardize: false,
   contentSelector: "body",
   removeExactSelectors: false,
   removePartialSelectors: false,
   removeLowScoring: false,
   removeContentPatterns: false,
 };
+
+const LEADING_H1_GUARD = "steelmarkdownstart";
 
 export async function get(
   ctx: Context,
@@ -168,7 +171,7 @@ async function markdown(
   ctx: Context,
   command: Extract<Command, { command: "get" }>,
 ): Promise<CommandResult> {
-  let source: { html: string; url: string };
+  let source: { html: string; url: string; base: string };
   let secrets: string[];
   if (command.target !== undefined) {
     const target = await element(ctx, { ...command, target: command.target });
@@ -186,15 +189,28 @@ async function markdown(
     ];
   }
   const masked = hideSecrets(source.html, htmlForms(secrets));
-  const content =
+  const value =
     command.target === undefined
-      ? await getDefuddleContent(`<html>${masked}</html>`, source.url)
-      : await Defuddle(`<html><body>${masked}</body></html>`, source.url, WHOLE_CONTENT);
+      ? (await getDefuddleContent(`<html>${masked}</html>`, source.url)).contentMarkdown ?? ""
+      : await elementMarkdown(masked, source.base);
   return {
     ok: true,
     effect: "none",
-    value: hideSecrets(stripBase64Images(content.contentMarkdown ?? ""), secrets),
+    value: hideSecrets(stripBase64Images(value), secrets),
   };
+}
+
+async function elementMarkdown(html: string, base: string): Promise<string> {
+  const href = base.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const content = await Defuddle(
+    `<html><head><base href="${href}"></head><body><p>${LEADING_H1_GUARD}</p>${html}</body></html>`,
+    "about:blank",
+    WHOLE_CONTENT,
+  );
+  const markdown = content.contentMarkdown ?? "";
+  return markdown.startsWith(LEADING_H1_GUARD)
+    ? markdown.slice(LEADING_H1_GUARD.length).trimStart()
+    : markdown;
 }
 
 export async function is(

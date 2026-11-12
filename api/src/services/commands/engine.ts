@@ -7,7 +7,7 @@ import {
   type Command,
   type CommandRequest,
 } from "./commands.js";
-import { DIALOG_HINT, openDialog, type Dialog } from "./dialogs.js";
+import { dialogHint, openDialog, type Dialog } from "./dialogs.js";
 import { statusFor, type RequestErrorCode } from "./errors.js";
 import {
   crashedTab,
@@ -676,11 +676,12 @@ export class CommandEngine {
       return command ? { ok: false, effect: job.touched ? "unknown" : "none", error } : { error };
     }
     const dialog = openDialogOn(active, job.tab);
+    const hint = dialogHint(job.tab);
     const error = {
       code: "dialog_pending",
       message: dialog
-        ? `Tab ${dialog.tab} shows ${dialog.type} dialog ${dialog.id}: "${dialog.message}". ${DIALOG_HINT}`
-        : `A dialog opened and blocked the page. ${DIALOG_HINT}`,
+        ? `Tab ${dialog.tab} shows ${dialog.type} dialog ${dialog.id}: "${dialog.message}". ${hint}`
+        : `A dialog opened and blocked the page. ${hint}`,
     };
     if (!command) {
       return { error };

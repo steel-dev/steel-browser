@@ -2,7 +2,10 @@ import type { Protocol } from "puppeteer-core";
 
 export type DialogType = Protocol.Page.DialogType;
 
-export const DIALOG_HINT = "Close it in the live view, or close its tab.";
+export function dialogHint(tab?: string): string {
+  const closing = tab ? `tab ${tab}` : "its tab";
+  return `Close it in the live view, or open a new tab and close ${closing}.`;
+}
 
 export interface Dialog {
   id: string;

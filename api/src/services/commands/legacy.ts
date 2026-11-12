@@ -4,7 +4,7 @@ import { LOCATOR_KINDS } from "./targets.js";
 export const DEPRECATED_HEADER = "x-steel-deprecated";
 
 export const DIALOG_GONE =
-  "Commands no longer answer dialogs. Close the dialog in the live view, or close its tab.";
+  "Commands no longer answer dialogs. Close the dialog in the live view, or open a new tab and close the tab that shows it.";
 
 export type LegacyForm = "eventsAfter" | "find" | "status" | "cancel" | "dialog";
 
