@@ -14,7 +14,8 @@
     "build": "npm run build -w api -w ui",
     "dev": "concurrently \"npm run dev -w api\" \"npm run dev -w ui\"",
     "test": "npm run test -w api",
-    "prepare": "husky"
+    "prepare": "husky",
+    "smoke:viewer": "npm run build -w api && node smoke/viewer.mjs"
   },
   "devDependencies": {
     "@types/archiver": "^6.0.3",
