@@ -1,14 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Steel Recording Extension",
-  "version": "1.0",
-  "permissions": [
-    "scripting",
-    "activeTab"
-  ],
+  "version": "2.0",
   "host_permissions": [
-    "http://localhost:3000/*",
-    "http://0.0.0.0:3000/*"
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "http://0.0.0.0/*"
   ],
   "background": {
     "service_worker": "dist/background.js"

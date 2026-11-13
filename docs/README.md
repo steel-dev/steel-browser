@@ -13,6 +13,7 @@ Welcome to the Steel Browser documentation! This directory contains comprehensiv
 ### Architecture & Design
 
 - **[Architecture Overview](ARCHITECTURE.md)** - System design and component relationships
+- **[Session Recording](ARCHITECTURE.md#5-session-recording-apiextensionsrecorder)** - How sessions are recorded and replayed
 - **[Plugin Development Guide](PLUGIN_DEVELOPMENT.md)** - Creating custom plugins
 
 ### API Reference

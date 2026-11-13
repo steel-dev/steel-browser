@@ -12,6 +12,7 @@ import scalarTheme from "./scalar-theme.js";
 import { buildJsonSchemas } from "../utils/schema.js";
 import filesSchemas from "../modules/files/files.schema.js";
 import commandsSchemas from "../modules/commands/commands.schema.js";
+import recordingSchemas from "../modules/recording/recording.schema.js";
 import { getBaseUrl } from "../utils/url.js";
 import { env } from "../env.js";
 
@@ -23,6 +24,7 @@ const SCHEMAS = {
   ...seleniumSchemas,
   ...filesSchemas,
   ...commandsSchemas,
+  ...recordingSchemas,
 };
 
 export const { schemas, $ref } = buildJsonSchemas(SCHEMAS);
@@ -30,6 +32,9 @@ export const { schemas, $ref } = buildJsonSchemas(SCHEMAS);
 const schemaPlugin: FastifyPluginAsync = async (fastify) => {
   for (const schema of schemas) {
     if (!env.ENABLE_COMMANDS_API && schema.$id in commandsSchemas) {
+      continue;
+    }
+    if (!fastify.steelBrowserConfig?.recording && schema.$id in recordingSchemas) {
       continue;
     }
     fastify.addSchema(schema);

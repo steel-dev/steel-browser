@@ -132,6 +132,7 @@ const ReleaseSession = SessionDetails.merge(
 
 const RecordedEvents = z.object({
   events: z.array(z.any()).describe("Events to emit"),
+  tabId: z.number().int().optional().describe("Chrome tab the events came from"),
 });
 
 const SessionStreamQuery = z.object({

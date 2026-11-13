@@ -726,6 +726,62 @@ p {
   border: 0;
 }
 
+.replay {
+  flex-direction: column;
+  min-width: 0;
+}
+
+.replay-tabs {
+  display: flex;
+  flex-shrink: 0;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+}
+
+.replay-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.replay-root {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.replay-root iframe {
+  display: block;
+  border: 0;
+  background: #ffffff;
+}
+
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+}
+
+.replay-scrubber {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--sand-12);
+}
+
+.replay-time {
+  flex-shrink: 0;
+  color: var(--sand-11);
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-note {
+  flex-shrink: 0;
+  color: var(--yellow-11);
+}
+
 .details-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
