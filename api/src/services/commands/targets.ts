@@ -1,4 +1,4 @@
-import type { CDPSession } from "puppeteer-core";
+import type { CDPSession, Protocol } from "puppeteer-core";
 import {
   axString,
   holdsValue,
@@ -352,6 +352,23 @@ function parentFrame(tree: FrameNode, frameId: string): string | null {
   return null;
 }
 
+function invalidLocator(
+  locator: Locator,
+  kind: LocatorKind,
+  details?: Protocol.Runtime.ExceptionDetails,
+): string {
+  if (kind === "css" && details) {
+    const meant = LOCATOR_KINDS.find(
+      (other) => other !== "css" && (locator.css ?? "").startsWith(`${other}=`),
+    );
+    return `The locator ${describeTarget(locator)} is not a valid CSS selector.${
+      meant ? ` To find by ${meant}, use the locator {"${meant}": "..."}.` : ""
+    }`;
+  }
+  const reason = details?.exception?.description ?? details?.text ?? "no result";
+  return `The locator ${describeTarget(locator)} is not valid: ${reason.split("\n")[0]}`;
+}
+
 export async function locate(scope: Scope, locator: Locator): Promise<Match[]> {
   const kind = locatorKind(locator);
   if (kind === "role") {
@@ -366,12 +383,7 @@ export async function locate(scope: Scope, locator: Locator): Promise<Match[]> {
     objectGroup: scope.group,
   });
   if (exceptionDetails || !result.objectId) {
-    throw new CommandError(
-      "invalid_argument",
-      `The locator ${describeTarget(locator)} is not valid: ${
-        exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? "no result"
-      }`,
-    );
+    throw new CommandError("invalid_argument", invalidLocator(locator, kind, exceptionDetails));
   }
   const { result: properties } = await scope.session.send("Runtime.getProperties", {
     objectId: result.objectId,

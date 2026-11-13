@@ -160,7 +160,7 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 ## Dialogs
 
 - Neither the engine nor commands answer a dialog. This holds for every type: `alert`, `confirm`, `prompt`, and `beforeunload`.
-- An open dialog shows in the response's `dialog`. Until it closes, commands on that tab fail with `dialog_pending`. Close it in the live view, with a CDP client, or by closing the tab with `{ "command": "tab", "action": "close", "tab": "t1" }`. Commands on the tab work again as soon as it closes.
+- An open dialog shows in the response's `dialog`. Until it closes, commands on that tab fail with `dialog_pending`. Close it in the live view, with a CDP client, or by closing the tab with `{ "command": "tab", "action": "close", "tab": "t1" }`. Commands on the tab work again as soon as it closes. The last tab cannot be closed, so when the dialog is on the only tab, open another tab first with `{ "command": "tab", "action": "new" }`.
 - If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Close the dialog and click again.
 - If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after the dialog closes. Send it again if you still need it.
 - A dialog that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
