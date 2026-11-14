@@ -4,9 +4,19 @@ import { LOCATOR_KINDS } from "./targets.js";
 export const DEPRECATED_HEADER = "x-steel-deprecated";
 
 export const DIALOG_GONE =
-  "Commands no longer answer dialogs. Close the dialog in the live view, or open a new tab and close the tab that shows it.";
+  "The dialog command is gone. Use press on the dialog's tab: Enter accepts the dialog, and Escape dismisses it.";
 
-export type LegacyForm = "eventsAfter" | "find" | "status" | "cancel" | "dialog";
+export type LegacyForm =
+  | "eventsAfter"
+  | "find"
+  | "status"
+  | "cancel"
+  | "dialog"
+  | "dblclick"
+  | "ref"
+  | "observe";
+
+const SPELLED_REF = /^\s*(?:@|ref=)(e\d+)\s*$/;
 
 const CONTROL: ReadonlySet<unknown> = new Set(["status", "cancel", "dialog"]);
 const KINDS: ReadonlySet<unknown> = new Set(LOCATOR_KINDS);
@@ -44,6 +54,49 @@ function upgradeFind(command: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
+function bareRef(value: unknown): unknown {
+  return (typeof value === "string" ? value.match(SPELLED_REF)?.[1] : undefined) ?? value;
+}
+
+function upgradeRefs(
+  command: Record<string, unknown>,
+  forms: Set<LegacyForm>,
+): Record<string, unknown> {
+  const bare: Record<string, unknown> = {};
+  for (const field of ["target", "source", "frame"]) {
+    const value = command[field];
+    if (Array.isArray(value)) {
+      const steps = value.map(bareRef);
+      if (steps.some((step, index) => step !== value[index])) {
+        bare[field] = steps;
+      }
+    } else if (bareRef(value) !== value) {
+      bare[field] = bareRef(value);
+    }
+  }
+  if (Object.keys(bare).length === 0) {
+    return command;
+  }
+  forms.add("ref");
+  return { ...command, ...bare };
+}
+
+function upgradeCommand(
+  command: Record<string, unknown>,
+  forms: Set<LegacyForm>,
+): Record<string, unknown> {
+  let upgraded = command;
+  if (upgraded.command === "find" && "by" in upgraded) {
+    forms.add("find");
+    upgraded = upgradeFind(upgraded);
+  }
+  if (upgraded.command === "dblclick") {
+    forms.add("dblclick");
+    upgraded = { ...upgraded, command: "click", clicks: 2 };
+  }
+  return upgradeRefs(upgraded, forms);
+}
+
 export function upgradeLegacy(body: unknown): LegacyRequest {
   if (!isRecord(body)) {
     return { body, forms: [], mixed: false };
@@ -53,6 +106,10 @@ export function upgradeLegacy(body: unknown): LegacyRequest {
   if ("eventsAfter" in rest) {
     forms.add("eventsAfter");
     delete rest.eventsAfter;
+  }
+  if (isRecord(rest.observe) && rest.observe.mode === "none") {
+    forms.add("observe");
+    delete rest.observe;
   }
   const given = rest.commands;
   const list: unknown[] = Array.isArray(given) ? given : given === undefined ? [] : [given];
@@ -68,13 +125,9 @@ export function upgradeLegacy(body: unknown): LegacyRequest {
       mixed: list.length > 1,
     };
   }
-  const commands = list.map((command) => {
-    if (isRecord(command) && command.command === "find" && "by" in command) {
-      forms.add("find");
-      return upgradeFind(command);
-    }
-    return command;
-  });
+  const commands = list.map((command) =>
+    isRecord(command) ? upgradeCommand(command, forms) : command,
+  );
   if (forms.size === 0) {
     return { body, forms: [], mixed: false };
   }

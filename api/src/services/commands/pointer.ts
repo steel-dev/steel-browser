@@ -122,6 +122,8 @@ interface FrameBox {
 
 export type MouseButton = "left" | "right" | "middle";
 
+export const BUTTONS: Record<MouseButton, number> = { left: 1, right: 2, middle: 4 };
+
 export type MouseParams = {
   type: "mouseMoved" | "mousePressed" | "mouseReleased" | "mouseWheel";
   x: number;
@@ -528,6 +530,7 @@ export async function click(
   point: Point,
   confirm: () => Promise<void>,
   clickCount = 1,
+  button: MouseButton = "left",
 ): Promise<boolean> {
   context.touch();
   if (await input(context, session, { type: "mouseMoved", ...point }, "unknown")) {
@@ -541,7 +544,7 @@ export async function click(
     const opened = await input(
       context,
       session,
-      { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: count },
+      { type: "mousePressed", ...point, button, buttons: BUTTONS[button], clickCount: count },
       "unknown",
     );
     if (opened) {
@@ -550,7 +553,7 @@ export async function click(
     const released = await input(
       context,
       session,
-      { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: count },
+      { type: "mouseReleased", ...point, button, buttons: 0, clickCount: count },
       "unknown",
     );
     if (released) {

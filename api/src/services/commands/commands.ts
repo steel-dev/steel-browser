@@ -68,8 +68,12 @@ export const commandSchema = z.discriminatedUnion("command", [
   strict({ command: z.literal("forward"), tab }),
   strict({ command: z.literal("reload"), tab }),
   strict({ command: z.literal("snapshot"), tab, ...snapshotOptions }),
-  strict({ command: z.literal("click"), ...element }),
-  strict({ command: z.literal("dblclick"), ...element }),
+  strict({
+    command: z.literal("click"),
+    ...element,
+    button: z.enum(["left", "right", "middle"]).optional(),
+    clicks: z.number().int().min(1).max(3).optional(),
+  }),
   strict({ command: z.literal("hover"), ...element }),
   strict({ command: z.literal("focus"), ...element }),
   strict({
@@ -295,7 +299,7 @@ export const requestSchema = z
     ),
     observe: z
       .object({
-        mode: z.enum(["none", "snapshot", "diff"]),
+        mode: z.enum(["snapshot", "diff"]),
         base: z.string().min(1).optional(),
         tab,
         ...snapshotOptions,
@@ -333,7 +337,6 @@ const MUTATING = new Set([
   "forward",
   "reload",
   "click",
-  "dblclick",
   "hover",
   "focus",
   "type",
