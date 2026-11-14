@@ -356,6 +356,7 @@ export class CommandEngine {
       current: null,
       inflight: null,
       touched: false,
+      answering: false,
       cancelled: false,
     });
     void this.pump(active);
@@ -374,6 +375,9 @@ export class CommandEngine {
     await this.settle(active, execution, deadline);
     if (active.ended) {
       return ended(active.id);
+    }
+    if (execution.state === "expired") {
+      return expired();
     }
     return ok(await this.envelope(active, execution, false));
   }
@@ -412,6 +416,9 @@ export class CommandEngine {
     if (active.ended) {
       return ended(active.id);
     }
+    if (execution.state === "expired") {
+      return expired();
+    }
     return ok(await this.envelope(active, execution, false));
   }
 
@@ -429,12 +436,7 @@ export class CommandEngine {
       this.expire(active, execution);
     }
     if (execution.state === "expired") {
-      return failure(
-        "expired",
-        "The execution could not start before the response deadline. Send the same request again.",
-        {},
-        1,
-      );
+      return expired();
     }
     execution.next ??= active.records.issue(execution);
     return ok(await this.envelope(active, execution, replayed));
@@ -543,6 +545,7 @@ export class CommandEngine {
         return;
       }
       job.touched = false;
+      job.answering = false;
       job.tab = undefined;
       execution.ran++;
       const ctx = this.context(active, job);
@@ -556,7 +559,7 @@ export class CommandEngine {
         break;
       }
     }
-    if (job.observe && job.observe.mode !== "none") {
+    if (job.observe) {
       if (await this.stopped(active, job)) {
         return;
       }
@@ -634,9 +637,10 @@ export class CommandEngine {
           return undefined;
         }
         const tab = job.tab ? active.tabs.get(job.tab) : undefined;
-        const watch = tab
-          ? watchBlocking(tab, !(command && RECOVERS.has(command.command)))
-          : undefined;
+        const watch =
+          tab && !job.answering
+            ? watchBlocking(tab, !(command && RECOVERS.has(command.command)))
+            : undefined;
         let result = await within<T | typeof BLOCKED>(
           watch
             ? Promise.race<T | typeof BLOCKED>([
@@ -853,6 +857,7 @@ export class CommandEngine {
 
   private closeDialog(dialog: Dialog) {
     dialog.open = false;
+    dialog.close();
   }
 
   private closeDialogs(active: ActiveSession) {
@@ -908,6 +913,15 @@ function failure(
     headers: retryAfter ? { "retry-after": String(retryAfter) } : {},
     body: { ...fields, error: { code, message } },
   };
+}
+
+function expired(): EngineResponse {
+  return failure(
+    "expired",
+    "The execution could not start before the response deadline. Send the same request again.",
+    {},
+    1,
+  );
 }
 
 function ended(sessionId: string): EngineResponse {

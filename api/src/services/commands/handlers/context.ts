@@ -233,19 +233,36 @@ export async function load(ctx: Context, tab: Tab, loading: Promise<unknown>) {
   }
 }
 
-export async function goto(ctx: Context, tab: Tab, url: string): Promise<Page> {
-  const page = await tab.navigable();
-  touch(ctx);
+export async function arrive(
+  ctx: Context,
+  tab: Tab,
+  url: string,
+  start: () => Promise<unknown>,
+): Promise<{ loading?: true }> {
+  const commits = tab.commits;
   try {
-    await load(
-      ctx,
-      tab,
-      page.goto(url, { waitUntil: "load", timeout: ctx.limits.navigationTimeoutMs }),
-    );
+    await load(ctx, tab, start());
+    return {};
   } catch (error) {
+    const slow = error instanceof Error && error.name === "TimeoutError";
+    if (slow && tab.commits > commits && !tab.navigating) {
+      return { loading: true };
+    }
     throw navigationError(error, url, ctx.limits.navigationTimeoutMs);
   }
-  return page;
+}
+
+export async function goto(
+  ctx: Context,
+  tab: Tab,
+  url: string,
+): Promise<{ url: string; loading?: true }> {
+  const page = await tab.navigable();
+  touch(ctx);
+  const arrived = await arrive(ctx, tab, url, () =>
+    page.goto(url, { waitUntil: "load", timeout: ctx.limits.navigationTimeoutMs }),
+  );
+  return { url: page.url(), ...arrived };
 }
 
 export async function capture(

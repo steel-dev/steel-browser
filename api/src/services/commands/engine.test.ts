@@ -803,6 +803,14 @@ line two</textarea>`,
     <button onclick="const end = Date.now() + 30000; while (Date.now() < end) {} document.title = 'spun'">Spin</button>
     <button onmousedown="window.held = confirm('Down?')" onclick="document.title = 'clicked after ' + window.held">Hold</button>
     <div onmouseover="confirm('Hover?')" onclick="document.title = 'trap clicked'" style="width: 120px; height: 30px">Hover trap</div>`,
+  "/slow-load": () => `<!doctype html><title>Slow load</title>
+    <p>Ready</p><img src="/blank?ms=1500" alt="Late">`,
+  "/openers": () => `<!doctype html><title>Openers</title>
+    <button onclick="window.open('/basic')">Script</button>
+    <a href="/counter" target="_blank">Link</a>
+    <button onclick="document.title = 'stayed'">Stay</button>`,
+  "/dialog-chain": () => `<!doctype html><title>Chain</title>
+    <button onclick="document.title = 'chain ' + confirm('One?') + ' ' + confirm('Two?')">Chain</button>`,
   "/leave": () => `<!doctype html><title>Leave</title><button>Touch</button>
     <script>
       addEventListener("beforeunload", (event) => {
@@ -1031,7 +1039,7 @@ describe.skipIf(!chrome)("command engine", () => {
   async function finished(id: string, target = engine): Promise<Envelope> {
     for (let attempt = 0; attempt < 20; attempt++) {
       const body = await waitFor(id, target);
-      if (!["queued", "running"].includes(body.execution.state)) {
+      if (body.execution.state !== "running") {
         return body;
       }
     }
@@ -1919,6 +1927,25 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("queue and time limits", () => {
+    test("never shows an execution that could not start", async () => {
+      const quick = create({ limits: { responseDeadlineMs: 400 } });
+      const slow = run({ command: "navigate", url: `${base}/slow?ms=1500` }, {}, quick);
+      await sleep(50);
+      const waiting = await send({ commands: { command: "snapshot" } }, undefined, quick);
+      expect(waiting.status).toBe(429);
+      const started = (await slow).execution.id;
+      const unstarted = `x-${Number(started.slice(2)) + 1}`;
+      for (const response of [
+        await quick.executionStatus(SESSION, unstarted),
+        await quick.cancelExecution(SESSION, unstarted),
+      ]) {
+        expect(response.status).toBe(429);
+        expect(response.body).toMatchObject({ error: { code: "expired" } });
+      }
+      await finished(started, quick);
+      quick.sessionEnded();
+    });
+
     test("expires an execution that cannot start before the deadline", async () => {
       const quick = create({ limits: { responseDeadlineMs: 400 } });
       const slow = run({ command: "navigate", url: `${base}/slow?ms=1500` }, {}, quick);
@@ -2080,7 +2107,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/hold");
       const short = create({ limits: { executionLimitMs: 800 } });
       const body = await run(
-        { command: "dblclick", target: { role: "button", name: "Add" } },
+        { command: "click", clicks: 2, target: { role: "button", name: "Add" } },
         {},
         short,
       );
@@ -2426,6 +2453,89 @@ describe.skipIf(!chrome)("command engine", () => {
       const hash = await run({ command: "click", target: { role: "link", name: "Hash" } });
       expect(hash.results[0]).toMatchObject({ ok: true });
       expect(hash.results[0].loading).toBeUndefined();
+    });
+
+    test("names the tabs that a command opens", async () => {
+      await open("/openers");
+      const home = (await run({ command: "get", what: "url" })).page!.tab;
+      const seen = new Set([home]);
+      for (const target of [
+        { role: "button", name: "Script" },
+        { role: "link", name: "Link" },
+        { role: "button", name: "Script" },
+        { role: "link", name: "Link" },
+      ]) {
+        const clicked = await run({ command: "click", target, tab: home });
+        expect(clicked.results[0], JSON.stringify(clicked.results[0])).toMatchObject({
+          ok: true,
+          opened: [expect.stringMatching(/^t\d+$/)],
+        });
+        const [opened] = clicked.results[0].opened as string[];
+        expect(seen.has(opened)).toBe(false);
+        seen.add(opened);
+        expect(await tabWith(target.role === "button" ? "/basic" : "/counter")).toBe(opened);
+        await run({ command: "tab", action: "close", tab: opened });
+      }
+      const stayed = await run({
+        command: "click",
+        target: { role: "button", name: "Stay" },
+        tab: home,
+      });
+      expect(stayed.results[0]).toMatchObject({ ok: true });
+      expect(stayed.results[0].opened).toBeUndefined();
+      const made = await run({ command: "tab", action: "new" });
+      expect(made.results[0].opened).toBeUndefined();
+    });
+
+    test("returns from a navigation once the DOM is ready and the page still loads", async () => {
+      const quick = create({ limits: { navigationTimeoutMs: 400 } });
+      const slow = await run({ command: "navigate", url: `${base}/slow-load` }, {}, quick);
+      expect(slow.execution).toMatchObject({ state: "completed", effect: "applied" });
+      expect(slow.results[0]).toMatchObject({
+        command: "navigate",
+        ok: true,
+        effect: "applied",
+        url: `${base}/slow-load`,
+        loading: true,
+      });
+      const read = await run(
+        [
+          { command: "get", what: "text", target: "p" },
+          { command: "wait", load: "load", timeout: 5000 },
+        ],
+        {},
+        quick,
+      );
+      expect(read.results).toMatchObject([{ ok: true, value: "Ready" }, { ok: true }]);
+      const again = await run({ command: "reload" }, {}, quick);
+      expect(again.results[0]).toMatchObject({ ok: true, effect: "applied", loading: true });
+      await run({ command: "wait", load: "load", timeout: 5000 }, {}, quick);
+      const made = await run(
+        { command: "tab", action: "new", url: `${base}/slow-load` },
+        {},
+        quick,
+      );
+      expect(made.results[0]).toMatchObject({ ok: true, effect: "applied", loading: true });
+      const fast = await run(
+        { command: "navigate", url: `${base}/basic`, tab: made.results[0].tab },
+        {},
+        quick,
+      );
+      expect(fast.results[0]).toMatchObject({ ok: true });
+      expect(fast.results[0].loading).toBeUndefined();
+      quick.sessionEnded();
+    });
+
+    test("still fails a navigation whose page has not arrived in time", async () => {
+      const quick = create({ limits: { navigationTimeoutMs: 300 } });
+      const body = await run({ command: "navigate", url: `${base}/slow?ms=1500` }, {}, quick);
+      expect(body.results[0]).toMatchObject({
+        ok: false,
+        effect: "unknown",
+        error: { code: "timeout", reason: "navigation" },
+      });
+      expect(body.results[0].loading).toBeUndefined();
+      quick.sessionEnded();
     });
 
     test("says the page is still loading and lets wait load finish it", async () => {
@@ -3001,8 +3111,7 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "dialog_pending" },
       });
       expect(blocked.results[0].error!.message).toContain(id);
-      expect(blocked.results[0].error!.message).toContain("live view");
-      expect(blocked.results[0].error!.message).toContain("open a new tab and close tab t1");
+      expect(blocked.results[0].error!.message).toContain("Press Enter on tab t1");
       expect(blocked.dialog).toMatchObject({ id });
       expect((await run({ command: "tab", action: "list" })).results[0]).toMatchObject({
         ok: true,
@@ -3104,6 +3213,147 @@ describe.skipIf(!chrome)("command engine", () => {
       await closeDialog(clicked.dialog!);
       await sleep(200);
       expect(await page.title()).toBe("clicked after true");
+    });
+
+    test("accepts a dialog when Enter is pressed on its tab", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const pressed = await run({ command: "press", key: "Enter" });
+      expect(pressed).toMatchObject({
+        execution: { state: "completed", effect: "applied" },
+        results: [{ command: "press", ok: true, effect: "applied" }],
+      });
+      expect(pressed.dialog).toBeUndefined();
+      expect(engineDialogs().dialogs.get(clicked.dialog!.id)?.open).toBe(false);
+      expect(await page.title()).toBe("confirm true");
+      expect((await run({ command: "snapshot" })).results[0]).toMatchObject({ ok: true });
+    });
+
+    test("dismisses a dialog when Escape is pressed on its tab", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const pressed = await run({ command: "press", key: "esc", tab: clicked.dialog!.tab });
+      expect(pressed.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(pressed.dialog).toBeUndefined();
+      expect(await page.title()).toBe("confirm false");
+    });
+
+    test("closes an alert with either key", async () => {
+      for (const key of ["Enter", "Escape"]) {
+        await open("/dialogs");
+        await press("Alert");
+        expect((await run({ command: "press", key })).results[0]).toMatchObject({ ok: true });
+        expect(await page.title()).toBe("alerted");
+      }
+    });
+
+    test("accepts a prompt with its default text and dismisses it without one", async () => {
+      await open("/dialogs");
+      const clicked = await press("Prompt");
+      expect(clicked.dialog).toMatchObject({ type: "prompt", defaultPrompt: "anon" });
+      await run({ command: "press", key: "Enter" });
+      expect(await page.title()).toBe("prompt anon");
+      await press("Prompt");
+      await run({ command: "press", key: "Escape" });
+      expect(await page.title()).toBe("prompt null");
+    });
+
+    test("shows the next dialog when a key closes one and another opens", async () => {
+      await open("/dialog-chain");
+      const clicked = await press("Chain");
+      expect(clicked.dialog).toMatchObject({ message: "One?" });
+      const first = await run({ command: "press", key: "Enter" });
+      expect(first.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(first.dialog).toMatchObject({ type: "confirm", message: "Two?" });
+      expect(first.dialog!.id).not.toBe(clicked.dialog!.id);
+      const second = await run({ command: "press", key: "Escape" });
+      expect(second.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(second.dialog).toBeUndefined();
+      expect(await page.title()).toBe("chain true false");
+    });
+
+    test("keeps other keys and other commands away from a dialog", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      for (const command of [
+        { command: "press", key: "a" },
+        { command: "press", key: "Shift+Enter" },
+        { command: "press", key: "Enter", target: { role: "button", name: "Alert" } },
+        { command: "keydown", key: "Enter" },
+        { command: "mouse", action: "click", x: 5, y: 5 },
+      ]) {
+        const blocked = await run(command);
+        expect(blocked.results[0], JSON.stringify(command)).toMatchObject({
+          ok: false,
+          effect: "none",
+          error: { code: "dialog_pending" },
+        });
+        expect(blocked.results[0].error!.message).toContain("Press Enter");
+      }
+      expect(engineDialogs().dialogs.get(clicked.dialog!.id)?.open).toBe(true);
+      await closeDialog(clicked.dialog!);
+    });
+
+    test("answers a dialog once when the same request is sent again", async () => {
+      await open("/dialogs");
+      await press("Confirm");
+      const commands = { command: "press", key: "Enter" };
+      const first = await send({ commands }, "answer-once");
+      const again = await send({ commands }, "answer-once");
+      expect(first.body).toMatchObject({
+        execution: { replayed: false },
+        results: [{ ok: true, effect: "applied" }],
+      });
+      expect(again.body).toMatchObject({
+        execution: { id: (first.body as unknown as Envelope).execution.id, replayed: true },
+        results: [{ ok: true, effect: "applied" }],
+      });
+      expect(await page.title()).toBe("confirm true");
+    });
+
+    test("answers a dialog that asks before leaving a page", async () => {
+      await open("/leave-link");
+      await run({ command: "click", target: { role: "button", name: "Touch" } });
+      const away = { command: "click", target: { role: "link", name: "Away" } };
+      expect((await run(away)).dialog).toMatchObject({ type: "beforeunload" });
+      const stayed = await run({ command: "press", key: "Escape" });
+      expect(stayed.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(await page.title()).toBe("Leave link");
+      expect((await run(away)).dialog).toMatchObject({ type: "beforeunload" });
+      const left = await run([
+        { command: "press", key: "Enter" },
+        { command: "wait", url: "*/basic" },
+      ]);
+      expect(left.results).toMatchObject([{ ok: true, effect: "applied" }, { ok: true }]);
+      expect(left.page).toMatchObject({ title: "Basic" });
+    });
+
+    test("says so when the key does not close the dialog", async () => {
+      await open("/dialogs");
+      const clicked = await press("Confirm");
+      const tab = engineDialogs().tabs.get(clicked.dialog!.tab) as unknown as {
+        answerDialog(accept: boolean): Promise<void>;
+      };
+      const answer = tab.answerDialog.bind(tab);
+      tab.answerDialog = () => Promise.reject(new Error("lost"));
+      const unanswered = await run({ command: "press", key: "Enter" });
+      expect(unanswered.results[0]).toMatchObject({
+        ok: false,
+        effect: "none",
+        error: { code: "dialog_pending", reason: "unanswered" },
+      });
+      expect(unanswered.dialog).toMatchObject({ id: clicked.dialog!.id });
+      tab.answerDialog = async () => {
+        await answer(false);
+        throw new Error("No dialog is showing");
+      };
+      const late = await run({ command: "press", key: "Enter" });
+      expect(late.results[0]).toMatchObject({
+        ok: false,
+        effect: "none",
+        error: { code: "not_actionable", reason: "dialog_closed" },
+      });
+      expect(await page.title()).toBe("confirm false");
     });
 
     test("lets a CDP client answer a dialog", async () => {
@@ -3232,6 +3482,54 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("older request forms", () => {
+    test("reads dblclick as a click with two clicks", async () => {
+      await open("/locators");
+      const response = await send({
+        commands: [{ command: "dblclick", target: { text: "Double" } }],
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers).toMatchObject({ "x-steel-deprecated": "dblclick" });
+      expect((response.body as unknown as Envelope).results[0]).toMatchObject({
+        command: "click",
+        ok: true,
+      });
+      expect(await page.title()).toBe("double");
+    });
+
+    test("reads @ and ref= refs as plain refs", async () => {
+      await open("/basic");
+      const ref = refOf(await snapshot(), 'button "Save"');
+      for (const target of [`@${ref}`, `ref=${ref}`]) {
+        await page.evaluate(() => {
+          document.title = "Basic";
+        });
+        const response = await send({ commands: [{ command: "click", target }] });
+        expect(response.status).toBe(200);
+        expect(response.headers).toMatchObject({ "x-steel-deprecated": "ref" });
+        expect((response.body as unknown as Envelope).results[0]).toMatchObject({ ok: true });
+        expect(await page.title()).toBe("saved");
+      }
+      const framed = await send({
+        commands: [{ command: "find", target: "button", frame: [`@${ref}`] }],
+      });
+      expect(framed.headers).toMatchObject({ "x-steel-deprecated": "ref" });
+      const plain = await send({ commands: [{ command: "click", target: ref }] });
+      expect(plain.status).toBe(200);
+      expect(plain.headers["x-steel-deprecated"]).toBeUndefined();
+    });
+
+    test("reads observe mode none as no observe", async () => {
+      await open("/basic");
+      const response = await send({
+        commands: [{ command: "get", what: "title" }],
+        observe: { mode: "none" },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers).toMatchObject({ "x-steel-deprecated": "observe" });
+      expect((response.body as unknown as Envelope).observe).toBeUndefined();
+      expect((response.body as unknown as Envelope).results[0]).toMatchObject({ value: "Basic" });
+    });
+
     test("waits for and cancels an execution with status and cancel commands", async () => {
       const quick = create({ limits: { responseDeadlineMs: 300 } });
       const first = await run({ command: "navigate", url: `${base}/slow?ms=800` }, {}, quick);
@@ -3269,7 +3567,7 @@ describe.skipIf(!chrome)("command engine", () => {
         expect(response.status).toBe(400);
         expect(response.headers).toMatchObject({ "x-steel-deprecated": "dialog" });
         expect((response.body as { error: { message: string } }).error.message).toContain(
-          "live view",
+          "Use press",
         );
       }
       expect(engineDialogs().dialogs.get(id)?.open).toBe(true);
@@ -4130,7 +4428,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/locators");
       await run({ command: "hover", target: { text: "Hover me" } });
       expect(await page.title()).toBe("hovered");
-      await run({ command: "dblclick", target: { text: "Double" } });
+      await run({ command: "click", clicks: 2, target: { text: "Double" } });
       expect(await page.title()).toBe("double");
       const focused = await run({ command: "focus", target: { label: "Focus target" } });
       expect(focused).toMatchObject({
@@ -4586,6 +4884,22 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("reads", () => {
+    test("says what a get read", async () => {
+      await open("/basic");
+      const body = await run([
+        { command: "get", what: "title" },
+        { command: "get", what: "text", target: "h1" },
+        { command: "get", what: "count", target: "button" },
+        { command: "get", what: "box", target: "h1" },
+      ]);
+      expect(body.results).toMatchObject([
+        { command: "get", what: "title", value: "Basic" },
+        { command: "get", what: "text", value: "Account" },
+        { command: "get", what: "count", value: 1 },
+        { command: "get", what: "box", value: { x: expect.any(Number) } },
+      ]);
+    });
+
     test("reads the page or an element as Markdown without secrets", async () => {
       await open("/article");
       const page = (await run({ command: "get", what: "markdown" })).results[0];
@@ -4833,6 +5147,24 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(events).toContain("mousedown 10 10 2 2 false 0");
       expect(events.some((event) => event.startsWith("contextmenu 10 10"))).toBe(true);
       expect(events).toContain("wheel 100 100 0 0 false 120");
+    });
+
+    test("clicks an element with another button or several times", async () => {
+      await open("/pad");
+      const body = await run([
+        { command: "click", target: "#pad", clicks: 2 },
+        { command: "click", target: "#pad", button: "right" },
+        { command: "click", target: "#pad", button: "middle" },
+      ]);
+      expect(body.execution.state, JSON.stringify(body.results)).toBe("completed");
+      const types = (await log()).map((event) => event.split(" ")[0] + " " + event.split(" ")[3]);
+      expect(types.filter((type) => type.startsWith("click"))).toEqual(["click 0", "click 0"]);
+      expect(types).toContain("dblclick 0");
+      expect(types).toContain("mousedown 2");
+      expect(types).toContain("contextmenu 2");
+      expect(types).toContain("mousedown 1");
+      await refused({ command: "click", target: "#pad", clicks: 4 });
+      await refused({ command: "click", target: "#pad", button: "back" });
     });
 
     test("needs a point for mouse input", async () => {

@@ -75,6 +75,14 @@ export async function get(
   ctx: Context,
   command: Extract<Command, { command: "get" }>,
 ): Promise<CommandResult> {
+  const { ok, effect, ...read } = await readFrom(ctx, command);
+  return { ok, effect, what: command.what, ...read };
+}
+
+async function readFrom(
+  ctx: Context,
+  command: Extract<Command, { command: "get" }>,
+): Promise<CommandResult> {
   const { active, job } = ctx;
   if (command.what === "title" || command.what === "url") {
     const tab = active.tabs.resolve(command.tab);

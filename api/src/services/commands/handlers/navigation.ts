@@ -2,15 +2,15 @@ import type { Page, Protocol } from "puppeteer-core";
 import type { Command } from "../commands.js";
 import { checkUrl } from "../policy.js";
 import type { CommandResult } from "../records.js";
-import { errorInfo, navigationError } from "../results.js";
+import { errorInfo } from "../results.js";
 import { clientOf, type Tab } from "../tabs.js";
 import {
+  arrive,
   crashedTab,
   dialogNote,
   ending,
   goto,
   halted,
-  load,
   navigationDone,
   sleep,
   tabFor,
@@ -38,8 +38,7 @@ export async function navigate(
 ): Promise<CommandResult> {
   const tab = tabFor(ctx, command.tab, true);
   const url = checkUrl(command.url);
-  const page = await goto(ctx, tab, url);
-  return { ok: true, effect: "applied", url: page.url() };
+  return { ok: true, effect: "applied", ...(await goto(ctx, tab, url)) };
 }
 
 export async function history(
@@ -58,28 +57,22 @@ export async function history(
   checkUrl(entry.url);
   const inFrame = entry.url === entries[currentIndex]?.url;
   touch(ctx);
-  try {
-    await load(
-      ctx,
-      tab,
-      Promise.all([
-        page
-          .waitForNavigation({
-            waitUntil: "load",
-            timeout: inFrame ? FRAME_HISTORY_MS : ctx.limits.navigationTimeoutMs,
-          })
-          .catch((error: unknown) => {
-            if (!inFrame) {
-              throw error;
-            }
-          }),
-        session.send("Page.navigateToHistoryEntry", { entryId: entry.id }),
-      ]),
-    );
-  } catch (error) {
-    throw navigationError(error, entry.url, ctx.limits.navigationTimeoutMs);
-  }
-  return { ok: true, effect: "applied", navigated: true, url: page.url() };
+  const arrived = await arrive(ctx, tab, entry.url, () =>
+    Promise.all([
+      page
+        .waitForNavigation({
+          waitUntil: "load",
+          timeout: inFrame ? FRAME_HISTORY_MS : ctx.limits.navigationTimeoutMs,
+        })
+        .catch((error: unknown) => {
+          if (!inFrame) {
+            throw error;
+          }
+        }),
+      session.send("Page.navigateToHistoryEntry", { entryId: entry.id }),
+    ]),
+  );
+  return { ok: true, effect: "applied", navigated: true, url: page.url(), ...arrived };
 }
 
 export async function reload(ctx: Context, tabId: string | undefined): Promise<CommandResult> {
@@ -89,16 +82,10 @@ export async function reload(ctx: Context, tabId: string | undefined): Promise<C
   const url = entries[currentIndex]?.url || page.url();
   checkUrl(url);
   touch(ctx);
-  try {
-    await load(
-      ctx,
-      tab,
-      page.reload({ waitUntil: "load", timeout: ctx.limits.navigationTimeoutMs }),
-    );
-  } catch (error) {
-    throw navigationError(error, url, ctx.limits.navigationTimeoutMs);
-  }
-  return { ok: true, effect: "applied", url: page.url() };
+  const arrived = await arrive(ctx, tab, url, () =>
+    page.reload({ waitUntil: "load", timeout: ctx.limits.navigationTimeoutMs }),
+  );
+  return { ok: true, effect: "applied", url: page.url(), ...arrived };
 }
 
 async function historyOf(
