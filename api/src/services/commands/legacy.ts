@@ -4,7 +4,7 @@ import { LOCATOR_KINDS } from "./targets.js";
 export const DEPRECATED_HEADER = "x-steel-deprecated";
 
 export const DIALOG_GONE =
-  "The dialog command is gone. Use press on the dialog's tab: Enter accepts the dialog, and Escape dismisses it.";
+  "The dialog command is gone. Use press without a target on the dialog's tab: Enter accepts the dialog, and Escape dismisses it.";
 
 export type LegacyForm =
   | "eventsAfter"
