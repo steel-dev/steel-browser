@@ -78,7 +78,7 @@ Executions run one at a time per session. The response waits up to 20 seconds. A
 
 Cancelling stops a page load in progress and keeps the tab. If a command still does not stop 2 seconds after a cancel, or 15 seconds after a timeout, the engine stops the page's scripts, including those in frames. If the command had already sent input to the page, the engine then closes the tab, and as a last resort ends the session. A command that has not sent input yet, such as a snapshot, is left behind instead, and the tab stays open.
 
-Execution states are `running`, `completed`, `failed`, `cancelled`, and `timeout`. An execution that could not start in time is never shown: its request gets `429 expired`, and so does a later request for it.
+Execution states are `running`, `completed`, `failed`, `cancelled`, and `timeout`. An execution that could not start in time is never shown. Its request gets `429 expired`, and it has no id to ask about.
 
 `navigate`, `back`, `forward`, `reload`, and `tab` `new` with a `url` wait up to 15 seconds for the page to load. If the page's DOM is loaded by then but the page is still loading, for example because an image is slow, the command succeeds with `loading: true`. If the DOM is not loaded by then, the command fails with `timeout` (`navigation`).
 

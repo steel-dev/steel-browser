@@ -1,6 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { Command } from "../commands.js";
+import { dialogHint } from "../dialogs.js";
 import { CommandError, withEffect } from "../errors.js";
 import { axString } from "../ax.js";
 import {
@@ -136,7 +137,7 @@ export async function write(
     if (prepared.end && (await pressKey(context, session, "End"))) {
       throw new CommandError(
         "dialog_pending",
-        "A dialog opened before typing started. Close it, then type again.",
+        `A dialog opened before typing started. ${dialogHint()} Then type again.`,
         "during_type",
         "applied",
       );

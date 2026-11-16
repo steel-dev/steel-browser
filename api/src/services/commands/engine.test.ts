@@ -1939,8 +1939,8 @@ describe.skipIf(!chrome)("command engine", () => {
         await quick.executionStatus(SESSION, unstarted),
         await quick.cancelExecution(SESSION, unstarted),
       ]) {
-        expect(response.status).toBe(429);
-        expect(response.body).toMatchObject({ error: { code: "expired" } });
+        expect(response.status).toBe(422);
+        expect(response.body).toMatchObject({ error: { code: "unknown_execution" } });
       }
       await finished(started, quick);
       quick.sessionEnded();

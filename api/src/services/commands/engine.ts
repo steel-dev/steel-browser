@@ -377,7 +377,7 @@ export class CommandEngine {
       return ended(active.id);
     }
     if (execution.state === "expired") {
-      return expired();
+      return unknownExecution(id);
     }
     return ok(await this.envelope(active, execution, false));
   }
@@ -417,7 +417,7 @@ export class CommandEngine {
       return ended(active.id);
     }
     if (execution.state === "expired") {
-      return expired();
+      return unknownExecution(id);
     }
     return ok(await this.envelope(active, execution, false));
   }

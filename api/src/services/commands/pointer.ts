@@ -1,5 +1,6 @@
 import type { CDPSession } from "puppeteer-core";
 import { axString, normalizeName } from "./ax.js";
+import { dialogHint } from "./dialogs.js";
 import { CommandError, withEffect } from "./errors.js";
 import type { HeldKey, PressedButton } from "./tabs.js";
 import { CONTROL_ROLES, scanSecrets } from "./snapshot.js";
@@ -680,7 +681,7 @@ export async function sendOrDialog(
 function dialogBefore(action: "click" | "drag"): CommandError {
   return new CommandError(
     "dialog_pending",
-    `A dialog opened when the mouse moved onto the element, before the ${action}. Close it, then ${action} again.`,
+    `A dialog opened when the mouse moved onto the element, before the ${action}. ${dialogHint()} Then ${action} again.`,
     `before_${action}`,
     "applied",
   );

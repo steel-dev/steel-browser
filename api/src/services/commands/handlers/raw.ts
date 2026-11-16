@@ -1,4 +1,5 @@
 import type { Command } from "../commands.js";
+import { dialogHint } from "../dialogs.js";
 import { CommandError } from "../errors.js";
 import { chordStroke, modifierBit, sendKey, strokeEvent } from "../keyboard.js";
 import { BUTTONS, input, type MouseParams } from "../pointer.js";
@@ -68,7 +69,7 @@ export async function mouse(
         if (opened && count < clicks) {
           throw new CommandError(
             "dialog_pending",
-            `A dialog opened after ${count} of ${clicks} clicks. Close it, then click again.`,
+            `A dialog opened after ${count} of ${clicks} clicks. ${dialogHint()} Then click again.`,
             "during_click",
             "applied",
           );
