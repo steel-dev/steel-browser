@@ -3288,7 +3288,7 @@ describe.skipIf(!chrome)("command engine", () => {
           effect: "none",
           error: { code: "dialog_pending" },
         });
-        expect(blocked.results[0].error!.message).toContain("Press Enter");
+        expect(blocked.results[0].error!.message).toContain("without a target");
       }
       expect(engineDialogs().dialogs.get(clicked.dialog!.id)?.open).toBe(true);
       await closeDialog(clicked.dialog!);
@@ -3496,26 +3496,27 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.title()).toBe("double");
     });
 
-    test("reads @ and ref= refs as plain refs", async () => {
+    test("reads @ refs as plain refs, and takes ref= as snapshots print it", async () => {
       await open("/basic");
       const ref = refOf(await snapshot(), 'button "Save"');
-      for (const target of [`@${ref}`, `ref=${ref}`]) {
-        await page.evaluate(() => {
-          document.title = "Basic";
-        });
-        const response = await send({ commands: [{ command: "click", target }] });
-        expect(response.status).toBe(200);
-        expect(response.headers).toMatchObject({ "x-steel-deprecated": "ref" });
-        expect((response.body as unknown as Envelope).results[0]).toMatchObject({ ok: true });
-        expect(await page.title()).toBe("saved");
-      }
+      const response = await send({ commands: [{ command: "click", target: `@${ref}` }] });
+      expect(response.status).toBe(200);
+      expect(response.headers).toMatchObject({ "x-steel-deprecated": "ref" });
+      expect((response.body as unknown as Envelope).results[0]).toMatchObject({ ok: true });
+      expect(await page.title()).toBe("saved");
       const framed = await send({
         commands: [{ command: "find", target: "button", frame: [`@${ref}`] }],
       });
       expect(framed.headers).toMatchObject({ "x-steel-deprecated": "ref" });
-      const plain = await send({ commands: [{ command: "click", target: ref }] });
-      expect(plain.status).toBe(200);
-      expect(plain.headers["x-steel-deprecated"]).toBeUndefined();
+      for (const target of [ref, `ref=${ref}`]) {
+        await page.evaluate(() => {
+          document.title = "Basic";
+        });
+        const plain = await send({ commands: [{ command: "click", target }] });
+        expect(plain.status).toBe(200);
+        expect(plain.headers["x-steel-deprecated"]).toBeUndefined();
+        expect(await page.title()).toBe("saved");
+      }
     });
 
     test("reads observe mode none as no observe", async () => {

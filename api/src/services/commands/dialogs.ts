@@ -3,7 +3,8 @@ import type { Protocol } from "puppeteer-core";
 export type DialogType = Protocol.Page.DialogType;
 
 export function dialogHint(tab?: string): string {
-  return `Press Enter${tab ? ` on tab ${tab}` : ""} to accept it, or Escape to dismiss it.`;
+  const on = tab ? ` on tab ${tab}` : "";
+  return `Press Enter${on} without a target to accept it, or Escape to dismiss it.`;
 }
 
 export interface Dialog {

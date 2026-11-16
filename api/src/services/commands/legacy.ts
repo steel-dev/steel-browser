@@ -16,7 +16,7 @@ export type LegacyForm =
   | "ref"
   | "observe";
 
-const SPELLED_REF = /^\s*(?:@|ref=)(e\d+)\s*$/;
+const SPELLED_REF = /^\s*@(e\d+)\s*$/;
 
 const CONTROL: ReadonlySet<unknown> = new Set(["status", "cancel", "dialog"]);
 const KINDS: ReadonlySet<unknown> = new Set(LOCATOR_KINDS);

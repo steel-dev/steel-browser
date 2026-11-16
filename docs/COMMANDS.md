@@ -88,7 +88,7 @@ When an input command opens tabs, for example through a link with `target="_blan
 
 ## Targets
 
-- A ref from a snapshot: `"e12"`.
+- A ref from a snapshot: `"e12"`, or `"ref=e12"` as the snapshot prints it.
 - A CSS selector: `"#submit"`.
 - A locator object with exactly one of `role` (with an optional `name`), `text`, `label`, `placeholder`, `alt`, `title`, `testid`, or `css`. Text matching is a case-insensitive substring match unless `exact` is `true`. `testid` always matches exactly. `nth` picks a match, and negative values count from the end. Without `nth`, a locator must find one element. When it finds several and exactly one of them is visible, that one is used. Otherwise the command fails with `invalid_argument` (`ambiguous`). Values must contain more than spaces, and `name` is accepted only with `role`.
 
@@ -170,7 +170,7 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 - The press is a command like any other. It waits its turn, its `effect` is `applied` once the dialog has closed, and `after` and `Idempotency-Key` keep a retry from pressing the key twice. If the page opens another dialog right away, the result shows it in `dialog`.
 - A press reaches the dialog only while it is open. If the dialog has already closed when the press runs, for example because another client answered it, the key goes to the page like any other press. If it closes while the press is on its way, the press fails with `not_actionable` (`dialog_closed`) and no key goes to the page. If the dialog does not close, the press fails with `dialog_pending` (`unanswered`).
 - A CDP client can answer a dialog too.
-- If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Close the dialog and click again.
+- If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Answer the dialog and click again.
 - If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after the dialog closes. Send it again if you still need it.
 - A dialog that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
 - If a dialog opens while a mouse button or key is down, also one held with `mouse` `down` or `keydown`, the engine lets it go once the dialog closes. A click still completes. A Space press on a button can lose its click, because the dialog takes focus from the page.
@@ -211,7 +211,7 @@ The engine still accepts the older request forms for now, so older clients keep 
 - `dialog` returns `400`. Answer a dialog with `press`, as described in [Dialogs](#dialogs).
 - `find` with `by`, `value`, `name`, and `exact` reads them as `target`, so `{ "by": "role", "value": "button", "name": "Save" }` finds `{ "role": "button", "name": "Save" }`.
 - `dblclick` runs as `click` with `clicks: 2`, and its result names `click`.
-- A ref written as `"@e12"` or `"ref=e12"` is read as `"e12"`. The header names this form `ref`.
+- A ref written as `"@e12"` is read as `"e12"`. The header names this form `ref`.
 - `observe` with `mode: "none"` is read as no `observe`. The header names this form `observe`.
 
 Responses also carry `epoch`, a counter that goes up when the page changes, because older clients read it. A response to a request in an older form carries `x-steel-deprecated`, which lists the forms it used, such as `eventsAfter, status`. These forms and `epoch` will be removed later.
