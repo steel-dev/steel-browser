@@ -56,6 +56,7 @@ export interface Job {
   current: Command | null;
   inflight: Promise<unknown> | null;
   touched: boolean;
+  answering: boolean;
   cancelled: boolean;
 }
 

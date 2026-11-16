@@ -20,6 +20,10 @@ const CLOSE_WAIT_MS = 5_000;
 
 const OPEN_MS = 10_000;
 
+const ARRIVAL_MS = 2_000;
+
+const ARRIVAL_POLL_MS = 20;
+
 type Hook = (session: CDPSession) => void;
 
 export interface BrowserHost {
@@ -83,6 +87,7 @@ export class Tab {
   closed = false;
   blocking = false;
   crashed = false;
+  commits = 0;
   pressed: PressedButton | null = null;
   key: HeldKey | null = null;
   pointer: { x: number; y: number } | null = null;
@@ -125,6 +130,7 @@ export class Tab {
   private readonly onFrameNavigated = (event: Protocol.Page.FrameNavigatedEvent) => {
     if (!event.frame.parentId) {
       this.crashed = false;
+      this.commits++;
       if (this.navigation) {
         this.navigation.committed = true;
         this.navigation.loaderId = event.frame.loaderId;
@@ -220,6 +226,16 @@ export class Tab {
     return () => {
       this.blockingListeners.delete(listener);
     };
+  }
+
+  async answerDialog(accept: boolean, text?: string) {
+    if (!this.client) {
+      throw new CommandError("tab_not_found", `Tab ${this.id} is not ready.`);
+    }
+    await this.client.send("Page.handleJavaScriptDialog", {
+      accept,
+      ...(text !== undefined ? { promptText: text } : {}),
+    });
   }
 
   async terminate() {
@@ -532,11 +548,29 @@ export class TabRegistry {
   private connection: Connection | null = null;
   private readonly tabs = new Map<string, Tab>();
   private readonly byTarget = new Map<string, Tab>();
+  private readonly arriving = new Map<string, number>();
   private readonly onCreated = (target: Target) => {
     this.track(target);
   };
   private readonly onDestroyed = (target: Target) => {
     this.untrack(targetIdOf(target));
+  };
+  private readonly onArriving = ({ targetInfo }: Protocol.Target.TargetCreatedEvent) => {
+    const elsewhere =
+      this.defaultContextId !== null &&
+      targetInfo.browserContextId !== undefined &&
+      targetInfo.browserContextId !== this.defaultContextId;
+    if (
+      targetInfo.type === "page" &&
+      !targetInfo.subtype &&
+      !elsewhere &&
+      !this.byTarget.has(targetInfo.targetId)
+    ) {
+      this.arriving.set(targetInfo.targetId, Date.now());
+    }
+  };
+  private readonly onGone = ({ targetId }: Protocol.Target.TargetDestroyedEvent) => {
+    this.arriving.delete(targetId);
   };
 
   constructor(
@@ -558,6 +592,8 @@ export class TabRegistry {
       this.track(target);
     }
     this.connection = connectionOf(browser);
+    this.connection?.on("Target.targetCreated", this.onArriving);
+    this.connection?.on("Target.targetDestroyed", this.onGone);
     void this.learnDefaultContext(browser);
   }
 
@@ -566,6 +602,9 @@ export class TabRegistry {
       this.browser.off("targetcreated", this.onCreated);
       this.browser.off("targetdestroyed", this.onDestroyed);
     }
+    this.connection?.off("Target.targetCreated", this.onArriving);
+    this.connection?.off("Target.targetDestroyed", this.onGone);
+    this.arriving.clear();
     this.connection = null;
     for (const tab of this.tabs.values()) {
       tab.close();
@@ -612,6 +651,34 @@ export class TabRegistry {
 
   list(): Tab[] {
     return [...this.tabs.values()].filter((tab) => !tab.closed);
+  }
+
+  ids(): Set<string> {
+    return new Set(this.list().map((tab) => tab.id));
+  }
+
+  async openedSince(
+    before: ReadonlySet<string>,
+    waitMs: number,
+    stopped: () => boolean,
+  ): Promise<string[]> {
+    const until = Date.now() + waitMs;
+    while (this.expecting() && Date.now() < until && !stopped()) {
+      await new Promise((resolve) => setTimeout(resolve, ARRIVAL_POLL_MS));
+    }
+    return this.list()
+      .filter((tab) => !before.has(tab.id))
+      .map((tab) => tab.id);
+  }
+
+  private expecting(): boolean {
+    const now = Date.now();
+    for (const [targetId, since] of this.arriving) {
+      if (now - since > ARRIVAL_MS) {
+        this.arriving.delete(targetId);
+      }
+    }
+    return this.arriving.size > 0;
   }
 
   resolve(id?: string): Tab {
@@ -704,6 +771,7 @@ export class TabRegistry {
   }
 
   private track(target: Target): Tab | undefined {
+    this.arriving.delete(targetIdOf(target));
     if (
       target.type() !== "page" ||
       target.browserContext() !== this.browser?.defaultBrowserContext()

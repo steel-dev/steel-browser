@@ -2,7 +2,8 @@ import type { Command } from "../commands.js";
 import { CommandError } from "../errors.js";
 import type { CommandResult } from "../records.js";
 import { failed } from "../results.js";
-import type { Context } from "./context.js";
+import { STEP_MS } from "../session.js";
+import { ending, type Context } from "./context.js";
 import { check, drag, focus, pointer, press, scroll, select, upload, write } from "./elements.js";
 import { get, is, pdf, screenshot, wait } from "./inspect.js";
 import { history, navigate, reload, settle } from "./navigation.js";
@@ -22,7 +23,6 @@ export { observe } from "./pages.js";
 
 const SETTLES = new Set([
   "click",
-  "dblclick",
   "type",
   "fill",
   "press",
@@ -38,14 +38,27 @@ const SETTLES = new Set([
 ]);
 
 export async function execute(ctx: Context, command: Command): Promise<CommandResult> {
+  const before = SETTLES.has(command.command) ? ctx.active.tabs.ids() : undefined;
   try {
     const result = await dispatch(ctx, command);
-    return result.ok && SETTLES.has(command.command) ? await settle(ctx, result) : result;
+    return result.ok && before ? await arrivals(ctx, before, await settle(ctx, result)) : result;
   } catch (error) {
     return failed(error, ctx.job.touched ? "unknown" : "none");
   } finally {
     release(ctx);
   }
+}
+
+async function arrivals(
+  ctx: Context,
+  before: ReadonlySet<string>,
+  result: CommandResult,
+): Promise<CommandResult> {
+  if (!result.ok) {
+    return result;
+  }
+  const opened = await ctx.active.tabs.openedSince(before, STEP_MS, () => ending(ctx));
+  return opened.length > 0 ? { ...result, opened } : result;
 }
 
 function release(ctx: Context) {
@@ -70,7 +83,6 @@ async function dispatch(ctx: Context, command: Command): Promise<CommandResult> 
     case "snapshot":
       return await snapshot(ctx, command);
     case "click":
-    case "dblclick":
     case "hover":
       return await pointer(ctx, command);
     case "focus":
