@@ -4,7 +4,41 @@ import { CommandError } from "../errors.js";
 import { chordStroke, modifierBit, sendKey, strokeEvent } from "../keyboard.js";
 import { BUTTONS, input, type MouseParams } from "../pointer.js";
 import type { CommandResult } from "../records.js";
-import { activate, dialogNote, inputs, tabFor, type Context } from "./context.js";
+import {
+  activate,
+  dialogNote,
+  inputs,
+  tabFor,
+  touch,
+  waitWithin,
+  type Context,
+} from "./context.js";
+
+export async function release(
+  ctx: Context,
+  command: Extract<Command, { command: "release" }>,
+): Promise<CommandResult> {
+  const tab = tabFor(ctx, command.tab);
+  const held = tab.heldInput();
+  if (!tab.holding()) {
+    return { ok: true, effect: "none", ...held };
+  }
+  touch(ctx);
+  const done = await waitWithin(
+    ctx,
+    tab.release().then(() => true),
+    ctx.limits.inputTimeoutMs,
+  );
+  if (!done) {
+    throw new CommandError(
+      "timeout",
+      `Tab ${tab.id} did not take the release in time.`,
+      "input",
+      "unknown",
+    );
+  }
+  return { ok: true, effect: "applied", ...held, ...dialogNote(ctx.active, tab) };
+}
 
 export async function mouse(
   ctx: Context,

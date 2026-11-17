@@ -101,6 +101,16 @@ export function chordStroke(chord: string, held = 0): { stroke: KeyStroke; modif
   return { stroke: keyStroke(parsed.key, modifiers), modifiers };
 }
 
+const DIALOG_KEYS = new Map([
+  ["Enter", true],
+  ["Escape", false],
+]);
+
+export function dialogAnswer(chord: string): boolean | undefined {
+  const { stroke, modifiers } = chordStroke(chord);
+  return modifiers === 0 ? DIALOG_KEYS.get(stroke.key) : undefined;
+}
+
 export function modifierBit(key: string): number {
   return MODIFIER_BITS.get(key.toLowerCase()) ?? 0;
 }

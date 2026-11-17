@@ -13,6 +13,7 @@ import {
   crashedTab,
   dialogNote,
   execute,
+  heldNote,
   observe,
   openDialogOn,
   pageInfo,
@@ -485,6 +486,7 @@ export class CommandEngine {
       },
       results: execution.results,
       ...dialogNote(active, execution.tab ? active.tabs.get(execution.tab) : undefined),
+      ...heldNote(active),
       ...(execution.observe ? { observe: execution.observe } : {}),
       ...(execution.bodyExpired ? { bodyExpired: true } : {}),
     };
@@ -680,7 +682,7 @@ export class CommandEngine {
       return command ? { ok: false, effect: job.touched ? "unknown" : "none", error } : { error };
     }
     const dialog = openDialogOn(active, job.tab);
-    const hint = dialogHint(job.tab);
+    const hint = dialogHint(job.tab, dialog?.id);
     const error = {
       code: "dialog_pending",
       message: dialog

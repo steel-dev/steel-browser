@@ -15,7 +15,7 @@ import {
   SET_PICKER,
   TOGGLE_INPUT,
 } from "../forms.js";
-import { chordStroke, insertText, press as pressKey, typeText } from "../keyboard.js";
+import { dialogAnswer, insertText, press as pressKey, typeText } from "../keyboard.js";
 import {
   actionPoint,
   attached,
@@ -43,11 +43,6 @@ import {
   waitWithin,
   type Context,
 } from "./context.js";
-
-const DIALOG_KEYS = new Map([
-  ["Enter", true],
-  ["Escape", false],
-]);
 
 export async function pointer(
   ctx: Context,
@@ -161,14 +156,19 @@ async function answer(
   ctx: Context,
   command: Extract<Command, { command: "press" }>,
 ): Promise<CommandResult | null> {
-  const { stroke, modifiers } = chordStroke(command.key);
-  const accept = modifiers === 0 ? DIALOG_KEYS.get(stroke.key) : undefined;
+  const accept = dialogAnswer(command.key);
   if (accept === undefined || command.target !== undefined) {
     return null;
   }
-  const tab = ctx.active.tabs.resolve(command.tab);
+  const tab =
+    command.dialog !== undefined
+      ? dialogTab(ctx, command.dialog, command.tab)
+      : ctx.active.tabs.resolve(command.tab);
   const dialog = tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
-  if (!dialog) {
+  if (!dialog || (command.dialog !== undefined && dialog.id !== command.dialog)) {
+    if (command.dialog !== undefined) {
+      throw notOpen(command.dialog);
+    }
     return null;
   }
   useTab(ctx, tab.id);
@@ -204,7 +204,33 @@ async function answer(
       "dialog_closed",
     );
   }
-  return { ok: true, effect: "applied", ...dialogNote(ctx.active, tab) };
+  return { ok: true, effect: "applied", answered: dialog.id, ...dialogNote(ctx.active, tab) };
+}
+
+function dialogTab(ctx: Context, id: string, tabId?: string): Tab {
+  const dialog = ctx.active.dialogs.get(id);
+  if (!dialog?.open) {
+    throw notOpen(id);
+  }
+  if (tabId !== undefined && tabId !== dialog.tab) {
+    throw new CommandError(
+      "invalid_argument",
+      `Dialog ${id} is on tab ${dialog.tab}, not ${tabId}.`,
+    );
+  }
+  const tab = ctx.active.tabs.get(dialog.tab);
+  if (!tab || tab.closed) {
+    throw notOpen(id);
+  }
+  return tab;
+}
+
+function notOpen(id: string): CommandError {
+  return new CommandError(
+    "not_actionable",
+    `Dialog ${id} is not open, so the key was not sent. Take a snapshot to see the page.`,
+    "dialog_closed",
+  );
 }
 
 export async function press(

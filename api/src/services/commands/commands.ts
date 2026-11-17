@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { toJsonSchema } from "../../utils/schema.js";
-import { chordStroke } from "./keyboard.js";
+import { chordStroke, dialogAnswer } from "./keyboard.js";
 import { parseRef } from "./refs.js";
 import { LOCATOR_KINDS, MAX_FRAME_DEPTH } from "./targets.js";
 
@@ -88,10 +88,15 @@ export const commandSchema = z.discriminatedUnion("command", [
     command: z.literal("press"),
     key: z.string().min(1),
     target: target.optional(),
+    dialog: z
+      .string()
+      .regex(/^d-\d+$/)
+      .optional(),
     ...scoped,
   }),
   strict({ command: z.literal("keydown"), key: z.string().min(1), tab }),
   strict({ command: z.literal("keyup"), key: z.string().min(1), tab }),
+  strict({ command: z.literal("release"), tab }),
   strict({
     command: z.literal("mouse"),
     action: z.enum(["move", "down", "up", "click", "wheel"]),
@@ -222,6 +227,18 @@ function keyProblem(key: string, single?: string): string | undefined {
     : undefined;
 }
 
+function dialogProblem(command: Extract<Command, { command: "press" }>): string | undefined {
+  if (command.dialog === undefined) {
+    return undefined;
+  }
+  if (command.target !== undefined || command.frame !== undefined || command.expect !== undefined) {
+    return "dialog works only without target, frame, and expect.";
+  }
+  return dialogAnswer(command.key) === undefined
+    ? "dialog works only with Enter or Escape."
+    : undefined;
+}
+
 function frameProblem(command: Command): string | undefined {
   const scoped = command as { target?: unknown; source?: unknown; frame?: unknown };
   if (scoped.frame === undefined) {
@@ -272,7 +289,7 @@ function commandProblem(command: Command): string | undefined {
         ? `mouse ${command.action} needs x and y.`
         : undefined;
     case "press":
-      return keyProblem(command.key);
+      return keyProblem(command.key) ?? dialogProblem(command);
     case "keydown":
     case "keyup":
       return keyProblem(command.key, command.command);
@@ -352,6 +369,7 @@ const MUTATING = new Set([
   "keydown",
   "keyup",
   "mouse",
+  "release",
   "eval",
 ]);
 

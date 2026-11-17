@@ -61,6 +61,7 @@ interface Envelope {
   dialog?: { id: string; tab: string; type: string; message: string };
   dialogs?: Array<{ id: string; type: string; accepted: boolean; by: string }>;
   answered?: { id: string; accepted: boolean; by: string };
+  held?: Array<{ tab: string; keys: string[]; button?: string }>;
   bodyExpired?: boolean;
   error?: { code: string; message: string };
 }
@@ -809,6 +810,12 @@ line two</textarea>`,
     <button onclick="window.open('/basic')">Script</button>
     <a href="/counter" target="_blank">Link</a>
     <button onclick="document.title = 'stayed'">Stay</button>`,
+  "/dialog-keys": () => `<!doctype html><title>Dialog keys</title>
+    <button onclick="document.title = 'confirm ' + confirm('Sure?')">Confirm</button>
+    <script>
+      window.keys = [];
+      addEventListener("keydown", (event) => keys.push(event.key));
+    </script>`,
   "/dialog-chain": () => `<!doctype html><title>Chain</title>
     <button onclick="document.title = 'chain ' + confirm('One?') + ' ' + confirm('Two?')">Chain</button>`,
   "/leave": () => `<!doctype html><title>Leave</title><button>Touch</button>
@@ -3272,6 +3279,54 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.title()).toBe("chain true false");
     });
 
+    test("answers only the dialog that press names and keeps the key from the page", async () => {
+      await open("/dialog-keys");
+      const clicked = await press("Confirm");
+      const id = clicked.dialog!.id;
+      const answered = await run({ command: "press", key: "Enter", dialog: id });
+      expect(answered.results[0]).toMatchObject({ ok: true, effect: "applied", answered: id });
+      expect(await page.title()).toBe("confirm true");
+      const again = await run({ command: "press", key: "Enter", dialog: id });
+      expect(again.results[0]).toMatchObject({
+        ok: false,
+        effect: "none",
+        error: { code: "not_actionable", reason: "dialog_closed" },
+      });
+      expect(await page.evaluate(() => (window as unknown as { keys: string[] }).keys)).toEqual([]);
+      const unguarded = await run({ command: "press", key: "Escape" });
+      expect(unguarded.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(unguarded.results[0].answered).toBeUndefined();
+      expect(await page.evaluate(() => (window as unknown as { keys: string[] }).keys)).toEqual([
+        "Escape",
+      ]);
+    });
+
+    test("finds the tab of the dialog that press names", async () => {
+      await open("/dialog-keys");
+      const clicked = await press("Confirm");
+      await run({ command: "tab", action: "new" });
+      const wrong = await run({
+        command: "press",
+        key: "Escape",
+        dialog: clicked.dialog!.id,
+        tab: "t999999",
+      });
+      expect(wrong.results[0]).toMatchObject({ ok: false, error: { code: "invalid_argument" } });
+      const answered = await run({ command: "press", key: "Escape", dialog: clicked.dialog!.id });
+      expect(answered.results[0]).toMatchObject({ ok: true, answered: clicked.dialog!.id });
+      expect(await page.title()).toBe("confirm false");
+    });
+
+    test("refuses a dialog on press that does not fit", async () => {
+      await refused({ command: "press", key: "a", dialog: "d-1" }, "only with Enter or Escape");
+      await refused({ command: "press", key: "Shift+Enter", dialog: "d-1" }, "Enter or Escape");
+      await refused(
+        { command: "press", key: "Enter", dialog: "d-1", target: "#field" },
+        "only without target",
+      );
+      await refused({ command: "press", key: "Enter", dialog: "x-1" });
+    });
+
     test("keeps other keys and other commands away from a dialog", async () => {
       await open("/dialogs");
       const clicked = await press("Confirm");
@@ -3289,6 +3344,7 @@ describe.skipIf(!chrome)("command engine", () => {
           error: { code: "dialog_pending" },
         });
         expect(blocked.results[0].error!.message).toContain("without a target");
+        expect(blocked.results[0].error!.message).toContain(`Pass dialog ${clicked.dialog!.id}`);
       }
       expect(engineDialogs().dialogs.get(clicked.dialog!.id)?.open).toBe(true);
       await closeDialog(clicked.dialog!);
@@ -5172,6 +5228,32 @@ describe.skipIf(!chrome)("command engine", () => {
       await open("/pad");
       await refused({ command: "mouse", action: "click", x: 5 }, "Pass x and y together");
       await refused({ command: "mouse", action: "wheel", deltaY: 10 }, "mouse wheel needs x and y");
+    });
+
+    test("shows held input and lets it all go with release", async () => {
+      await open("/pad");
+      const holding = await run([
+        { command: "keydown", key: "Shift" },
+        { command: "mouse", action: "down", x: 30, y: 30 },
+      ]);
+      expect(holding.execution.state, JSON.stringify(holding.results)).toBe("completed");
+      expect(holding.held).toEqual([{ tab: holding.page!.tab, keys: ["Shift"], button: "left" }]);
+      expect((await run({ command: "tab", action: "list" })).held).toEqual(holding.held);
+      const released = await run({ command: "release" });
+      expect(released.results[0]).toMatchObject({
+        command: "release",
+        ok: true,
+        effect: "applied",
+        keys: ["Shift"],
+        button: "left",
+      });
+      expect(released.held).toBeUndefined();
+      expect(await log()).toContain("mouseup 30 30 0 0 false 0");
+      const idle = await run({ command: "release" });
+      expect(idle.results[0]).toMatchObject({ ok: true, effect: "none", keys: [] });
+      expect(idle.results[0].button).toBeUndefined();
+      await run({ command: "mouse", action: "click", x: 40, y: 40 });
+      expect(await log()).toContain("click 40 40 0 0 false 0");
     });
 
     test("holds keys down until keyup and applies held modifiers", async () => {

@@ -8,12 +8,13 @@ import { check, drag, focus, pointer, press, scroll, select, upload, write } fro
 import { get, is, pdf, screenshot, wait } from "./inspect.js";
 import { history, navigate, reload, settle } from "./navigation.js";
 import { find, snapshot, tab } from "./pages.js";
-import { key, mouse } from "./raw.js";
+import { key, mouse, release as releaseInput } from "./raw.js";
 import { evaluate } from "./script.js";
 
 export {
   crashedTab,
   dialogNote,
+  heldNote,
   openDialogOn,
   pageInfo,
   watchBlocking,
@@ -34,6 +35,7 @@ const SETTLES = new Set([
   "keydown",
   "keyup",
   "mouse",
+  "release",
   "eval",
 ]);
 
@@ -97,6 +99,8 @@ async function dispatch(ctx: Context, command: Command): Promise<CommandResult> 
       return await key(ctx, command);
     case "mouse":
       return await mouse(ctx, command);
+    case "release":
+      return await releaseInput(ctx, command);
     case "eval":
       return await evaluate(ctx, command);
     case "select":

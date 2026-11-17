@@ -19,6 +19,14 @@ const Dialog = z.object({
   defaultPrompt: z.string().optional(),
 });
 
+const Button = z.enum(["left", "right", "middle"]);
+
+const Held = z.object({
+  tab: z.string(),
+  keys: z.array(z.string()).describe("Keys still held down, for example with keydown."),
+  button: Button.optional().describe("A mouse button held down with mouse down."),
+});
+
 const resultBase = {
   ok: z.boolean(),
   effect: Effect,
@@ -58,10 +66,23 @@ const RESULT_FIELDS = {
   focus: {},
   type: interrupts,
   fill: interrupts,
-  press: interrupts,
+  press: {
+    answered: z
+      .string()
+      .optional()
+      .describe(
+        "The id of the dialog that the key answered. Absent when the key went to the page.",
+      ),
+    ...interrupts,
+  },
   keydown: interrupts,
   keyup: interrupts,
   mouse: interrupts,
+  release: {
+    keys: z.array(z.string()).optional().describe("The keys that were let go."),
+    button: Button.optional().describe("The mouse button that was let go."),
+    ...interrupts,
+  },
   select: {
     selected: z.array(z.string()).optional().describe("The values of the selected options."),
     ...interrupts,
@@ -176,6 +197,12 @@ export const CommandResponse = z.object({
   dialog: Dialog.optional().describe(
     "A dialog that is open on the tab and blocks it until it closes.",
   ),
+  held: z
+    .array(Held)
+    .optional()
+    .describe(
+      "Tabs with keys or a mouse button still held down. They apply to later input until released.",
+    ),
   bodyExpired: z.boolean().optional(),
 });
 

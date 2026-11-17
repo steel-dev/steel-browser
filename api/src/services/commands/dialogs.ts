@@ -2,9 +2,10 @@ import type { Protocol } from "puppeteer-core";
 
 export type DialogType = Protocol.Page.DialogType;
 
-export function dialogHint(tab?: string): string {
+export function dialogHint(tab?: string, dialog?: string): string {
   const on = tab ? ` on tab ${tab}` : "";
-  return `Press Enter${on} without a target to accept it, or Escape to dismiss it.`;
+  const only = dialog ? ` Pass dialog ${dialog} with the key so it goes to this dialog only.` : "";
+  return `Press Enter${on} without a target to accept it, or Escape to dismiss it.${only}`;
 }
 
 export interface Dialog {

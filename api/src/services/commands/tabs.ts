@@ -259,6 +259,19 @@ export class Tab {
     return this.pressed !== null || this.key !== null || this.held.size > 0;
   }
 
+  heldInput(): { keys: string[]; button?: "left" | "right" | "middle" } {
+    const keys = new Set<string>();
+    for (const key of [this.key, ...this.held.values()]) {
+      if (key?.keyUp.key) {
+        keys.add(key.keyUp.key);
+      }
+    }
+    return {
+      keys: [...keys],
+      ...(this.pressed ? { button: this.pressed.button ?? "left" } : {}),
+    };
+  }
+
   async release() {
     const pressed = this.pressed;
     const keys = [this.key, ...this.held.values()];

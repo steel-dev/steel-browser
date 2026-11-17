@@ -59,7 +59,7 @@ export function usable(ctx: Context, tab: Tab, crashed = false): Tab {
     return tab;
   }
   const dialog = openDialogOn(ctx.active, tab.id);
-  const hint = `${dialogHint(tab.id)} Then send the command again.`;
+  const hint = `${dialogHint(tab.id, dialog?.id)} Then send the command again.`;
   throw new CommandError(
     "dialog_pending",
     dialog
@@ -92,6 +92,16 @@ export function dialogNote(
 ): { dialog?: ReturnType<typeof describeDialog> } {
   const dialog = tab?.blocking ? openDialogOn(active, tab.id) : undefined;
   return dialog ? { dialog: describeDialog(dialog) } : {};
+}
+
+export function heldNote(active: ActiveSession): {
+  held?: Array<{ tab: string } & ReturnType<Tab["heldInput"]>>;
+} {
+  const held = active.tabs
+    .list()
+    .filter((tab) => tab.holding())
+    .map((tab) => ({ tab: tab.id, ...tab.heldInput() }));
+  return held.length > 0 ? { held } : {};
 }
 
 export function watchBlocking(tab: Tab, crashes = true): Watch {
