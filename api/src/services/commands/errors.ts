@@ -42,8 +42,7 @@ export type RequestErrorCode =
   | "records_full"
   | "key_conflict"
   | "invalid_operation_token"
-  | "unknown_execution"
-  | "dialog_not_pending";
+  | "unknown_execution";
 
 const STATUS: Record<RequestErrorCode, number> = {
   invalid_request: 400,
@@ -54,7 +53,6 @@ const STATUS: Record<RequestErrorCode, number> = {
   key_conflict: 422,
   invalid_operation_token: 422,
   unknown_execution: 422,
-  dialog_not_pending: 422,
 };
 
 export function withEffect(error: unknown, effect: CommandEffect): unknown {

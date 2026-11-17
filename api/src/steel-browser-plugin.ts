@@ -16,6 +16,7 @@ import {
   cdpRoutes,
   filesRoutes,
   logsRoutes,
+  recordingRoutes,
   seleniumRoutes,
   sessionsRoutes,
 } from "./routes.js";
@@ -27,6 +28,7 @@ import type { BrowserLauncherOptions } from "./types/browser.js";
 import { WebSocketHandler } from "./types/websocket.js";
 import { WebSocketRegistryService } from "./services/websocket-registry.service.js";
 import { SessionService } from "./services/session.service.js";
+import { RecordingService } from "./services/recording.service.js";
 import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.interface.js";
 
 // We need to redeclare any decorators from within the plugin that we want to expose
@@ -37,6 +39,7 @@ declare module "fastify" {
     sessionService: SessionService;
     webSocketRegistry: WebSocketRegistryService;
     commandEngine: CommandEngine | null;
+    recordingService: RecordingService | null;
     registerCDPLaunchHook: (hook: (config: BrowserLauncherOptions) => Promise<void> | void) => void;
     registerCDPShutdownHook: (
       hook: (config: BrowserLauncherOptions | null) => Promise<void> | void,
@@ -56,6 +59,9 @@ export interface SteelBrowserConfig {
     storagePath?: string;
     enableConsoleLogging?: boolean;
     enableLogsRoutes?: boolean;
+  };
+  recording?: {
+    maxBytes: number;
   };
 }
 
@@ -84,8 +90,13 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
     ? await import("./modules/commands/commands.routes.js")
     : null;
   fastify.decorate("commandEngine", commands ? commands.createCommandEngine(fastify) : null);
+  fastify.decorate(
+    "recordingService",
+    opts.recording ? new RecordingService(opts.recording.maxBytes) : null,
+  );
   await fastify.register(actionsRoutes, { prefix: "/v1" });
   await fastify.register(sessionsRoutes, { prefix: "/v1" });
+  await fastify.register(recordingRoutes, { prefix: "/v1" });
   await fastify.register(cdpRoutes, { prefix: "/v1" });
   await fastify.register(seleniumRoutes);
   await fastify.register(filesRoutes, { prefix: "/v1" });

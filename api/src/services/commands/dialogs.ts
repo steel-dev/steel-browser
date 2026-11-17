@@ -2,7 +2,10 @@ import type { Protocol } from "puppeteer-core";
 
 export type DialogType = Protocol.Page.DialogType;
 
-export type DialogHandler = "command" | "client" | "closed";
+export function dialogHint(tab?: string): string {
+  const on = tab ? ` on tab ${tab}` : "";
+  return `Press Enter${on} without a target to accept it, or Escape to dismiss it.`;
+}
 
 export interface Dialog {
   id: string;
@@ -11,9 +14,6 @@ export interface Dialog {
   message: string;
   defaultPrompt?: string;
   open: boolean;
-  accepted?: boolean;
-  text?: string;
-  by?: DialogHandler;
   closed: Promise<void>;
   close: () => void;
 }
@@ -43,12 +43,5 @@ export function describeDialog(dialog: Dialog) {
     type: dialog.type,
     message: dialog.message,
     ...(dialog.defaultPrompt ? { defaultPrompt: dialog.defaultPrompt } : {}),
-    ...(dialog.open
-      ? {}
-      : {
-          accepted: dialog.accepted ?? false,
-          ...(dialog.text ? { text: dialog.text } : {}),
-          by: dialog.by ?? "client",
-        }),
   };
 }

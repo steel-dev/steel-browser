@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Notice } from "./components/notice";
 import { Rail, type ApiStatus } from "./components/rail";
 import { SessionConsole } from "./components/session-console";
@@ -10,6 +11,7 @@ export function App() {
   const [railOpen, toggleRail] = useStoredToggle("steel-browser:rail", true);
   const [consoleOpen, toggleConsole] = useStoredToggle("steel-browser:console", true);
   const [devtoolsOpen, toggleDevtools] = useStoredToggle("steel-browser:devtools", false);
+  const [replayOpen, setReplayOpen] = useState(false);
   useShortcutKeys();
 
   const status: ApiStatus = error
@@ -31,6 +33,8 @@ export function App() {
             onToggleRail={toggleRail}
             consoleOpen={consoleOpen}
             onToggleConsole={toggleConsole}
+            replayOpen={replayOpen}
+            onToggleReplay={() => setReplayOpen((open) => !open)}
             devtoolsOpen={devtoolsOpen}
             onToggleDevtools={toggleDevtools}
             onSessionChange={refresh}
@@ -38,7 +42,7 @@ export function App() {
           {session ? (
             <div className="workspace">
               <SessionConsole key={session.id} session={session} hidden={!consoleOpen} />
-              <Stage session={session} devtoolsOpen={devtoolsOpen} />
+              <Stage session={session} devtoolsOpen={devtoolsOpen} replayOpen={replayOpen} />
             </div>
           ) : error ? (
             <Notice title="Can't reach the Steel API">

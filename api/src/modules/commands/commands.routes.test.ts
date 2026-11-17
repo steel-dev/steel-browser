@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { CDPService } from "../../services/cdp/cdp.service.js";
-import type { EngineHost } from "../../services/commands/engine.js";
+import type { CommandEngine, EngineHost } from "../../services/commands/engine.js";
 import { ShutdownReason, type BasePlugin } from "../../services/cdp/plugins/core/base-plugin.js";
 import type { SessionService } from "../../services/session.service.js";
 import type { BrowserLauncherOptions } from "../../types/browser.js";
@@ -106,7 +106,7 @@ describe.skipIf(!chrome)("commands route", () => {
     });
   });
 
-  test("answers a dialog in the documented shape", async () => {
+  test("reports a dialog and has no route to answer it", async () => {
     await page.setContent(
       `<button onclick="document.title = String(confirm('Sure?'))">Ask</button>`,
     );
@@ -114,22 +114,98 @@ describe.skipIf(!chrome)("commands route", () => {
       commands: { command: "click", target: { role: "button", name: "Ask" } },
     });
     expect(commandsSchemas.CommandResponse.safeParse(clicked.json()).success).toBe(true);
-    const answered = await post("live", {
-      commands: { command: "dialog", dialog: clicked.json().dialog.id, action: "accept" },
+    const id = clicked.json().dialog.id;
+    const answer = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/dialogs/${id}/answer`,
+      payload: { action: "accept" },
     });
-    expect(answered.statusCode).toBe(200);
-    expect(answered.json()).toMatchObject({ answered: { accepted: true, by: "command" } });
-    expect(commandsSchemas.CommandDialogResponse.safeParse(answered.json()).success).toBe(true);
-    const spec = app.swagger() as {
-      paths: Record<string, { post: { responses: Record<string, any> } }>;
+    expect(answer.statusCode).toBe(404);
+    await (
+      page as unknown as {
+        _client(): { send(method: string, params?: object): Promise<unknown> };
+      }
+    )
+      ._client()
+      .send("Page.handleJavaScriptDialog", { accept: true });
+    const spec = app.swagger() as unknown as {
+      paths: Record<string, Record<string, { responses: Record<string, any> }>>;
     };
-    const ok = spec.paths["/v1/sessions/{sessionId}/commands"].post.responses["200"];
-    expect(
-      ok.content["application/json"].schema.anyOf.map((schema: { $ref: string }) => schema.$ref),
-    ).toEqual([
+    const ok = (path: string, method: string) =>
+      spec.paths[path][method].responses["200"].content["application/json"].schema.$ref;
+    expect(ok("/v1/sessions/{sessionId}/commands", "post")).toBe(
       "#/components/schemas/CommandResponse",
-      "#/components/schemas/CommandDialogResponse",
-    ]);
+    );
+    expect(ok("/v1/sessions/{sessionId}/commands/executions/{executionId}", "get")).toBe(
+      "#/components/schemas/CommandResponse",
+    );
+    expect(Object.keys(spec.paths).filter((path) => path.includes("dialogs"))).toEqual([]);
+  });
+
+  test("reads and cancels executions on their own routes", async () => {
+    const listed = await post("live", { commands: { command: "tab", action: "list" } });
+    const id = listed.json().execution.id;
+    const status = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/live/commands/executions/${id}`,
+    });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({ id, execution: { id, state: "completed" } });
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
+    });
+    expect(cancelled.statusCode).toBe(200);
+    expect(cancelled.json()).toMatchObject({ execution: { id, state: "completed" } });
+    const typed = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/live/commands/executions/${id}/cancel`,
+      headers: { "content-type": "application/json" },
+    });
+    expect(typed.statusCode, typed.body).toBe(200);
+    const empty = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      headers: { "content-type": "application/json" },
+    });
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json()).toMatchObject({ error: { code: "invalid_request" } });
+    const unknown = await app.inject({
+      method: "GET",
+      url: "/v1/sessions/live/commands/executions/x-999999",
+    });
+    expect(unknown.statusCode).toBe(422);
+    expect(unknown.json()).toMatchObject({ error: { code: "unknown_execution" } });
+    const ended = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/old/commands/executions/${id}/cancel`,
+    });
+    expect(ended.statusCode).toBe(410);
+  });
+
+  test("answers an internal error with 500 and says whether a retry is safe", async () => {
+    const engine = app.commandEngine!;
+    const spy = vi
+      .spyOn(engine as unknown as { dispatch(): Promise<unknown> }, "dispatch")
+      .mockRejectedValue(new Error("Fixture failure"));
+    try {
+      const bare = await post("live", { commands: { command: "snapshot" } });
+      expect(bare.statusCode).toBe(500);
+      expect(bare.headers["x-should-retry"]).toBe("false");
+      expect(bare.json()).toEqual({
+        error: { code: "internal_error", message: "Fixture failure" },
+      });
+      const keyed = await post(
+        "live",
+        { commands: { command: "snapshot" } },
+        { "idempotency-key": "route-500" },
+      );
+      expect(keyed.headers["x-should-retry"]).toBe("true");
+      const after = await post("live", { commands: { command: "snapshot" }, after: "op_x" });
+      expect(after.headers["x-should-retry"]).toBe("true");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("publishes the request schema", async () => {
@@ -138,7 +214,8 @@ describe.skipIf(!chrome)("commands route", () => {
     const body = response.json();
     expect(body.version).toBe(1);
     expect(JSON.stringify(body.schema)).toContain('"navigate"');
-    expect(JSON.stringify(body.schema)).toContain('"eventsAfter"');
+    expect(JSON.stringify(body.schema)).not.toContain('"eventsAfter"');
+    expect(JSON.stringify(body.schema)).not.toContain('"status"');
   });
 
   test("lets quick actions run between commands and reports them as a change", async () => {
@@ -191,6 +268,55 @@ describe.skipIf(!chrome)("commands route", () => {
     expect((await post("live", list)).statusCode).toBe(200);
     await plugin.onShutdown(ShutdownReason.MODE_SWITCH);
     expect((await post("live", list)).statusCode).toBe(410);
+  });
+});
+
+describe("commands body parsing", () => {
+  test("answers bodies it cannot read in the commands error shape", async () => {
+    const app = Fastify();
+    app.decorate("commandEngine", {
+      handle: async () => ({ status: 200, headers: {}, body: {} }),
+    } as unknown as CommandEngine);
+    await app.register(commandsRoutes, { prefix: "/v1" });
+    const broken = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      headers: { "content-type": "application/json" },
+      payload: "{nope",
+    });
+    expect(broken.statusCode).toBe(400);
+    expect(broken.json()).toMatchObject({ error: { code: "invalid_request" } });
+    expect(broken.json().error.message).not.toBe("");
+    const csv = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      headers: { "content-type": "text/csv" },
+      payload: "a,b",
+    });
+    expect(csv.statusCode).toBe(415);
+    expect(csv.json()).toMatchObject({ error: { code: "invalid_request" } });
+    await app.close();
+  });
+
+  test("answers an engine that throws in the commands error shape", async () => {
+    const app = Fastify();
+    app.decorate("commandEngine", {
+      handle: async () => {
+        throw new Error("Fixture failure");
+      },
+    } as unknown as CommandEngine);
+    await app.register(commandsRoutes, { prefix: "/v1" });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/sessions/live/commands",
+      payload: { commands: { command: "snapshot" } },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.headers["x-should-retry"]).toBe("false");
+    expect(response.json()).toEqual({
+      error: { code: "internal_error", message: "Fixture failure" },
+    });
+    await app.close();
   });
 });
 

@@ -1,5 +1,5 @@
 import type { Page } from "puppeteer-core";
-import { describeDialog, type Dialog } from "../dialogs.js";
+import { describeDialog, dialogHint, type Dialog } from "../dialogs.js";
 import { CommandError } from "../errors.js";
 import type { InputContext, Watch } from "../pointer.js";
 import { isFinal } from "../records.js";
@@ -59,11 +59,12 @@ export function usable(ctx: Context, tab: Tab, crashed = false): Tab {
     return tab;
   }
   const dialog = openDialogOn(ctx.active, tab.id);
+  const hint = `${dialogHint(tab.id)} Then send the command again.`;
   throw new CommandError(
     "dialog_pending",
     dialog
-      ? `Tab ${tab.id} shows ${dialog.type} dialog ${dialog.id}: "${dialog.message}". Answer it with the dialog command, then send the command again.`
-      : `Tab ${tab.id} shows a dialog. Answer it, then send the command again.`,
+      ? `Tab ${tab.id} shows ${dialog.type} dialog ${dialog.id}: "${dialog.message}". ${hint}`
+      : `Tab ${tab.id} shows a dialog. ${hint}`,
   );
 }
 
@@ -232,19 +233,36 @@ export async function load(ctx: Context, tab: Tab, loading: Promise<unknown>) {
   }
 }
 
-export async function goto(ctx: Context, tab: Tab, url: string): Promise<Page> {
-  const page = await tab.navigable();
-  touch(ctx);
+export async function arrive(
+  ctx: Context,
+  tab: Tab,
+  url: string,
+  start: () => Promise<unknown>,
+): Promise<{ loading?: true }> {
+  const commits = tab.commits;
   try {
-    await load(
-      ctx,
-      tab,
-      page.goto(url, { waitUntil: "load", timeout: ctx.limits.navigationTimeoutMs }),
-    );
+    await load(ctx, tab, start());
+    return {};
   } catch (error) {
+    const slow = error instanceof Error && error.name === "TimeoutError";
+    if (slow && tab.commits > commits && !tab.navigating) {
+      return { loading: true };
+    }
     throw navigationError(error, url, ctx.limits.navigationTimeoutMs);
   }
-  return page;
+}
+
+export async function goto(
+  ctx: Context,
+  tab: Tab,
+  url: string,
+): Promise<{ url: string; loading?: true }> {
+  const page = await tab.navigable();
+  touch(ctx);
+  const arrived = await arrive(ctx, tab, url, () =>
+    page.goto(url, { waitUntil: "load", timeout: ctx.limits.navigationTimeoutMs }),
+  );
+  return { url: page.url(), ...arrived };
 }
 
 export async function capture(

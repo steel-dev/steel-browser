@@ -6,7 +6,7 @@ import type { CommandResult } from "../records.js";
 import { combine, errorInfo, failed } from "../results.js";
 import type { Observe } from "../session.js";
 import { refsFor, scanSecrets } from "../snapshot.js";
-import { callIn, frameMissing, locate } from "../targets.js";
+import { asLocator, callIn, frameMissing, locate, pick } from "../targets.js";
 import { SECRET_VALUES, secretsWithin } from "../secrets.js";
 import {
   capture,
@@ -41,9 +41,7 @@ export async function find(
   ctx: Context,
   command: Extract<Command, { command: "find" }>,
 ): Promise<CommandResult> {
-  if (command.name !== undefined && command.by !== "role") {
-    throw new CommandError("invalid_argument", "name works only with by: role.");
-  }
+  const locator = asLocator(command.target)!;
   const tab = tabFor(ctx, command.tab);
   const scope = await scopeFor(ctx, tab, command.frame).catch((error) => {
     if (frameMissing(error)) {
@@ -54,11 +52,11 @@ export async function find(
   if (!scope) {
     return { ok: true, effect: "none", count: 0, matches: [] };
   }
-  const matches = await locate(scope, {
-    [command.by]: command.value,
-    ...(command.name !== undefined ? { name: command.name } : {}),
-    ...(command.exact !== undefined ? { exact: command.exact } : {}),
-  });
+  const located = await locate(scope, locator);
+  const matches =
+    locator.nth === undefined
+      ? located
+      : located.filter((match) => match === pick(located, locator));
   const scan = await scanSecrets(scope.session);
   const secrets = [
     ...(await callIn<string[]>(scope, SECRET_VALUES).catch(() => [])),
@@ -96,9 +94,10 @@ export async function tab(
       touch(ctx);
       const opened = await active.tabs.create();
       useTab(ctx, opened.id);
+      let arrived: { loading?: true } = {};
       if (url) {
         try {
-          await goto(ctx, opened, url);
+          arrived = await goto(ctx, opened, url);
         } catch (error) {
           const result = failed(error, "unknown");
           return {
@@ -108,7 +107,12 @@ export async function tab(
           };
         }
       }
-      return { ok: true, effect: "applied", tab: opened.id };
+      return {
+        ok: true,
+        effect: "applied",
+        tab: opened.id,
+        ...(arrived.loading ? { loading: true } : {}),
+      };
     }
     case "close": {
       const closing = active.tabs.resolve(command.tab);

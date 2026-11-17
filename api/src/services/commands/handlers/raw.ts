@@ -1,11 +1,10 @@
 import type { Command } from "../commands.js";
+import { dialogHint } from "../dialogs.js";
 import { CommandError } from "../errors.js";
 import { chordStroke, modifierBit, sendKey, strokeEvent } from "../keyboard.js";
-import { input, type MouseButton, type MouseParams } from "../pointer.js";
+import { BUTTONS, input, type MouseParams } from "../pointer.js";
 import type { CommandResult } from "../records.js";
 import { activate, dialogNote, inputs, tabFor, type Context } from "./context.js";
-
-const BUTTONS: Record<MouseButton, number> = { left: 1, right: 2, middle: 4 };
 
 export async function mouse(
   ctx: Context,
@@ -70,7 +69,7 @@ export async function mouse(
         if (opened && count < clicks) {
           throw new CommandError(
             "dialog_pending",
-            `A dialog opened after ${count} of ${clicks} clicks. Answer it, then click again.`,
+            `A dialog opened after ${count} of ${clicks} clicks. ${dialogHint()} Then click again.`,
             "during_click",
             "applied",
           );

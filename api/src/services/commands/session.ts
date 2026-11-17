@@ -41,8 +41,6 @@ export const STEP_MS = 1_000;
 
 export const KEPT_SNAPSHOTS = 32;
 
-export const KEPT_EVENTS = 500;
-
 export const KEPT_DOWNLOADS = 50;
 
 export type Observe = NonNullable<CommandRequest["observe"]>;
@@ -58,15 +56,8 @@ export interface Job {
   current: Command | null;
   inflight: Promise<unknown> | null;
   touched: boolean;
+  answering: boolean;
   cancelled: boolean;
-}
-
-export interface SessionEvent {
-  id: number;
-  type: string;
-  tab: string;
-  at: string;
-  [field: string]: unknown;
 }
 
 export interface Download {
@@ -89,7 +80,6 @@ export class Counters {
   refs = 1;
   tabs = 0;
   snapshots = 0;
-  events = 0;
   dialogs = 0;
 }
 
@@ -101,7 +91,6 @@ export class ActiveSession {
   readonly dialogs = new Map<string, Dialog>();
   readonly kept = new Map<string, KeptSnapshot>();
   readonly latest = new Map<string, string>();
-  readonly events: SessionEvent[] = [];
   readonly downloads = new Map<string, Download>();
   running: Job | null = null;
   browser: Browser | null = null;
@@ -129,14 +118,6 @@ export class ActiveSession {
 
   set snapshots(value: number) {
     this.counters.snapshots = value;
-  }
-
-  get eventSequence(): number {
-    return this.counters.events;
-  }
-
-  set eventSequence(value: number) {
-    this.counters.events = value;
   }
 
   get dialogSequence(): number {

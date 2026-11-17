@@ -20,6 +20,10 @@ const CLOSE_WAIT_MS = 5_000;
 
 const OPEN_MS = 10_000;
 
+const ARRIVAL_MS = 2_000;
+
+const ARRIVAL_POLL_MS = 20;
+
 type Hook = (session: CDPSession) => void;
 
 export interface BrowserHost {
@@ -38,8 +42,6 @@ export interface TabEvents {
   dialogClosed(tab: Tab, event: Protocol.Page.JavascriptDialogClosedEvent): void;
   downloadStarted(tab: Tab, event: Protocol.Page.DownloadWillBeginEvent): void;
   downloadProgress(tab: Tab, event: Protocol.Page.DownloadProgressEvent): void;
-  navigated(tab: Tab, url: string, sameDocument: boolean): void;
-  opened(tab: Tab, opener: Tab | undefined): void;
   closed(tab: Tab): void;
 }
 
@@ -85,6 +87,7 @@ export class Tab {
   closed = false;
   blocking = false;
   crashed = false;
+  commits = 0;
   pressed: PressedButton | null = null;
   key: HeldKey | null = null;
   pointer: { x: number; y: number } | null = null;
@@ -98,7 +101,6 @@ export class Tab {
   private main: CDPSession | null = null;
   private client: CDPSession | null = null;
   private navigation: Navigation | null = null;
-  private navigations = 0;
   private dialogType: string | null = null;
   private readonly onDialogOpening = (event: Protocol.Page.JavascriptDialogOpeningEvent) => {
     this.dialogType = event.type;
@@ -127,13 +129,12 @@ export class Tab {
   };
   private readonly onFrameNavigated = (event: Protocol.Page.FrameNavigatedEvent) => {
     if (!event.frame.parentId) {
-      this.navigations++;
       this.crashed = false;
+      this.commits++;
       if (this.navigation) {
         this.navigation.committed = true;
         this.navigation.loaderId = event.frame.loaderId;
       }
-      this.events.navigated(this, event.frame.url + (event.frame.urlFragment ?? ""), false);
     }
   };
   private readonly onNavigatedWithinDocument = (
@@ -143,7 +144,6 @@ export class Tab {
       if (!this.navigation?.committed) {
         this.settle();
       }
-      this.events.navigated(this, event.url, true);
     }
   };
   private readonly onNavigationRequested = (event: Protocol.Page.FrameRequestedNavigationEvent) => {
@@ -181,35 +181,19 @@ export class Tab {
     private readonly events: TabEvents,
   ) {}
 
-  watch(client?: CDPSession, opened?: Protocol.Page.JavascriptDialogOpeningEvent, fresh = false) {
+  watch(client?: CDPSession, opened?: Protocol.Page.JavascriptDialogOpeningEvent) {
     if (client) {
       this.listen(client);
       if (opened) {
         this.onDialogOpening(opened);
       }
-      if (fresh) {
-        void this.catchUp(client);
-      }
       return;
     }
     void this.pending.then((page) => {
       if (page && !this.closed) {
-        const client = clientOf(page);
-        this.listen(client);
-        if (fresh) {
-          void this.catchUp(client);
-        }
+        this.listen(clientOf(page));
       }
     });
-  }
-
-  private async catchUp(client: CDPSession) {
-    const seen = this.navigations;
-    const history = await client.send("Page.getNavigationHistory").catch(() => null);
-    const url = history?.entries[history.currentIndex]?.url;
-    if (!this.closed && this.navigations === seen && url && url !== "about:blank") {
-      this.events.navigated(this, url, false);
-    }
   }
 
   get navigating(): boolean {
@@ -564,11 +548,29 @@ export class TabRegistry {
   private connection: Connection | null = null;
   private readonly tabs = new Map<string, Tab>();
   private readonly byTarget = new Map<string, Tab>();
+  private readonly arriving = new Map<string, number>();
   private readonly onCreated = (target: Target) => {
-    this.track(target, true);
+    this.track(target);
   };
   private readonly onDestroyed = (target: Target) => {
     this.untrack(targetIdOf(target));
+  };
+  private readonly onArriving = ({ targetInfo }: Protocol.Target.TargetCreatedEvent) => {
+    const elsewhere =
+      this.defaultContextId !== null &&
+      targetInfo.browserContextId !== undefined &&
+      targetInfo.browserContextId !== this.defaultContextId;
+    if (
+      targetInfo.type === "page" &&
+      !targetInfo.subtype &&
+      !elsewhere &&
+      !this.byTarget.has(targetInfo.targetId)
+    ) {
+      this.arriving.set(targetInfo.targetId, Date.now());
+    }
+  };
+  private readonly onGone = ({ targetId }: Protocol.Target.TargetDestroyedEvent) => {
+    this.arriving.delete(targetId);
   };
 
   constructor(
@@ -590,6 +592,8 @@ export class TabRegistry {
       this.track(target);
     }
     this.connection = connectionOf(browser);
+    this.connection?.on("Target.targetCreated", this.onArriving);
+    this.connection?.on("Target.targetDestroyed", this.onGone);
     void this.learnDefaultContext(browser);
   }
 
@@ -598,6 +602,9 @@ export class TabRegistry {
       this.browser.off("targetcreated", this.onCreated);
       this.browser.off("targetdestroyed", this.onDestroyed);
     }
+    this.connection?.off("Target.targetCreated", this.onArriving);
+    this.connection?.off("Target.targetDestroyed", this.onGone);
+    this.arriving.clear();
     this.connection = null;
     for (const tab of this.tabs.values()) {
       tab.close();
@@ -646,6 +653,34 @@ export class TabRegistry {
     return [...this.tabs.values()].filter((tab) => !tab.closed);
   }
 
+  ids(): Set<string> {
+    return new Set(this.list().map((tab) => tab.id));
+  }
+
+  async openedSince(
+    before: ReadonlySet<string>,
+    waitMs: number,
+    stopped: () => boolean,
+  ): Promise<string[]> {
+    const until = Date.now() + waitMs;
+    while (this.expecting() && Date.now() < until && !stopped()) {
+      await new Promise((resolve) => setTimeout(resolve, ARRIVAL_POLL_MS));
+    }
+    return this.list()
+      .filter((tab) => !before.has(tab.id))
+      .map((tab) => tab.id);
+  }
+
+  private expecting(): boolean {
+    const now = Date.now();
+    for (const [targetId, since] of this.arriving) {
+      if (now - since > ARRIVAL_MS) {
+        this.arriving.delete(targetId);
+      }
+    }
+    return this.arriving.size > 0;
+  }
+
   resolve(id?: string): Tab {
     if (id) {
       const tab = this.tabs.get(id);
@@ -677,7 +712,7 @@ export class TabRegistry {
       throw new CommandError("tab_not_found", "The browser is not ready.");
     }
     const page = await this.browser.newPage();
-    const tab = this.track(page.target(), true);
+    const tab = this.track(page.target());
     if (!tab) {
       throw new CommandError("tab_not_found", "The new tab closed before it could be used.");
     }
@@ -735,7 +770,8 @@ export class TabRegistry {
     return this.control;
   }
 
-  private track(target: Target, announce = false): Tab | undefined {
+  private track(target: Target): Tab | undefined {
+    this.arriving.delete(targetIdOf(target));
     if (
       target.type() !== "page" ||
       target.browserContext() !== this.browser?.defaultBrowserContext()
@@ -766,12 +802,8 @@ export class TabRegistry {
     );
     this.tabs.set(tab.id, tab);
     this.byTarget.set(targetId, tab);
-    if (announce) {
-      const opener = target.opener();
-      this.events.opened(tab, opener ? this.byTarget.get(targetIdOf(opener)) : undefined);
-    }
     const client = sessionOf(target);
-    tab.watch(client, client ? this.dialogs.get(client.id()) : undefined, announce);
+    tab.watch(client, client ? this.dialogs.get(client.id()) : undefined);
     return tab;
   }
 

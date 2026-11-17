@@ -36,6 +36,9 @@ const setupServer = async () => {
     fileStorage: {
       maxSizePerSession: 100 * MB,
     },
+    recording: {
+      maxBytes: 64 * MB,
+    },
   });
 
   const upgradedSockets = new Set<Duplex>();
