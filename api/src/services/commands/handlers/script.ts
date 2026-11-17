@@ -1,5 +1,5 @@
 import type { Command } from "../commands.js";
-import { DIALOG_HINT } from "../dialogs.js";
+import { dialogHint } from "../dialogs.js";
 import { CommandError } from "../errors.js";
 import type { CommandResult } from "../records.js";
 import { SECRET_VALUES, secretMask } from "../secrets.js";
@@ -69,11 +69,12 @@ export async function evaluate(
       throw crashedTab(tab);
     }
     const dialog = openDialogOn(ctx.active, tab.id);
+    const hint = dialogHint(tab.id);
     throw new CommandError(
       "dialog_pending",
       dialog
-        ? `A dialog opened while the script ran: ${dialog.type} dialog ${dialog.id}. ${DIALOG_HINT}`
-        : `A dialog opened while the script ran. ${DIALOG_HINT}`,
+        ? `A dialog opened while the script ran: ${dialog.type} dialog ${dialog.id}. ${hint}`
+        : `A dialog opened while the script ran. ${hint}`,
       "during_script",
       "applied",
     );

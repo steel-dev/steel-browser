@@ -1,5 +1,6 @@
 import type { CDPSession } from "puppeteer-core";
 import { axString, normalizeName } from "./ax.js";
+import { dialogHint } from "./dialogs.js";
 import { CommandError, withEffect } from "./errors.js";
 import type { HeldKey, PressedButton } from "./tabs.js";
 import { CONTROL_ROLES, scanSecrets } from "./snapshot.js";
@@ -121,6 +122,8 @@ interface FrameBox {
 }
 
 export type MouseButton = "left" | "right" | "middle";
+
+export const BUTTONS: Record<MouseButton, number> = { left: 1, right: 2, middle: 4 };
 
 export type MouseParams = {
   type: "mouseMoved" | "mousePressed" | "mouseReleased" | "mouseWheel";
@@ -528,6 +531,7 @@ export async function click(
   point: Point,
   confirm: () => Promise<void>,
   clickCount = 1,
+  button: MouseButton = "left",
 ): Promise<boolean> {
   context.touch();
   if (await input(context, session, { type: "mouseMoved", ...point }, "unknown")) {
@@ -541,7 +545,7 @@ export async function click(
     const opened = await input(
       context,
       session,
-      { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: count },
+      { type: "mousePressed", ...point, button, buttons: BUTTONS[button], clickCount: count },
       "unknown",
     );
     if (opened) {
@@ -550,7 +554,7 @@ export async function click(
     const released = await input(
       context,
       session,
-      { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: count },
+      { type: "mouseReleased", ...point, button, buttons: 0, clickCount: count },
       "unknown",
     );
     if (released) {
@@ -677,7 +681,7 @@ export async function sendOrDialog(
 function dialogBefore(action: "click" | "drag"): CommandError {
   return new CommandError(
     "dialog_pending",
-    `A dialog opened when the mouse moved onto the element, before the ${action}. Close it, then ${action} again.`,
+    `A dialog opened when the mouse moved onto the element, before the ${action}. ${dialogHint()} Then ${action} again.`,
     `before_${action}`,
     "applied",
   );

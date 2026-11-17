@@ -94,9 +94,10 @@ export async function tab(
       touch(ctx);
       const opened = await active.tabs.create();
       useTab(ctx, opened.id);
+      let arrived: { loading?: true } = {};
       if (url) {
         try {
-          await goto(ctx, opened, url);
+          arrived = await goto(ctx, opened, url);
         } catch (error) {
           const result = failed(error, "unknown");
           return {
@@ -106,7 +107,12 @@ export async function tab(
           };
         }
       }
-      return { ok: true, effect: "applied", tab: opened.id };
+      return {
+        ok: true,
+        effect: "applied",
+        tab: opened.id,
+        ...(arrived.loading ? { loading: true } : {}),
+      };
     }
     case "close": {
       const closing = active.tabs.resolve(command.tab);

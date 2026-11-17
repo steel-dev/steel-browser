@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import { apiUrl, type SessionDetails } from "../api";
 import { useColorScheme, usePageId } from "../hooks";
 import { Details } from "./details";
 import { Notice } from "./notice";
+
+const Replay = lazy(() => import("./replay").then((module) => ({ default: module.Replay })));
 
 type BridgeMessage = {
   type?: string;
@@ -110,15 +112,31 @@ function DevTools() {
 export function Stage({
   session,
   devtoolsOpen,
+  replayOpen,
 }: {
   session: SessionDetails;
   devtoolsOpen: boolean;
+  replayOpen: boolean;
 }) {
-  const docked = devtoolsOpen && Boolean(session.debugUrl);
+  const docked = devtoolsOpen && Boolean(session.debugUrl) && !replayOpen;
 
   return (
-    <section className="stage" data-devtools={docked ? "open" : "closed"} aria-label="Live view">
-      {session.debugUrl ? (
+    <section
+      className="stage"
+      data-devtools={docked ? "open" : "closed"}
+      aria-label={replayOpen ? "Replay" : "Live view"}
+    >
+      {replayOpen ? (
+        <Suspense
+          fallback={
+            <div className="player">
+              <Notice title="Loading replay" busy />
+            </div>
+          }
+        >
+          <Replay key={session.id} sessionId={session.id} />
+        </Suspense>
+      ) : session.debugUrl ? (
         <LiveFrame url={session.debugUrl} />
       ) : (
         <div className="player">

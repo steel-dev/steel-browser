@@ -120,6 +120,5 @@ export class RefTable {
 }
 
 export function parseRef(target: string): string | null {
-  const match = target.trim().match(/^(?:@|ref=)?(e\d+)$/);
-  return match ? match[1] : null;
+  return target.trim().match(/^(?:ref=)?(e\d+)$/)?.[1] ?? null;
 }
