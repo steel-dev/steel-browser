@@ -6,6 +6,7 @@ import type {
   SessionStorageData,
 } from "../services/context/types.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
+import type { Browser, Page } from "puppeteer-core";
 import type { CredentialsOptions } from "../modules/sessions/sessions.schema.js";
 
 export interface OptimizeBandwidthOptions {
@@ -57,10 +58,13 @@ export interface BrowserLauncherOptions {
   dangerouslyLogRequestDetails?: boolean;
   captureWorkerNetwork?: boolean;
   caCertificates?: string[];
+  runtimeSettingsApplied?: boolean;
 }
 
 export interface BrowserServerOptions {
   args?: string[];
+  disableFeatures?: string[];
+  runtimeExtensions?: boolean;
   chromiumSandbox?: boolean;
   devtools?: boolean;
   downloadsPath?: string;
@@ -76,3 +80,12 @@ export type BrowserEvent = {
   text: string;
   timestamp: Date;
 };
+
+export interface SessionReusePolicy {
+  canReuse(
+    current: BrowserLauncherOptions,
+    next: BrowserLauncherOptions,
+  ): boolean | Promise<boolean>;
+  prepare(next: BrowserLauncherOptions, browser: Browser): Promise<void>;
+  preparePage?(page: Page, config: BrowserLauncherOptions): Promise<void>;
+}
