@@ -43,4 +43,10 @@ describe("isAdRequest", () => {
   it("does not match unrelated hosts", () => {
     expect(isAdRequest(new URL("https://example.com/ad"))).toBe(false);
   });
+
+  it("matches an ad entry's path on its host only", () => {
+    expect(isAdRequest(new URL("https://www.facebook.com/tr/?id=1&ev=PageView"))).toBe(true);
+    expect(isAdRequest(new URL("https://facebook.com/tr?id=1"))).toBe(true);
+    expect(isAdRequest(new URL("https://www.facebook.com/trending"))).toBe(false);
+  });
 });
