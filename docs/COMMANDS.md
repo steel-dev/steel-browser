@@ -31,13 +31,16 @@ curl -X POST http://localhost:3000/v1/sessions/$SESSION_ID/commands \
 ```json
 {
   "id": "x-1",
-  "next": "op_3cvyhx9ub0",
-  "page": { "tab": "t1", "url": "https://example.com/", "title": "Example Domain" },
-  "execution": { "id": "x-1", "state": "completed", "effect": "applied", "replayed": false, "ran": 2 },
+  "state": "completed",
+  "effect": "applied",
+  "ran": 2,
   "results": [
     { "command": "navigate", "ok": true, "effect": "applied", "url": "https://example.com/" },
     { "command": "snapshot", "ok": true, "effect": "none", "snapshotId": "s-1", "snapshot": "- link \"Learn more\" [ref=e1]" }
-  ]
+  ],
+  "page": { "tab": "t1", "url": "https://example.com/", "title": "Example Domain" },
+  "next": "op_3cvyhx9ub0",
+  "replayed": false
 }
 ```
 
@@ -63,15 +66,20 @@ Send a random `Idempotency-Key` header to make retries safe. A request with a ke
 
 | Field | Meaning |
 |---|---|
-| `id` | The execution's id, the same as `execution.id`. Use it in `GET .../commands/executions/{executionId}` and `POST .../commands/executions/{executionId}/cancel`. |
-| `next` | Send it as `after` in your next request. Valid for an hour. |
-| `epochChanged` | Set when the execution ran with `after`. `true` when, since that `after`, another execution changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
-| `page` | The tab the execution used, with its URL and title. |
-| `execution` | `id`, `state`, `effect`, `replayed`, and `ran` (commands started). `error` says why an execution ended early. |
+| `id` | The execution's id. Use it in `GET .../commands/executions/{executionId}` and `POST .../commands/executions/{executionId}/cancel`. |
+| `state` | `running`, `completed`, `failed`, `cancelled`, or `timeout`. |
+| `effect` | What the execution did to the page, as below. |
+| `ran` | Commands started. |
+| `stopped` | Why the execution stopped early, such as a cancel, a timeout, or a browser restart: `code` and `message`. A command that failed has its error in `results` instead. |
 | `results` | One entry per command that ran: `command`, `ok`, `effect`, the fields of that command, and `error` (`code`, `message`, `reason`) when it failed. |
 | `observe` | `snapshotId` with `snapshot`, or `diff`. A diff without a usable base returns the full snapshot with `full: true`. If the snapshot fails, `observe` is `{ "error": { ... } }` and the commands' results stay as they are. |
+| `page` | The tab the execution used, with its URL and title. |
 | `dialog` | A dialog that is open on the tab and blocks it until it closes. See [Dialogs](#dialogs). |
 | `held` | Tabs with keys or a mouse button still held down, such as `[{ "tab": "t1", "keys": ["Shift"], "button": "left" }]`. Held input applies to later input on its tab until it is let go. Left out when nothing is held. |
+| `next` | Send it as `after` in your next request. Valid for an hour. |
+| `epochChanged` | Set when the execution ran with `after`. `true` when, since that `after`, another execution changed the page, a quick action ran on the session's tabs, or the browser restarted. Input from a CDP client or the live view does not count. |
+| `replayed` | `true` when this is the stored result of an earlier request with the same `Idempotency-Key` or `after`. Nothing ran again. |
+| `bodyExpired` | Set on a replay whose large result bodies are no longer kept. |
 
 `effect` tells what happened to the page: `none` (nothing changed), `applied` (the page changed), or `unknown` (it may have changed, for example after a timeout during input). When an execution is cancelled or runs out of time, the running command stops before its next input, so `effect: none` means nothing changed. A click or drag that already pressed the mouse button still lets it go, and its effect is `unknown`. The page has 10 seconds to take each input. If it takes longer, the command fails with `timeout`, and a pressed button or key is still let go.
 
@@ -132,9 +140,9 @@ Password fields, and fields and editable regions that the browser hides with `-w
 | `focus` | `target` | |
 | `type` | `target`, `text`, `clear`, `delay` | Types the text one key press at a time, so pages see `keydown` and `keyup` for each character. It types after the current content, or at the cursor when the field already has focus. Line breaks (`\n` or `\r\n`) and tabs are sent as Enter and Tab. `clear` replaces the current content. Read-only and disabled fields fail with `not_actionable` (`read_only`, `disabled`), and so do inputs that take no text, such as checkboxes (`not_editable`). Date and time fields take the value as `fill` does. Other focusable elements, such as custom widgets that read keys, get the same key presses. If a dialog opens partway, typing stops and the command fails with `dialog_pending` (`during_type`), saying how many characters it typed. |
 | `fill` | `target`, `value` | Selects the content and replaces it in one step, without key presses. Date and time inputs take values like `2025-01-31`. |
-| `press` | `key`, `target`, `dialog` | Key names follow the US layout (`Enter`, `Tab`, `ArrowDown`, `F5`) and combinations such as `Control+a`. On a tab with an open dialog, `Enter` accepts the dialog and `Escape` dismisses it, and the result has `answered` with the dialog's id. `dialog` names the dialog the key is for, so the key never goes to the page. See [Dialogs](#dialogs). |
-| `keydown`, `keyup` | `key`, `tab` | Holds a key down or lets it go, for example `Shift` while you click. A key stays down until its `keyup`. Held modifier keys (`Shift`, `Control`, `Alt`, `Meta`) apply to later mouse and key input on the tab. Takes one key, not a combination such as `Control+a`. |
-| `release` | `tab` | Lets go of every key and mouse button held on the tab, for example after a client stopped before its `keyup`. Returns `keys` and `button` it let go. When nothing is held, `effect` is `none`. The response's `held` shows what is held. |
+| `press` | `key`, `target` | Key names follow the US layout (`Enter`, `Tab`, `ArrowDown`, `F5`) and combinations such as `Control+a`. On a tab with an open dialog, `Enter` accepts the dialog and `Escape` dismisses it, and the result has `answered` with the dialog's id. See [Dialogs](#dialogs). |
+| `keyboard` | `action` (`down`, `up`), `key`, `tab` | Holds a key down or lets it go, for example `Shift` while you click. A key stays down until its `up`. Held modifier keys (`Shift`, `Control`, `Alt`, `Meta`) apply to later mouse and key input on the tab. Takes one key, not a combination such as `Control+a`. |
+| `release` | `tab` | Lets go of every key and mouse button held on the tab, for example after a client stopped before it let go of a key. Returns `keys` and `button` it let go. When nothing is held, `effect` is `none`. The response's `held` shows what is held. |
 | `mouse` | `action` (`move`, `down`, `up`, `click`, `wheel`), `x`, `y`, `button`, `clicks`, `deltaX`, `deltaY`, `tab` | Mouse input at a point, for pages without useful elements such as a canvas or a map. `x` and `y` are CSS pixels of the visible part of the page, like `get box`. `down` and `up` use the last point the mouse moved to when you leave them out. A button held with `down` stays down until `up` or `release`, and `move` drags with it. `button` is `left` (default), `right`, or `middle`. `clicks` (1 to 3) makes `click` a double or triple click. `wheel` scrolls by `deltaX` and `deltaY` at the point. |
 | `select` | `target`, `values` | Matches options by value, then label, then label ignoring case. |
 | `check`, `uncheck` | `target` | Checkboxes, radio buttons, switches, and toggle buttons. A disabled control fails with `not_actionable` (`disabled`). A target that is not one of these counts when it is a label, or when it holds a single checkbox or radio button as a child or grandchild. Clicks that checkbox or radio button, or the target itself when the control cannot be clicked and the target is a label or holds no other controls, such as buttons or links. Then it waits up to 1.5 seconds for the state to change. Presses Space instead only when something covers the control or it has no visible box. If the control changes when the mouse moves onto it, the command stops instead. If the page draws the control again when it is clicked, a locator target finds the new control in the same tab and reads its state. A ref target fails with `stale_ref` (`detached`, effect `applied`); take a new snapshot to see the state. |
@@ -148,6 +156,7 @@ Password fields, and fields and editable regions that the browser hides with `-w
 | `pdf` | `tab`, `landscape`, `printBackground` | Returns base64 `data`. Needs headless Chrome. |
 | `eval` | `script`, `timeout`, `tab` | Runs JavaScript in the page and returns `value`, the result as JSON. It waits for a promise to settle. The default timeout is 10 seconds and the most is 50 seconds. A script that throws fails with `script_error`. A result of more than 100,000 characters of JSON fails with `invalid_argument` (`too_large`). Secret values in the result are hidden, as elsewhere, but this only guards against accidents: a script can read and change anything on the page. |
 | `tab` | `action` (`list`, `new`, `close`), `tab`, `url` | The last tab cannot be closed. |
+| `dialog` | `dialog`, `action` (`accept`, `dismiss`), `text` | Answers the open dialog with this id, such as `d-3`. `text` is the answer to a `prompt`, and works only with `accept`. See [Dialogs](#dialogs). |
 
 ## Clicking
 
@@ -167,16 +176,17 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 ## Dialogs
 
 - The engine never answers a dialog on its own. This holds for every type: `alert`, `confirm`, `prompt`, and `beforeunload`.
-- An open dialog shows in the response's `dialog`. Until it closes, commands on that tab fail with `dialog_pending`, except the two key presses below. Commands on the tab work again as soon as it closes.
+- An open dialog shows in the response's `dialog`. Until it closes, commands on that tab fail with `dialog_pending`, except the `dialog` command and the two key presses below. Commands on the tab work again as soon as it closes.
+- `{ "command": "dialog", "dialog": "d-3", "action": "accept" }` accepts the dialog and `"action": "dismiss"` dismisses it. It finds the dialog's tab, so it needs no `tab`. Add `"text": "..."` to answer a `prompt`. Without `text`, a `prompt` is accepted with its default text. `text` on another type of dialog fails with `invalid_argument`.
+- The `dialog` command never sends a key to the page. If the dialog is not open when the command runs, for example because another client answered it, the command fails with `not_actionable` (`dialog_closed`) and changes nothing.
 - `{ "command": "press", "key": "Enter" }` accepts the dialog and `{ "command": "press", "key": "Escape" }` dismisses it, as the keys do for a person at the browser. Pass `tab` when several tabs are open. The press takes no `target` and no modifier keys. A `prompt` is accepted with its default text. Every other key fails with `dialog_pending`. A press that answered a dialog has `answered` with the dialog's id in its result.
-- Add the dialog's id, such as `{ "command": "press", "key": "Enter", "dialog": "d-3" }`, to make sure the key goes to that dialog and nowhere else. If the dialog is not open when the press runs, the press fails with `not_actionable` (`dialog_closed`) and sends no key. With `dialog`, the press finds the dialog's tab and needs no `tab`.
-- The press is a command like any other. It waits its turn, its `effect` is `applied` once the dialog has closed, and `after` and `Idempotency-Key` keep a retry from pressing the key twice. If the page opens another dialog right away, the result shows it in `dialog`.
-- A press reaches the dialog only while it is open. If the dialog has already closed when the press runs, for example because another client answered it, the key goes to the page like any other press, unless the press names the dialog with `dialog`. If it closes while the press is on its way, the press fails with `not_actionable` (`dialog_closed`) and no key goes to the page. If the dialog does not close, the press fails with `dialog_pending` (`unanswered`).
+- Both are commands like any other. They wait their turn, their `effect` is `applied` once the dialog has closed, and `after` and `Idempotency-Key` keep a retry from answering twice. If the page opens another dialog right away, the result shows it in `dialog`.
+- A press reaches the dialog only while it is open. If the dialog has already closed when the press runs, the key goes to the page like any other press. Use the `dialog` command when the key must not reach the page. If the dialog closes while the answer is on its way, the command fails with `not_actionable` (`dialog_closed`) and no key goes to the page. If the dialog does not close, the command fails with `dialog_pending` (`unanswered`).
 - A CDP client can answer a dialog too.
 - If a dialog opens when the mouse moves onto the element, before the click, the command fails with `dialog_pending` (reason `before_click`). Answer the dialog and click again.
 - If a dialog stops a command partway, for example a focus handler that opens a confirm, the command fails with `dialog_pending` and does not go on after the dialog closes. Send it again if you still need it.
 - A dialog that opens during a timed `wait` or during `observe` also stops the execution, and the response shows it in `dialog`. A timed `wait` watches the tab you pass, or the only open tab.
-- If a dialog opens while a mouse button or key is down, also one held with `mouse` `down` or `keydown`, the engine lets it go once the dialog closes. A click still completes. A Space press on a button can lose its click, because the dialog takes focus from the page.
+- If a dialog opens while a mouse button or key is down, also one held with `mouse` `down` or `keyboard` `down`, the engine lets it go once the dialog closes. A click still completes. A Space press on a button can lose its click, because the dialog takes focus from the page.
 - When a tab closes, its open dialog closes with it. `{ "command": "tab", "action": "close", "tab": "t1" }` closes a tab. The last tab cannot be closed, so when the dialog is on the only tab, open another tab first with `{ "command": "tab", "action": "new" }`.
 - A dialog that opened before the session started, such as one left open by an earlier session, shows in `dialog`. Commands on its tab fail with `dialog_pending` until it closes.
 - Dialogs that a new tab shows while it loads, such as a popup that calls `alert()` right away, follow the same rules.
@@ -187,7 +197,7 @@ An element outside the visible part of the page fails with `offscreen`, and an e
 
 ## Errors
 
-Request errors have no execution. The body is `{ "error": { "code": ..., "message": ... } }`.
+Request errors have no execution, so their body has no `id` or `state`. The body is `{ "error": { "code": ..., "message": ... } }`.
 
 | Status | Codes |
 |---|---|
@@ -211,10 +221,10 @@ The engine still accepts the older request forms for now, so older clients keep 
 
 - `eventsAfter` is ignored, and the response has no `events`.
 - `status` and `cancel` sent as the only command run like `GET .../commands/executions/x-1` and `POST .../commands/executions/x-1/cancel`. Sent with other commands, they return `400` with "Send a control command on its own."
-- `dialog` returns `400`. Answer a dialog with `press`, as described in [Dialogs](#dialogs).
+- `keydown` and `keyup` run as `keyboard` with `action` `down` and `up`. Their results keep the names `keydown` and `keyup`.
 - `find` with `by`, `value`, `name`, and `exact` reads them as `target`, so `{ "by": "role", "value": "button", "name": "Save" }` finds `{ "role": "button", "name": "Save" }`.
 - `dblclick` runs as `click` with `clicks: 2`, and its result names `click`.
 - A ref written as `"@e12"` is read as `"e12"`. The header names this form `ref`.
 - `observe` with `mode: "none"` is read as no `observe`. The header names this form `observe`.
 
-Responses also carry `epoch`, a counter that goes up when the page changes, because older clients read it. A response to a request in an older form carries `x-steel-deprecated`, which lists the forms it used, such as `eventsAfter, status`. These forms and `epoch` will be removed later.
+Responses also carry two fields that older clients read: `epoch`, a counter that goes up when the page changes, and `execution`, which holds `id`, `state`, `effect`, `replayed`, `ran`, and `error` (the same as `stopped`). A response to a request in an older form carries `x-steel-deprecated`, which lists the forms it used, such as `eventsAfter, status`. These forms, `epoch`, and `execution` will be removed later.

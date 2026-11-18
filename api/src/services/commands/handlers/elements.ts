@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { Command } from "../commands.js";
-import { dialogHint } from "../dialogs.js";
+import { dialogHint, type Dialog } from "../dialogs.js";
 import { CommandError, withEffect } from "../errors.js";
 import { axString } from "../ax.js";
 import {
@@ -160,39 +160,67 @@ async function answer(
   if (accept === undefined || command.target !== undefined) {
     return null;
   }
-  const tab =
-    command.dialog !== undefined
-      ? dialogTab(ctx, command.dialog, command.tab)
-      : ctx.active.tabs.resolve(command.tab);
-  const dialog = tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
-  if (!dialog || (command.dialog !== undefined && dialog.id !== command.dialog)) {
-    if (command.dialog !== undefined) {
-      throw notOpen(command.dialog);
-    }
+  const tab = ctx.active.tabs.resolve(command.tab);
+  const open = tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
+  if (!open) {
     return null;
   }
+  const text = accept && open.type === "prompt" ? open.defaultPrompt ?? "" : undefined;
+  await closeDialog(ctx, tab, open, accept, text);
+  return { ok: true, effect: "applied", answered: open.id, ...dialogNote(ctx.active, tab) };
+}
+
+export async function dialog(
+  ctx: Context,
+  command: Extract<Command, { command: "dialog" }>,
+): Promise<CommandResult> {
+  const found = ctx.active.dialogs.get(command.dialog);
+  const tab = found?.open ? ctx.active.tabs.get(found.tab) : undefined;
+  const open = tab && !tab.closed && tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
+  if (!tab || !open || open.id !== command.dialog) {
+    throw new CommandError(
+      "not_actionable",
+      `Dialog ${command.dialog} is not open. Take a snapshot to see the page.`,
+      "dialog_closed",
+    );
+  }
+  if (command.text !== undefined && open.type !== "prompt") {
+    throw new CommandError(
+      "invalid_argument",
+      `Dialog ${open.id} is not a prompt, so it takes no text.`,
+    );
+  }
+  const accept = command.action === "accept";
+  const text =
+    accept && open.type === "prompt" ? command.text ?? open.defaultPrompt ?? "" : undefined;
+  await closeDialog(ctx, tab, open, accept, text);
+  return { ok: true, effect: "applied", ...dialogNote(ctx.active, tab) };
+}
+
+async function closeDialog(
+  ctx: Context,
+  tab: Tab,
+  open: Dialog,
+  accept: boolean,
+  text: string | undefined,
+): Promise<void> {
   useTab(ctx, tab.id);
   touch(ctx);
   ctx.job.answering = true;
   let sent: boolean;
   try {
-    sent = await tab
-      .answerDialog(
-        accept,
-        accept && dialog.type === "prompt" ? dialog.defaultPrompt ?? "" : undefined,
-      )
-      .then(
-        () => true,
-        () => false,
-      );
-    await waitWithin(ctx, dialog.closed, STEP_MS);
+    sent = await tab.answerDialog(accept, text).then(
+      () => true,
+      () => false,
+    );
+    await waitWithin(ctx, open.closed, STEP_MS);
   } finally {
     ctx.job.answering = false;
   }
-  if (dialog.open) {
+  if (open.open) {
     throw new CommandError(
       "dialog_pending",
-      `Dialog ${dialog.id} on tab ${tab.id} did not close. Press the key again.`,
+      `Dialog ${open.id} on tab ${tab.id} did not close. Answer it again.`,
       "unanswered",
       sent ? "unknown" : "none",
     );
@@ -200,37 +228,10 @@ async function answer(
   if (!sent) {
     throw new CommandError(
       "not_actionable",
-      `Dialog ${dialog.id} closed before the key reached it. Check the page before you press again.`,
+      `Dialog ${open.id} closed before the answer reached it. Check the page before you answer again.`,
       "dialog_closed",
     );
   }
-  return { ok: true, effect: "applied", answered: dialog.id, ...dialogNote(ctx.active, tab) };
-}
-
-function dialogTab(ctx: Context, id: string, tabId?: string): Tab {
-  const dialog = ctx.active.dialogs.get(id);
-  if (!dialog?.open) {
-    throw notOpen(id);
-  }
-  if (tabId !== undefined && tabId !== dialog.tab) {
-    throw new CommandError(
-      "invalid_argument",
-      `Dialog ${id} is on tab ${dialog.tab}, not ${tabId}.`,
-    );
-  }
-  const tab = ctx.active.tabs.get(dialog.tab);
-  if (!tab || tab.closed) {
-    throw notOpen(id);
-  }
-  return tab;
-}
-
-function notOpen(id: string): CommandError {
-  return new CommandError(
-    "not_actionable",
-    `Dialog ${id} is not open, so the key was not sent. Take a snapshot to see the page.`,
-    "dialog_closed",
-  );
 }
 
 export async function press(

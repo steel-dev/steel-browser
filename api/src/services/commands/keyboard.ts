@@ -101,6 +101,8 @@ export function chordStroke(chord: string, held = 0): { stroke: KeyStroke; modif
   return { stroke: keyStroke(parsed.key, modifiers), modifiers };
 }
 
+export const ONE_KEY = "takes one key. Hold each modifier with its own keyboard down.";
+
 const DIALOG_KEYS = new Map([
   ["Enter", true],
   ["Escape", false],

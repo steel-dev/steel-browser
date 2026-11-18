@@ -4,7 +4,18 @@ import type { CommandResult } from "../records.js";
 import { failed } from "../results.js";
 import { STEP_MS } from "../session.js";
 import { ending, type Context } from "./context.js";
-import { check, drag, focus, pointer, press, scroll, select, upload, write } from "./elements.js";
+import {
+  check,
+  dialog,
+  drag,
+  focus,
+  pointer,
+  press,
+  scroll,
+  select,
+  upload,
+  write,
+} from "./elements.js";
 import { get, is, pdf, screenshot, wait } from "./inspect.js";
 import { history, navigate, reload, settle } from "./navigation.js";
 import { find, snapshot, tab } from "./pages.js";
@@ -32,11 +43,13 @@ const SETTLES = new Set([
   "uncheck",
   "upload",
   "drag",
+  "keyboard",
   "keydown",
   "keyup",
   "mouse",
   "release",
   "eval",
+  "dialog",
 ]);
 
 export async function execute(ctx: Context, command: Command): Promise<CommandResult> {
@@ -94,6 +107,7 @@ async function dispatch(ctx: Context, command: Command): Promise<CommandResult> 
       return await write(ctx, command);
     case "press":
       return await press(ctx, command);
+    case "keyboard":
     case "keydown":
     case "keyup":
       return await key(ctx, command);
@@ -128,6 +142,8 @@ async function dispatch(ctx: Context, command: Command): Promise<CommandResult> 
       return await find(ctx, command);
     case "tab":
       return await tab(ctx, command);
+    case "dialog":
+      return await dialog(ctx, command);
     default:
       throw new CommandError(
         "unknown_command",

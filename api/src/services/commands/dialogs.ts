@@ -4,8 +4,10 @@ export type DialogType = Protocol.Page.DialogType;
 
 export function dialogHint(tab?: string, dialog?: string): string {
   const on = tab ? ` on tab ${tab}` : "";
-  const only = dialog ? ` Pass dialog ${dialog} with the key so it goes to this dialog only.` : "";
-  return `Press Enter${on} without a target to accept it, or Escape to dismiss it.${only}`;
+  const keys = `Enter${on} without a target to accept it, or Escape to dismiss it.`;
+  return dialog
+    ? `Answer it with the dialog command, dialog ${dialog}, and action accept or dismiss. Or press ${keys}`
+    : `Press ${keys}`;
 }
 
 export interface Dialog {
