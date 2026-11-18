@@ -5315,6 +5315,20 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await log()).toContain("click 40 40 0 0 false 0");
     });
 
+    test("names held keys as they were sent, also under a held modifier", async () => {
+      await open("/pad");
+      await run({ command: "focus", target: "#field" });
+      const holding = await run([
+        { command: "keyboard", action: "down", key: "Shift" },
+        { command: "keyboard", action: "down", key: "b" },
+      ]);
+      expect(holding.held).toEqual([{ tab: holding.page!.tab, keys: ["Shift", "b"] }]);
+      const released = await run({ command: "release" });
+      expect(released.results[0]).toMatchObject({ ok: true, keys: ["Shift", "b"] });
+      expect(released.held).toBeUndefined();
+      expect(await page.$eval("#field", (field) => (field as HTMLInputElement).value)).toBe("B");
+    });
+
     test("holds keys down until keyup and applies held modifiers", async () => {
       await open("/pad");
       const body = await run([

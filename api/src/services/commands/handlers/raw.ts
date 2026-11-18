@@ -149,6 +149,7 @@ export async function key(
   if (down) {
     tab.held.set(code, {
       session,
+      name: alone.stroke.key,
       keyUp: { ...strokeEvent(stroke, modifiers & ~bit), type: "keyUp" },
     });
   } else {

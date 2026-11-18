@@ -55,6 +55,7 @@ export interface PressedButton {
 export interface HeldKey {
   session: CDPSession;
   keyUp: Protocol.Input.DispatchKeyEventRequest;
+  name?: string;
 }
 
 function targetIdOf(target: Target): string {
@@ -262,8 +263,9 @@ export class Tab {
   heldInput(): { keys: string[]; button?: "left" | "right" | "middle" } {
     const keys = new Set<string>();
     for (const key of [this.key, ...this.held.values()]) {
-      if (key?.keyUp.key) {
-        keys.add(key.keyUp.key);
+      const name = key?.name ?? key?.keyUp.key;
+      if (name) {
+        keys.add(name);
       }
     }
     return {
