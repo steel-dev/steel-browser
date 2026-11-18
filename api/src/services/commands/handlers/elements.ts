@@ -165,6 +165,7 @@ async function answer(
   if (!open) {
     return null;
   }
+  useTab(ctx, tab.id);
   const text = accept && open.type === "prompt" ? open.defaultPrompt ?? "" : undefined;
   await closeDialog(ctx, tab, open, accept, text);
   return { ok: true, effect: "applied", answered: open.id, ...dialogNote(ctx.active, tab) };
@@ -175,7 +176,10 @@ export async function dialog(
   command: Extract<Command, { command: "dialog" }>,
 ): Promise<CommandResult> {
   const found = ctx.active.dialogs.get(command.dialog);
-  const tab = found?.open ? ctx.active.tabs.get(found.tab) : undefined;
+  const tab = found ? ctx.active.tabs.get(found.tab) : undefined;
+  if (tab && !tab.closed) {
+    useTab(ctx, tab.id);
+  }
   const open = tab && !tab.closed && tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
   if (!tab || !open || open.id !== command.dialog) {
     throw new CommandError(
@@ -204,7 +208,6 @@ async function closeDialog(
   accept: boolean,
   text: string | undefined,
 ): Promise<void> {
-  useTab(ctx, tab.id);
   touch(ctx);
   ctx.job.answering = true;
   let sent: boolean;

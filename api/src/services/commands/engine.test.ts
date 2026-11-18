@@ -3307,6 +3307,7 @@ describe.skipIf(!chrome)("command engine", () => {
         effect: "none",
         error: { code: "not_actionable", reason: "dialog_closed" },
       });
+      expect(again.page).toMatchObject({ tab: clicked.dialog!.tab, title: "confirm true" });
       expect(await page.evaluate(() => (window as unknown as { keys: string[] }).keys)).toEqual([]);
       const unguarded = await run({ command: "press", key: "Escape" });
       expect(unguarded.results[0]).toMatchObject({ ok: true, effect: "applied" });
@@ -3365,6 +3366,8 @@ describe.skipIf(!chrome)("command engine", () => {
         error: { code: "invalid_argument" },
       });
       expect(wrong.results[0].error!.message).toContain("not a prompt");
+      expect(wrong.dialog).toMatchObject({ id: confirmed.dialog!.id, type: "confirm" });
+      expect(wrong.page).toMatchObject({ tab: confirmed.dialog!.tab });
       expect(engineDialogs().dialogs.get(confirmed.dialog!.id)?.open).toBe(true);
       await closeDialog(confirmed.dialog!);
     });
