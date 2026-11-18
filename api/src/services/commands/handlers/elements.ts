@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { Command } from "../commands.js";
-import { dialogHint } from "../dialogs.js";
+import { dialogHint, type Dialog } from "../dialogs.js";
 import { CommandError, withEffect } from "../errors.js";
 import { axString } from "../ax.js";
 import {
@@ -15,7 +15,7 @@ import {
   SET_PICKER,
   TOGGLE_INPUT,
 } from "../forms.js";
-import { chordStroke, insertText, press as pressKey, typeText } from "../keyboard.js";
+import { dialogAnswer, insertText, press as pressKey, typeText } from "../keyboard.js";
 import {
   actionPoint,
   attached,
@@ -43,11 +43,6 @@ import {
   waitWithin,
   type Context,
 } from "./context.js";
-
-const DIALOG_KEYS = new Map([
-  ["Enter", true],
-  ["Escape", false],
-]);
 
 export async function pointer(
   ctx: Context,
@@ -161,38 +156,74 @@ async function answer(
   ctx: Context,
   command: Extract<Command, { command: "press" }>,
 ): Promise<CommandResult | null> {
-  const { stroke, modifiers } = chordStroke(command.key);
-  const accept = modifiers === 0 ? DIALOG_KEYS.get(stroke.key) : undefined;
+  const accept = dialogAnswer(command.key);
   if (accept === undefined || command.target !== undefined) {
     return null;
   }
   const tab = ctx.active.tabs.resolve(command.tab);
-  const dialog = tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
-  if (!dialog) {
+  const open = tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
+  if (!open) {
     return null;
   }
   useTab(ctx, tab.id);
+  const text = accept && open.type === "prompt" ? open.defaultPrompt ?? "" : undefined;
+  await closeDialog(ctx, tab, open, accept, text);
+  return { ok: true, effect: "applied", answered: open.id, ...dialogNote(ctx.active, tab) };
+}
+
+export async function dialog(
+  ctx: Context,
+  command: Extract<Command, { command: "dialog" }>,
+): Promise<CommandResult> {
+  const found = ctx.active.dialogs.get(command.dialog);
+  const tab = found ? ctx.active.tabs.get(found.tab) : undefined;
+  if (tab && !tab.closed) {
+    useTab(ctx, tab.id);
+  }
+  const open = tab && !tab.closed && tab.blocking ? openDialogOn(ctx.active, tab.id) : undefined;
+  if (!tab || !open || open.id !== command.dialog) {
+    throw new CommandError(
+      "not_actionable",
+      `Dialog ${command.dialog} is not open. Take a snapshot to see the page.`,
+      "dialog_closed",
+    );
+  }
+  if (command.text !== undefined && open.type !== "prompt") {
+    throw new CommandError(
+      "invalid_argument",
+      `Dialog ${open.id} is not a prompt, so it takes no text.`,
+    );
+  }
+  const accept = command.action === "accept";
+  const text =
+    accept && open.type === "prompt" ? command.text ?? open.defaultPrompt ?? "" : undefined;
+  await closeDialog(ctx, tab, open, accept, text);
+  return { ok: true, effect: "applied", ...dialogNote(ctx.active, tab) };
+}
+
+async function closeDialog(
+  ctx: Context,
+  tab: Tab,
+  open: Dialog,
+  accept: boolean,
+  text: string | undefined,
+): Promise<void> {
   touch(ctx);
   ctx.job.answering = true;
   let sent: boolean;
   try {
-    sent = await tab
-      .answerDialog(
-        accept,
-        accept && dialog.type === "prompt" ? dialog.defaultPrompt ?? "" : undefined,
-      )
-      .then(
-        () => true,
-        () => false,
-      );
-    await waitWithin(ctx, dialog.closed, STEP_MS);
+    sent = await tab.answerDialog(accept, text).then(
+      () => true,
+      () => false,
+    );
+    await waitWithin(ctx, open.closed, STEP_MS);
   } finally {
     ctx.job.answering = false;
   }
-  if (dialog.open) {
+  if (open.open) {
     throw new CommandError(
       "dialog_pending",
-      `Dialog ${dialog.id} on tab ${tab.id} did not close. Press the key again.`,
+      `Dialog ${open.id} on tab ${tab.id} did not close. Answer it again.`,
       "unanswered",
       sent ? "unknown" : "none",
     );
@@ -200,11 +231,10 @@ async function answer(
   if (!sent) {
     throw new CommandError(
       "not_actionable",
-      `Dialog ${dialog.id} closed before the key reached it. Check the page before you press again.`,
+      `Dialog ${open.id} closed before the answer reached it. Check the page before you answer again.`,
       "dialog_closed",
     );
   }
-  return { ok: true, effect: "applied", ...dialogNote(ctx.active, tab) };
 }
 
 export async function press(

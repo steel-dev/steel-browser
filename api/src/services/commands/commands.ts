@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { toJsonSchema } from "../../utils/schema.js";
-import { chordStroke } from "./keyboard.js";
+import { chordStroke, ONE_KEY } from "./keyboard.js";
 import { parseRef } from "./refs.js";
 import { LOCATOR_KINDS, MAX_FRAME_DEPTH } from "./targets.js";
 
@@ -62,7 +62,9 @@ function strict<T extends z.ZodRawShape>(shape: T) {
   return z.object(shape).strict();
 }
 
-export const commandSchema = z.discriminatedUnion("command", [
+const keyName = z.string().min(1);
+
+const COMMANDS = [
   strict({ command: z.literal("navigate"), url: z.string().min(1), tab }),
   strict({ command: z.literal("back"), tab }),
   strict({ command: z.literal("forward"), tab }),
@@ -84,14 +86,9 @@ export const commandSchema = z.discriminatedUnion("command", [
     delay: z.number().int().min(0).max(1000).optional(),
   }),
   strict({ command: z.literal("fill"), ...element, value: z.string() }),
-  strict({
-    command: z.literal("press"),
-    key: z.string().min(1),
-    target: target.optional(),
-    ...scoped,
-  }),
-  strict({ command: z.literal("keydown"), key: z.string().min(1), tab }),
-  strict({ command: z.literal("keyup"), key: z.string().min(1), tab }),
+  strict({ command: z.literal("press"), key: keyName, target: target.optional(), ...scoped }),
+  strict({ command: z.literal("keyboard"), action: z.enum(["down", "up"]), key: keyName, tab }),
+  strict({ command: z.literal("release"), tab }),
   strict({
     command: z.literal("mouse"),
     action: z.enum(["move", "down", "up", "click", "wheel"]),
@@ -196,9 +193,24 @@ export const commandSchema = z.discriminatedUnion("command", [
     tab,
     url: z.string().min(1).optional(),
   }),
-]);
+  strict({
+    command: z.literal("dialog"),
+    dialog: z.string().regex(/^d-\d+$/),
+    action: z.enum(["accept", "dismiss"]),
+    text: z.string().optional(),
+  }),
+] as const;
 
-export type Command = z.infer<typeof commandSchema>;
+const OLD_KEYS = [
+  strict({ command: z.literal("keydown"), key: keyName, tab }),
+  strict({ command: z.literal("keyup"), key: keyName, tab }),
+] as const;
+
+export const commandSchema = z.discriminatedUnion("command", COMMANDS);
+
+const acceptedSchema = z.discriminatedUnion("command", [...COMMANDS, ...OLD_KEYS]);
+
+export type Command = z.infer<typeof acceptedSchema>;
 
 const NEEDS_TARGET = new Set(["text", "html", "value", "attr", "count", "box", "locator"]);
 
@@ -217,9 +229,7 @@ function keyProblem(key: string, single?: string): string | undefined {
   } catch (error) {
     return (error as Error).message;
   }
-  return single && modifiers !== 0
-    ? `${single} takes one key. Hold each modifier with its own keydown.`
-    : undefined;
+  return single && modifiers !== 0 ? `${single} ${ONE_KEY}` : undefined;
 }
 
 function frameProblem(command: Command): string | undefined {
@@ -273,15 +283,21 @@ function commandProblem(command: Command): string | undefined {
         : undefined;
     case "press":
       return keyProblem(command.key);
+    case "keyboard":
+      return keyProblem(command.key, `keyboard ${command.action}`);
     case "keydown":
     case "keyup":
       return keyProblem(command.key, command.command);
+    case "dialog":
+      return command.text !== undefined && command.action !== "accept"
+        ? "text works only with accept."
+        : undefined;
     default:
       return undefined;
   }
 }
 
-const checkedCommand = commandSchema.superRefine((command, ctx) => {
+const checkedCommand = acceptedSchema.superRefine((command, ctx) => {
   const problem = commandProblem(command);
   if (problem) {
     ctx.addIssue({ code: "custom", message: problem });
@@ -312,7 +328,7 @@ export const requestSchema = z
 export type CommandRequest = z.infer<typeof requestSchema>;
 
 export const publishedRequestSchema = requestSchema.extend({
-  commands: z.union([commandSchema, commandList]),
+  commands: z.union([commandSchema, z.array(commandSchema).min(1).max(MAX_COMMANDS)]),
 });
 
 export const COMMANDS_API_VERSION = 1;
@@ -349,10 +365,13 @@ const MUTATING = new Set([
   "screenshot",
   "upload",
   "drag",
+  "keyboard",
   "keydown",
   "keyup",
   "mouse",
+  "release",
   "eval",
+  "dialog",
 ]);
 
 export function isMutating(command: Command): boolean {

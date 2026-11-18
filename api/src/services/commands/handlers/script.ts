@@ -69,7 +69,7 @@ export async function evaluate(
       throw crashedTab(tab);
     }
     const dialog = openDialogOn(ctx.active, tab.id);
-    const hint = dialogHint(tab.id);
+    const hint = dialogHint(tab.id, dialog?.id);
     throw new CommandError(
       "dialog_pending",
       dialog
