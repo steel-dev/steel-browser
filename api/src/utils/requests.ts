@@ -101,7 +101,7 @@ export function compileUrlPatterns(patterns: string[]): RegExp[] {
   return patterns.map((pattern) => {
     try {
       return new RegExp(
-        `^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`,
+        `^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`,
         "i",
       );
     } catch {
