@@ -3,22 +3,20 @@ import { LOCATOR_KINDS } from "./targets.js";
 
 export const DEPRECATED_HEADER = "x-steel-deprecated";
 
-export const DIALOG_GONE =
-  "The dialog command is gone. Use press without a target on the dialog's tab: Enter accepts the dialog, and Escape dismisses it.";
-
 export type LegacyForm =
   | "eventsAfter"
   | "find"
   | "status"
   | "cancel"
-  | "dialog"
   | "dblclick"
+  | "keydown"
+  | "keyup"
   | "ref"
   | "observe";
 
 const SPELLED_REF = /^\s*@(e\d+)\s*$/;
 
-const CONTROL: ReadonlySet<unknown> = new Set(["status", "cancel", "dialog"]);
+const CONTROL: ReadonlySet<unknown> = new Set(["status", "cancel"]);
 const KINDS: ReadonlySet<unknown> = new Set(LOCATOR_KINDS);
 
 export const legacyControlSchema = z.discriminatedUnion("command", [
@@ -93,6 +91,9 @@ function upgradeCommand(
   if (upgraded.command === "dblclick") {
     forms.add("dblclick");
     upgraded = { ...upgraded, command: "click", clicks: 2 };
+  }
+  if (upgraded.command === "keydown" || upgraded.command === "keyup") {
+    forms.add(upgraded.command);
   }
   return upgradeRefs(upgraded, forms);
 }

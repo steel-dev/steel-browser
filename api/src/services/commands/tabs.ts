@@ -55,6 +55,7 @@ export interface PressedButton {
 export interface HeldKey {
   session: CDPSession;
   keyUp: Protocol.Input.DispatchKeyEventRequest;
+  name?: string;
 }
 
 function targetIdOf(target: Target): string {
@@ -116,6 +117,7 @@ export class Tab {
   };
   private readonly onCrashed = () => {
     this.crashed = true;
+    this.forgetInput();
     this.settle();
     for (const listener of [...this.blockingListeners]) {
       listener();
@@ -259,13 +261,24 @@ export class Tab {
     return this.pressed !== null || this.key !== null || this.held.size > 0;
   }
 
+  heldInput(): { keys: string[]; button?: "left" | "right" | "middle" } {
+    const keys = new Set<string>();
+    for (const key of [this.key, ...this.held.values()]) {
+      const name = key?.name ?? key?.keyUp.key;
+      if (name) {
+        keys.add(name);
+      }
+    }
+    return {
+      keys: [...keys],
+      ...(this.pressed ? { button: this.pressed.button ?? "left" } : {}),
+    };
+  }
+
   async release() {
     const pressed = this.pressed;
     const keys = [this.key, ...this.held.values()];
-    this.pressed = null;
-    this.key = null;
-    this.held.clear();
-    this.modifiers = 0;
+    this.forgetInput();
     await pressed?.session.send("Input.dispatchMouseEvent", {
       type: "mouseReleased",
       x: pressed.x,
@@ -277,6 +290,13 @@ export class Tab {
     for (const key of keys) {
       await key?.session.send("Input.dispatchKeyEvent", key.keyUp);
     }
+  }
+
+  private forgetInput() {
+    this.pressed = null;
+    this.key = null;
+    this.held.clear();
+    this.modifiers = 0;
   }
 
   async page(): Promise<Page> {

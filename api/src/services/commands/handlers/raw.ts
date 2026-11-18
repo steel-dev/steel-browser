@@ -1,10 +1,48 @@
 import type { Command } from "../commands.js";
 import { dialogHint } from "../dialogs.js";
 import { CommandError } from "../errors.js";
-import { chordStroke, modifierBit, sendKey, strokeEvent } from "../keyboard.js";
+import { chordStroke, modifierBit, ONE_KEY, sendKey, strokeEvent } from "../keyboard.js";
 import { BUTTONS, input, type MouseParams } from "../pointer.js";
 import type { CommandResult } from "../records.js";
-import { activate, dialogNote, inputs, tabFor, type Context } from "./context.js";
+import {
+  activate,
+  dialogNote,
+  ending,
+  inputs,
+  stopped,
+  tabFor,
+  touch,
+  waitWithin,
+  type Context,
+} from "./context.js";
+
+export async function release(
+  ctx: Context,
+  command: Extract<Command, { command: "release" }>,
+): Promise<CommandResult> {
+  const tab = tabFor(ctx, command.tab);
+  const held = tab.heldInput();
+  if (!tab.holding()) {
+    return { ok: true, effect: "none", ...held };
+  }
+  touch(ctx);
+  const done = await waitWithin(
+    ctx,
+    tab.release().then(() => true),
+    ctx.limits.inputTimeoutMs,
+  );
+  if (!done) {
+    throw ending(ctx)
+      ? stopped(ctx)
+      : new CommandError(
+          "timeout",
+          `Tab ${tab.id} did not take the release in time.`,
+          "input",
+          "unknown",
+        );
+  }
+  return { ok: true, effect: "applied", ...held, ...dialogNote(ctx.active, tab) };
+}
 
 export async function mouse(
   ctx: Context,
@@ -94,32 +132,32 @@ export async function mouse(
 
 export async function key(
   ctx: Context,
-  command: Extract<Command, { command: "keydown" | "keyup" }>,
+  command: Extract<Command, { command: "keyboard" | "keydown" | "keyup" }>,
 ): Promise<CommandResult> {
   const alone = chordStroke(command.key);
+  const name = command.command === "keyboard" ? `keyboard ${command.action}` : command.command;
   if (alone.modifiers !== 0) {
-    throw new CommandError(
-      "invalid_argument",
-      `${command.command} takes one key. Hold each modifier with its own keydown.`,
-    );
+    throw new CommandError("invalid_argument", `${name} ${ONE_KEY}`);
   }
   const tab = tabFor(ctx, command.tab);
-  const down = command.command === "keydown";
+  const down =
+    command.command === "keyboard" ? command.action === "down" : command.command === "keydown";
   const bit = modifierBit(alone.stroke.key);
   const modifiers = down ? tab.modifiers | bit : tab.modifiers & ~bit;
   const { stroke } = chordStroke(command.key, modifiers);
   await activate(ctx, tab);
   const session = await tab.session();
-  const name = stroke.code || stroke.key;
+  const code = stroke.code || stroke.key;
   const event = strokeEvent(stroke, modifiers);
   tab.modifiers = modifiers;
   if (down) {
-    tab.held.set(name, {
+    tab.held.set(code, {
       session,
+      name: alone.stroke.key,
       keyUp: { ...strokeEvent(stroke, modifiers & ~bit), type: "keyUp" },
     });
   } else {
-    tab.held.delete(name);
+    tab.held.delete(code);
   }
   await sendKey(
     inputs(ctx, tab),
