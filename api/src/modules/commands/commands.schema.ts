@@ -25,29 +25,35 @@ const resultBase = {
   error: ErrorInfo.optional(),
 };
 
+const loading = z
+  .boolean()
+  .optional()
+  .describe("The page was still loading when the command returned.");
+
 const interrupts = {
   dialog: Dialog.optional().describe(
     "A dialog that the command opened. It blocks the tab until it closes.",
   ),
-  loading: z
-    .boolean()
+  loading,
+  opened: z
+    .array(z.string())
     .optional()
-    .describe("The command started a navigation that was still loading when it returned."),
+    .describe("The ids of tabs that opened while the command ran."),
 };
 
 const visited = {
   navigated: z.boolean().optional().describe("False when there was no history entry."),
   url: z.string().optional(),
+  loading,
 };
 
 const RESULT_FIELDS = {
-  navigate: { url: z.string().optional() },
+  navigate: { url: z.string().optional(), loading },
   back: visited,
   forward: visited,
-  reload: { url: z.string().optional() },
+  reload: { url: z.string().optional(), loading },
   snapshot: { snapshotId: z.string().optional(), snapshot: z.string().optional() },
   click: interrupts,
-  dblclick: interrupts,
   hover: { dialog: interrupts.dialog },
   focus: {},
   type: interrupts,
@@ -65,6 +71,21 @@ const RESULT_FIELDS = {
   upload: { files: z.array(z.string()).optional(), ...interrupts },
   drag: interrupts,
   get: {
+    what: z
+      .enum([
+        "text",
+        "html",
+        "markdown",
+        "value",
+        "attr",
+        "title",
+        "url",
+        "count",
+        "box",
+        "locator",
+      ])
+      .optional()
+      .describe("What was read. It tells the type of value."),
     value: z
       .unknown()
       .optional()
@@ -97,6 +118,7 @@ const RESULT_FIELDS = {
   tab: {
     tabs: z.array(z.object({ tab: z.string(), url: z.string(), title: z.string() })).optional(),
     tab: z.string().optional(),
+    loading,
   },
 };
 
@@ -131,7 +153,7 @@ export const CommandResponse = z.object({
     .describe("The tab the execution used."),
   execution: z.object({
     id: z.string(),
-    state: z.enum(["queued", "running", "completed", "failed", "cancelled", "timeout", "expired"]),
+    state: z.enum(["running", "completed", "failed", "cancelled", "timeout"]),
     effect: Effect,
     replayed: z.boolean(),
     ran: z.number().int().describe("Commands started."),

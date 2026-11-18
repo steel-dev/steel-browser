@@ -50,7 +50,7 @@ Under the hood, it manages sessions, pages, and browser processes, allowing you 
 - **Session Management**: Maintains browser state, cookies, and local storage across requests
 - **Proxy Support**: Built-in proxy chain management for IP rotation
 - **Extension Support**: Load custom Chrome extensions for enhanced functionality
-- **Debugging Tools**: Built-in request logging and a UI to view/debug sessions with
+- **Debugging Tools**: Built-in request logging, plus a UI to watch sessions live and replay them
 - **Anti-Detection**: Includes stealth plugins and fingerprint management
 - **Resource Management**: Automatic cleanup and browser lifecycle management
 - **Browser Tools**: Exposes APIs to quick convert pages to markdown, readability, screenshots, or PDFs.

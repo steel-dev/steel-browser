@@ -10,7 +10,7 @@ export const TEXT = `function () {
   return typeof this.innerText === "string" ? this.innerText : this.textContent || "";
 }`;
 
-export const HTML = `function () {
+export const HTML = `function (outer) {
   const secret = ${SECRET_FIELD};
   const mask = ${JSON.stringify(SECRET_MASK)};
   if (secret(this)) {
@@ -35,7 +35,7 @@ export const HTML = `function () {
   for (const helper of copy.querySelectorAll(${JSON.stringify(MOUSE_HELPERS)})) {
     helper.remove();
   }
-  return copy.innerHTML;
+  return outer ? copy.outerHTML : copy.innerHTML;
 }`;
 
 export const VALUE = `function () {

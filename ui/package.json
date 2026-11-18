@@ -11,8 +11,10 @@
     "generate-api": "npx --yes --prefix=/ --package=typescript@5.9.2 --package=@hey-api/openapi-ts@0.99.0 openapi-ts -i ../api/openapi/schemas.json -o src/client -p @hey-api/typescript --no-log-file && prettier --write src/client"
   },
   "dependencies": {
+    "@rrweb/packer": "2.1.7",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "rrweb": "2.1.7"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

@@ -2,7 +2,10 @@ import type { Protocol } from "puppeteer-core";
 
 export type DialogType = Protocol.Page.DialogType;
 
-export const DIALOG_HINT = "Close it in the live view, or close its tab.";
+export function dialogHint(tab?: string): string {
+  const on = tab ? ` on tab ${tab}` : "";
+  return `Press Enter${on} without a target to accept it, or Escape to dismiss it.`;
+}
 
 export interface Dialog {
   id: string;
@@ -11,6 +14,8 @@ export interface Dialog {
   message: string;
   defaultPrompt?: string;
   open: boolean;
+  closed: Promise<void>;
+  close: () => void;
 }
 
 export function openDialog(
@@ -18,6 +23,7 @@ export function openDialog(
   tab: string,
   event: Protocol.Page.JavascriptDialogOpeningEvent,
 ): Dialog {
+  const { promise, resolve } = Promise.withResolvers<void>();
   return {
     id,
     tab,
@@ -25,6 +31,8 @@ export function openDialog(
     message: event.message,
     defaultPrompt: event.defaultPrompt || undefined,
     open: true,
+    closed: promise,
+    close: resolve,
   };
 }
 

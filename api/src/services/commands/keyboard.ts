@@ -1,5 +1,6 @@
 import type { CDPSession, Protocol } from "puppeteer-core";
 import { _keyDefinitions, type KeyInput } from "puppeteer-core/internal/common/USKeyboardLayout.js";
+import { dialogHint } from "./dialogs.js";
 import { CommandError } from "./errors.js";
 import { sendOrDialog, type InputContext } from "./pointer.js";
 
@@ -182,7 +183,9 @@ export async function typeText(
     if (opened && typed < characters.length) {
       throw new CommandError(
         "dialog_pending",
-        `A dialog opened after ${typed} of ${characters.length} characters. Close it, then type the rest.`,
+        `A dialog opened after ${typed} of ${
+          characters.length
+        } characters. ${dialogHint()} Then type the rest.`,
         "during_type",
         "applied",
       );
