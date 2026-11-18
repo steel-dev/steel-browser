@@ -2921,6 +2921,23 @@ describe.skipIf(!chrome)("command engine", () => {
       });
     });
 
+    test("forgets held keys and buttons when the tab crashes", async () => {
+      await open("/pad");
+      const holding = await run([
+        { command: "keyboard", action: "down", key: "Shift" },
+        { command: "mouse", action: "down", x: 30, y: 30 },
+      ]);
+      expect(holding.held).toEqual([{ tab: holding.page!.tab, keys: ["Shift"], button: "left" }]);
+      const cdp = await page.createCDPSession();
+      void cdp.send("Page.crash").catch(() => undefined);
+      await sleep(500);
+      expect((await run({ command: "tab", action: "list" })).held).toBeUndefined();
+      expect((await run({ command: "reload" })).results[0]).toMatchObject({ ok: true });
+      await run({ command: "mouse", action: "click", x: 40, y: 40 });
+      const events = await page.evaluate(() => (window as unknown as { log: string[] }).log);
+      expect(events).toContain("click 40 40 0 0 false 0");
+    });
+
     test("fails fast on a tab whose renderer crashed and recovers with navigate", async () => {
       await open("/basic");
       const cdp = await page.createCDPSession();
