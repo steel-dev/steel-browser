@@ -2930,8 +2930,12 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(holding.held).toEqual([{ tab: holding.page!.tab, keys: ["Shift"], button: "left" }]);
       const cdp = await page.createCDPSession();
       void cdp.send("Page.crash").catch(() => undefined);
-      await sleep(500);
-      expect((await run({ command: "tab", action: "list" })).held).toBeUndefined();
+      let held = holding.held;
+      for (let attempt = 0; attempt < 50 && held; attempt++) {
+        await sleep(100);
+        held = (await run({ command: "tab", action: "list" })).held;
+      }
+      expect(held).toBeUndefined();
       expect((await run({ command: "reload" })).results[0]).toMatchObject({ ok: true });
       await run({ command: "mouse", action: "click", x: 40, y: 40 });
       const events = await page.evaluate(() => (window as unknown as { log: string[] }).log);
