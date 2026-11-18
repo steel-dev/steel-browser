@@ -337,7 +337,7 @@ export async function pageInfo(active: ActiveSession, tabId?: string): Promise<T
   return active.tabs.info(tab).catch(() => null);
 }
 
-function stopped(ctx: Context): CommandError {
+export function stopped(ctx: Context): CommandError {
   return new CommandError(
     "cancelled",
     "The command stopped because its execution ended.",

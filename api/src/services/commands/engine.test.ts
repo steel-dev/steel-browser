@@ -5353,6 +5353,52 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(await page.$eval("#field", (field) => (field as HTMLInputElement).value)).toBe("B");
     });
 
+    test("reports a release that a cancel cut short as cancelled", async () => {
+      await open("/pad");
+      await run({ command: "mouse", action: "down", x: 30, y: 30 });
+      const original = CdpCDPSession.prototype.send;
+      let reach = () => {};
+      const reached = new Promise<void>((resolve) => (reach = resolve));
+      let go = () => {};
+      const gate = new Promise<void>((resolve) => (go = resolve));
+      const spy = vi.spyOn(CdpCDPSession.prototype, "send").mockImplementation(async function (
+        this: CdpCDPSession,
+        method: string,
+        params?: unknown,
+        options?: unknown,
+      ) {
+        if (
+          method === "Input.dispatchMouseEvent" &&
+          (params as { type?: string } | undefined)?.type === "mouseReleased"
+        ) {
+          reach();
+          await gate;
+        }
+        return (original as (...args: unknown[]) => Promise<unknown>).call(
+          this,
+          method,
+          params,
+          options,
+        );
+      } as never);
+      try {
+        const releasing = run({ command: "release" });
+        await reached;
+        const cancelled = await halt("x-3");
+        expect(cancelled.state).toBe("cancelled");
+        expect(cancelled.results[0]).toMatchObject({
+          command: "release",
+          ok: false,
+          effect: "unknown",
+          error: { code: "cancelled", reason: "halted" },
+        });
+        expect((await releasing).state).toBe("cancelled");
+      } finally {
+        go();
+        spy.mockRestore();
+      }
+    });
+
     test("holds keys down until keyup and applies held modifiers", async () => {
       await open("/pad");
       const body = await run([

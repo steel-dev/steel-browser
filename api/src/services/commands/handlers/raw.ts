@@ -7,7 +7,9 @@ import type { CommandResult } from "../records.js";
 import {
   activate,
   dialogNote,
+  ending,
   inputs,
+  stopped,
   tabFor,
   touch,
   waitWithin,
@@ -30,12 +32,14 @@ export async function release(
     ctx.limits.inputTimeoutMs,
   );
   if (!done) {
-    throw new CommandError(
-      "timeout",
-      `Tab ${tab.id} did not take the release in time.`,
-      "input",
-      "unknown",
-    );
+    throw ending(ctx)
+      ? stopped(ctx)
+      : new CommandError(
+          "timeout",
+          `Tab ${tab.id} did not take the release in time.`,
+          "input",
+          "unknown",
+        );
   }
   return { ok: true, effect: "applied", ...held, ...dialogNote(ctx.active, tab) };
 }
