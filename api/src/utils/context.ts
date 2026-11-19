@@ -100,9 +100,9 @@ export async function extractStorageForPage(
         });
 
         if (localStorageResponse?.entries?.length) {
-          result.localStorage![domain] = {};
+          result.localStorage![origin] = {};
           for (const [key, value] of localStorageResponse.entries) {
-            result.localStorage![domain][key] = value;
+            result.localStorage![origin][key] = value;
           }
         }
       } catch (err) {
@@ -117,9 +117,9 @@ export async function extractStorageForPage(
         });
 
         if (sessionStorageResponse?.entries?.length) {
-          result.sessionStorage![domain] = {};
+          result.sessionStorage![origin] = {};
           for (const [key, value] of sessionStorageResponse.entries) {
-            result.sessionStorage![domain][key] = value;
+            result.sessionStorage![origin][key] = value;
           }
         }
       } catch (err) {
@@ -136,7 +136,7 @@ export async function extractStorageForPage(
         const databaseNames = dbResponse?.databaseNames || [];
 
         if (databaseNames.length) {
-          result.indexedDB![domain] = [];
+          result.indexedDB![origin] = [];
 
           // Process each database
           for (let dbIndex = 0; dbIndex < databaseNames.length; dbIndex++) {
@@ -210,7 +210,7 @@ export async function extractStorageForPage(
             }
 
             // Add the database to the result
-            result.indexedDB![domain].push(database);
+            result.indexedDB![origin].push(database);
           }
         }
       } catch (err) {
@@ -409,6 +409,19 @@ export const handleFrameNavigated = async (
   }
 };
 
+// Older versions saved storage from open pages under a bare hostname ("example.com"),
+// while restore looks it up by origin. Map such keys to both schemes, and apply keys
+// that are already origins last so they win for the same site.
+function entriesByOrigin<T>(record: Record<string, T>): [string, T][] {
+  const legacy: [string, T][] = [];
+  const origins: [string, T][] = [];
+  for (const [key, value] of Object.entries(record)) {
+    if (key.includes("://")) origins.push([key, value]);
+    else legacy.push([`https://${key}`, value], [`http://${key}`, value]);
+  }
+  return [...legacy, ...origins];
+}
+
 /**
  * Organizes session storage data by origin for efficient lookup
  * @param context Session context data from BrowserLauncherOptions
@@ -436,7 +449,7 @@ export function groupSessionStorageByOrigin(
   if (!context) return result;
 
   if (context.localStorage) {
-    for (const [domain, storage] of Object.entries(context.localStorage)) {
+    for (const [domain, storage] of entriesByOrigin(context.localStorage)) {
       if (!result.has(domain)) {
         result.set(domain, {});
       }
@@ -445,7 +458,7 @@ export function groupSessionStorageByOrigin(
   }
 
   if (context.sessionStorage) {
-    for (const [domain, storage] of Object.entries(context.sessionStorage)) {
+    for (const [domain, storage] of entriesByOrigin(context.sessionStorage)) {
       if (!result.has(domain)) {
         result.set(domain, {});
       }
@@ -454,7 +467,7 @@ export function groupSessionStorageByOrigin(
   }
 
   if (context.indexedDB) {
-    for (const [domain, databases] of Object.entries(context.indexedDB)) {
+    for (const [domain, databases] of entriesByOrigin(context.indexedDB)) {
       if (!result.has(domain)) {
         result.set(domain, {});
       }
