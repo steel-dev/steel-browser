@@ -77,7 +77,7 @@ describe("CDPService request interception", () => {
   });
 });
 
-describe("CDPService without request interception", () => {
+describe("CDPService browser requests", () => {
   let dataDir: string;
   let server: http.Server;
   let origin: string;
@@ -87,6 +87,14 @@ describe("CDPService without request interception", () => {
   beforeAll(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "steel-interception-"));
     server = http.createServer((req, res) => {
+      if (req.url === "/basic-auth") {
+        if (req.headers.authorization !== `Basic ${Buffer.from("demo:demo").toString("base64")}`) {
+          res.writeHead(401, { "WWW-Authenticate": 'Basic realm="test"' }).end("Unauthorized");
+          return;
+        }
+        res.writeHead(200, { "content-type": "text/html" }).end('<img src="/blocked.png">');
+        return;
+      }
       if (req.url === "/app.js") {
         res.writeHead(200, { "content-type": "application/javascript" });
         res.end(
@@ -174,6 +182,23 @@ describe("CDPService without request interception", () => {
         ["session-token", "session-tab"],
         ["session-token", "session-tab"],
       ],
+    );
+  }, 30000);
+
+  test("lets a connected Puppeteer client answer Basic Auth while filtering requests", async () => {
+    const page = await start({ blockAds: true, optimizeBandwidth: { blockImages: true } });
+    await page.authenticate({ username: "demo", password: "demo" });
+    const failedRequests = vi.fn();
+    page.on("requestfailed", (request) =>
+      failedRequests(request.url(), request.failure()?.errorText),
+    );
+
+    const response = await page.goto(`${origin}/basic-auth`);
+
+    expect(response?.status()).toBe(200);
+    expect(failedRequests).toHaveBeenCalledWith(
+      `${origin}/blocked.png`,
+      expect.stringMatching(/^net::ERR_BLOCKED_BY_CLIENT/),
     );
   }, 30000);
 });
