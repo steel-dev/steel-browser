@@ -4,6 +4,7 @@ import { getErrors } from "../../utils/errors.js";
 import { CreateSessionRequest, SessionDetails, SessionStreamRequest } from "./sessions.schema.js";
 import { CookieData } from "../../services/context/types.js";
 import { getUrl, getBaseUrl } from "../../utils/url.js";
+import { getPageFavicon } from "../../utils/casting.js";
 
 export const handleLaunchBrowserSession = async (
   server: FastifyInstance,
@@ -181,22 +182,7 @@ export const handleGetSessionLiveDetails = async (
 
           const title = await page.title();
 
-          let favicon: string | null = null;
-          try {
-            favicon = await page.evaluate(() => {
-              const iconLink = document.querySelector(
-                'link[rel="icon"], link[rel="shortcut icon"]',
-              );
-              if (iconLink) {
-                const href = iconLink.getAttribute("href");
-                if (href?.startsWith("http")) return href;
-                if (href?.startsWith("//")) return window.location.protocol + href;
-                if (href?.startsWith("/")) return window.location.origin + href;
-                return window.location.origin + "/" + href;
-              }
-              return null;
-            });
-          } catch (error) {}
+          const favicon = await getPageFavicon(page);
 
           return {
             id: pageId,
