@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isAdRequest, isHostBlocked, normalizeHosts } from "./requests.js";
+import {
+  compileUrlPatterns,
+  isAdRequest,
+  isHostBlocked,
+  isUrlMatchingPatterns,
+  normalizeHosts,
+} from "./requests.js";
 
 describe("isHostBlocked", () => {
   it("matches the host and its subdomains", () => {
@@ -48,5 +54,23 @@ describe("isAdRequest", () => {
     expect(isAdRequest(new URL("https://www.facebook.com/tr/?id=1&ev=PageView"))).toBe(true);
     expect(isAdRequest(new URL("https://facebook.com/tr?id=1"))).toBe(true);
     expect(isAdRequest(new URL("https://www.facebook.com/trending"))).toBe(false);
+  });
+});
+
+describe("compileUrlPatterns", () => {
+  const matches = (pattern: string, url: string) =>
+    isUrlMatchingPatterns(url, compileUrlPatterns([pattern]));
+
+  it("treats ? as a literal query separator", () => {
+    expect(matches("https://example.com/api?key=*", "https://example.com/api?key=1")).toBe(true);
+  });
+
+  it("does not make the character before ? optional", () => {
+    expect(matches("https://example.com/api?key=*", "https://example.com/apkey=1")).toBe(false);
+  });
+
+  it("still treats * as a wildcard", () => {
+    expect(matches("*.example.com/*", "https://cdn.example.com/a.js")).toBe(true);
+    expect(matches("*.example.com/*", "https://example.org/a.js")).toBe(false);
   });
 });
