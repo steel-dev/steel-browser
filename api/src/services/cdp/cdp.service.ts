@@ -16,7 +16,6 @@ import puppeteer, {
   Browser,
   BrowserContext,
   CDPSession,
-  HTTPRequest,
   Page,
   Protocol,
   Target,
@@ -458,12 +457,7 @@ export class CDPService extends EventEmitter {
           return;
         }
 
-        if (this.requiresRequestInterception()) {
-          await page.setRequestInterception(true);
-          page.on("request", (request) => this.handlePageRequest(request, page));
-        } else {
-          await this.blockFileRequests(page);
-        }
+        await this.installRequestFilter(page);
 
         page.on("response", (response) => {
           if (response.url().startsWith("file://")) {
@@ -489,19 +483,39 @@ export class CDPService extends EventEmitter {
     }
   }
 
-  private async blockFileRequests(page: Page) {
+  private async installRequestFilter(page: Page) {
+    const filterAllRequests = this.requiresRequestInterception();
     const session = await page.createCDPSession();
-    session.on("Fetch.requestPaused", (event: Protocol.Fetch.RequestPausedEvent) => {
-      this.logger.error(`[CDPService] Blocked request to file protocol: ${event.request.url}`);
-      session
-        .send("Fetch.failRequest", { requestId: event.requestId, errorReason: "AccessDenied" })
-        .catch(() => {});
-      page.close().catch(() => {});
-      this.endSession(ShutdownReason.SECURITY_VIOLATION);
+    session.on("Fetch.requestPaused", async ({ requestId, request, resourceType }) => {
+      try {
+        if (request.url.startsWith("file://")) {
+          this.logger.error(`[CDPService] Blocked request to file protocol: ${request.url}`);
+          await session
+            .send("Fetch.failRequest", { requestId, errorReason: "AccessDenied" })
+            .catch(() => {});
+          page.close().catch(() => {});
+          await this.endSession(ShutdownReason.SECURITY_VIOLATION);
+        } else if (filterAllRequests && this.shouldBlockRequest(request.url, resourceType)) {
+          await session.send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" });
+        } else {
+          await session.send("Fetch.continueRequest", { requestId });
+        }
+      } catch (error) {
+        if (!isTargetClosedError(error) && !page.isClosed()) {
+          this.logger.error({ err: error }, "[CDPService] Failed to handle paused request");
+        }
+      }
     });
-    await session.send("Fetch.enable", {
-      patterns: [{ urlPattern: "file://*", requestStage: "Request" }],
-    });
+    try {
+      // Puppeteer's setRequestInterception also claims auth challenges. Leave those to the client.
+      await session.send("Fetch.enable", {
+        handleAuthRequests: false,
+        patterns: [{ urlPattern: filterAllRequests ? "*" : "file://*", requestStage: "Request" }],
+      });
+    } catch (error) {
+      await session.detach().catch(() => {});
+      throw error;
+    }
   }
 
   private requiresRequestInterception(): boolean {
@@ -523,9 +537,7 @@ export class CDPService extends EventEmitter {
     );
   }
 
-  private async handlePageRequest(request: HTTPRequest, page: Page) {
-    const url = request.url();
-
+  private shouldBlockRequest(url: string, resourceType: Protocol.Network.ResourceType): boolean {
     const parsed = tryParseUrl(url);
 
     const optimize = this.launchConfig?.optimizeBandwidth;
@@ -533,8 +545,7 @@ export class CDPService extends EventEmitter {
 
     if (parsed && this.launchConfig?.blockAds && isAdRequest(parsed)) {
       this.logger.debug(`[CDPService] Blocked request to ad related resource: ${url}`);
-      await request.abort();
-      return;
+      return true;
     }
 
     if (
@@ -542,8 +553,7 @@ export class CDPService extends EventEmitter {
       isUrlMatchingPatterns(url, this.compiledUrlPatterns)
     ) {
       this.logger.debug(`[CDPService] Blocked request to blocked host or pattern: ${url}`);
-      await request.abort();
-      return;
+      return true;
     }
 
     // Block resources via optimizeBandwidth
@@ -552,29 +562,21 @@ export class CDPService extends EventEmitter {
     const blockStylesheets = isOptimizeObject ? !!optimize.blockStylesheets : false;
 
     if (parsed && (blockImages || blockMedia || blockStylesheets)) {
-      const resourceType = request.resourceType();
       if (
-        (blockImages && (resourceType === "image" || isImageRequest(parsed))) ||
-        (blockMedia && (resourceType === "media" || isHeavyMediaRequest(parsed))) ||
-        (blockStylesheets && resourceType === "stylesheet")
+        (blockImages && (resourceType === "Image" || isImageRequest(parsed))) ||
+        (blockMedia && (resourceType === "Media" || isHeavyMediaRequest(parsed))) ||
+        (blockStylesheets && resourceType === "Stylesheet")
       ) {
         this.logger.debug(
           `[CDPService] Blocked ${resourceType} resource due to optimizeBandwidth (${
             blockImages ? "blockImages" : ""
           }${blockMedia ? "blockMedia" : ""}${blockStylesheets ? "blockStylesheets" : ""}): ${url}`,
         );
-        await request.abort();
-        return;
+        return true;
       }
     }
 
-    if (url.startsWith("file://")) {
-      this.logger.error(`[CDPService] Blocked request to file protocol: ${url}`);
-      page.close().catch(() => {});
-      this.endSession(ShutdownReason.SECURITY_VIOLATION);
-    } else {
-      await request.continue();
-    }
+    return false;
   }
 
   public async createPage(): Promise<Page> {
