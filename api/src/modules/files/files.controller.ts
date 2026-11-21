@@ -1,29 +1,189 @@
 import { MultipartFile } from "@fastify/multipart";
 import archiver from "archiver";
 import { randomUUID } from "crypto";
+import { lookup as dnsLookup } from "dns/promises";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as fs from "fs";
 import http from "http";
 import https from "https";
 import mime from "mime-types";
+import net from "net";
 import { tmpdir } from "os";
 import path from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
-import { FileService } from "../../services/file.service.js";
+import { FileQuotaExceededError, FileService } from "../../services/file.service.js";
 import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
 
+// Thrown for every URL-fetch failure (blocked host/scheme, DNS failure,
+// non-200, network error). handleFileUpload maps these to
+// 400: the caller supplied a bad URL, so it is never a 500.
+class InvalidFileUrlError extends Error {}
+
+function isBlockedIPv4(ip: string): boolean {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return true;
+  const octets: number[] = [];
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) return true;
+    const n = Number(part);
+    if (!Number.isInteger(n) || n < 0 || n > 255) return true;
+    octets.push(n);
+  }
+  const [a, b] = octets;
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 127) return true; // 127.0.0.0/8 loopback
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local
+  if (a === 0) return true; // 0.0.0.0/8
+  // NOTE (quota-PR minimal blocklist): 100.64.0.0/10 CGNAT (RFC 6598) was split to the SSRF follow-up (ssrf-extras.split.md).
+  return false;
+}
+
+// Numeric compare so every textual form of loopback/unspecified is caught
+// (::1, 0::1, 0:0:0:0:0:0:0:1, ::, ::0, 0::0, ...), not just the two
+// compressed spellings. addr must already be lowercased with any %zone cut.
+function expandIPv6HexGroups(addr: string): number[] | null {
+  let groups: string[];
+  const compression = addr.indexOf("::");
+  if (compression !== -1) {
+    if (addr.indexOf("::", compression + 2) !== -1) return null;
+    const left = compression === 0 ? [] : addr.slice(0, compression).split(":");
+    const right = compression + 2 >= addr.length ? [] : addr.slice(compression + 2).split(":");
+    if (left.includes("") || right.includes("")) return null;
+    const missing = 8 - (left.length + right.length);
+    if (missing < 0) return null;
+    groups = [...left, ...Array<string>(missing).fill("0"), ...right];
+  } else {
+    groups = addr.split(":");
+    if (groups.length !== 8) return null;
+  }
+  if (groups.length !== 8) return null;
+  const nums: number[] = [];
+  for (const g of groups) {
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+    nums.push(Number.parseInt(g, 16));
+  }
+  return nums;
+}
+
+// Numeric compare so every textual form of loopback/unspecified is caught
+// (::1, 0::1, 0:0:0:0:0:0:0:1, ::, ::0, 0::0, ...), not just the two
+// compressed spellings. addr must already be lowercased with any %zone cut.
+function isLoopbackOrUnspecifiedIPv6(addr: string): boolean {
+  const nums = expandIPv6HexGroups(addr);
+  if (nums === null) return false;
+  if (nums.every((n) => n === 0)) return true; // :: and equivalents
+  if (nums.slice(0, 7).every((n) => n === 0) && nums[7] === 1) return true; // ::1 equivalents
+  return false;
+}
+
+function isBlockedIp(ip: string): boolean {
+  const family = net.isIP(ip);
+  if (family === 4) return isBlockedIPv4(ip);
+  if (family !== 6) return true; // fail closed on malformed input
+  const addr = ip.toLowerCase().split("%")[0];
+  // Dotted-embedded IPv6 (IPv4-mapped/compatible in any notation): the tail
+  // is an IPv4 address inside IPv6 space, never a legitimate fetch target.
+  const tail = addr.slice(addr.lastIndexOf(":") + 1);
+  if (tail.includes(".")) return true;
+  if (isLoopbackOrUnspecifiedIPv6(addr)) return true; // loopback / unspecified
+  // Hex twin of the dotted mapped form: ::ffff:7f00:1 names the same host
+  // as the denied ::ffff:127.0.0.1, so expand first and run the same IPv4
+  // blocklist on the embedded last 32 bits. Only the mapped prefix
+  // ::ffff:0:0/96 denotes an IPv4 address; other hex tails stay native IPv6.
+  const nums = expandIPv6HexGroups(addr);
+  if (
+    nums !== null &&
+    nums[0] === 0 &&
+    nums[1] === 0 &&
+    nums[2] === 0 &&
+    nums[3] === 0 &&
+    nums[4] === 0 &&
+    nums[5] === 0xffff
+  ) {
+    const hi = nums[6];
+    const lo = nums[7];
+    return isBlockedIPv4(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`);
+  }
+  // NOTE (quota-PR minimal blocklist): IPv4-compatible range checks
+  // (::/96), fc00::/7, and fe80::/10 were split out to the
+  // SSRF follow-up (see ssrf-extras.split.md at the repo root). Dotted tails
+  // stay denied above, as does loopback/unspecified.
+  return false;
+}
+
+function ipv4ToInt(ip: string): number {
+  const [a, b, c, d] = ip.split(".").map(Number);
+  return (((a * 256 + b) * 256 + c) * 256 + d) >>> 0;
+}
+
+function parseIPv4Cidr(entry: string): { network: number; mask: number } | null {
+  const slash = entry.indexOf("/");
+  if (slash === -1) return null;
+  const addr = entry.slice(0, slash);
+  const prefix = entry.slice(slash + 1);
+  if (net.isIP(addr) !== 4) return null;
+  if (!/^(0|[1-9]\d?)$/.test(prefix)) return null;
+  const bits = Number(prefix);
+  if (bits < 0 || bits > 32) return null;
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return { network: (ipv4ToInt(addr) & mask) >>> 0, mask };
+}
+
+// Opt-in escape hatch for the default-deny guard below
+// (fileStorage.urlAllowlist): explicitly permitted hosts skip the blocklist.
+// An entry is a hostname ("localhost"), an IPv4 literal ("127.0.0.1"), or
+// an IPv4 CIDR ("10.0.0.0/8"), matched case-insensitively against the URL
+// hostname and (for the DNS branch) the resolved address. IPv6 literals
+// match exactly; IPv6 CIDRs are not supported. Malformed or non-string
+// entries permit nothing (fail closed).
+function isAllowlistedHost(value: string, allowlist: readonly string[]): boolean {
+  const normalized = value.toLowerCase();
+  for (const rawEntry of allowlist) {
+    if (typeof rawEntry !== "string") continue;
+    const entry = rawEntry
+      .trim()
+      .toLowerCase()
+      .replace(/\.$/, "")
+      .replace(/^\[|\]$/g, "");
+    if (entry === "") continue;
+    const cidr = parseIPv4Cidr(entry);
+    if (cidr !== null) {
+      if (
+        net.isIP(normalized) === 4 &&
+        (ipv4ToInt(normalized) & cidr.mask) >>> 0 === cidr.network
+      ) {
+        return true;
+      }
+      continue;
+    }
+    if (entry === normalized) return true;
+  }
+  return false;
+}
+
 export class FilesController {
   constructor(private fileService: FileService) {}
+
+  // Max number of `file` file-parts accepted in a single upload request.
+  // busboy (via @fastify/multipart) has no file-count limit by default
+  // (parts defaults to 1000, files is unbounded), so the routes-level
+  // `limits.files` mirrors this value and the in-controller check below is
+  // the authoritative guard. Documented policy: at most 5 file parts per
+  // request; the last staged file part wins (pre-existing behavior).
+  // Transient tmpdir worst case per request is 5 x routes fileSize (each part staged, only last committed); quota (FileService cumulative) never applies to discarded sum.
+  public static readonly MAX_FILE_PARTS_PER_REQUEST = 5;
 
   private validatePath(filePath: string): boolean {
     if (path.isAbsolute(filePath)) {
       return false;
     }
 
-    if (filePath.includes("..")) {
+    if (filePath.includes("\\")) {
       return false;
     }
 
@@ -32,7 +192,11 @@ export class FilesController {
     }
 
     const normalized = path.normalize(filePath);
-    if (normalized.startsWith("..")) {
+    if (
+      normalized === "." ||
+      normalized.startsWith("." + path.sep) ||
+      normalized.split(path.sep).includes("..")
+    ) {
       return false;
     }
 
@@ -44,7 +208,16 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
   ) {
-    let tempFilePath: string | null = null;
+    // Every staged file part is tracked here so ALL temps are unlinked on
+    // every exit (success, invalid-path 400, file-count cap 413, quota
+    // 413, pipeline/iteration throw, client abort). Never glob tmpdir():
+    // the `upload_` prefix is generic and a glob could delete other
+    // processes' files.
+    const tempFilePaths: string[] = [];
+    const unlinkAllTemps = async (): Promise<void> => {
+      await Promise.all(tempFilePaths.map((p) => fs.promises.unlink(p).catch(() => {})));
+      tempFilePaths.length = 0;
+    };
 
     try {
       if (!request.isMultipart()) {
@@ -57,18 +230,31 @@ export class FilesController {
       let filePath: string | null = null;
       let fileUrl: string | null = null;
       let fileProvided: boolean = false;
+      let filePartCount = 0;
       let saveFileResult: Awaited<ReturnType<typeof this.fileService.saveFile>> | null = null;
 
       for await (const part of request.parts()) {
         if (part.fieldname === "file") {
           if (part.type === "file") {
-            const file = part as MultipartFile;
+            filePartCount += 1;
+            if (filePartCount > FilesController.MAX_FILE_PARTS_PER_REQUEST) {
+              const stream = part.file;
+              if (stream && typeof stream.destroy === "function") {
+                stream.destroy();
+              }
+              await unlinkAllTemps();
+              return reply.code(413).send({
+                success: false,
+                message: `Too many files in the multipart request: at most ${FilesController.MAX_FILE_PARTS_PER_REQUEST} file parts are accepted.`,
+              });
+            }
             fileProvided = true;
 
-            tempFilePath = path.join(tmpdir(), `upload_${uuidv4()}`);
+            const stagedPath = path.join(tmpdir(), `upload_${uuidv4()}`);
+            tempFilePaths.push(stagedPath);
 
-            const writeStream = fs.createWriteStream(tempFilePath);
-            await pipeline(file.file, writeStream);
+            const writeStream = fs.createWriteStream(stagedPath);
+            await pipeline(part.file, writeStream);
           } else if (part.type === "field" && typeof part.value === "string") {
             fileUrl = part.value;
           }
@@ -91,12 +277,12 @@ export class FilesController {
 
       let finalPath: string;
 
-      if (fileProvided && tempFilePath) {
+      if (fileProvided && tempFilePaths.length > 0) {
         if (!filePath) {
           finalPath = randomUUID();
         } else {
           if (!this.validatePath(filePath)) {
-            await fs.promises.unlink(tempFilePath).catch(() => {});
+            await unlinkAllTemps();
             return reply.code(400).send({
               success: false,
               message: "Invalid path provided",
@@ -105,17 +291,28 @@ export class FilesController {
           finalPath = filePath;
         }
 
+        const tempFilePath = tempFilePaths[tempFilePaths.length - 1];
+        const { size } = await fs.promises.stat(tempFilePath);
         const readStream = fs.createReadStream(tempFilePath);
         saveFileResult = await this.fileService.saveFile({
           filePath: finalPath,
           stream: readStream,
+          size,
         });
 
-        await fs.promises.unlink(tempFilePath).catch(() => {});
-        tempFilePath = null;
+        await unlinkAllTemps();
       } else if (fileUrl) {
+        let parsedFileUrl: URL;
+        try {
+          parsedFileUrl = new URL(fileUrl);
+        } catch {
+          return reply.code(400).send({
+            success: false,
+            message: "Invalid URL provided",
+          });
+        }
         if (!filePath) {
-          const urlPath = new URL(fileUrl).pathname;
+          const urlPath = parsedFileUrl.pathname;
           const filename = urlPath.split("/").pop() || randomUUID();
           const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
           finalPath = sanitizedFilename;
@@ -129,11 +326,46 @@ export class FilesController {
           finalPath = filePath;
         }
 
-        const { stream } = await this.createStreamFromUrl(fileUrl);
-        saveFileResult = await this.fileService.saveFile({
-          filePath: finalPath,
-          stream,
-        });
+        // Any failure to fetch the remote URL (blocked host, DNS failure,
+        // non-200, network error) is a client error: the
+        // caller supplied the URL, so it maps to 400, never 500.
+        let fetched: Awaited<ReturnType<typeof this.createStreamFromUrl>>;
+        try {
+          fetched = await this.createStreamFromUrl(
+            fileUrl,
+            server.steelBrowserConfig?.fileStorage?.urlAllowlist,
+          );
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : "Failed to fetch file from URL";
+          return reply.code(400).send({ success: false, message });
+        }
+        const { stream, contentLength } = fetched;
+        try {
+          saveFileResult = await this.fileService.saveFile({
+            filePath: finalPath,
+            stream,
+            size: contentLength,
+          });
+        } catch (e: unknown) {
+          try {
+            stream.destroy();
+          } catch {}
+          if (e instanceof FileQuotaExceededError) throw e;
+          if (
+            (e as { code?: string })?.code === "ENOSPC" ||
+            (e as { code?: string })?.code === "EACCES"
+          ) {
+            throw e;
+          }
+          if (
+            typeof (e as { statusCode?: unknown })?.statusCode === "number" &&
+            (e as { statusCode: number }).statusCode === 413
+          ) {
+            throw e;
+          }
+          const message = e instanceof Error ? e.message : "Failed to fetch file from URL";
+          return reply.code(400).send({ success: false, message });
+        }
       }
 
       if (!saveFileResult) {
@@ -149,8 +381,18 @@ export class FilesController {
         lastModified: saveFileResult.lastModified,
       });
     } catch (e: unknown) {
-      if (tempFilePath) {
-        await fs.promises.unlink(tempFilePath).catch(() => {});
+      await unlinkAllTemps();
+      if (e instanceof FileQuotaExceededError) {
+        return reply.code(413).send({ success: false, message: e.message });
+      }
+      // Busboy/multipart limit errors (per-file fileSize, files/parts
+      // count) carry statusCode 413: map them to 413, never 500.
+      if (
+        typeof (e as { statusCode?: unknown })?.statusCode === "number" &&
+        (e as { statusCode: number }).statusCode === 413
+      ) {
+        const message = e instanceof Error ? e.message : "Upload exceeds request limits";
+        return reply.code(413).send({ success: false, message });
       }
       const error = getErrors(e);
       return reply.code(500).send({ success: false, message: error });
@@ -159,14 +401,74 @@ export class FilesController {
 
   private async createStreamFromUrl(
     url: string,
-  ): Promise<{ stream: Readable; contentType?: string; name: string }> {
-    return new Promise((resolve, reject) => {
-      const protocol = url.startsWith("https") ? https : http;
+    urlAllowlist?: string[],
+  ): Promise<{ stream: Readable; contentType?: string; name: string; contentLength?: number }> {
+    // Default-deny for loopback/intranet fetch targets: hosts resolving to a
+    // blocked address (loopback, private, link-local, or reserved ranges) —
+    // plus "localhost" itself — are denied unless explicitly opted back in
+    // via fileStorage.urlAllowlist (hostnames, IPv4 literals, or IPv4
+    // CIDRs; self-hosted escape hatch, empty by default). Public internet
+    // hosts stay fetchable. The allowlist never widens schemes (http/https
+    // only) and never permits redirect chasing (non-200 still rejected).
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new InvalidFileUrlError("Invalid URL provided");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new InvalidFileUrlError("Only http and https URLs are allowed");
+    }
+    const hostname = parsed.hostname
+      .toLowerCase()
+      .replace(/\.$/, "")
+      .replace(/^\[|\]$/g, "");
+    const allowlist: readonly string[] = urlAllowlist ?? [];
+    // An explicitly permitted host skips the blocklist gates (but not the
+    // scheme check above): the operator opted it back in.
+    const hostnameAllowed = isAllowlistedHost(hostname, allowlist);
+    if (!hostnameAllowed && hostname === "localhost") {
+      throw new InvalidFileUrlError("URL host is not allowed");
+    }
 
-      protocol
-        .get(url, (response) => {
+    // Minimal pre-connect guard for the quota PR: literal-IP check plus a
+    // single DNS lookup. Resolving/checking ALL records, DNS pinning (TOCTOU
+    // fix), and the fetch timeout live in the SSRF follow-up
+    // (see ssrf-extras.split.md at the repo root).
+    if (net.isIP(hostname) !== 0) {
+      if (!hostnameAllowed && isBlockedIp(hostname)) {
+        throw new InvalidFileUrlError("URL host is not allowed");
+      }
+    } else if (!hostnameAllowed) {
+      let address: string;
+      try {
+        address = (await dnsLookup(hostname)).address;
+      } catch {
+        throw new InvalidFileUrlError("URL host could not be resolved");
+      }
+      // A hostname outside the allowlist may still resolve to an allowlisted
+      // address (e.g. an intranet name inside an allowlisted CIDR).
+      if (!isAllowlistedHost(address, allowlist) && isBlockedIp(address)) {
+        throw new InvalidFileUrlError("URL host is not allowed");
+      }
+    }
+
+    const get = (parsed.protocol === "https:" ? https.get : http.get) as typeof http.get;
+
+    return new Promise((resolve, reject) => {
+      const fail = (message: string): void => {
+        reject(new InvalidFileUrlError(message));
+      };
+      let request: ReturnType<typeof http.get>;
+      try {
+        request = get(parsed, {}, (response) => {
+          // The stdlib never follows redirects on its own; reject every
+          // non-200 (including 3xx that carry a Location header) instead
+          // of chasing them.
           if (response.statusCode !== 200) {
-            return reject(new Error(`Failed to fetch file: ${response.statusCode}`));
+            response.destroy();
+            fail(`Failed to fetch file: ${response.statusCode}`);
+            return;
           }
 
           const contentType = response.headers["content-type"];
@@ -181,13 +483,29 @@ export class FilesController {
             name = url.split("/").pop() || "downloaded-file";
           }
 
+          let contentLength: number | undefined;
+          const rawLength = response.headers["content-length"];
+          if (typeof rawLength === "string") {
+            const parsedLength = Number.parseInt(rawLength, 10);
+            if (Number.isFinite(parsedLength) && parsedLength >= 0) {
+              contentLength = parsedLength;
+            }
+          }
+
           resolve({
             stream: response,
             contentType,
             name,
+            contentLength,
           });
-        })
-        .on("error", reject);
+        });
+      } catch (e: unknown) {
+        fail(e instanceof Error ? e.message : "Failed to fetch file from URL");
+        return;
+      }
+      request.on("error", (e: Error) => {
+        fail(e.message);
+      });
     });
   }
 
@@ -221,19 +539,24 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>,
     reply: FastifyReply,
   ) {
-    const { size, lastModified } = await this.fileService.getFile({
-      filePath: request.params["*"],
-    });
+    try {
+      const { size, lastModified } = await this.fileService.getFile({
+        filePath: request.params["*"],
+      });
 
-    const name = request.params["*"].split("/").pop() || "downloaded-file";
+      const name = request.params["*"].split("/").pop() || "downloaded-file";
 
-    reply
-      .header("Content-Length", size)
-      .header("Last-Modified", lastModified.toISOString())
-      .header("Content-Type", mime.lookup(request.params["*"]) || "application/octet-stream")
-      .header("Content-Disposition", attachmentContentDisposition(name));
+      reply
+        .header("Content-Length", size)
+        .header("Last-Modified", lastModified.toISOString())
+        .header("Content-Type", mime.lookup(request.params["*"]) || "application/octet-stream")
+        .header("Content-Disposition", attachmentContentDisposition(name));
 
-    return reply.code(200).send();
+      return reply.code(200).send();
+    } catch (e: unknown) {
+      const error = getErrors(e);
+      return reply.code(500).send({ success: false, message: error });
+    }
   }
 
   async handleFileList(

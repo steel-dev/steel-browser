@@ -106,11 +106,11 @@ interface SessionConfig {
 
 ### 4. File Storage Service (`api/src/services/file.service.ts`)
 
-Handles file operations with session-scoped storage:
+Handles file operations with process-wide storage (FileService singleton):
 
 - **Upload Management**: Handles multipart file uploads
 - **Download Coordination**: Manages browser downloads
-- **Storage Isolation**: Session-scoped file storage
+- **Storage Isolation**: Process-wide file storage (FileService singleton); per-session files removed on cleanup
 - **Cleanup**: Automatic file cleanup on session end
 
 ### 5. Session Recording (`api/extensions/recorder`)
@@ -189,7 +189,7 @@ Steel Browser uses Fastify's plugin architecture for modular API design:
 ```typescript
 // Main plugin registration
 await fastify.register(steelBrowserPlugin, {
-  fileStorage: { maxSizePerSession: 100 * MB }
+  fileStorage: { maxTotalBytes: 100 * MB }
 });
 
 // Individual plugins
@@ -197,6 +197,8 @@ await fastify.register(browserInstancePlugin);
 await fastify.register(sessionPlugin);
 await fastify.register(fileStoragePlugin);
 ```
+
+File quota is process-wide: `maxTotalBytes` caps the store-wide cumulative bytes on the `FileService` singleton (`maxSizePerSession` is a deprecated alias). Cleanup wipes the shared store on browser shutdown/relaunch. When unset, the cumulative quota is unbounded while the multipart per-file `fileSize` limit still falls back to 100MB. A quota of `0` is a valid deny-all: any upload with positive bytes is rejected.
 
 ### Route Organization
 
