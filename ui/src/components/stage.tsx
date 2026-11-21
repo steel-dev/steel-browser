@@ -137,7 +137,7 @@ export function Stage({
           <Replay key={session.id} sessionId={session.id} />
         </Suspense>
       ) : session.debugUrl ? (
-        <LiveFrame url={session.debugUrl} />
+        <LiveFrame key={session.id} url={session.debugUrl} />
       ) : (
         <div className="player">
           <Notice title="No live view">
