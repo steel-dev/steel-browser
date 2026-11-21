@@ -37,6 +37,7 @@ import {
   isImageRequest,
 } from "../../utils/requests.js";
 import { filterHeaders, getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
+import { chromeGlLaunchArgs } from "../../utils/chrome-gl.js";
 import {
   deepMerge,
   extractStorageForPageWithTimeout,
@@ -968,10 +969,16 @@ export class CDPService extends EventEmitter {
           env.DISABLE_CHROME_SANDBOX ||
           (typeof process.getuid === "function" && process.getuid() === 0);
 
+        const glLaunchArgs = chromeGlLaunchArgs({
+          headless: isHeadless,
+          useGl: env.CHROME_USE_GL,
+          disableGpu: env.CHROME_DISABLE_GPU,
+        });
+
         const staticDefaultArgs = [
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
-          "--disable-gpu",
+          ...glLaunchArgs.disableGpu,
           "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync,DisableLoadExtensionCommandLineSwitch,DisableDisableExtensionsExceptCommandLineSwitch",
           "--enable-features=Clipboard",
           "--no-default-browser-check",
@@ -1007,7 +1014,7 @@ export class CDPService extends EventEmitter {
           "--ozone-platform=x11",
           "--disable-renderer-backgrounding",
           "--disable-backgrounding-occluded-windows",
-          "--use-gl=swiftshader",
+          ...(isHeadless ? [] : glLaunchArgs.useGl),
           "--in-process-gpu",
           "--enable-crashpad",
           "--crash-dumps-dir=/tmp/chrome-dumps",
@@ -1018,6 +1025,7 @@ export class CDPService extends EventEmitter {
 
         const headlessArgs = [
           "--headless=new",
+          ...(isHeadless ? glLaunchArgs.useGl : []),
           "--hide-crash-restore-bubble",
           "--disable-blink-features=AutomationControlled",
           // can we just remove this outright?
