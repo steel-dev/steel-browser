@@ -14,11 +14,14 @@ export class WebSocketRegistryService implements WebSocketHandlerRegistry {
   matchHandler(url: string): WebSocketHandler | undefined {
     // TODO: use path-to-regexp or find-my-way to match the path
     // Find the first handler whose path matches the start of the URL
+    let best: WebSocketHandler | undefined;
+    let bestLength = -1;
     for (const [path, handler] of this.handlers.entries()) {
-      if (url.startsWith(path)) {
-        return handler;
+      if (url.startsWith(path) && path.length > bestLength) {
+        best = handler;
+        bestLength = path.length;
       }
     }
-    return undefined;
+    return best;
   }
 }
