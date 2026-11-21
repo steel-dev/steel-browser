@@ -13,6 +13,7 @@ import {
   crashedTab,
   dialogNote,
   execute,
+  heldNote,
   observe,
   openDialogOn,
   pageInfo,
@@ -20,7 +21,6 @@ import {
   type Context,
 } from "./handlers/index.js";
 import {
-  DIALOG_GONE,
   deprecationHeader,
   legacyControlSchema,
   upgradeLegacy,
@@ -259,9 +259,6 @@ export class CommandEngine {
     legacy: LegacyRequest,
     deadline: number,
   ): Promise<EngineResponse> {
-    if (legacy.forms.includes("dialog")) {
-      return failure("invalid_request", DIALOG_GONE);
-    }
     if (legacy.mixed) {
       return failure("invalid_request", "Send a control command on its own.");
     }
@@ -471,10 +468,20 @@ export class CommandEngine {
       : (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
     return {
       id: execution.id,
-      ...(execution.next ? { next: execution.next } : {}),
-      epoch: active.records.epoch,
-      ...(execution.epochChanged !== undefined ? { epochChanged: execution.epochChanged } : {}),
+      state: execution.state,
+      effect: execution.effect,
+      ran: execution.ran,
+      ...(execution.error ? { stopped: execution.error } : {}),
+      results: execution.results,
+      ...(execution.observe ? { observe: execution.observe } : {}),
       page,
+      ...dialogNote(active, execution.tab ? active.tabs.get(execution.tab) : undefined),
+      ...heldNote(active),
+      ...(execution.next ? { next: execution.next } : {}),
+      ...(execution.epochChanged !== undefined ? { epochChanged: execution.epochChanged } : {}),
+      replayed,
+      ...(execution.bodyExpired ? { bodyExpired: true } : {}),
+      epoch: active.records.epoch,
       execution: {
         id: execution.id,
         state: execution.state,
@@ -483,10 +490,6 @@ export class CommandEngine {
         ran: execution.ran,
         ...(execution.error ? { error: execution.error } : {}),
       },
-      results: execution.results,
-      ...dialogNote(active, execution.tab ? active.tabs.get(execution.tab) : undefined),
-      ...(execution.observe ? { observe: execution.observe } : {}),
-      ...(execution.bodyExpired ? { bodyExpired: true } : {}),
     };
   }
 
@@ -680,7 +683,7 @@ export class CommandEngine {
       return command ? { ok: false, effect: job.touched ? "unknown" : "none", error } : { error };
     }
     const dialog = openDialogOn(active, job.tab);
-    const hint = dialogHint(job.tab);
+    const hint = dialogHint(job.tab, dialog?.id);
     const error = {
       code: "dialog_pending",
       message: dialog

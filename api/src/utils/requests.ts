@@ -44,7 +44,7 @@ const AD_HOSTS = [
   "outbrain.com",
 
   // Social Media Tracking
-  "facebook.com/tr/",
+  "facebook.com/tr",
   "connect.facebook.net",
   "platform.twitter.com",
   "ads.linkedin.com",
@@ -71,9 +71,19 @@ function hostMatches(hostname: string, host: string): boolean {
   return hostname === host || hostname.endsWith(`.${host}`);
 }
 
+function adEntryMatches(parsed: URL, hostname: string, entry: string): boolean {
+  const slash = entry.indexOf("/");
+  if (slash === -1) return hostMatches(hostname, entry);
+  const path = entry.slice(slash);
+  return (
+    hostMatches(hostname, entry.slice(0, slash)) &&
+    (parsed.pathname === path || parsed.pathname.startsWith(`${path}/`))
+  );
+}
+
 export function isAdRequest(parsed: URL): boolean {
   const hostname = normalizeHost(parsed.hostname);
-  return AD_HOSTS.some((adHost) => hostMatches(hostname, adHost));
+  return AD_HOSTS.some((entry) => adEntryMatches(parsed, hostname, entry));
 }
 
 export function isImageRequest(parsed: URL): boolean {
@@ -101,7 +111,7 @@ export function compileUrlPatterns(patterns: string[]): RegExp[] {
   return patterns.map((pattern) => {
     try {
       return new RegExp(
-        `^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`,
+        `^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`,
         "i",
       );
     } catch {

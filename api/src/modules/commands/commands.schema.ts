@@ -19,6 +19,14 @@ const Dialog = z.object({
   defaultPrompt: z.string().optional(),
 });
 
+const Button = z.enum(["left", "right", "middle"]);
+
+const Held = z.object({
+  tab: z.string(),
+  keys: z.array(z.string()).describe("Keys still held down, for example with keyboard down."),
+  button: Button.optional().describe("A mouse button held down with mouse down."),
+});
+
 const resultBase = {
   ok: z.boolean(),
   effect: Effect,
@@ -58,10 +66,22 @@ const RESULT_FIELDS = {
   focus: {},
   type: interrupts,
   fill: interrupts,
-  press: interrupts,
-  keydown: interrupts,
-  keyup: interrupts,
+  press: {
+    answered: z
+      .string()
+      .optional()
+      .describe(
+        "The id of the dialog that the key answered. Absent when the key went to the page.",
+      ),
+    ...interrupts,
+  },
+  keyboard: interrupts,
   mouse: interrupts,
+  release: {
+    keys: z.array(z.string()).optional().describe("The keys that were let go."),
+    button: Button.optional().describe("The mouse button that was let go."),
+    ...interrupts,
+  },
   select: {
     selected: z.array(z.string()).optional().describe("The values of the selected options."),
     ...interrupts,
@@ -120,6 +140,7 @@ const RESULT_FIELDS = {
     tab: z.string().optional(),
     loading,
   },
+  dialog: interrupts,
 };
 
 type ResultName = keyof typeof RESULT_FIELDS;
@@ -140,25 +161,12 @@ export const CommandResponse = z.object({
     .describe(
       "The id of this execution. Use it in GET /v1/sessions/{sessionId}/commands/executions/{executionId} and POST /v1/sessions/{sessionId}/commands/executions/{executionId}/cancel.",
     ),
-  next: z.string().optional().describe("Send it as after in the next request."),
-  epochChanged: z
-    .boolean()
-    .optional()
-    .describe(
-      "Whether another commands client, a quick action, or a browser restart changed the session since after.",
-    ),
-  page: z
-    .object({ tab: z.string(), url: z.string(), title: z.string() })
-    .nullable()
-    .describe("The tab the execution used."),
-  execution: z.object({
-    id: z.string(),
-    state: z.enum(["running", "completed", "failed", "cancelled", "timeout"]),
-    effect: Effect,
-    replayed: z.boolean(),
-    ran: z.number().int().describe("Commands started."),
-    error: ErrorInfo.optional(),
-  }),
+  state: z.enum(["running", "completed", "failed", "cancelled", "timeout"]),
+  effect: Effect,
+  ran: z.number().int().describe("Commands started."),
+  stopped: ErrorInfo.optional().describe(
+    "Why the execution stopped early, such as a cancel, a timeout, or a browser restart. A failed command has its error in results instead.",
+  ),
   results: z.array(CommandResult),
   observe: z
     .object({
@@ -173,9 +181,27 @@ export const CommandResponse = z.object({
     })
     .partial()
     .optional(),
+  page: z
+    .object({ tab: z.string(), url: z.string(), title: z.string() })
+    .nullable()
+    .describe("The tab the execution used."),
   dialog: Dialog.optional().describe(
     "A dialog that is open on the tab and blocks it until it closes.",
   ),
+  held: z
+    .array(Held)
+    .optional()
+    .describe(
+      "Tabs with keys or a mouse button still held down. They apply to later input until released.",
+    ),
+  next: z.string().optional().describe("Send it as after in the next request."),
+  epochChanged: z
+    .boolean()
+    .optional()
+    .describe(
+      "Whether another commands client, a quick action, or a browser restart changed the session since after.",
+    ),
+  replayed: z.boolean().describe("This is the stored result of an earlier request."),
   bodyExpired: z.boolean().optional(),
 });
 

@@ -71,6 +71,8 @@ describe("published request schema", () => {
         { command: "click", target: { text: "Accept" }, frame: { title: "Consent" } },
         { command: "click", target: { text: "Accept" }, frame: "iframe#consent" },
         { command: "click", target: { text: "Accept" }, frame: ["iframe", { css: "iframe" }] },
+        { command: "keyboard", action: "down", key: "Shift" },
+        { command: "dialog", dialog: "d-3", action: "accept", text: "Jun" },
       ]) {
         const response = await app.inject({ method: "POST", url, payload: { commands } });
         expect(response.statusCode, `${url} ${response.body}`).toBe(200);
@@ -79,6 +81,8 @@ describe("published request schema", () => {
         [],
         { command: "teleport" },
         { command: "click", target: { text: "Accept" }, frame: [] },
+        { command: "keydown", key: "Shift" },
+        { command: "press", key: "Enter", dialog: "d-3" },
       ]) {
         const response = await app.inject({ method: "POST", url, payload: { commands } });
         expect(response.statusCode, `${url} ${JSON.stringify(commands)}`).toBe(400);
