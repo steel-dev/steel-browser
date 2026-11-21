@@ -209,16 +209,16 @@ describe("CDPService mobile device emulation", () => {
 });
 
 describe("CDPService desktop device emulation", () => {
-  test("still applies its overrides on a short-lived session", async () => {
+  test("keeps native desktop UA metadata and metrics on one persistent session", async () => {
     const service = serviceWith(desktopFingerprint);
     const { page, send, detach } = fakePage();
 
     await (service as any).applyDeviceMetricsOverride(page);
     await (service as any).injectFingerprintSafely(page, desktopFingerprint);
 
-    expect(page.createCDPSession).toHaveBeenCalledTimes(2);
-    expect(detach).toHaveBeenCalledTimes(2);
-    expect(page.setUserAgent).toHaveBeenCalledWith(DESKTOP_UA);
+    expect(page.createCDPSession).toHaveBeenCalledOnce();
+    expect(detach).not.toHaveBeenCalled();
+    expect(page.setUserAgent).toHaveBeenCalledWith(DESKTOP_UA, expect.objectContaining({ platform: "Linux" }));
     expect(send).toHaveBeenCalledWith(
       "Page.setDeviceMetricsOverride",
       expect.objectContaining({ width: 1920, height: 1080, mobile: false }),
@@ -227,7 +227,7 @@ describe("CDPService desktop device emulation", () => {
     expect(send).toHaveBeenCalledWith(
       "Emulation.setUserAgentOverride",
       expect.objectContaining({
-        platform: "Linux",
+        platform: "Linux x86_64",
         userAgentMetadata: expect.objectContaining({
           platform: "Linux",
           platformVersion: "",
@@ -240,7 +240,7 @@ describe("CDPService desktop device emulation", () => {
 
     const script = page.evaluateOnNewDocument.mock.calls[0][0] as string;
     expect(script).toContain('const FIXED_ARCHITECTURE = "x86"');
-    expect(script).toContain('const FIXED_PLATFORM_VERSION = "15.0.0"');
+    expect(script).toContain('const FIXED_PLATFORM_VERSION = ""');
   });
 
   test("queues nothing when a page target appears", () => {
@@ -249,6 +249,19 @@ describe("CDPService desktop device emulation", () => {
 
     (service as any).queueMobileEmulation({ _session: () => ({ send }) });
 
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test("does not inject JavaScript or UA metadata into a native Core session", async () => {
+    const service = serviceWith(desktopFingerprint);
+    Object.assign((service as any).launchConfig, {
+      skipFingerprintInjection: true,
+      extra: { stealthConfig: { useStealthBrowser: true } },
+    });
+    const { page, send } = fakePage();
+    await (service as any).injectFingerprintSafely(page, desktopFingerprint);
+    expect(page.evaluateOnNewDocument).not.toHaveBeenCalled();
+    expect(page.setUserAgent).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
 });
