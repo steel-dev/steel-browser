@@ -45,14 +45,13 @@ export interface DuckDBStorageOptions {
   writeBufferFlushInterval?: number;
 }
 
-/**
- * Maximum number of rows inserted per INSERT statement. A single INSERT that
- * spans the entire write buffer builds a statement with ~7 bound parameters per
- * row; spreading hundreds of thousands of params into `db.run(sql, ...params)`
- * overflows the V8 call stack ("Maximum call stack size exceeded"). Capping the
- * rows per statement keeps each flush bounded regardless of buffer size.
- */
-const WRITE_CHUNK_SIZE = 1000;
+// Bound both native bind arguments and serialized payload per INSERT. Allow a
+// single large event through intact, since truncation would change log content.
+const MAX_WRITE_ROWS = 1000;
+const MAX_WRITE_PAYLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_RETRY_DELAY_MS = 30_000;
+
+type PendingWrite = { event: BrowserEventUnion; context: Record<string, any> };
 
 export class DuckDBStorage implements LogStorage {
   private db: Database | null = null;
@@ -60,15 +59,18 @@ export class DuckDBStorage implements LogStorage {
   private maxThreads: number;
   private memoryLimit: string;
   private parquetCompression: ParquetCompression;
-  private isInitialized = false;
 
-  // Write buffer for batching
-  private writeBuffer: Array<{ event: BrowserEventUnion; context: Record<string, any> }> = [];
+  // Keep each entry until its INSERT commits. An ordered set lets us release
+  // committed entries without shifting or copying the remaining backlog.
+  private writeBuffer = new Set<PendingWrite>();
+  private committedWrites = 0;
   private writeBufferEnabled: boolean;
   private writeBufferSize: number;
   private writeBufferFlushInterval: number;
   private flushTimer: NodeJS.Timeout | null = null;
-  private isFlushing = false;
+  private writeOperation: Promise<void> | null = null;
+  private retryDelay = 0;
+  private retryAt = 0;
 
   constructor(options: DuckDBStorageOptions = {}) {
     this.dbPath = options.dbPath || ":memory:";
@@ -78,200 +80,174 @@ export class DuckDBStorage implements LogStorage {
     this.writeBufferEnabled = options.enableWriteBuffer ?? true;
     this.writeBufferSize = options.writeBufferSize ?? 100;
     this.writeBufferFlushInterval = options.writeBufferFlushInterval ?? 1000;
-  }
 
-  async initialize(): Promise<void> {
-    if (this.isInitialized) return;
-
-    this.db = await Database.create(this.dbPath, {});
-
-    // Throttle CPU usage: limit threads and memory
-    await this.db.run(`SET threads = ${this.maxThreads}`);
-    await this.db.run(`SET memory_limit = '${this.memoryLimit}'`);
-
-    console.log(`DuckDB initialized: threads=${this.maxThreads}, memory=${this.memoryLimit}`);
-
-    await this.db.run(`
-      CREATE TABLE IF NOT EXISTS browser_events (
-        id VARCHAR PRIMARY KEY,
-        timestamp TIMESTAMP NOT NULL,
-        event_type VARCHAR NOT NULL,
-        target_type VARCHAR,
-        page_id VARCHAR,
-        data JSON NOT NULL,
-        context JSON NOT NULL,
-        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    console.log("Created browser_events table");
-
-    await this.db.run(`
-      CREATE INDEX IF NOT EXISTS idx_timestamp ON browser_events(timestamp);
-    `);
-    await this.db.run(`
-      CREATE INDEX IF NOT EXISTS idx_event_type ON browser_events(event_type);
-    `);
-    await this.db.run(`
-      CREATE INDEX IF NOT EXISTS idx_page_id ON browser_events(page_id);
-    `);
-
-    // Start periodic flush timer if write buffering is enabled
-    if (this.writeBufferEnabled) {
-      this.startFlushTimer();
+    if (!Number.isSafeInteger(this.writeBufferSize) || this.writeBufferSize < 1) {
+      throw new RangeError("writeBufferSize must be a positive integer");
     }
-
-    this.isInitialized = true;
+    if (
+      !Number.isInteger(this.writeBufferFlushInterval) ||
+      this.writeBufferFlushInterval < 1 ||
+      this.writeBufferFlushInterval > 2_147_483_647
+    ) {
+      throw new RangeError("writeBufferFlushInterval must be between 1 and 2147483647 ms");
+    }
   }
 
-  private startFlushTimer(): void {
-    if (this.flushTimer) return;
-    this.flushTimer = setInterval(() => {
-      this.flushWriteBuffer().catch((err) => {
-        console.error("DuckDB flush error:", err);
+  initialize(): Promise<void> {
+    return this.runWriteOperation(async () => {
+      if (this.db) return;
+
+      const db = await Database.create(this.dbPath, {
+        threads: String(this.maxThreads),
+        memory_limit: this.memoryLimit,
       });
-    }, this.writeBufferFlushInterval);
-    // Don't block process exit
-    this.flushTimer.unref();
+      try {
+        await db.run(`
+          CREATE TABLE IF NOT EXISTS browser_events (
+            id VARCHAR PRIMARY KEY,
+            timestamp TIMESTAMP NOT NULL,
+            event_type VARCHAR NOT NULL,
+            target_type VARCHAR,
+            page_id VARCHAR,
+            data JSON NOT NULL,
+            context JSON NOT NULL,
+            indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        await db.run("CREATE INDEX IF NOT EXISTS idx_timestamp ON browser_events(timestamp)");
+        await db.run("CREATE INDEX IF NOT EXISTS idx_event_type ON browser_events(event_type)");
+        await db.run("CREATE INDEX IF NOT EXISTS idx_page_id ON browser_events(page_id)");
+      } catch (err) {
+        await db.close().catch((closeError) => {
+          console.error("Error closing DuckDB after initialization failure:", closeError);
+        });
+        throw err;
+      }
+
+      this.db = db;
+      console.log(`DuckDB initialized: threads=${this.maxThreads}, memory=${this.memoryLimit}`);
+      if (this.writeBufferEnabled) {
+        this.flushTimer = setInterval(() => {
+          this.autoFlush().catch((err) => {
+            console.error("DuckDB flush error:", err);
+          });
+        }, this.writeBufferFlushInterval);
+        this.flushTimer.unref();
+      }
+    });
   }
 
-  private stopFlushTimer(): void {
-    if (this.flushTimer) {
-      clearInterval(this.flushTimer);
-      this.flushTimer = null;
-    }
+  private async autoFlush(): Promise<void> {
+    if (this.writeOperation || !this.writeBuffer.size || performance.now() < this.retryAt) return;
+    await this.flush();
   }
 
-  private async flushWriteBuffer(): Promise<void> {
-    if (this.isFlushing || this.writeBuffer.length === 0 || !this.db) return;
+  private runWriteOperation(run: () => Promise<void>): Promise<void> {
+    // A previous caller receives its own error. Allow later explicit operations
+    // to retry, while automatic flushes respect the cooldown.
+    const previous = this.writeOperation?.catch(() => {}) ?? Promise.resolve();
+    const operation = previous.then(run).finally(() => {
+      if (this.writeOperation === operation) this.writeOperation = null;
+    });
+    this.writeOperation = operation;
+    return operation;
+  }
 
-    this.isFlushing = true;
-    const toFlush = this.writeBuffer.splice(0, this.writeBuffer.length);
+  private async drainWrites(db: Database, through: number): Promise<void> {
+    if (this.committedWrites >= through) return;
 
     try {
-      await this.writeBatchInternal(toFlush);
+      while (this.committedWrites < through) {
+        const count = Math.min(
+          through - this.committedWrites,
+          this.writeBufferSize,
+          MAX_WRITE_ROWS,
+        );
+        const batch = Array.from(this.writeBuffer.values().take(count));
+        const inserted = await this.writeChunk(db, batch);
+        for (let i = 0; i < inserted; i++) this.writeBuffer.delete(batch[i]);
+        this.committedWrites += inserted;
+      }
+      this.retryDelay = 0;
+      this.retryAt = 0;
     } catch (err) {
-      // Put events back on failure (at the front). Use concat rather than
-      // `unshift(...toFlush)`: spreading a large array as call arguments throws
-      // "Maximum call stack size exceeded" once the buffer is big enough, which
-      // would mask the original failure and lose the buffered events.
-      this.writeBuffer = toFlush.concat(this.writeBuffer);
+      const interval = this.writeBufferFlushInterval;
+      this.retryDelay = Math.min(
+        Math.max(MAX_RETRY_DELAY_MS, interval),
+        (this.retryDelay || interval) * 2,
+      );
+      this.retryAt = performance.now() + this.retryDelay;
       throw err;
-    } finally {
-      this.isFlushing = false;
     }
   }
 
   async write(event: BrowserEventUnion, context: Record<string, any>): Promise<void> {
-    if (!this.db) {
-      throw new Error("Database not initialized");
-    }
+    await this.writeBatch([{ event, context }]);
+  }
+
+  async writeBatch(events: PendingWrite[]): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+    if (!events.length) return;
 
     if (this.writeBufferEnabled) {
-      // Add to buffer
-      this.writeBuffer.push({ event, context });
-
-      // Flush if buffer is full
-      if (this.writeBuffer.length >= this.writeBufferSize) {
-        await this.flushWriteBuffer();
-      }
+      for (const { event, context } of events) this.writeBuffer.add({ event, context });
+      if (this.writeBuffer.size >= this.writeBufferSize) await this.autoFlush();
       return;
     }
 
-    // Direct write (no buffering)
-    await this.writeSingle(event, context);
-  }
-
-  private async writeSingle(event: BrowserEventUnion, context: Record<string, any>): Promise<void> {
-    if (!this.db) return;
-
-    const stmt = await this.db.prepare(`
-        INSERT INTO browser_events (id, timestamp, event_type, target_type, page_id, data, context, indexed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `);
-
-    const id = randomUUID();
-    const timestamp = event.timestamp;
-    const eventType = event.type;
-    const targetType = event.targetType || null;
-    const pageId = event.pageId || null;
-    const data = safeStringify(event);
-    const contextJson = safeStringify(context);
-
-    await stmt.run(id, timestamp, eventType, targetType, pageId, data, contextJson);
-    await stmt.finalize();
-  }
-
-  async writeBatch(
-    events: Array<{ event: BrowserEventUnion; context: Record<string, any> }>,
-  ): Promise<void> {
-    if (!this.db) {
-      throw new Error("Database not initialized");
-    }
-
-    if (events.length === 0) return;
-
-    if (this.writeBufferEnabled) {
-      // Add all to buffer
-      this.writeBuffer.push(...events);
-
-      // Flush if buffer exceeds threshold
-      if (this.writeBuffer.length >= this.writeBufferSize) {
-        await this.flushWriteBuffer();
+    await this.runWriteOperation(async () => {
+      const db = this.requireDatabase();
+      for (let offset = 0; offset < events.length; ) {
+        offset += await this.writeChunk(db, events, offset);
       }
-      return;
-    }
-
-    // Direct batch write (no buffering)
-    await this.writeBatchInternal(events);
+    });
   }
 
-  private async writeBatchInternal(
-    events: Array<{ event: BrowserEventUnion; context: Record<string, any> }>,
-  ): Promise<void> {
-    if (!this.db || events.length === 0) return;
-
-    // Insert in fixed-size chunks so a large buffer never produces a single
-    // statement with hundreds of thousands of bound parameters (see
-    // WRITE_CHUNK_SIZE).
-    for (let i = 0; i < events.length; i += WRITE_CHUNK_SIZE) {
-      await this.writeChunk(events.slice(i, i + WRITE_CHUNK_SIZE));
-    }
+  private requireDatabase(): Database {
+    if (!this.db) throw new Error("Database not initialized");
+    return this.db;
   }
 
-  private async writeChunk(
-    events: Array<{ event: BrowserEventUnion; context: Record<string, any> }>,
-  ): Promise<void> {
-    if (!this.db || events.length === 0) return;
-
+  private async writeChunk(db: Database, events: PendingWrite[], offset = 0): Promise<number> {
     const values: string[] = [];
-    const params: any[] = [];
+    const params: Array<string | null> = [];
+    let payloadBytes = 0;
 
-    for (const { event, context } of events) {
-      values.push("(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)");
-
-      const id = randomUUID();
-      const timestamp = event.timestamp;
-      const eventType = event.type;
-      const targetType = event.targetType || null;
-      const pageId = event.pageId || null;
+    for (let i = offset; i < Math.min(offset + MAX_WRITE_ROWS, events.length); i++) {
+      const { event, context } = events[i];
       const data = safeStringify(event);
       const contextJson = safeStringify(context);
+      const bytes = Buffer.byteLength(data) + Buffer.byteLength(contextJson);
+      if (values.length && payloadBytes + bytes > MAX_WRITE_PAYLOAD_BYTES) break;
 
-      params.push(id, timestamp, eventType, targetType, pageId, data, contextJson);
+      payloadBytes += bytes;
+      values.push("(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)");
+      params.push(
+        randomUUID(),
+        event.timestamp,
+        event.type,
+        event.targetType || null,
+        event.pageId || null,
+        data,
+        contextJson,
+      );
     }
 
-    const sql = `
+    await db.run(
+      `
       INSERT INTO browser_events (id, timestamp, event_type, target_type, page_id, data, context, indexed_at)
       VALUES ${values.join(", ")}
-    `;
-
-    await this.db.run(sql, ...params);
+    `,
+      ...params,
+    );
+    return values.length;
   }
 
   async flush(): Promise<void> {
-    // Flush any buffered writes
-    await this.flushWriteBuffer();
+    const through = this.committedWrites + this.writeBuffer.size;
+    await this.runWriteOperation(async () => {
+      if (this.db) await this.drainWrites(this.db, through);
+    });
   }
 
   async query(query: LogQuery): Promise<LogQueryResult> {
@@ -439,24 +415,21 @@ export class DuckDBStorage implements LogStorage {
   }
 
   async clear(options: { vacuum?: boolean } = {}): Promise<void> {
-    if (!this.db) {
-      throw new Error("Database not initialized");
-    }
+    const through = this.committedWrites + this.writeBuffer.size;
+    await this.runWriteOperation(async () => {
+      const db = this.requireDatabase();
+      await this.drainWrites(db, through);
+      await db.run("DELETE FROM browser_events");
 
-    // Flush any pending writes first
-    await this.flushWriteBuffer();
-
-    await this.db.run("DELETE FROM browser_events");
-
-    // VACUUM is CPU-intensive; run in background by default
-    if (options.vacuum) {
-      await this.db.run("VACUUM");
-    } else {
-      // Fire-and-forget vacuum (don't block)
-      this.db.run("VACUUM").catch((err) => {
-        console.error("Background VACUUM error:", err);
-      });
-    }
+      const vacuum = db.run("VACUUM");
+      if (options.vacuum) {
+        await vacuum;
+      } else {
+        vacuum.catch((err) => {
+          console.error("Background VACUUM error:", err);
+        });
+      }
+    });
   }
 
   /**
@@ -471,24 +444,26 @@ export class DuckDBStorage implements LogStorage {
   }
 
   async close(): Promise<void> {
-    // Stop the flush timer
-    this.stopFlushTimer();
+    await this.runWriteOperation(async () => {
+      const db = this.db;
+      if (!db) return;
 
-    // Flush any remaining buffered writes
-    if (this.writeBuffer.length > 0 && this.db) {
-      try {
-        await this.flushWriteBuffer();
-      } catch (err) {
-        console.error("Error flushing buffer on close:", err);
+      // A failed drain leaves the database and timer available for recovery.
+      while (this.writeBuffer.size) {
+        await this.drainWrites(db, this.committedWrites + this.writeBuffer.size);
       }
-    }
-
-    if (this.db) {
-      await this.db.close();
       this.db = null;
-    }
-
-    this.isInitialized = false;
+      try {
+        await db.close();
+      } catch (err) {
+        this.db = db;
+        throw err;
+      }
+      if (this.flushTimer) {
+        clearInterval(this.flushTimer);
+        this.flushTimer = null;
+      }
+    });
   }
 
   /**
@@ -496,7 +471,7 @@ export class DuckDBStorage implements LogStorage {
    */
   getBufferStats(): { bufferedEvents: number; isBufferingEnabled: boolean } {
     return {
-      bufferedEvents: this.writeBuffer.length,
+      bufferedEvents: this.writeBuffer.size,
       isBufferingEnabled: this.writeBufferEnabled,
     };
   }

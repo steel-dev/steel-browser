@@ -30,6 +30,7 @@ import { WebSocketRegistryService } from "./services/websocket-registry.service.
 import { SessionService } from "./services/session.service.js";
 import { RecordingService } from "./services/recording.service.js";
 import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.interface.js";
+import type { DuckDBStorageOptions } from "./services/cdp/instrumentation/storage/duckdb-storage.js";
 
 // We need to redeclare any decorators from within the plugin that we want to expose
 declare module "fastify" {
@@ -54,7 +55,10 @@ export interface SteelBrowserConfig {
     maxSizePerSession?: number;
   };
   customWsHandlers?: WebSocketHandler[];
-  logging?: {
+  logging?: Pick<
+    DuckDBStorageOptions,
+    "memoryLimit" | "maxThreads" | "writeBufferSize" | "writeBufferFlushInterval"
+  > & {
     enableStorage?: boolean;
     storagePath?: string;
     enableConsoleLogging?: boolean;
