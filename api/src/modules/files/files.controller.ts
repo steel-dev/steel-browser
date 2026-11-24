@@ -1,5 +1,4 @@
 import { MultipartFile } from "@fastify/multipart";
-import archiver from "archiver";
 import { randomUUID } from "crypto";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as fs from "fs";
@@ -9,9 +8,9 @@ import mime from "mime-types";
 import { tmpdir } from "os";
 import path from "path";
 import { Readable } from "stream";
-import { pipeline } from "stream/promises";
+import { pipeline } from "node:stream/promises";
 import { v4 as uuidv4 } from "uuid";
-import { FileService } from "../../services/file.service.js";
+import { FileService, getArchiveErrorCode } from "../../services/file.service.js";
 import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
 
@@ -294,34 +293,27 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
   ) {
-    const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath();
+    const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath().catch((error) => {
+      // The service logs the failure code. Fastify must not log or return the underlying disk path.
+      throw Object.assign(new Error("Failed to build file archive"), {
+        code: getArchiveErrorCode(error),
+      });
+    });
 
     try {
       const stats = await fs.promises.stat(prebuiltArchivePath);
-      if (stats.isFile()) {
-        server.log.info(`Serving prebuilt archive: ${prebuiltArchivePath}`);
-        const stream = fs.createReadStream(prebuiltArchivePath);
-
-        reply.header("Content-Type", "application/zip");
-        reply.header("Content-Disposition", `attachment; filename="files.zip"`);
-        reply.header("Content-Length", stats.size);
-        reply.header("Last-Modified", stats.mtime.toUTCString());
-        return reply.send(stream);
-      } else {
-        server.log.warn(`Prebuilt archive path exists but is not a file: ${prebuiltArchivePath}`);
+      if (!stats.isFile()) {
+        throw new Error("Published archive must be a regular file");
       }
 
-      server.log.info("Sending empty archive.");
+      const stream = fs.createReadStream(prebuiltArchivePath);
       reply.header("Content-Type", "application/zip");
-      reply.header("Content-Disposition", `attachment; filename="files-archive-empty.zip"`);
-      const emptyArchive = archiver("zip", { zlib: { level: 9 } });
-
-      emptyArchive.pipe(reply.raw);
-
-      await emptyArchive.finalize();
-      return;
-    } catch (err: any) {
-      server.log.error({ err }, "Error during handleFileArchive");
+      reply.header("Content-Disposition", `attachment; filename="files.zip"`);
+      reply.header("Content-Length", stats.size);
+      reply.header("Last-Modified", stats.mtime.toUTCString());
+      return reply.send(stream);
+    } catch (error) {
+      server.log.error({ code: getArchiveErrorCode(error) }, "Failed to serve file archive");
       if (!reply.sent) {
         try {
           reply.code(500).send({ message: "Failed to process archive request" });
