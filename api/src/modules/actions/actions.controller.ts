@@ -16,8 +16,6 @@ import {
 import { normalizeUrl } from "../../utils/url.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 import { DefuddleResponse } from "defuddle";
-import { buildHtmlLikeMetadataFromPdf, convertPdfWithMupdf } from "../../utils/scrape/pdfToHtml.js";
-import { renderPdfFirstPageAsJpeg } from "../../utils/scrape/pdfToImage.js";
 import { fetchPdf } from "../../utils/scrape/fetchPdf.js";
 import { safeGoto } from "../../utils/scrape/safeGoTo.js";
 
@@ -154,6 +152,8 @@ export const handleScrape = async (
       });
       const pdfBuffer = download.buffer;
 
+      const { buildHtmlLikeMetadataFromPdf, convertPdfWithMupdf } =
+        await import("../../utils/scrape/pdfToHtml.js");
       const convertStart = Date.now();
       const { html, links, meta } = convertPdfWithMupdf(pdfBuffer);
       htmlContent = html;
@@ -306,7 +306,7 @@ export const handleScrape = async (
 
       if (needsCleanedHtml && !isJson) {
         const cleanHtmlStart = Date.now();
-        cleanedHtml = cleanHtml(htmlContent);
+        cleanedHtml = await cleanHtml(htmlContent);
         times.cleanedHtmlTime = Date.now() - cleanHtmlStart;
 
         if (format.includes(ScrapeFormat.CLEANED_HTML)) {
@@ -548,7 +548,7 @@ export const handleScreenshot = async (
     }
 
     const screenshot = pdfDocument
-      ? renderPdfFirstPageAsJpeg(pdfDocument)
+      ? (await import("../../utils/scrape/pdfToImage.js")).renderPdfFirstPageAsJpeg(pdfDocument)
       : await page.screenshot({ fullPage, type: "jpeg", quality: 100 });
     times.screenshotTime =
       Date.now() - times.pageLoadTime - times.pageTime - times.proxyTime - startTime;

@@ -16,14 +16,16 @@ const eventAt = (index: number, data = "") => ({
   context: { index },
 });
 
-function interceptInserts(onInsert: (bindCount: number) => void | Promise<void>) {
+function interceptInserts(onInsert: (rowCount: number) => void | Promise<void>) {
   const run = Database.prototype.run;
   return vi.spyOn(Database.prototype, "run").mockImplementation(async function (
     this: Database,
     sql,
     ...params
   ) {
-    if (sql.includes("INSERT INTO browser_events")) await onInsert(params.length);
+    if (sql.includes("INSERT INTO browser_events")) {
+      await onInsert(JSON.parse(params[0]).length);
+    }
     return run.call(this, sql, ...params);
   });
 }
@@ -65,7 +67,7 @@ describe("DuckDB instrumentation storage", () => {
     await expect(store.writeBatch(records)).rejects.toBe(failure);
     expect(store.getBufferStats().bufferedEvents).toBe(3);
     expect((await store.getStats()).totalEvents).toBe(2);
-    expect(insert.mock.calls).toEqual([[14], [14]]);
+    expect(insert.mock.calls).toEqual([[2], [2]]);
 
     await store.flush();
     const result = await store.query({ limit: 10 });
@@ -99,7 +101,7 @@ describe("DuckDB instrumentation storage", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(insert.mock.calls).toHaveLength(3);
     await vi.advanceTimersByTimeAsync(54_000);
-    expect(insert.mock.calls).toEqual(Array.from({ length: 6 }, () => [14]));
+    expect(insert.mock.calls).toEqual(Array.from({ length: 6 }, () => [2]));
     expect(errors).toHaveBeenCalledTimes(5);
     expect(store.getBufferStats().bufferedEvents).toBe(12);
 
@@ -131,7 +133,7 @@ describe("DuckDB instrumentation storage", () => {
     expect(insert).toHaveBeenCalledTimes(1);
     proceed.resolve();
     await Promise.all([first, clear, flush]);
-    expect(insert.mock.calls).toEqual([[7], [7]]);
+    expect(insert.mock.calls).toEqual([[1], [1]]);
     expect((await store.query({})).events).toEqual([
       { ...eventAt(1).event, ...eventAt(1).context },
     ]);
@@ -170,7 +172,7 @@ describe("DuckDB instrumentation storage", () => {
     const insert = vi.fn();
     interceptInserts(insert);
     await store.writeBatch(Array.from({ length: 1500 }, (_, i) => eventAt(i)));
-    expect(insert.mock.calls).toEqual([[7000], [3500]]);
+    expect(insert.mock.calls).toEqual([[1000], [500]]);
     expect((await store.getStats()).totalEvents).toBe(1500);
   });
 
@@ -191,7 +193,7 @@ describe("DuckDB instrumentation storage", () => {
     interceptInserts(insert);
     await store.writeBatch([eventAt(0, medium), eventAt(1, medium), eventAt(2, large)]);
     await store.close();
-    expect(insert.mock.calls).toEqual([[7], [7], [7]]);
+    expect(insert.mock.calls).toEqual([[1], [1], [1]]);
 
     await store.initialize();
     await store.exportToParquet(out);

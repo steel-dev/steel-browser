@@ -1,7 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import fastifySwagger from "@fastify/swagger";
-import fastifyScalar from "@scalar/fastify-api-reference";
 import { titleCase } from "../utils/text.js";
 import actionSchemas from "../modules/actions/actions.schema.js";
 import cdpSchemas from "../modules/cdp/cdp.schemas.js";
@@ -65,6 +64,9 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  if (fastify.steelBrowserConfig?.apiReference === false) return;
+
+  const { default: fastifyScalar } = await import("@scalar/fastify-api-reference");
   await fastify.register(fastifyScalar as any, {
     // scalar still uses fastify v4
     routePrefix: "/documentation",

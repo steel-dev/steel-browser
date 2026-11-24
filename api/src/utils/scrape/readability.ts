@@ -1,4 +1,3 @@
-import { Defuddle } from "defuddle/node";
 import type { DefuddleResponse } from "defuddle";
 
 const MIN_EXTRACTED_WORDS = 50;
@@ -23,6 +22,7 @@ export const getDefuddleContent = async (
   htmlString: string,
   url?: string,
 ): Promise<DefuddleResponse> => {
+  const { Defuddle } = await import("defuddle/node");
   const primary = await Defuddle(htmlString, url, BASE_OPTIONS);
   if (!isThin(primary)) {
     return primary;

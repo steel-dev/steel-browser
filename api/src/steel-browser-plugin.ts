@@ -67,6 +67,7 @@ export interface SteelBrowserConfig {
   recording?: {
     maxBytes: number;
   };
+  apiReference?: boolean;
 }
 
 const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
