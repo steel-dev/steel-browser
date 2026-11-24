@@ -5,7 +5,7 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { finished, pipeline } from "node:stream/promises";
 import type { DebouncedFunc } from "lodash-es";
-import { debounce } from "lodash-es";
+import debounce from "lodash-es/debounce.js";
 import { tmpdir } from "os";
 import path, { resolve } from "path";
 import { Readable } from "stream";

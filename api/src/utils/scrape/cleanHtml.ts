@@ -1,6 +1,5 @@
-import { JSDOM } from "jsdom";
-
-export const cleanHtml = (html: string): string => {
+export const cleanHtml = async (html: string): Promise<string> => {
+  const { JSDOM } = await import("jsdom");
   const blacklistedElements = new Set([
     "head",
     "title",

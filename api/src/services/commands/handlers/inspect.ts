@@ -1,4 +1,3 @@
-import { Defuddle } from "defuddle/node";
 import { ProtocolError } from "puppeteer-core";
 import { getDefuddleContent, stripBase64Images } from "../../../utils/scrape/index.js";
 import type { Command } from "../commands.js";
@@ -210,6 +209,7 @@ async function markdown(
 
 async function elementMarkdown(html: string, base: string): Promise<string> {
   const href = base.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const { Defuddle } = await import("defuddle/node");
   const content = await Defuddle(
     `<html><head><base href="${href}"></head><body><p>${LEADING_H1_GUARD}</p>${html}</body></html>`,
     "about:blank",

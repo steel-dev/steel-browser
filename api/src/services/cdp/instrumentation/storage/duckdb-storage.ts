@@ -48,6 +48,23 @@ export interface DuckDBStorageOptions {
 // Bound both native bind arguments and serialized payload per INSERT. Allow a
 // single large event through intact, since truncation would change log content.
 const MAX_WRITE_ROWS = 1000;
+const INSERT_ROWS_SQL = `
+  INSERT INTO browser_events (id, timestamp, event_type, target_type, page_id, data, context, indexed_at)
+  SELECT r.id, r.timestamp::TIMESTAMP, r.event_type, r.target_type, r.page_id, r.data, r.context, CURRENT_TIMESTAMP
+  FROM (
+    SELECT unnest(from_json(?::JSON, '[{"id":"VARCHAR","timestamp":"VARCHAR","event_type":"VARCHAR","target_type":"VARCHAR","page_id":"VARCHAR","data":"VARCHAR","context":"VARCHAR"}]')) AS r
+  )
+`;
+
+interface InsertRow {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  target_type: string | null;
+  page_id: string | null;
+  data: string;
+  context: string;
+}
 const MAX_WRITE_PAYLOAD_BYTES = 8 * 1024 * 1024;
 const MAX_RETRY_DELAY_MS = 30_000;
 
@@ -197,7 +214,7 @@ export class DuckDBStorage implements LogStorage {
 
     await this.runWriteOperation(async () => {
       const db = this.requireDatabase();
-      for (let offset = 0; offset < events.length; ) {
+      for (let offset = 0; offset < events.length;) {
         offset += await this.writeChunk(db, events, offset);
       }
     });
@@ -209,8 +226,7 @@ export class DuckDBStorage implements LogStorage {
   }
 
   private async writeChunk(db: Database, events: PendingWrite[], offset = 0): Promise<number> {
-    const values: string[] = [];
-    const params: Array<string | null> = [];
+    const rows: InsertRow[] = [];
     let payloadBytes = 0;
 
     for (let i = offset; i < Math.min(offset + MAX_WRITE_ROWS, events.length); i++) {
@@ -218,29 +234,22 @@ export class DuckDBStorage implements LogStorage {
       const data = safeStringify(event);
       const contextJson = safeStringify(context);
       const bytes = Buffer.byteLength(data) + Buffer.byteLength(contextJson);
-      if (values.length && payloadBytes + bytes > MAX_WRITE_PAYLOAD_BYTES) break;
+      if (rows.length && payloadBytes + bytes > MAX_WRITE_PAYLOAD_BYTES) break;
 
       payloadBytes += bytes;
-      values.push("(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)");
-      params.push(
-        randomUUID(),
-        event.timestamp,
-        event.type,
-        event.targetType || null,
-        event.pageId || null,
+      rows.push({
+        id: randomUUID(),
+        timestamp: event.timestamp,
+        event_type: event.type,
+        target_type: event.targetType || null,
+        page_id: event.pageId || null,
         data,
-        contextJson,
-      );
+        context: contextJson,
+      });
     }
 
-    await db.run(
-      `
-      INSERT INTO browser_events (id, timestamp, event_type, target_type, page_id, data, context, indexed_at)
-      VALUES ${values.join(", ")}
-    `,
-      ...params,
-    );
-    return values.length;
+    await db.run(INSERT_ROWS_SQL, JSON.stringify(rows));
+    return rows.length;
   }
 
   async flush(): Promise<void> {
