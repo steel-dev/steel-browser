@@ -1,12 +1,20 @@
 import archiver from "archiver";
 import chokidar, { FSWatcher } from "chokidar";
-import fs from "fs";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import fs from "node:fs";
+import { finished, pipeline } from "node:stream/promises";
 import type { DebouncedFunc } from "lodash-es";
 import { debounce } from "lodash-es";
 import { tmpdir } from "os";
 import path, { resolve } from "path";
 import { Readable } from "stream";
 import { env } from "../env.js";
+
+export function getArchiveErrorCode(error: unknown): string | undefined {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(code) ? code : undefined;
+}
 
 interface File {
   size: number;
@@ -25,11 +33,10 @@ export class FileService {
   private static instance: FileService | null = null;
   private prebuiltArchiveDir: string;
   private prebuiltArchivePath: string;
-  private isArchiving: boolean = false;
-  private currentArchivePromise: Promise<string | null> | null = null;
+  private currentArchivePromise: Promise<void> | null = null;
   private archiveDirty = true;
   private archiveDebounceTime = 500;
-  private debouncedCreateArchive: DebouncedFunc<() => Promise<string | null>>;
+  private debouncedCreateArchive: DebouncedFunc<() => void>;
 
   public constructor(options: FileServiceOptions = {}) {
     this.baseFilesPath =
@@ -40,8 +47,10 @@ export class FileService {
 
     fs.mkdirSync(this.baseFilesPath, { recursive: true });
 
-    const boundCreateArchive = this._createArchive.bind(this);
-    this.debouncedCreateArchive = debounce(boundCreateArchive, this.archiveDebounceTime);
+    this.debouncedCreateArchive = debounce(() => {
+      // Background work observes the rejection. Foreground callers still await the shared promise.
+      void this.startArchive().catch(() => {});
+    }, this.archiveDebounceTime);
 
     if (options.watchFiles !== false) {
       this.initFileWatcher();
@@ -53,21 +62,6 @@ export class FileService {
       FileService.instance = new FileService();
     }
     return FileService.instance;
-  }
-
-  private async handleFileAdd(filePath: string) {
-    console.log(`[FileService] File added detected: ${filePath}`);
-    this.scheduleArchiveCreation();
-  }
-
-  private handleFileDelete(filePath: string) {
-    console.log(`[FileService] File deleted detected: ${filePath}`);
-    this.scheduleArchiveCreation();
-  }
-
-  private handleDirChange(filePath: string) {
-    console.log(`[FileService] Directory change detected: ${filePath}`);
-    this.scheduleArchiveCreation();
   }
 
   private scheduleArchiveCreation() {
@@ -87,14 +81,14 @@ export class FileService {
       depth: undefined,
     });
 
-    console.log(`[FileService] File watcher initialized for ${this.baseFilesPath}`);
-
     this.fileWatcher
-      .on("add", (filePath) => this.handleFileAdd(filePath))
-      .on("unlink", (filePath) => this.handleFileDelete(filePath))
-      .on("addDir", (filePath) => this.handleDirChange(filePath))
-      .on("unlinkDir", (filePath) => this.handleDirChange(filePath))
-      .on("error", (error) => console.error(`Watcher error: ${error}`))
+      .on("add", () => this.scheduleArchiveCreation())
+      .on("unlink", () => this.scheduleArchiveCreation())
+      .on("addDir", () => this.scheduleArchiveCreation())
+      .on("unlinkDir", () => this.scheduleArchiveCreation())
+      .on("error", (error) => {
+        console.error("[FileService] File watcher failed", { code: getArchiveErrorCode(error) });
+      })
       .on("ready", () => {
         console.log("[FileService] Initial scan complete. Ready for changes.");
         this.scheduleArchiveCreation();
@@ -354,7 +348,7 @@ export class FileService {
     this.debouncedCreateArchive.cancel();
 
     while (this.currentArchivePromise || this.archiveDirty) {
-      await (this.currentArchivePromise ?? this._createArchive());
+      await (this.currentArchivePromise ?? this.startArchive());
       this.debouncedCreateArchive.cancel();
     }
 
@@ -367,152 +361,22 @@ export class FileService {
     try {
       await this.currentArchivePromise;
     } catch (err) {
-      console.warn("[FileService cleanupFiles] Archive in progress failed before cleanup:", err);
+      console.warn("[FileService cleanupFiles] Archive in progress failed before cleanup", {
+        code: getArchiveErrorCode(err),
+      });
     }
   }
 
-  private _createArchive(): Promise<string | null> {
+  private startArchive(): Promise<void> {
     if (this.currentArchivePromise) {
       return this.currentArchivePromise;
     }
 
     this.archiveDirty = false;
-    const archivePromise = new Promise<string | null>(async (resolvePromise, rejectPromise) => {
-      if (this.isArchiving) {
-        console.warn(
-          `[_createArchive] Warning: Archiving process initiated while another is already in progress. This might lead to conflicts if not handled by caller.`,
-        );
-      }
-
-      this.isArchiving = true;
-      console.log(`[_createArchive] Starting archive creation`);
-
-      const tempArchivePath = path.join(this.prebuiltArchiveDir, `files-${Date.now()}.zip.tmp`);
-      const finalArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
-
-      try {
-        await fs.promises.mkdir(this.prebuiltArchiveDir, { recursive: true });
-      } catch (mkdirError) {
-        console.error(
-          `[_createArchive] Error creating archive directory ${this.prebuiltArchiveDir}:`,
-          mkdirError,
-        );
-        this.isArchiving = false;
-        return rejectPromise(mkdirError);
-      }
-
-      const output = fs.createWriteStream(tempArchivePath);
-      const archive = archiver("zip", { zlib: { level: 9 } });
-      let errorOccurredStream = false;
-
-      const operationCleanup = async (
-        success: boolean,
-        archivePath: string | null = null,
-        error?: any,
-      ) => {
-        this.isArchiving = false;
-
-        if (!success && tempArchivePath && (await this.exists(tempArchivePath))) {
-          try {
-            await fs.promises.unlink(tempArchivePath);
-            console.log("[_createArchive] Cleaned up temporary archive file due to error.");
-          } catch (unlinkErr) {
-            console.error(
-              "[_createArchive] Failed to clean up temp archive file after error:",
-              unlinkErr,
-            );
-          }
-        }
-        if (success && archivePath) {
-          resolvePromise(archivePath);
-        } else {
-          rejectPromise(error || new Error("Archiving failed due to an unknown reason."));
-        }
-      };
-
-      output.on("close", async () => {
-        if (errorOccurredStream) {
-          console.log(
-            "[_createArchive] Output stream closed after an error was emitted and handled.",
-          );
-          return;
-        }
-        try {
-          if (await this.exists(finalArchivePath)) {
-            await fs.promises.unlink(finalArchivePath);
-          }
-          await fs.promises.rename(tempArchivePath, finalArchivePath);
-          console.log(
-            `[_createArchive] Archive successfully created: ${finalArchivePath}, size: ${archive.pointer()} bytes`,
-          );
-          operationCleanup(true, finalArchivePath);
-        } catch (renameError) {
-          console.error("[_createArchive] Error renaming temporary archive file:", renameError);
-          operationCleanup(false, null, renameError);
-        }
-      });
-
-      output.on("error", (err) => {
-        console.error("[_createArchive] Archive output stream error:", err);
-        errorOccurredStream = true;
-        if (!output.writableFinished) {
-          output.destroy();
-        }
-        operationCleanup(false, null, err);
-      });
-
-      archive.on("warning", (err) => {
-        if (err.code === "ENOENT") {
-          console.warn(`[_createArchive] Archiving warning (ENOENT): ${err.message}`);
-        } else {
-          console.error("[_createArchive] Archiving warning:", err);
-        }
-      });
-
-      archive.on("error", (err) => {
-        console.error("[_createArchive] Archiving process error (archive.on('error')):", err);
-        errorOccurredStream = true;
-        if (!output.writableFinished) {
-          output.destroy(err instanceof Error ? err : new Error(String(err)));
-        }
-        operationCleanup(false, null, err);
-      });
-
-      try {
-        if (!(await this.exists(this.baseFilesPath))) {
-          console.warn(
-            `[_createArchive] Base directory ${this.baseFilesPath} does not exist. Creating empty archive.`,
-          );
-        } else {
-          const stats = await fs.promises.stat(this.baseFilesPath);
-          if (!stats.isDirectory()) {
-            console.error(
-              `[_createArchive] Base path ${this.baseFilesPath} is not a directory. Creating empty archive.`,
-            );
-          } else {
-            const files = await fs.promises.readdir(this.baseFilesPath);
-            if (files.length === 0) {
-              console.log("[_createArchive] Base directory is empty. Creating empty archive.");
-            } else {
-              archive.directory(this.baseFilesPath, false);
-            }
-          }
-        }
-        archive.pipe(output);
-        await archive.finalize();
-      } catch (err: any) {
-        console.error("[_createArchive] Error during archive preparation or finalization:", err);
-        errorOccurredStream = true;
-        if (!output.writableFinished) {
-          output.destroy(err instanceof Error ? err : new Error(String(err)));
-        }
-        operationCleanup(false, null, err);
-      }
-    });
-
-    this.currentArchivePromise = archivePromise
-      .catch((error) => {
+    this.currentArchivePromise = this.buildArchive()
+      .catch((error: unknown) => {
         this.archiveDirty = true;
+        console.error("[FileService] Archive build failed", { code: getArchiveErrorCode(error) });
         throw error;
       })
       .finally(() => {
@@ -520,5 +384,139 @@ export class FileService {
       });
 
     return this.currentArchivePromise;
+  }
+
+  private async buildArchive(): Promise<void> {
+    await fs.promises.mkdir(this.prebuiltArchiveDir, { recursive: true });
+    const stagingPath = path.join(this.prebuiltArchiveDir, `files-${randomUUID()}.zip.tmp`);
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const output = fs.createWriteStream(stagingPath, { flags: "wx" });
+    let ownsStagingFile = false;
+    output.once("open", () => {
+      ownsStagingFile = true;
+    });
+
+    try {
+      await this.writeArchive(archive, output);
+      await fs.promises.rename(stagingPath, this.prebuiltArchivePath);
+      ownsStagingFile = false;
+    } finally {
+      if (ownsStagingFile) {
+        try {
+          await fs.promises.unlink(stagingPath);
+        } catch (error) {
+          const code = getArchiveErrorCode(error);
+          if (code !== "ENOENT") {
+            console.warn("[FileService] Archive staging cleanup failed", { code });
+          }
+        }
+      }
+    }
+  }
+
+  private async writeArchive(archive: archiver.Archiver, output: fs.WriteStream): Promise<void> {
+    const closed = new Promise<void>((resolve) => output.once("close", resolve));
+    const abort = new AbortController();
+    const writing = pipeline(archive, output);
+    const entries = this.appendArchiveDirectory(archive, this.baseFilesPath, abort.signal);
+    const finalizing = entries.then(() => archive.finalize());
+
+    try {
+      await Promise.all([writing, finalizing]);
+    } catch (error) {
+      abort.abort();
+      try {
+        archive.abort();
+      } catch (abortError) {
+        console.warn("[FileService] Archive abort failed", {
+          code: getArchiveErrorCode(abortError),
+        });
+      }
+      archive.destroy();
+      output.destroy();
+
+      // Archiver may leave finalize() pending after abort. Its rejection is already observed.
+      // Wait for the owned input and output streams to close before removing the staging file.
+      await Promise.allSettled([entries, writing]);
+      throw error;
+    } finally {
+      await closed;
+    }
+  }
+
+  private async appendArchiveDirectory(
+    archive: archiver.Archiver,
+    directory: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let names: string[];
+    try {
+      names = await fs.promises.readdir(directory);
+    } catch (error) {
+      const code = getArchiveErrorCode(error);
+      if (code === "ENOENT" || code === "ENOTDIR") return;
+      throw error;
+    }
+
+    for (const name of names) {
+      signal.throwIfAborted();
+      const filePath = path.join(directory, name);
+      const stats = await fs.promises.lstat(filePath).catch((error: unknown) => {
+        if (getArchiveErrorCode(error) === "ENOENT") return undefined;
+        throw error;
+      });
+      if (!stats) continue;
+
+      const metadata = { name: path.relative(this.baseFilesPath, filePath), stats };
+      if (stats.isFile()) {
+        await this.appendArchiveFile(archive, filePath, metadata, signal);
+      } else if (stats.isDirectory()) {
+        await this.appendArchiveEntry(archive, { ...metadata, name: metadata.name + "/" }, signal);
+        await this.appendArchiveDirectory(archive, filePath, signal);
+      } else if (stats.isSymbolicLink()) {
+        const target = await fs.promises.readlink(filePath);
+        const link = {
+          ...metadata,
+          type: "symlink",
+          linkname: path.relative(directory, path.resolve(directory, target)),
+        };
+        await this.appendArchiveEntry(archive, link, signal);
+      }
+    }
+  }
+
+  private async appendArchiveEntry(
+    archive: archiver.Archiver,
+    metadata: archiver.EntryData,
+    signal: AbortSignal,
+  ): Promise<void> {
+    signal.throwIfAborted();
+    await Promise.all([
+      once(archive, "entry", { signal }),
+      Promise.resolve().then(() => archive.append(Buffer.alloc(0), metadata)),
+    ]);
+  }
+
+  private async appendArchiveFile(
+    archive: archiver.Archiver,
+    filePath: string,
+    metadata: archiver.EntryData,
+    signal: AbortSignal,
+  ): Promise<void> {
+    signal.throwIfAborted();
+    // Own the input stream so output failure can interrupt a backpressured file read.
+    const input = fs.createReadStream(filePath, { signal });
+    const closed = new Promise<void>((resolve) => input.once("close", resolve));
+
+    try {
+      await Promise.all([
+        once(archive, "entry", { signal }),
+        finished(input),
+        Promise.resolve().then(() => archive.append(input, metadata)),
+      ]);
+    } finally {
+      input.destroy();
+      await closed;
+    }
   }
 }
