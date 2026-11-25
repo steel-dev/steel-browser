@@ -519,3 +519,56 @@ describe("CDPService cookies", () => {
     expect(foreign.send).not.toHaveBeenCalled();
   });
 });
+
+describe("CDPService session data", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function stateFixture(cookieSend: () => Promise<unknown>) {
+    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
+    Object.assign(service as unknown as Record<string, unknown>, {
+      launchConfig: { userDataDir: "/fixture/browser-data" },
+      primaryPage: { isClosed: () => false },
+      browserInstance: {
+        pages: async () => [],
+        target: () => ({
+          createCDPSession: async () => ({ send: cookieSend, detach: async () => {} }),
+        }),
+      },
+      chromeSessionService: {
+        getSessionData: async () => ({
+          localStorage: { "example.com": { saved: "1" } },
+          sessionStorage: { "example.com": { step: "2" } },
+        }),
+      },
+    });
+    return service;
+  }
+
+  test("saves disk storage when the browser never answers the cookie read", async () => {
+    vi.useFakeTimers();
+    const service = stateFixture(() => new Promise(() => {}));
+
+    const pending = service.getBrowserState();
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    await expect(pending).resolves.toEqual({
+      localStorage: { "example.com": { saved: "1" } },
+      sessionStorage: { "example.com": { step: "2" } },
+      indexedDB: {},
+    });
+  });
+
+  test("saves disk storage when the cookie read fails", async () => {
+    const service = stateFixture(async () => {
+      throw new Error("Protocol error (Storage.getCookies): Target closed");
+    });
+
+    const state = await service.getBrowserState();
+
+    expect(state.localStorage).toEqual({ "example.com": { saved: "1" } });
+    expect(state.cookies).toBeUndefined();
+  });
+});
