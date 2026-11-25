@@ -390,7 +390,8 @@ const fixtures: Record<string, (other: string) => string> = {
     </form>
     <ul><li>First</li><li>Second</li></ul>
     <button>Register</button>
-    <p>one<br>two</p>`,
+    <p>one<br>two</p>
+    <a href="#pages" aria-label="Page 10 of 12">1</a>`,
   "/search": () => `<!doctype html><title>Search</title>
     <button onclick="fetch('/basic?ms=400').then((r) => r.text()).then(() => { document.getElementById('results').innerHTML = '<li>Result one</li><li>Result two</li>'; })">Search</button>
     <button onclick="fetch('/stream').then((r) => r.text()).then(() => { document.title = 'streamed'; })">Slow</button>
@@ -1157,7 +1158,7 @@ describe.skipIf(!chrome)("command engine", () => {
       for (const named of ["Telephone", "Size", "Small", "Register"]) {
         expect(text.split(named)).toHaveLength(2);
       }
-      for (const kept of ["First", "Second", "one", "two"]) {
+      for (const kept of ["First", "Second", "one", "two", "1"]) {
         expect(text).toContain(`StaticText "${kept}"`);
       }
     });

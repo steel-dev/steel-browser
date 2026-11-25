@@ -1006,12 +1006,26 @@ function echoKey(text: string): string {
     .toLowerCase();
 }
 
+const WORD = /[\p{L}\p{N}]/u;
+
+function containsWords(whole: string, part: string): boolean {
+  if (!WORD.test(part)) {
+    return true;
+  }
+  for (let at = whole.indexOf(part); at !== -1; at = whole.indexOf(part, at + 1)) {
+    if (!WORD.test(whole[at - 1] ?? "") && !WORD.test(whole[at + part.length] ?? "")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function echoes(node: Outline, parent?: Outline, before?: Outline, after?: Outline): boolean {
   const text = echoKey(node.name);
   if (!text) {
     return false;
   }
-  if (parent?.name && echoKey(parent.name).includes(text)) {
+  if (parent?.name && containsWords(echoKey(parent.name), text)) {
     return true;
   }
   return [before, after].some(
