@@ -1,3 +1,4 @@
+import { parse, type Program } from "acorn";
 import { Script } from "node:vm";
 import type { Command } from "../commands.js";
 import { dialogHint } from "../dialogs.js";
@@ -26,7 +27,7 @@ export async function evaluate(
   ctx: Context,
   command: Extract<Command, { command: "eval" }>,
 ): Promise<CommandResult> {
-  const { expression, bodyError, replMode } = runnable(command.script);
+  const { expression, bodyError } = runnable(command.script);
   const tab = tabFor(ctx, command.tab);
   const session = await tab.session();
   const timeout = command.timeout ?? SCRIPT_TIMEOUT_MS;
@@ -38,7 +39,6 @@ export async function evaluate(
       session
         .send("Runtime.evaluate", {
           expression,
-          replMode,
           returnByValue: true,
           awaitPromise: true,
           userGesture: true,
@@ -123,16 +123,63 @@ export async function evaluate(
   return { ok: true, effect: "applied", value };
 }
 
-function runnable(script: string): { expression: string; bodyError?: string; replMode?: true } {
-  if (!syntaxError(script)) {
+function runnable(script: string): { expression: string; bodyError?: string } {
+  const body = functionBody(script);
+  if (body === undefined && !syntaxError(script)) {
     return { expression: script };
   }
-  const body = `(async () => {\n${script}\n})()`;
-  const bodyError = syntaxError(body);
-  if (bodyError) {
-    return { expression: script, bodyError };
+  const wrapped = `(async () => {\n${body ?? script}\n})()`;
+  const bodyError = syntaxError(wrapped);
+  return bodyError ? { expression: script, bodyError } : { expression: wrapped };
+}
+
+function functionBody(script: string): string | undefined {
+  let program: Program;
+  try {
+    program = parse(script, {
+      ecmaVersion: "latest",
+      allowReturnOutsideFunction: true,
+      allowAwaitOutsideFunction: true,
+    });
+  } catch {
+    return undefined;
   }
-  return /\breturn\b/.test(script) ? { expression: body } : { expression: script, replMode: true };
+  const found = new Set<string>();
+  topLevel(program.body, found);
+  if (!found.has("await") && !found.has("return")) {
+    return undefined;
+  }
+  const last = program.body[program.body.length - 1];
+  if (found.has("return") || last?.type !== "ExpressionStatement") {
+    return script;
+  }
+  const { start, end } = last.expression;
+  return `${script.slice(0, start)}return (${script.slice(start, end)})${script.slice(end)}`;
+}
+
+function topLevel(node: unknown, found: Set<string>): void {
+  if (Array.isArray(node)) {
+    node.forEach((item) => topLevel(item, found));
+    return;
+  }
+  if (!node || typeof node !== "object" || !("type" in node)) {
+    return;
+  }
+  const type = node.type;
+  if (
+    type === "FunctionDeclaration" ||
+    type === "FunctionExpression" ||
+    type === "ArrowFunctionExpression"
+  ) {
+    return;
+  }
+  if (type === "ReturnStatement") {
+    found.add("return");
+  }
+  if (type === "AwaitExpression" || (type === "ForOfStatement" && "await" in node && node.await)) {
+    found.add("await");
+  }
+  Object.values(node).forEach((value) => topLevel(value, found));
 }
 
 function syntaxError(code: string): string | undefined {

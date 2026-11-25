@@ -5504,6 +5504,22 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(first.results[0].value).toBe(1);
       const second = await run({ command: "eval", script: "const b = 2;\nawait 0;\nb" });
       expect(second.results[0].value).toBe(2);
+      const nestedReturn = await run({
+        command: "eval",
+        script: "const xs = [1, 2];\nxs.map((x) => { return x * 2 });\nawait 0;\nxs",
+      });
+      expect(nestedReturn.results[0].value).toEqual([1, 2]);
+      const quoted = await run({ command: "eval", script: "await 0;\n'return'" });
+      expect(quoted.results[0].value).toBe("return");
+      const promised = await run({ command: "eval", script: "await 0;\nPromise.resolve(5)" });
+      expect(promised.results[0].value).toBe(5);
+      const called = await run({ command: "eval", script: "await (async () => 6)()" });
+      expect(called.results[0].value).toBe(6);
+      const looped = await run({
+        command: "eval",
+        script: "let n = 0;\nfor await (const x of [1, 2]) n += x;\nn",
+      });
+      expect(looped.results[0].value).toBe(3);
     });
 
     test("runs a script once when it throws a SyntaxError", async () => {
