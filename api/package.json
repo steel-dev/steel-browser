@@ -89,7 +89,6 @@
     "fastify-plugin": "^5.0.1",
     "file-type": "^21.3.4",
     "fingerprint-generator": "2.1.82",
-    "fingerprint-injector": "2.1.82",
     "http-proxy": "^1.18.1",
     "https-proxy-agent": "^7.0.6",
     "iconv-lite": "^0.6.3",

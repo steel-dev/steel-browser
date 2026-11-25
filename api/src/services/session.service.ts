@@ -183,10 +183,11 @@ export class SessionService {
         : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
     await mkdir(userDataDir, { recursive: true });
 
+    // Keep in sync with CDPService.defaultLaunchConfig: isSimilarConfig compares
+    // userPreferences, so a mismatch would relaunch the idle browser every session.
     const defaultUserPreferences = {
       plugins: {
-        always_open_pdf_externally: true,
-        plugins_disabled: ["Chrome PDF Viewer"],
+        always_open_pdf_externally: false,
       },
     };
 

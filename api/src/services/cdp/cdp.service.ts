@@ -1,12 +1,6 @@
 import { EventEmitter } from "events";
 import { FastifyBaseLogger } from "fastify";
-import {
-  BrowserFingerprintWithHeaders,
-  FingerprintGenerator,
-  FingerprintGeneratorOptions,
-  VideoCard,
-} from "fingerprint-generator";
-import { FingerprintInjector } from "fingerprint-injector";
+import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import fs from "fs";
 import { IncomingMessage } from "http";
 import httpProxy from "http-proxy";
@@ -23,7 +17,6 @@ import puppeteer, {
 } from "puppeteer-core";
 import { Duplex } from "stream";
 import { env } from "../../env.js";
-import { loadFingerprintScript } from "../../scripts/index.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
 import { BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types/index.js";
 import {
@@ -36,7 +29,7 @@ import {
   normalizeHosts,
   isImageRequest,
 } from "../../utils/requests.js";
-import { filterHeaders, getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
+import { getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
 import {
   deepMerge,
   extractStorageForPageWithTimeout,
@@ -85,6 +78,12 @@ import { executeBestEffort, executeCritical, executeOptional } from "./utils/err
 import { ProfileInUseError, releaseStaleProfileLock } from "./utils/profile-lock.js";
 import { collectSessionData, mergePageStorage, type PagesStorage } from "./utils/session-data.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
+import {
+  buildScreenInfoSwitch,
+  FingerprintTargetSetup,
+  generateFingerprint,
+  readChromeVersion,
+} from "./fingerprint/index.js";
 
 const LAUNCH_TIMEOUT_MS = 60_000;
 
@@ -109,7 +108,7 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private crashedPages: WeakSet<Page> = new WeakSet<Page>();
-  private emulationSessions: WeakMap<Page, CDPSession> = new WeakMap<Page, CDPSession>();
+  private fingerprintTargets: FingerprintTargetSetup | null = null;
   private chromeSessionService: ChromeContextService;
   private retryManager: RetryManager;
   private targetInstrumentationManager: TargetInstrumentationManager;
@@ -172,10 +171,13 @@ export class CDPService extends EventEmitter {
       extensions: [],
       userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
       timezone: coldStartTimezone,
+      // always_open_pdf_externally=true removes the PDF viewer, which empties
+      // navigator.plugins/mimeTypes and sets pdfViewerEnabled=false, while real
+      // Chrome reports five PDF plugins. It is set explicitly so a profile
+      // reused from an older session does not keep the old value.
       userPreferences: {
         plugins: {
-          always_open_pdf_externally: true,
-          plugins_disabled: ["Chrome PDF Viewer"],
+          always_open_pdf_externally: false,
         },
       },
       deviceConfig: { device: "desktop" },
@@ -370,10 +372,6 @@ export class CDPService extends EventEmitter {
   }
 
   private async handleNewTarget(target: Target) {
-    if (target.type() === TargetType.PAGE) {
-      this.queueMobileEmulation(target);
-    }
-
     try {
       await this.targetInstrumentationManager.attach(target, target.type() as TargetType);
     } catch (error) {
@@ -432,26 +430,12 @@ export class CDPService extends EventEmitter {
           await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
         }
 
-        if (this.launchConfig?.customHeaders) {
-          await page.setExtraHTTPHeaders({
-            ...env.DEFAULT_HEADERS,
-            ...this.launchConfig.customHeaders,
-          });
-        } else if (env.DEFAULT_HEADERS) {
-          await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
-        }
-
-        await this.applyDeviceMetricsOverride(page);
-
-        // Inject fingerprint only if it's not skipped
-        if (!env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection) {
-          // Use our safer fingerprint injection method instead of FingerprintInjector
-          await this.injectFingerprintSafely(page, this.fingerprintData);
-          this.logger.debug("[CDPService] Injected fingerprint into page");
-        } else {
-          this.logger.info(
-            "[CDPService] Fingerprint injection skipped due to 'SKIP_FINGERPRINT_INJECTION' setting",
-          );
+        // The fingerprint (UA, client hints, metrics, scripts) was applied
+        // by FingerprintTargetSetup before the target started. Client hints
+        // come from the UA metadata, never from static headers.
+        const extraHeaders = { ...env.DEFAULT_HEADERS, ...this.launchConfig?.customHeaders };
+        if (Object.keys(extraHeaders).length > 0) {
+          await page.setExtraHTTPHeaders(extraHeaders);
         }
 
         if (page.isClosed()) {
@@ -620,6 +604,7 @@ export class CDPService extends EventEmitter {
       }
 
       this.fingerprintData = null;
+      this.fingerprintTargets = null;
       this.currentSessionConfig = null;
       this.browserInstance = null;
       this.wsEndpoint = null;
@@ -641,6 +626,7 @@ export class CDPService extends EventEmitter {
       }
 
       this.browserInstance = null;
+      this.fingerprintTargets = null;
       this.shuttingDown = false;
     }
   }
@@ -824,7 +810,9 @@ export class CDPService extends EventEmitter {
             ),
         );
 
-        // Fingerprint generation - can fail gracefully
+        const isHeadless = !!this.launchConfig?.options?.headless;
+
+        // Fingerprint generation, aligned with the version of the binary
         if (
           !env.SKIP_FINGERPRINT_INJECTION &&
           !userAgent &&
@@ -833,55 +821,15 @@ export class CDPService extends EventEmitter {
         ) {
           await executeCritical(
             async () => {
-              let fingerprintOptions: Partial<FingerprintGeneratorOptions> = {
-                devices: ["desktop"],
-                operatingSystems: ["linux"],
-                browsers: [{ name: "chrome", minVersion: 146 }],
-                locales: ["en-US", "en"],
-                screen: {
-                  minWidth: this.launchConfig!.dimensions?.width ?? 1920,
-                  minHeight: this.launchConfig!.dimensions?.height ?? 1080,
-                  maxWidth: this.launchConfig!.dimensions?.width ?? 1920,
-                  maxHeight: this.launchConfig!.dimensions?.height ?? 1080,
-                },
-              };
-
-              if (this.launchConfig!.deviceConfig?.device === "mobile") {
-                fingerprintOptions = {
-                  devices: ["mobile"],
-                  locales: ["en-US", "en"],
-                };
-              }
-
-              // fingerprint-generator's bundled dataset lags the latest Chrome
-              // release, so a hardcoded newest-Chrome `minVersion` (and/or the
-              // tight `screen` box) can leave zero matching samples and make
-              // getFingerprint() throw deterministically. Prefer the strict
-              // options for best stealth, but relax progressively rather than
-              // hard-fail when the dataset cannot satisfy them.
-              const fallbackOptions: Array<Partial<FingerprintGeneratorOptions>> = [
-                fingerprintOptions,
-                { ...fingerprintOptions, browsers: [{ name: "chrome" }] },
-                { ...fingerprintOptions, browsers: [{ name: "chrome" }], screen: undefined },
-              ];
-              let fingerprintErr: unknown;
-              for (const options of fallbackOptions) {
-                try {
-                  this.fingerprintData = new FingerprintGenerator(options).getFingerprint();
-                  if (options !== fingerprintOptions) {
-                    this.logger.warn(
-                      { requested: fingerprintOptions, used: options },
-                      "[CDPService] Strict fingerprint constraints unsatisfiable in the bundled dataset; generated with relaxed constraints",
-                    );
-                  }
-                  break;
-                } catch (err) {
-                  fingerprintErr = err;
-                }
-              }
-              if (!this.fingerprintData) {
-                throw fingerprintErr;
-              }
+              const isMobile = this.launchConfig!.deviceConfig?.device === "mobile";
+              this.fingerprintData = generateFingerprint({
+                device: isMobile ? "mobile" : "desktop",
+                dimensions: this.launchConfig!.dimensions ?? undefined,
+                browserVersion: await readChromeVersion(this.chromeExecPath),
+                // Headful desktop windows render with --force-device-scale-factor=1.
+                devicePixelRatio: !isHeadless && !isMobile ? 1 : undefined,
+                logger: this.logger,
+              });
             },
             (error) => {
               this.logger.error({ err: error }, "[CDPService] Error generating fingerprint");
@@ -898,7 +846,26 @@ export class CDPService extends EventEmitter {
           );
         }
 
-        const isHeadless = !!this.launchConfig?.options?.headless;
+        // The fingerprint is applied to each target before it starts.
+        const screenFromLaunchFlags = isHeadless;
+        this.fingerprintTargets =
+          this.fingerprintData && this.isFingerprintInjectionEnabled()
+            ? await executeCritical(
+                async () =>
+                  new FingerprintTargetSetup({
+                    fingerprintData: this.fingerprintData!,
+                    screenFromLaunchFlags,
+                    logger: this.logger,
+                  }),
+                (error) =>
+                  new FingerprintError(
+                    error instanceof Error ? error.message : String(error),
+                    FingerprintStage.INJECTION,
+                    error,
+                  ),
+              )
+            : null;
+        const injectedFingerprint = this.fingerprintTargets ? this.fingerprintData : null;
 
         this.currentSessionConfig = {
           ...this.launchConfig,
@@ -980,8 +947,6 @@ export class CDPService extends EventEmitter {
           "--disable-translate",
           "--no-first-run",
           "--disable-search-engine-choice-screen",
-          "--webrtc-ip-handling-policy=disable_non_proxied_udp",
-          "--force-webrtc-ip-handling-policy",
           "--disable-touch-editing",
           "--disable-touch-drag-drop",
           "--disable-client-side-phishing-detection",
@@ -991,7 +956,6 @@ export class CDPService extends EventEmitter {
           "--disable-breakpad",
           "--disable-background-networking",
           "--disable-session-crashed-bubble",
-          "--disable-ipc-flooding-protection",
           "--disable-popup-blocking",
           "--disable-prompt-on-repost",
           "--disable-domain-reliability",
@@ -1025,16 +989,36 @@ export class CDPService extends EventEmitter {
           `--unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://${env.HOST}:${env.PORT}`,
         ];
 
+        const windowSize = {
+          width: this.launchConfig.dimensions?.width ?? 1920,
+          height: this.launchConfig.dimensions?.height ?? 1080,
+        };
+        const launchUserAgent = userAgent ?? injectedFingerprint?.fingerprint.navigator.userAgent;
+        // Mobile too: out-of-process iframes take the screen and pixel ratio from this
+        // switch, because Emulation.setDeviceMetricsOverride only works on the top frame.
+        const launchScreen = injectedFingerprint
+          ? injectedFingerprint.fingerprint.screen
+          : windowSize;
+
         const dynamicArgs = [
           this.launchConfig.dimensions ? "" : "--start-maximized",
           `--remote-debugging-address=${env.HOST}`,
           "--remote-debugging-port=9222",
-          `--window-size=${this.launchConfig.dimensions?.width ?? 1920},${
-            this.launchConfig.dimensions?.height ?? 1080
-          }`,
-          userAgent ? `--user-agent=${userAgent}` : "",
+          `--window-size=${windowSize.width},${windowSize.height}`,
+          // The fingerprint UA from the first request of every target,
+          // including popups and service/shared workers.
+          launchUserAgent ? `--user-agent=${launchUserAgent}` : "",
+          injectedFingerprint?.fingerprint.navigator.language
+            ? `--lang=${injectedFingerprint.fingerprint.navigator.language}`
+            : "",
+          screenFromLaunchFlags ? buildScreenInfoSwitch(launchScreen) : "",
           this.launchConfig.options.proxyUrl
             ? `--proxy-server=${this.launchConfig.options.proxyUrl}`
+            : "",
+          // Without a proxy, WebRTC exposes the same public address as HTTP;
+          // the policy then only removes every ICE candidate.
+          this.launchConfig.options.proxyUrl
+            ? "--webrtc-ip-handling-policy=disable_non_proxied_udp"
             : "",
           this.launchConfig.fullscreen === true ? "--kiosk" : "",
         ];
@@ -1055,7 +1039,16 @@ export class CDPService extends EventEmitter {
           defaultViewport: null,
           args: launchArgs,
           executablePath: this.chromeExecPath,
-          ignoreDefaultArgs: ["--enable-automation"],
+          // Puppeteer adds --hide-scrollbars in headless mode: a 0px scrollbar
+          // with a desktop Linux user agent. --disable-ipc-flooding-protection
+          // lifts Chrome's limit of 200 history.pushState/replaceState calls per
+          // 10 s, which pages probe in ~1 ms (bot-detector.rebrowser.net).
+          ignoreDefaultArgs: [
+            "--enable-automation",
+            "--hide-scrollbars",
+            "--disable-ipc-flooding-protection",
+          ],
+          targetFilter: this.fingerprintTargets?.targetFilter,
           timeout: LAUNCH_TIMEOUT_MS,
           env: {
             HOME: os.userInfo().homedir,
@@ -1108,6 +1101,15 @@ export class CDPService extends EventEmitter {
         }
         this.browserInstance = browser;
         this.ownBrowserPid = browser.process()?.pid;
+
+        const fingerprintTargets = this.fingerprintTargets;
+        if (fingerprintTargets) {
+          await executeBestEffort(
+            this.logger,
+            async () => fingerprintTargets.attachServiceWorkers(browser),
+            "Failed to attach the fingerprint to service workers",
+          );
+        }
 
         // Plugin notifications - catch individual plugin errors
         await executeOptional(
@@ -1550,212 +1552,8 @@ export class CDPService extends EventEmitter {
     this.logger.debug("[CDPService] Session context injection setup complete");
   }
 
-  @traceable
-  private async injectFingerprintSafely(
-    page: Page,
-    fingerprintData: BrowserFingerprintWithHeaders | null,
-  ) {
-    if (!fingerprintData) return;
-
-    try {
-      const { fingerprint, headers } = fingerprintData;
-      const userAgentMetadata = fingerprint.navigator.userAgentData;
-      const { isMobile, navigatorPlatform, uaPlatform, override } =
-        this.buildUserAgentOverride(fingerprintData);
-
-      if (isMobile) {
-        await page.setUserAgent(override.userAgent, override.userAgentMetadata);
-      } else {
-        await page.setUserAgent(override.userAgent);
-      }
-
-      await this.withEmulationSession(page, isMobile, async (session) => {
-        await page.setExtraHTTPHeaders(filterHeaders(headers));
-        await session.send("Emulation.setUserAgentOverride", override);
-      });
-
-      await page.evaluateOnNewDocument(
-        loadFingerprintScript({
-          fixedPlatform: navigatorPlatform,
-          fixedUaPlatform: uaPlatform,
-          fixedMobile: Boolean(userAgentMetadata.mobile),
-          fixedVendor: (fingerprint.videoCard as VideoCard | null)?.vendor,
-          fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
-          fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
-          fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
-          fixedArchitecture: userAgentMetadata.architecture ?? "x86",
-          fixedBitness: userAgentMetadata.bitness ?? "64",
-          fixedModel: userAgentMetadata.model ?? "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion ?? "15.0.0",
-          fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
-          fixedBrands:
-            userAgentMetadata.brands ||
-            ([] as unknown as Array<{
-              brand: string;
-              version: string;
-            }>),
-        }),
-      );
-    } catch (error) {
-      if (isTargetClosedError(error) || page.isClosed()) {
-        this.logger.debug({ err: error }, "[Fingerprint] Skipping injection; target closed");
-        return;
-      }
-      this.logger.error({ error }, `[Fingerprint] Error injecting fingerprint safely`);
-      const fingerprintInjector = new FingerprintInjector();
-      // @ts-ignore - Ignore type mismatch between puppeteer versions
-      await fingerprintInjector.attachFingerprintToPuppeteer(page, fingerprintData);
-    }
-  }
-
-  @traceable
-  private async applyDeviceMetricsOverride(page: Page): Promise<void> {
-    const screen = this.fingerprintData?.fingerprint?.screen;
-    if (!screen) {
-      this.logger.warn(
-        "[CDPService] No fingerprint screen data available, skipping Page.setDeviceMetricsOverride",
-      );
-      return;
-    }
-
-    const isMobile = this.isMobileUserAgent(this.getUserAgent());
-    const { metrics, touch } = this.buildDeviceMetrics(screen, isMobile);
-    const persist = isMobile && this.isFingerprintInjectionEnabled();
-    await this.withEmulationSession(page, persist, async (session) => {
-      await session.send("Page.setDeviceMetricsOverride", metrics);
-      if (touch) {
-        await session.send("Emulation.setTouchEmulationEnabled", touch);
-      }
-    });
-  }
-
-  private queueMobileEmulation(target: Target): void {
-    const fingerprintData = this.fingerprintData;
-    const session = (target as any)._session?.() as CDPSession | undefined;
-    if (!fingerprintData || !session) return;
-    const { screen, navigator } = fingerprintData.fingerprint;
-    if (!screen || !this.isMobileUserAgent(navigator.userAgent)) return;
-    if (!this.isFingerprintInjectionEnabled()) return;
-
-    const { metrics, touch } = this.buildDeviceMetrics(screen, true);
-    const sent = [
-      session.send("Page.setDeviceMetricsOverride", metrics),
-      ...(touch ? [session.send("Emulation.setTouchEmulationEnabled", touch)] : []),
-      ...(navigator.userAgentData
-        ? [
-            session.send(
-              "Emulation.setUserAgentOverride",
-              this.buildUserAgentOverride(fingerprintData).override,
-            ),
-          ]
-        : []),
-    ];
-    void Promise.all(sent).catch((err) => {
-      this.logger.debug({ err }, "[CDPService] Early mobile emulation did not apply");
-    });
-  }
-
-  private buildUserAgentOverride(fingerprintData: BrowserFingerprintWithHeaders) {
-    const { fingerprint, headers } = fingerprintData;
-    const userAgent = fingerprint.navigator.userAgent;
-    const userAgentMetadata = fingerprint.navigator.userAgentData;
-    const isMobile = this.isMobileUserAgent(userAgent);
-    const navigatorPlatform = fingerprint.navigator.platform || "Linux x86_64";
-    const uaPlatform = userAgentMetadata.platform || navigatorPlatform;
-    const acceptLanguage = headers["accept-language"]
-      ?.split(",")
-      .map((language) => language.split(";")[0].trim())
-      .filter(Boolean)
-      .join(",");
-    const override: Protocol.Emulation.SetUserAgentOverrideRequest & {
-      userAgentMetadata: Protocol.Emulation.UserAgentMetadata;
-    } = {
-      userAgent,
-      acceptLanguage,
-      platform: isMobile ? navigatorPlatform : uaPlatform,
-      userAgentMetadata: {
-        brands:
-          userAgentMetadata.brands as unknown as Protocol.Emulation.UserAgentMetadata["brands"],
-        fullVersionList:
-          userAgentMetadata.fullVersionList as unknown as Protocol.Emulation.UserAgentMetadata["fullVersionList"],
-        fullVersion: userAgentMetadata.uaFullVersion,
-        platform: uaPlatform,
-        platformVersion: userAgentMetadata.platformVersion ?? "",
-        architecture: userAgentMetadata.architecture ?? "x86",
-        model: userAgentMetadata.model ?? "",
-        mobile: userAgentMetadata.mobile as unknown as boolean,
-        bitness: userAgentMetadata.bitness ?? "64",
-        wow64: false, // wow64 property doesn't exist on UserAgentData, defaulting to false
-        ...(isMobile
-          ? ({ formFactors: [userAgentMetadata.mobile ? "Mobile" : "Desktop"] } as object)
-          : {}),
-      },
-    };
-    return { isMobile, navigatorPlatform, uaPlatform, override };
-  }
-
-  private buildDeviceMetrics(
-    screen: {
-      width: number;
-      height: number;
-      devicePixelRatio: number;
-      innerWidth?: number;
-      innerHeight?: number;
-    },
-    isMobile: boolean,
-  ): {
-    metrics: Protocol.Page.SetDeviceMetricsOverrideRequest;
-    touch: Protocol.Emulation.SetTouchEmulationEnabledRequest | null;
-  } {
-    const maxTouchPoints =
-      (this.fingerprintData?.fingerprint.navigator as { maxTouchPoints?: number } | undefined)
-        ?.maxTouchPoints ?? 1;
-    return {
-      metrics: {
-        screenWidth: screen.width,
-        screenHeight: screen.height,
-        width: screen.innerWidth || screen.width,
-        height: screen.innerHeight || screen.height,
-        mobile: isMobile,
-        screenOrientation:
-          screen.height > screen.width
-            ? { angle: 0, type: "portraitPrimary" }
-            : { angle: 90, type: "landscapePrimary" },
-        deviceScaleFactor: screen.devicePixelRatio,
-      },
-      touch: isMobile ? { enabled: true, maxTouchPoints } : null,
-    };
-  }
-
   private isFingerprintInjectionEnabled(): boolean {
     return !env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection;
-  }
-
-  private isMobileUserAgent(userAgent: string | null | undefined): boolean {
-    return /phone|android|mobile/i.test(userAgent ?? "");
-  }
-
-  private async withEmulationSession(
-    page: Page,
-    persist: boolean,
-    apply: (session: CDPSession) => Promise<void>,
-  ): Promise<void> {
-    if (!persist) {
-      const session = await page.createCDPSession();
-      try {
-        await apply(session);
-      } finally {
-        await session.detach().catch(() => {});
-      }
-      return;
-    }
-
-    let session = this.emulationSessions.get(page);
-    if (!session) {
-      session = await page.createCDPSession();
-      this.emulationSessions.set(page, session);
-    }
-    await apply(session);
   }
 
   private async releaseProfileLock(userDataDir: string) {
