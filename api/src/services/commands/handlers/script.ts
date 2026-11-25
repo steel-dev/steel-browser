@@ -140,6 +140,7 @@ function functionBody(script: string): string | undefined {
       ecmaVersion: "latest",
       allowReturnOutsideFunction: true,
       allowAwaitOutsideFunction: true,
+      preserveParens: true,
     });
   } catch {
     return undefined;

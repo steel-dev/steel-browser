@@ -5513,6 +5513,11 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(quoted.results[0].value).toBe("return");
       const promised = await run({ command: "eval", script: "await 0;\nPromise.resolve(5)" });
       expect(promised.results[0].value).toBe(5);
+      const wrapped = await run({
+        command: "eval",
+        script: "const a = await Promise.resolve(1);\n({ a });",
+      });
+      expect(wrapped.results[0].value).toEqual({ a: 1 });
       const called = await run({ command: "eval", script: "await (async () => 6)()" });
       expect(called.results[0].value).toBe(6);
       const looped = await run({
