@@ -5471,6 +5471,48 @@ describe.skipIf(!chrome)("command engine", () => {
       });
     });
 
+    test("runs a function body with return and await", async () => {
+      await open("/pad");
+      const title = await run({ command: "eval", script: "return document.title" });
+      expect(title.results[0]).toMatchObject({ ok: true, value: expect.any(String) });
+      const awaited = await run({
+        command: "eval",
+        script:
+          "await new Promise((r) => setTimeout(r, 50));\nconst a = 1;\nreturn { a, url: location.href }",
+      });
+      expect(awaited.results[0].value).toMatchObject({
+        a: 1,
+        url: expect.stringContaining("/pad"),
+      });
+      const again = await run({ command: "eval", script: "const a = 2;\nreturn a" });
+      expect(again.results[0].value).toBe(2);
+      const nested = await run({
+        command: "eval",
+        script: "return (async () => { await new Promise((r) => setTimeout(r, 50)); return 3; })()",
+      });
+      expect(nested.results[0].value).toBe(3);
+      const commented = await run({ command: "eval", script: "return 4 // done" });
+      expect(commented.results[0].value).toBe(4);
+    });
+
+    test("runs a script once when it throws a SyntaxError", async () => {
+      await open("/pad");
+      const thrown = await run({
+        command: "eval",
+        script: "window.runs = (window.runs || 0) + 1; JSON.parse('{')",
+      });
+      expect(thrown.results[0]).toMatchObject({ ok: false, error: { code: "script_error" } });
+      expect(thrown.results[0].error!.message).toContain("SyntaxError");
+      expect((await run({ command: "eval", script: "window.runs" })).results[0].value).toBe(1);
+      const invalid = await run({ command: "eval", script: "return (" });
+      expect(invalid.results[0]).toMatchObject({
+        ok: false,
+        error: { code: "script_error", reason: "syntax" },
+      });
+      expect(invalid.results[0].error!.message).toContain("Illegal return statement");
+      expect(invalid.results[0].error!.message).toContain("As a function body");
+    });
+
     test("hides secrets in script results", async () => {
       await open("/article");
       const body = await run({

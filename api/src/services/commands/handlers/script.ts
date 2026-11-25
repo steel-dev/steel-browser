@@ -1,3 +1,4 @@
+import { Script } from "node:vm";
 import type { Command } from "../commands.js";
 import { dialogHint } from "../dialogs.js";
 import { CommandError } from "../errors.js";
@@ -25,6 +26,7 @@ export async function evaluate(
   ctx: Context,
   command: Extract<Command, { command: "eval" }>,
 ): Promise<CommandResult> {
+  const expression = runnable(command.script);
   const tab = tabFor(ctx, command.tab);
   const session = await tab.session();
   const timeout = command.timeout ?? SCRIPT_TIMEOUT_MS;
@@ -35,7 +37,7 @@ export async function evaluate(
     Promise.race([
       session
         .send("Runtime.evaluate", {
-          expression: command.script,
+          expression,
           returnByValue: true,
           awaitPromise: true,
           userGesture: true,
@@ -115,6 +117,32 @@ export async function evaluate(
     );
   }
   return { ok: true, effect: "applied", value };
+}
+
+function runnable(script: string): string {
+  const plain = syntaxError(script);
+  if (!plain) {
+    return script;
+  }
+  const body = `(async () => {\n${script}\n})()`;
+  const wrapped = syntaxError(body);
+  if (!wrapped) {
+    return body;
+  }
+  throw new CommandError(
+    "script_error",
+    `The script is neither a valid expression nor a valid function body. As an expression: ${plain}. As a function body: ${wrapped}.`,
+    "syntax",
+  );
+}
+
+function syntaxError(code: string): string | undefined {
+  try {
+    new Script(code);
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 function masked(value: unknown, hide: (text: string) => string): unknown {
