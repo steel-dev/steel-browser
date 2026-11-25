@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FastifyBaseLogger } from "fastify";
 import type { Page } from "puppeteer-core";
-import { extractStorageForPageWithTimeout, safePageUrl } from "./context.js";
+import {
+  extractStorageForPage,
+  extractStorageForPageWithTimeout,
+  groupSessionStorageByOrigin,
+  safePageUrl,
+} from "./context.js";
 
 const logger = () =>
   ({
@@ -79,5 +84,72 @@ describe("safePageUrl", () => {
         },
       } as unknown as Page),
     ).toBe("unknown");
+  });
+});
+
+// A page whose renderer answers with one localStorage and one sessionStorage item.
+const pageWithStorage = (url: string) =>
+  ({
+    url: () => url,
+    target: () => ({
+      createCDPSession: async () => ({
+        send: async (method: string, params?: any) => {
+          if (method === "Page.getFrameTree") return { frameTree: {} };
+          if (method === "DOMStorage.getDOMStorageItems") {
+            return params.storageId.isLocalStorage
+              ? { entries: [["token", "abc"]] }
+              : { entries: [["tab", "1"]] };
+          }
+          if (method === "IndexedDB.requestDatabaseNames") return { databaseNames: [] };
+          return {};
+        },
+        detach: async () => {},
+      }),
+    }),
+  }) as unknown as Page;
+
+describe("storage round trip", () => {
+  it("keys storage from a page so the restore path finds it by origin", async () => {
+    const extracted = await extractStorageForPage(
+      pageWithStorage("https://example.com/account"),
+      logger(),
+    );
+
+    const restored = groupSessionStorageByOrigin(extracted).get("https://example.com");
+
+    expect(restored?.localStorage).toEqual({ token: "abc" });
+    expect(restored?.sessionStorage).toEqual({ tab: "1" });
+  });
+
+  it("keeps the port in the key", async () => {
+    const extracted = await extractStorageForPage(
+      pageWithStorage("http://localhost:8080/"),
+      logger(),
+    );
+
+    expect(Object.keys(extracted.localStorage!)).toEqual(["http://localhost:8080"]);
+  });
+
+  it("restores contexts saved under a bare hostname by older versions", () => {
+    const byOrigin = groupSessionStorageByOrigin({
+      localStorage: { "example.com": { token: "abc" } },
+      indexedDB: { "example.com": [{ id: 0, name: "db", data: [] }] },
+    });
+
+    expect(byOrigin.get("https://example.com")?.localStorage).toEqual({ token: "abc" });
+    expect(byOrigin.get("http://example.com")?.localStorage).toEqual({ token: "abc" });
+    expect(byOrigin.get("https://example.com")?.indexedDB).toHaveLength(1);
+  });
+
+  it("prefers an origin key over a legacy hostname key for the same site", () => {
+    const byOrigin = groupSessionStorageByOrigin({
+      localStorage: {
+        "https://example.com": { token: "new" },
+        "example.com": { token: "old" },
+      },
+    });
+
+    expect(byOrigin.get("https://example.com")?.localStorage).toEqual({ token: "new" });
+    expect(byOrigin.get("http://example.com")?.localStorage).toEqual({ token: "old" });
   });
 });
