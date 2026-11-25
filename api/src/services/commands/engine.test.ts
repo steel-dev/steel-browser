@@ -5493,6 +5493,8 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(nested.results[0].value).toBe(3);
       const commented = await run({ command: "eval", script: "return 4 // done" });
       expect(commented.results[0].value).toBe(4);
+      const modern = await run({ command: "eval", script: "/(?i:a)/.test('A')" });
+      expect(modern.results[0].value).toBe(true);
     });
 
     test("runs a script once when it throws a SyntaxError", async () => {
@@ -5505,12 +5507,11 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(thrown.results[0].error!.message).toContain("SyntaxError");
       expect((await run({ command: "eval", script: "window.runs" })).results[0].value).toBe(1);
       const invalid = await run({ command: "eval", script: "return (" });
-      expect(invalid.results[0]).toMatchObject({
-        ok: false,
-        error: { code: "script_error", reason: "syntax" },
-      });
+      expect(invalid.results[0]).toMatchObject({ ok: false, error: { code: "script_error" } });
       expect(invalid.results[0].error!.message).toContain("Illegal return statement");
       expect(invalid.results[0].error!.message).toContain("As a function body");
+      const runtime = await run({ command: "eval", script: "null.x" });
+      expect(runtime.results[0].error!.message).not.toContain("As a function body");
     });
 
     test("hides secrets in script results", async () => {

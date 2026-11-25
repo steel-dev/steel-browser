@@ -26,7 +26,7 @@ export async function evaluate(
   ctx: Context,
   command: Extract<Command, { command: "eval" }>,
 ): Promise<CommandResult> {
-  const expression = runnable(command.script);
+  const { expression, bodyError } = runnable(command.script);
   const tab = tabFor(ctx, command.tab);
   const session = await tab.session();
   const timeout = command.timeout ?? SCRIPT_TIMEOUT_MS;
@@ -91,9 +91,12 @@ export async function evaluate(
   }
   const { result, exceptionDetails } = outcome.response;
   if (exceptionDetails) {
+    const thrown = exceptionDetails.exception?.description ?? exceptionDetails.text;
     throw new CommandError(
       "script_error",
-      `The script threw: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`,
+      bodyError && exceptionDetails.exception?.className === "SyntaxError"
+        ? `The script threw: ${thrown}. As a function body: ${bodyError}`
+        : `The script threw: ${thrown}`,
       undefined,
       "applied",
     );
@@ -119,21 +122,13 @@ export async function evaluate(
   return { ok: true, effect: "applied", value };
 }
 
-function runnable(script: string): string {
-  const plain = syntaxError(script);
-  if (!plain) {
-    return script;
+function runnable(script: string): { expression: string; bodyError?: string } {
+  if (!syntaxError(script)) {
+    return { expression: script };
   }
   const body = `(async () => {\n${script}\n})()`;
-  const wrapped = syntaxError(body);
-  if (!wrapped) {
-    return body;
-  }
-  throw new CommandError(
-    "script_error",
-    `The script is neither a valid expression nor a valid function body. As an expression: ${plain}. As a function body: ${wrapped}.`,
-    "syntax",
-  );
+  const bodyError = syntaxError(body);
+  return bodyError ? { expression: script, bodyError } : { expression: body };
 }
 
 function syntaxError(code: string): string | undefined {
