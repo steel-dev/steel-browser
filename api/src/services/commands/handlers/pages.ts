@@ -12,6 +12,7 @@ import {
   capture,
   ending,
   goto,
+  latestKey,
   navigationDone,
   optionsKey,
   scopeFor,
@@ -138,7 +139,8 @@ export async function observe(ctx: Context, observe: Observe): Promise<Record<st
     await navigationDone(ctx, tab);
     const current = usable(ctx, tab);
     const { mode, base, tab: _, ...options } = observe;
-    const baseId = mode === "diff" ? base ?? active.latest.get(current.id) : undefined;
+    const baseId =
+      mode === "diff" ? (base ?? active.latest.get(latestKey(current.id, options))) : undefined;
     const before = baseId ? active.kept.get(baseId) : undefined;
     const captured = await capture(
       active,
@@ -154,7 +156,7 @@ export async function observe(ctx: Context, observe: Observe): Promise<Record<st
       before && before.tab === current.id && before.options === optionsKey(options)
         ? diffSnapshots(before.text, captured.snapshot)
         : null;
-    if (!diff) {
+    if (!diff || diff.additions + diff.removals > captured.snapshot.split("\n").length) {
       return { ...captured, full: true };
     }
     return {

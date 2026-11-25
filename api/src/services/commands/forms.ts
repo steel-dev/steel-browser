@@ -85,6 +85,10 @@ export const PREPARE_EDIT = `function (replace) {
   return { empty: field ? this.value === "" : this.textContent === "", end };
 }`;
 
+export const IS_SELECT = `function () {
+  return this.localName === "select";
+}`;
+
 export const SET_PICKER = `function (value) {
   const before = this.value;
   this.value = value;

@@ -7,6 +7,7 @@ import { axString } from "../ax.js";
 import {
   FOCUS,
   INPUT_STATE,
+  IS_SELECT,
   ONLY_TOGGLE,
   PREPARE_EDIT,
   SCROLL_ELEMENT,
@@ -107,6 +108,9 @@ export async function write(
   if (prepared.refused === "not_focused" || prepared.refused === "detached") {
     throw await focusFailure(target);
   }
+  if (prepared.refused === "not_editable" && command.command === "fill") {
+    return await choose(ctx, command, target);
+  }
   if (prepared.refused) {
     throw new CommandError(
       "not_actionable",
@@ -152,6 +156,45 @@ export async function write(
   return { ok: true, effect: "applied", ...dialogNote(ctx.active, target.tab) };
 }
 
+const CHECKED = new Set(["true", "on", "yes", "checked", "1"]);
+
+const UNCHECKED = new Set(["false", "off", "no", "unchecked", "0"]);
+
+async function choose(
+  ctx: Context,
+  command: Extract<Command, { command: "fill" }>,
+  target: Element,
+): Promise<CommandResult> {
+  const { value, ...rest } = command;
+  if (await callOn<boolean>(target, IS_SELECT)) {
+    return filled(await select(ctx, { ...rest, command: "select", values: value }));
+  }
+  if (await toggleState(target)) {
+    const wanted = value.trim().toLowerCase();
+    if (!CHECKED.has(wanted) && !UNCHECKED.has(wanted)) {
+      throw new CommandError(
+        "invalid_argument",
+        `${target.label} is a checkbox or radio button. Fill it with true or false.`,
+      );
+    }
+    return filled(
+      await check(ctx, { ...rest, command: CHECKED.has(wanted) ? "check" : "uncheck" }),
+    );
+  }
+  throw new CommandError(
+    "not_actionable",
+    `${target.label} is not a text field, select or checkbox. For a custom dropdown, click it and then click the option.`,
+    "not_editable",
+  );
+}
+
+function filled(result: CommandResult): CommandResult {
+  const kept = { ...result };
+  delete kept.selected;
+  delete kept.checked;
+  return kept;
+}
+
 async function answer(
   ctx: Context,
   command: Extract<Command, { command: "press" }>,
@@ -166,7 +209,7 @@ async function answer(
     return null;
   }
   useTab(ctx, tab.id);
-  const text = accept && open.type === "prompt" ? open.defaultPrompt ?? "" : undefined;
+  const text = accept && open.type === "prompt" ? (open.defaultPrompt ?? "") : undefined;
   await closeDialog(ctx, tab, open, accept, text);
   return { ok: true, effect: "applied", answered: open.id, ...dialogNote(ctx.active, tab) };
 }
@@ -196,7 +239,7 @@ export async function dialog(
   }
   const accept = command.action === "accept";
   const text =
-    accept && open.type === "prompt" ? command.text ?? open.defaultPrompt ?? "" : undefined;
+    accept && open.type === "prompt" ? (command.text ?? open.defaultPrompt ?? "") : undefined;
   await closeDialog(ctx, tab, open, accept, text);
   return { ok: true, effect: "applied", ...dialogNote(ctx.active, tab) };
 }
@@ -338,8 +381,8 @@ export async function toggleState(target: Element): Promise<Toggle | null> {
   const node = nodes.find((candidate) => candidate.backendDOMNodeId === target.backendNodeId);
   const state =
     node && !node.ignored
-      ? node.properties?.find((property) => property.name === "checked") ??
-        node.properties?.find((property) => property.name === "pressed")
+      ? (node.properties?.find((property) => property.name === "checked") ??
+        node.properties?.find((property) => property.name === "pressed"))
       : undefined;
   if (state) {
     const raw = String(state.value.value);

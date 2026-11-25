@@ -64,6 +64,10 @@ const NATIVE_CONTROLS = new Set([
 
 const ITEM_ROLES = new Set(["row", "LayoutTableRow", "listitem", "option", "treeitem", "article"]);
 
+const NOISE_ROLES = new Set(["ListMarker", "LineBreak"]);
+
+const WRAPPER_ROLES = new Set(["LabelText", "Legend"]);
+
 const CONTEXT_DEPTH = 4;
 
 const CONTEXT_LIMIT = 400;
@@ -204,8 +208,8 @@ export async function refsFor(
         index === undefined
           ? null
           : valueInside(index)
-          ? null
-          : normalizeName(axString(axNodes[index].name)),
+            ? null
+            : normalizeName(axString(axNodes[index].name)),
       item:
         index === undefined
           ? null
@@ -923,7 +927,7 @@ class DomView {
 
   box(node: number): number[] | null {
     const layout = this.layoutOf[node];
-    return layout < 0 ? null : this.document.layout.bounds[layout] ?? null;
+    return layout < 0 ? null : (this.document.layout.bounds[layout] ?? null);
   }
 
   textWithin(node: number, limit: number): string {
@@ -991,8 +995,29 @@ class DomView {
   }
 
   private string(index: number | undefined): string {
-    return index === undefined || index < 0 ? "" : this.strings[index] ?? "";
+    return index === undefined || index < 0 ? "" : (this.strings[index] ?? "");
   }
+}
+
+function echoKey(text: string): string {
+  return normalizeName(text)
+    .trim()
+    .replace(/[\s:*]+$/, "")
+    .toLowerCase();
+}
+
+function echoes(node: Outline, parent?: Outline, before?: Outline, after?: Outline): boolean {
+  const text = echoKey(node.name);
+  if (!text) {
+    return false;
+  }
+  if (parent?.name && echoKey(parent.name).includes(text)) {
+    return true;
+  }
+  return [before, after].some(
+    (other) =>
+      other?.ref !== undefined && other.role !== "StaticText" && echoKey(other.name) === text,
+  );
 }
 
 function emit(
@@ -1001,15 +1026,36 @@ function emit(
   options: SnapshotOptions,
   lines: string[],
   shown: Outline[],
+  parent?: Outline,
+  before?: Outline,
+  after?: Outline,
 ): boolean {
-  const through = () =>
+  const children = (into: Outline | undefined, depth: number) =>
     node.children.reduce(
-      (kept, child) => emit(child, indent, options, lines, shown) || kept,
+      (kept, child, index) =>
+        emit(
+          child,
+          depth,
+          options,
+          lines,
+          shown,
+          into,
+          node.children[index - 1],
+          node.children[index + 1],
+        ) || kept,
       false,
     );
+  const through = () => children(parent, indent);
+  if (NOISE_ROLES.has(node.role)) {
+    return false;
+  }
+  if (node.role === "StaticText" && echoes(node, parent, before, after)) {
+    return false;
+  }
   if (
     (node.role === "generic" && !node.ref && node.size <= 1) ||
-    (node.role === "StaticText" && normalizeName(node.name).trim() === "")
+    (node.role === "StaticText" && normalizeName(node.name).trim() === "") ||
+    (WRAPPER_ROLES.has(node.role) && !node.ref && !node.name)
   ) {
     return through();
   }
@@ -1033,9 +1079,7 @@ function emit(
   for (const root of node.frame ?? []) {
     kept = emit(root, indent + 1, options, lines, shown) || kept;
   }
-  for (const child of node.children) {
-    kept = emit(child, indent + 1, options, lines, shown) || kept;
-  }
+  kept = children(node, indent + 1) || kept;
   if (options.compact && !kept) {
     lines.length = start;
   }
@@ -1049,7 +1093,7 @@ function lineOf(
   value: string | undefined,
 ): string {
   const parts = [`${"  ".repeat(indent)}- ${node.role}`];
-  const display = node.name || (options.interactive ? node.affordance?.text ?? "" : "");
+  const display = node.name || (options.interactive ? (node.affordance?.text ?? "") : "");
   if (display) {
     parts.push(JSON.stringify(normalizeName(display)));
   }
