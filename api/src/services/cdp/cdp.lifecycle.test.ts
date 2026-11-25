@@ -167,22 +167,27 @@ describe("CDPService lifecycle hook ownership", () => {
     await service.shutdown(ShutdownReason.SESSION_END);
   });
 
-  test("does not retry or fall back to a cold launch when preparing the browser fails", async () => {
+  test("replaces the browser on the next session after a partial extension load", async () => {
     const { service, events } = lifecycleFixture();
-    const configure = vi.fn().mockRejectedValue(new Error("native profile rejected"));
+    const configure = vi.fn((next: BrowserLauncherOptions) => service.loadSessionExtensions(next));
     service.setReusePolicy({ canReuse: () => true, prepare: configure });
     const browser = await service.launch();
+    const cdp = await browser.target().createCDPSession();
+    vi.mocked(cdp.send)
+      .mockResolvedValueOnce({ id: "first" })
+      .mockRejectedValueOnce(new Error("extension failed"));
     await expect(
       service.startNewSession({
         ...service.getLaunchConfig()!,
-        extra: { session: { id: "session" } },
+        extra: { orgExtensions: { paths: ["/first", "/second"] } },
       }),
-    ).rejects.toThrow("native profile rejected");
+    ).rejects.toThrow("extension failed");
     expect(configure).toHaveBeenCalledTimes(1);
     expect(puppeteer.launch).toHaveBeenCalledTimes(1);
     expect(browser.close).not.toHaveBeenCalled();
     expect(events.map((event) => event.phase)).toEqual(["launch"]);
     expect(service.getLaunchConfig()?.runtimeSettingsApplied).toBeUndefined();
+    expect(await service.startNewSession({ ...service.getLaunchConfig()! })).not.toBe(browser);
     await service.shutdown(ShutdownReason.SESSION_END);
   });
 
@@ -606,6 +611,40 @@ describe("CDPService overlapping launches", () => {
     expect(service.getBrowserInstance()).toBe(browser);
     await service.shutdown(ShutdownReason.SESSION_END);
   });
+
+  test.each(["canReuse", "prepare"])(
+    "releases the launch queue when %s times out",
+    async (hook) => {
+      const { service } = lifecycleFixture();
+      const options = sessionConfig("idle", "shared");
+      await service.launch(options);
+      const stalled = Promise.withResolvers<void>();
+      const canReuse = vi.fn().mockReturnValue(true);
+      const prepare = vi.fn().mockResolvedValue(undefined);
+      if (hook === "canReuse") {
+        canReuse.mockReturnValueOnce(stalled.promise.then(() => true));
+      } else {
+        prepare.mockImplementationOnce(async (next) => {
+          await stalled.promise;
+          await service.loadSessionExtensions(next);
+        });
+      }
+      service.setReusePolicy({ canReuse, prepare });
+
+      const expired = { ...options, extra: { orgExtensions: { paths: ["/expired"] } } };
+      const timeout = expect(service.startNewSession(expired)).rejects.toThrow(LaunchTimeoutError);
+      const queued = service.startNewSession({ ...options });
+      await vi.advanceTimersByTimeAsync(60_000);
+      await timeout;
+      const browser = await queued;
+      stalled.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(expired.runtimeSettingsApplied).toBeUndefined();
+      const cdp = await browser.target().createCDPSession();
+      expect(cdp.send).not.toHaveBeenCalledWith("Extensions.loadUnpacked", { path: "/expired" });
+      await service.shutdown(ShutdownReason.SESSION_END);
+    },
+  );
 
   test("closes a browser that starts after its launch attempt timed out", async () => {
     const { service } = lifecycleFixture();

@@ -138,6 +138,9 @@ export async function isSimilarConfig(
   const currentArgs = normalizeArgs(current.options?.args);
   const nextArgs = normalizeArgs(next.options?.args);
 
+  const currentDisabledFeatures = [...new Set(current.options?.disableFeatures)].sort();
+  const nextDisabledFeatures = [...new Set(next.options?.disableFeatures)].sort();
+
   const currentExt = normalizeExt(current.extensions);
   const nextExt = normalizeExt(next.extensions);
 
@@ -172,6 +175,7 @@ export async function isSimilarConfig(
 
   return (
     currentHeadless === nextHeadless &&
+    Boolean(current.options?.runtimeExtensions) === Boolean(next.options?.runtimeExtensions) &&
     currentProxy === nextProxy &&
     currentUserAgent === nextUserAgent &&
     currentUserDataDir === nextUserDataDir &&
@@ -180,6 +184,7 @@ export async function isSimilarConfig(
     currentHeight === nextHeight &&
     currentBlockAds === nextBlockAds &&
     JSON.stringify(currentArgs) === JSON.stringify(nextArgs) &&
+    JSON.stringify(currentDisabledFeatures) === JSON.stringify(nextDisabledFeatures) &&
     JSON.stringify(currentExt) === JSON.stringify(nextExt) &&
     JSON.stringify(currentExtra) === JSON.stringify(nextExtra) &&
     JSON.stringify(current.userPreferences) === JSON.stringify(next.userPreferences) &&

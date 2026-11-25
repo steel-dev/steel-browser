@@ -69,7 +69,16 @@ export async function resetPrimaryPage(browserService: CDPService): Promise<void
 }
 
 export async function waitForPageSetup(browserService: CDPService, page: Page): Promise<void> {
-  await settleWithin(browserService.waitForPageSetup(page), PAGE_SETUP_TIMEOUT_MS);
+  const requiresSetup = browserService.getLaunchConfig()?.runtimeSettingsApplied;
+  const setup = browserService.waitForPageSetup(page);
+  let timedOut = false;
+  await settleWithin(setup, PAGE_SETUP_TIMEOUT_MS, () => {
+    timedOut = true;
+  });
+  if (requiresSetup) {
+    if (timedOut) throw new Error("Timed out configuring the session page");
+    await setup;
+  }
 }
 
 export const handleScrape = async (

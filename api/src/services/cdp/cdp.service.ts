@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "async_hooks";
 import { EventEmitter } from "events";
 import { FastifyBaseLogger } from "fastify";
 import {
@@ -122,6 +123,8 @@ export class CDPService extends EventEmitter {
   private launchQueue: Promise<unknown> = Promise.resolve();
   private reusePolicy?: SessionReusePolicy;
   private sessionPageSettings = new WeakMap<Page, Promise<void>>();
+  private readonly preparationContext = new AsyncLocalStorage<AbortSignal>();
+  private readonly browsersRequiringRelaunch = new WeakSet<Browser>();
   private loadedExtensionPaths = new Set<string>();
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
@@ -243,13 +246,22 @@ export class CDPService extends EventEmitter {
     this.launchMutators.push(fn);
   }
 
+  /**
+   * If canReuse returns false, launch falls back to its usual configuration comparison.
+   * If canReuse throws or outlasts the launch timeout, the launch fails without that fallback.
+   */
   public setReusePolicy(policy: SessionReusePolicy): void {
     this.reusePolicy = policy;
   }
 
+  /** Loads requested extensions that are missing from the running browser. */
   public async loadSessionExtensions(config: BrowserLauncherOptions): Promise<void> {
+    this.preparationContext.getStore()?.throwIfAborted();
     const browser = this.browserInstance;
-    if (!browser) throw new Error("There is no running browser to load extensions into");
+    if (!browser || this.shuttingDown) {
+      throw new Error("There is no running browser to load extensions into");
+    }
+    const loadedPaths = this.loadedExtensionPaths;
     const requested = [
       ...(await getExtensionPaths([
         ...(config.options?.headless ? ["recorder"] : []),
@@ -257,13 +269,13 @@ export class CDPService extends EventEmitter {
       ])),
       ...(config.extra?.orgExtensions?.paths ?? []),
     ];
-    const paths = [...new Set(requested)].filter((path) => !this.loadedExtensionPaths.has(path));
+    const paths = [...new Set(requested)].filter((path) => !loadedPaths.has(path));
     if (paths.length === 0) return;
     const session = await browser.target().createCDPSession();
     try {
       for (const path of paths) {
         await session.send("Extensions.loadUnpacked", { path });
-        this.loadedExtensionPaths.add(path);
+        loadedPaths.add(path);
       }
     } finally {
       await session.detach().catch(() => {});
@@ -322,7 +334,7 @@ export class CDPService extends EventEmitter {
     const previous = this.primaryPage;
     const isCurrent = () => !signal?.aborted && this.primaryPage === previous;
     const newPage = await this.createPage();
-    if (this.launchConfig?.runtimeSettingsApplied) {
+    if (isCurrent() && this.launchConfig?.runtimeSettingsApplied) {
       try {
         await this.applySessionSettings(newPage);
         await this.waitForPageSetup(newPage);
@@ -385,7 +397,8 @@ export class CDPService extends EventEmitter {
 
   private setUpTarget(target: Target): Promise<void> {
     const targetId = (target as any)._targetId as string;
-    const setup: Promise<void> = this.handleNewTarget(target)
+    const setup = this.handleNewTarget(target);
+    const handledSetup: Promise<void> = setup
       .catch((error) => {
         if (isTargetClosedError(error)) {
           this.logger.debug(
@@ -397,16 +410,21 @@ export class CDPService extends EventEmitter {
         this.logger.error({ err: error }, "[CDPService] Unhandled error in handleNewTarget");
       })
       .finally(() => {
-        if (this.pageSetups.get(targetId) === setup) {
+        if (this.pageSetups.get(targetId) === pendingSetup) {
           this.pageSetups.delete(targetId);
         }
       });
-    this.pageSetups.set(targetId, setup);
-    return setup;
+    const pendingSetup = this.launchConfig?.runtimeSettingsApplied ? setup : handledSetup;
+    this.pageSetups.set(targetId, pendingSetup);
+    return handledSetup;
   }
 
   public async waitForPageSetup(page: Page): Promise<void> {
     await this.pageSetups.get(this.getTargetId(page));
+    if (this.launchConfig?.runtimeSettingsApplied) {
+      await this.sessionPageSettings.get(page);
+      if (page.isClosed()) throw new Error("The session page closed during configuration");
+    }
   }
 
   private async handleNewTarget(target: Target) {
@@ -469,7 +487,12 @@ export class CDPService extends EventEmitter {
 
         // Only install mouse helper in headless mode
         if (this.launchConfig?.options?.headless) {
-          await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+          try {
+            await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+          } catch (error) {
+            if (isTargetClosedError(error) || page.isClosed()) throw error;
+            this.logger.warn({ err: error }, "[CDPService] Could not install the mouse helper");
+          }
         }
 
         if (!this.launchConfig?.runtimeSettingsApplied && this.launchConfig?.customHeaders) {
@@ -518,6 +541,10 @@ export class CDPService extends EventEmitter {
           }
         });
       } catch (error) {
+        if (this.launchConfig?.runtimeSettingsApplied) {
+          if (!page.isClosed()) await page.close().catch(() => {});
+          throw error;
+        }
         if (isTargetClosedError(error) || page.isClosed()) {
           this.logger.debug(
             { err: error },
@@ -728,14 +755,10 @@ export class CDPService extends EventEmitter {
       }
     };
 
-    // Use retry mechanism for the launch process
     const launched = this.launchQueue.then(async () => {
-      const current = this.browserInstance ? this.launchConfig : undefined;
-      if (
-        current &&
-        (await this.reusePolicy?.canReuse(current, config || this.defaultLaunchConfig))
-      ) {
-        return this.launchInternal(config, true);
+      if (this.browserInstance && this.reusePolicy) {
+        const reused = await this.launchInternal(config, this.reusePolicy);
+        if (reused) return reused;
       }
       const result = await this.retryManager.executeWithRetry(
         operation,
@@ -748,11 +771,25 @@ export class CDPService extends EventEmitter {
     return launched;
   }
 
+  private isReadyForReuse(browser: Browser): boolean {
+    return (
+      browser === this.browserInstance &&
+      !this.shuttingDown &&
+      !this.browsersRequiringRelaunch.has(browser)
+    );
+  }
+
+  private launchInternal(config?: BrowserLauncherOptions): Promise<Browser>;
+  private launchInternal(
+    config: BrowserLauncherOptions | undefined,
+    policy: SessionReusePolicy,
+  ): Promise<Browser | null>;
   @traceable
   private async launchInternal(
     config?: BrowserLauncherOptions,
-    prepareReuse = false,
-  ): Promise<Browser> {
+    policy?: SessionReusePolicy,
+  ): Promise<Browser | null> {
+    let preparingBrowser: Browser | undefined;
     const abandon = new AbortController();
     let timer: NodeJS.Timeout | undefined;
     try {
@@ -765,27 +802,34 @@ export class CDPService extends EventEmitter {
 
       const launchProcess = (async () => {
         const next = config || this.defaultLaunchConfig;
-        const shouldReuseInstance =
-          this.browserInstance &&
-          (prepareReuse || (await isSimilarConfig(this.launchConfig, next)));
+        const running = this.browserInstance;
+        const current = this.launchConfig;
+        const canReuseBrowser =
+          running &&
+          current &&
+          (policy
+            ? await policy.canReuse(current, next)
+            : this.isReadyForReuse(running) && (await isSimilarConfig(current, next)));
         abandon.signal.throwIfAborted();
 
-        if (shouldReuseInstance) {
-          if (prepareReuse) {
+        if (canReuseBrowser && this.isReadyForReuse(running)) {
+          if (policy) {
             validateLaunchConfig(next);
             next.timezone = validateTimezone(
               this.logger,
               next.timezone ?? Promise.resolve(this.defaultTimezone),
             );
             void next.timezone.catch(() => {});
-            await this.reusePolicy!.prepare(next, this.browserInstance!);
+            preparingBrowser = running;
+            await this.preparationContext.run(abandon.signal, () => policy.prepare(next, running));
+            abandon.signal.throwIfAborted();
+            if (!this.isReadyForReuse(running)) {
+              throw new Error("Browser preparation did not complete");
+            }
             this.fingerprintData = next.fingerprint ?? null;
             next.runtimeSettingsApplied = true;
-            abandon.signal.throwIfAborted();
           }
-          this.logger.info(
-            "[CDPService] Reusing existing browser instance with default configuration.",
-          );
+          this.logger.info("[CDPService] Reusing existing browser instance.");
           this.launchConfig = config || this.defaultLaunchConfig;
           this.currentSessionConfig = this.launchConfig;
 
@@ -798,7 +842,7 @@ export class CDPService extends EventEmitter {
           this.blockedHosts = reuseHosts?.length ? normalizeHosts(reuseHosts) : [];
 
           await executeCritical(
-            async () => this.refreshPrimaryPage(),
+            async () => this.refreshPrimaryPage(policy ? abandon.signal : undefined),
             (error) =>
               error instanceof ConfigurationError
                 ? error
@@ -808,7 +852,8 @@ export class CDPService extends EventEmitter {
                     error,
                   ),
           );
-          if (prepareReuse) await this.launchConfig.timezone;
+          if (policy) await this.launchConfig.timezone;
+          abandon.signal.throwIfAborted();
 
           // Session context injection - should throw error if it fails
           if (this.launchConfig?.sessionContext) {
@@ -829,6 +874,7 @@ export class CDPService extends EventEmitter {
               },
             );
           }
+          abandon.signal.throwIfAborted();
           if (!this.shuttingDown && this.browserInstance) {
             await this.pluginManager.onBrowserReady(this.launchConfig);
           } else {
@@ -838,8 +884,13 @@ export class CDPService extends EventEmitter {
               }, browserInstance=${!!this.browserInstance}`,
             );
           }
-
-          return this.browserInstance!;
+          abandon.signal.throwIfAborted();
+          if (!this.isReadyForReuse(running)) {
+            throw new Error("Browser configuration changed during reuse");
+          }
+          return running;
+        } else if (policy) {
+          return null;
         } else if (this.browserInstance) {
           this.logger.info(
             "[CDPService] Existing browser instance detected. Closing it before launching a new one.",
@@ -1333,8 +1384,10 @@ export class CDPService extends EventEmitter {
         return this.browserInstance;
       })();
 
-      return (await Promise.race([launchProcess, launchTimeout])) as Browser;
+      return await Promise.race([launchProcess, launchTimeout]);
     } catch (error: unknown) {
+      if (policy && !preparingBrowser) throw error;
+      if (preparingBrowser) this.browsersRequiringRelaunch.add(preparingBrowser);
       const categorizedError =
         error instanceof BaseLaunchError ? error : categorizeError(error, "browser launch");
 
@@ -1352,6 +1405,7 @@ export class CDPService extends EventEmitter {
       throw categorizedError;
     } finally {
       clearTimeout(timer);
+      if (policy) abandon.abort();
     }
   }
 

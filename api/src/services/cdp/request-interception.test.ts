@@ -143,6 +143,25 @@ describe("CDPService browser requests", () => {
     return page;
   }
 
+  test("closes a new tab when its session settings fail", async () => {
+    await start();
+    const setup = Promise.withResolvers<void>();
+    const preparePage = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockImplementation(async () => {
+        await setup.promise;
+        throw new Error("setup failed");
+      });
+    service!.setReusePolicy({ canReuse: () => true, prepare: async () => {}, preparePage });
+    const browser = await service!.startNewSession({ ...service!.getLaunchConfig()! });
+    const tab = await browser.newPage();
+    const result = expect(service!.waitForPageSetup(tab)).rejects.toThrow("setup failed");
+    setup.resolve();
+    await result;
+    expect(tab.isClosed()).toBe(true);
+  });
+
   test("blocks file:// navigations before the file loads", async () => {
     const secret = path.join(dataDir, "secret.txt");
     fs.writeFileSync(secret, "file-guard-secret");

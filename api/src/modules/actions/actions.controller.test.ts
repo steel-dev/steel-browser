@@ -163,6 +163,7 @@ describe("waitForPageSetup", () => {
   it("waits for the page to finish its setup", async () => {
     let finish: () => void = () => {};
     const browserService = {
+      getLaunchConfig: () => undefined,
       waitForPageSetup: vi.fn(
         () =>
           new Promise<void>((resolve) => {
@@ -186,14 +187,18 @@ describe("waitForPageSetup", () => {
     expect(browserService.waitForPageSetup).toHaveBeenCalledWith(page);
   });
 
-  it("stops waiting on a setup that never finishes", async () => {
+  it.each([false, true])("times out during page setup (required=%s)", async (requiresSetup) => {
     vi.useFakeTimers();
-    const browserService = { waitForPageSetup: vi.fn(() => new Promise<void>(() => {})) };
-
-    const waiting = waitForPageSetup(browserService as never, {} as never);
+    const browserService = {
+      getLaunchConfig: () => ({ runtimeSettingsApplied: requiresSetup }),
+      waitForPageSetup: () => new Promise<void>(() => {}),
+    };
+    const waiting = expect(waitForPageSetup(browserService as never, {} as never));
+    const result = requiresSetup
+      ? waiting.rejects.toThrow("Timed out")
+      : waiting.resolves.toBeUndefined();
     await vi.advanceTimersByTimeAsync(PAGE_SETUP_TIMEOUT_MS);
-
-    await expect(waiting).resolves.toBeUndefined();
+    await result;
   });
 });
 
