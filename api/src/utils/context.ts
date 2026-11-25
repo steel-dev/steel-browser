@@ -10,6 +10,7 @@ import {
 import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../types/index.js";
 import path from "path";
+import { isTargetClosedError } from "./target-closed.js";
 
 // Storage extraction talks to the renderer, which can stop answering without ever
 // rejecting, so bound each page rather than let one stall session teardown.
@@ -27,26 +28,47 @@ function emptySessionData(): SessionData {
   return { localStorage: {}, sessionStorage: {}, indexedDB: {} };
 }
 
+// "gone": the page closed before we could attach to it.
+export type PageStorageOutcome = "ok" | "gone" | "failed" | "timed_out";
+
+export interface PageStorage {
+  data: SessionData;
+  outcome: PageStorageOutcome;
+}
+
+function isPageGone(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return isTargetClosedError(err) || /no target with given id/i.test(message);
+}
+
 // Resolves to empty data if the renderer does not answer in time, and never rejects,
 // so a single unresponsive page cannot fail the whole release.
 export async function extractStorageForPageWithTimeout(
   page: Page,
   logger: FastifyBaseLogger,
   timeoutMs: number = STORAGE_EXTRACTION_TIMEOUT_MS,
-): Promise<SessionData> {
+): Promise<PageStorage> {
   let timer: NodeJS.Timeout | undefined;
+
+  const attempt = extractStorageForPage(page, logger).then(
+    (data): PageStorage => ({ data, outcome: "ok" }),
+    (err: unknown): PageStorage => {
+      logger.warn(`[CDPService] Error extracting storage for page: ${err}`);
+      return { data: emptySessionData(), outcome: isPageGone(err) ? "gone" : "failed" };
+    },
+  );
 
   try {
     return await Promise.race([
-      extractStorageForPage(page, logger),
-      new Promise<SessionData>((resolve) => {
+      attempt,
+      new Promise<PageStorage>((resolve) => {
         timer = setTimeout(() => {
           logger.warn(
             `[CDPService] Storage extraction timed out after ${timeoutMs}ms for ${safePageUrl(
               page,
             )}; skipping page`,
           );
-          resolve(emptySessionData());
+          resolve({ data: emptySessionData(), outcome: "timed_out" });
         }, timeoutMs);
       }),
     ]);
@@ -70,159 +92,153 @@ export async function extractStorageForPage(
     indexedDB: {},
   };
 
+  // Skip pages that aren't valid or don't have a proper URL
+  const url = page.url();
+  if (!url || !url.startsWith("http")) {
+    return result;
+  }
+
+  // Extract origin and domain from URL
+  const origin = new URL(url).origin;
+  const domain = new URL(url).hostname;
+
+  const client = await page.target().createCDPSession();
+
   try {
-    // Skip pages that aren't valid or don't have a proper URL
-    const url = page.url();
-    if (!url || !url.startsWith("http")) {
+    // Check if the page has a valid main frame
+    const { frameTree } = await client.send("Page.getFrameTree").catch(() => ({ frameTree: null }));
+    if (!frameTree) {
+      logger.debug(`[CDPService] Page has no valid frame tree for ${domain}`);
       return result;
     }
 
-    // Extract origin and domain from URL
-    const origin = new URL(url).origin;
-    const domain = new URL(url).hostname;
-
-    const client = await page.target().createCDPSession();
-
+    // Get localStorage using CDP
     try {
-      // Check if the page has a valid main frame
-      const { frameTree } = await client
-        .send("Page.getFrameTree")
-        .catch(() => ({ frameTree: null }));
-      if (!frameTree) {
-        logger.debug(`[CDPService] Page has no valid frame tree for ${domain}`);
-        return result;
-      }
+      const localStorageResponse = await client.send("DOMStorage.getDOMStorageItems", {
+        storageId: { securityOrigin: origin, isLocalStorage: true },
+      });
 
-      // Get localStorage using CDP
-      try {
-        const localStorageResponse = await client.send("DOMStorage.getDOMStorageItems", {
-          storageId: { securityOrigin: origin, isLocalStorage: true },
-        });
-
-        if (localStorageResponse?.entries?.length) {
-          result.localStorage![domain] = {};
-          for (const [key, value] of localStorageResponse.entries) {
-            result.localStorage![domain][key] = value;
-          }
+      if (localStorageResponse?.entries?.length) {
+        result.localStorage![domain] = {};
+        for (const [key, value] of localStorageResponse.entries) {
+          result.localStorage![domain][key] = value;
         }
-      } catch (err) {
-        // Lower log level to avoid flooding logs with expected errors
-        logger.trace(`[CDPService] Could not get localStorage for ${domain}: ${err}`);
       }
+    } catch (err) {
+      // Lower log level to avoid flooding logs with expected errors
+      logger.trace(`[CDPService] Could not get localStorage for ${domain}: ${err}`);
+    }
 
-      // Get sessionStorage (note: only works for active pages)
-      try {
-        const sessionStorageResponse = await client.send("DOMStorage.getDOMStorageItems", {
-          storageId: { securityOrigin: origin, isLocalStorage: false },
-        });
+    // Get sessionStorage (note: only works for active pages)
+    try {
+      const sessionStorageResponse = await client.send("DOMStorage.getDOMStorageItems", {
+        storageId: { securityOrigin: origin, isLocalStorage: false },
+      });
 
-        if (sessionStorageResponse?.entries?.length) {
-          result.sessionStorage![domain] = {};
-          for (const [key, value] of sessionStorageResponse.entries) {
-            result.sessionStorage![domain][key] = value;
-          }
+      if (sessionStorageResponse?.entries?.length) {
+        result.sessionStorage![domain] = {};
+        for (const [key, value] of sessionStorageResponse.entries) {
+          result.sessionStorage![domain][key] = value;
         }
-      } catch (err) {
-        // Lower log level to avoid flooding logs with expected errors
-        logger.trace(`[CDPService] Could not get sessionStorage for ${domain}: ${err}`);
       }
+    } catch (err) {
+      // Lower log level to avoid flooding logs with expected errors
+      logger.trace(`[CDPService] Could not get sessionStorage for ${domain}: ${err}`);
+    }
 
-      // Get IndexedDB databases
-      try {
-        const dbResponse = await client.send("IndexedDB.requestDatabaseNames", {
-          securityOrigin: origin,
-        });
+    // Get IndexedDB databases
+    try {
+      const dbResponse = await client.send("IndexedDB.requestDatabaseNames", {
+        securityOrigin: origin,
+      });
 
-        const databaseNames = dbResponse?.databaseNames || [];
+      const databaseNames = dbResponse?.databaseNames || [];
 
-        if (databaseNames.length) {
-          result.indexedDB![domain] = [];
+      if (databaseNames.length) {
+        result.indexedDB![domain] = [];
 
-          // Process each database
-          for (let dbIndex = 0; dbIndex < databaseNames.length; dbIndex++) {
-            const dbName = databaseNames[dbIndex];
+        // Process each database
+        for (let dbIndex = 0; dbIndex < databaseNames.length; dbIndex++) {
+          const dbName = databaseNames[dbIndex];
 
-            // Create a properly structured database object
-            const database: IndexedDBDatabase = {
-              id: dbIndex,
-              name: dbName,
-              data: [],
+          // Create a properly structured database object
+          const database: IndexedDBDatabase = {
+            id: dbIndex,
+            name: dbName,
+            data: [],
+          };
+
+          // Get database schema
+          const dbSchemaResponse = await client.send("IndexedDB.requestDatabase", {
+            securityOrigin: origin,
+            databaseName: dbName,
+          });
+
+          // Access object stores safely
+          const objectStores = dbSchemaResponse?.databaseWithObjectStores?.objectStores || [];
+
+          // Process each object store
+          for (let storeIndex = 0; storeIndex < objectStores.length; storeIndex++) {
+            const store = objectStores[storeIndex];
+
+            // Create a properly structured object store
+            const objectStore: IndexedDBObjectStore = {
+              id: storeIndex,
+              name: store.name,
+              records: [],
             };
 
-            // Get database schema
-            const dbSchemaResponse = await client.send("IndexedDB.requestDatabase", {
-              securityOrigin: origin,
-              databaseName: dbName,
-            });
+            // Paginate through all records
+            let hasMoreData = true;
+            let skipCount = 0;
+            const pageSize = 1000;
 
-            // Access object stores safely
-            const objectStores = dbSchemaResponse?.databaseWithObjectStores?.objectStores || [];
+            while (hasMoreData) {
+              const dataResponse = await client.send("IndexedDB.requestData", {
+                securityOrigin: origin,
+                databaseName: dbName,
+                objectStoreName: store.name,
+                indexName: "", // Empty string means use primary key
+                skipCount,
+                pageSize,
+              });
 
-            // Process each object store
-            for (let storeIndex = 0; storeIndex < objectStores.length; storeIndex++) {
-              const store = objectStores[storeIndex];
+              // Add the retrieved data
+              const objectStoreData = dataResponse?.objectStoreDataEntries || [];
+              if (objectStoreData.length) {
+                // Map the data to the correct record format
+                const records: IndexedDBRecord[] = objectStoreData.map((entry) => ({
+                  key: entry.key,
+                  value: entry.value,
+                  // TODO: Add blob files
+                }));
 
-              // Create a properly structured object store
-              const objectStore: IndexedDBObjectStore = {
-                id: storeIndex,
-                name: store.name,
-                records: [],
-              };
-
-              // Paginate through all records
-              let hasMoreData = true;
-              let skipCount = 0;
-              const pageSize = 1000;
-
-              while (hasMoreData) {
-                const dataResponse = await client.send("IndexedDB.requestData", {
-                  securityOrigin: origin,
-                  databaseName: dbName,
-                  objectStoreName: store.name,
-                  indexName: "", // Empty string means use primary key
-                  skipCount,
-                  pageSize,
-                });
-
-                // Add the retrieved data
-                const objectStoreData = dataResponse?.objectStoreDataEntries || [];
-                if (objectStoreData.length) {
-                  // Map the data to the correct record format
-                  const records: IndexedDBRecord[] = objectStoreData.map((entry) => ({
-                    key: entry.key,
-                    value: entry.value,
-                    // TODO: Add blob files
-                  }));
-
-                  objectStore.records.push(...records);
-                }
-
-                // Check if we need to continue pagination
-                hasMoreData = !!dataResponse?.hasMore;
-                skipCount += objectStoreData.length;
-
-                // Safety check to prevent infinite loops
-                if (objectStoreData.length === 0) break;
+                objectStore.records.push(...records);
               }
 
-              // Add the object store to the database
-              database.data.push(objectStore);
+              // Check if we need to continue pagination
+              hasMoreData = !!dataResponse?.hasMore;
+              skipCount += objectStoreData.length;
+
+              // Safety check to prevent infinite loops
+              if (objectStoreData.length === 0) break;
             }
 
-            // Add the database to the result
-            result.indexedDB![domain].push(database);
+            // Add the object store to the database
+            database.data.push(objectStore);
           }
+
+          // Add the database to the result
+          result.indexedDB![domain].push(database);
         }
-      } catch (err) {
-        // Lower log level to avoid flooding logs with expected errors
-        logger.trace(`[CDPService] Could not get IndexedDB for ${domain}: ${err}`);
       }
-    } finally {
-      // Always ensure the client session is detached
-      await client.detach().catch(() => {});
+    } catch (err) {
+      // Lower log level to avoid flooding logs with expected errors
+      logger.trace(`[CDPService] Could not get IndexedDB for ${domain}: ${err}`);
     }
-  } catch (err) {
-    logger.warn(`[CDPService] Error extracting storage for page: ${err}`);
+  } finally {
+    // Always ensure the client session is detached
+    await client.detach().catch(() => {});
   }
 
   return result;

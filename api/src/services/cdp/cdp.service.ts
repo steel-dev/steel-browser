@@ -83,6 +83,7 @@ import {
 } from "./instrumentation/browser-logger.js";
 import { executeBestEffort, executeCritical, executeOptional } from "./utils/error-handlers.js";
 import { ProfileInUseError, releaseStaleProfileLock } from "./utils/profile-lock.js";
+import { collectSessionData, mergePageStorage, type PagesStorage } from "./utils/session-data.js";
 import { TimezoneFetcher } from "../timezone-fetcher.service.js";
 
 const LAUNCH_TIMEOUT_MS = 60_000;
@@ -1366,111 +1367,52 @@ export class CDPService extends EventEmitter {
       return {};
     }
 
-    try {
-      this.logger.info(`[CDPService] Dumping session data from userDataDir: ${userDataDir}`);
+    this.logger.info(`[CDPService] Dumping session data from userDataDir: ${userDataDir}`);
 
-      // Run session data extraction and CDP storage extraction in parallel
-      const [cookieData, sessionData, storageData] = await Promise.all([
-        this.getCookies(),
-        this.chromeSessionService.getSessionData(userDataDir),
-        this.getExistingPageSessionData(),
-      ]);
-
-      // Merge storage data with session data
-      const result = {
-        cookies: cookieData,
-        localStorage: {
-          ...(sessionData.localStorage || {}),
-          ...(storageData.localStorage || {}),
-        },
-        sessionStorage: {
-          ...(sessionData.sessionStorage || {}),
-          ...(storageData.sessionStorage || {}),
-        },
-        indexedDB: {
-          ...(sessionData.indexedDB || {}),
-          ...(storageData.indexedDB || {}),
-        },
-      };
-
-      this.logger.info("[CDPService] Session data dumped successfully");
-      return result;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error(`[CDPService] Error dumping session data: ${errorMessage}`);
-      return {};
-    }
+    return collectSessionData(
+      {
+        cookies: () => this.getCookies(),
+        disk: () => this.chromeSessionService.getSessionData(userDataDir),
+        pages: () => this.getExistingPageSessionData(),
+      },
+      this.logger,
+    );
   }
 
   /**
    * Extract all storage data (localStorage, sessionStorage, IndexedDB) for all open pages
    */
-  private async getExistingPageSessionData(): Promise<SessionData> {
+  private async getExistingPageSessionData(): Promise<PagesStorage> {
     if (!this.browserInstance || !this.primaryPage) {
-      return {};
+      return mergePageStorage([]);
     }
 
-    const result: SessionData = {
-      localStorage: {},
-      sessionStorage: {},
-      indexedDB: {},
-    };
+    const pages = await this.browserInstance.pages();
 
-    try {
-      const pages = await this.browserInstance.pages();
-
-      let crashedCount = 0;
-      const validPages = pages.filter((page) => {
-        try {
-          if (this.crashedPages.has(page)) {
-            crashedCount++;
-            return false;
-          }
-          const url = page.url();
-          return url && url.startsWith("http");
-        } catch (e) {
+    let crashedCount = 0;
+    const validPages = pages.filter((page) => {
+      try {
+        if (this.crashedPages.has(page)) {
+          crashedCount++;
           return false;
         }
-      });
-
-      this.logger.info(
-        `[CDPService] Processing ${validPages.length} valid pages out of ${pages.length} total for storage extraction` +
-          (crashedCount > 0 ? ` (skipped ${crashedCount} crashed)` : ""),
-      );
-
-      const results = await Promise.all(
-        validPages.map((page) => extractStorageForPageWithTimeout(page, this.logger)),
-      );
-
-      // Merge all results
-      for (const item of results) {
-        for (const domain in item.localStorage) {
-          result.localStorage![domain] = {
-            ...(result.localStorage![domain] || {}),
-            ...item.localStorage![domain],
-          };
-        }
-
-        for (const domain in item.sessionStorage) {
-          result.sessionStorage![domain] = {
-            ...(result.sessionStorage![domain] || {}),
-            ...item.sessionStorage![domain],
-          };
-        }
-
-        for (const domain in item.indexedDB) {
-          result.indexedDB![domain] = [
-            ...(result.indexedDB![domain] || []),
-            ...item.indexedDB![domain],
-          ];
-        }
+        const url = page.url();
+        return url && url.startsWith("http");
+      } catch (e) {
+        return false;
       }
+    });
 
-      return result;
-    } catch (error) {
-      this.logger.error(`[CDPService] Error extracting storage with CDP: ${error}`);
-      return result;
-    }
+    this.logger.info(
+      `[CDPService] Processing ${validPages.length} valid pages out of ${pages.length} total for storage extraction` +
+        (crashedCount > 0 ? ` (skipped ${crashedCount} crashed)` : ""),
+    );
+
+    const results = await Promise.all(
+      validPages.map((page) => extractStorageForPageWithTimeout(page, this.logger)),
+    );
+
+    return mergePageStorage(results, crashedCount);
   }
 
   public async getAllPages() {

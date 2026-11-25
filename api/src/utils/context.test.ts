@@ -30,7 +30,10 @@ describe("extractStorageForPageWithTimeout", () => {
 
     const result = await extractStorageForPageWithTimeout(unresponsivePage(), log, 50);
 
-    expect(result).toEqual({ localStorage: {}, sessionStorage: {}, indexedDB: {} });
+    expect(result).toEqual({
+      data: { localStorage: {}, sessionStorage: {}, indexedDB: {} },
+      outcome: "timed_out",
+    });
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("timed out"));
   });
 
@@ -38,11 +41,48 @@ describe("extractStorageForPageWithTimeout", () => {
     const exploding = {
       url: () => "https://example.com",
       target: () => {
-        throw new Error("gone");
+        throw new Error("boom");
       },
     } as unknown as Page;
 
-    await expect(extractStorageForPageWithTimeout(exploding, logger(), 50)).resolves.toBeDefined();
+    await expect(extractStorageForPageWithTimeout(exploding, logger(), 50)).resolves.toMatchObject({
+      outcome: "failed",
+    });
+  });
+
+  it("reports a page that closed before attach as gone", async () => {
+    const log = logger();
+    const closed = {
+      url: () => "https://example.com",
+      target: () => ({
+        createCDPSession: async () => {
+          throw new Error("Protocol error (Target.attachToTarget): No target with given id found");
+        },
+      }),
+    } as unknown as Page;
+
+    const result = await extractStorageForPageWithTimeout(closed, log, 50);
+
+    expect(result.outcome).toBe("gone");
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("[CDPService] Error extracting storage for page"),
+    );
+  });
+
+  it("reports a page that was read as ok", async () => {
+    const page = {
+      url: () => "https://example.com",
+      target: () => ({
+        createCDPSession: async () => ({
+          send: async () => ({ frameTree: null }),
+          detach: async () => {},
+        }),
+      }),
+    } as unknown as Page;
+
+    await expect(extractStorageForPageWithTimeout(page, logger(), 50)).resolves.toMatchObject({
+      outcome: "ok",
+    });
   });
 
   it("clears its timer once extraction resolves", async () => {
