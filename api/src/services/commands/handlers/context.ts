@@ -311,7 +311,7 @@ export async function capture(
     return { snapshotId, snapshot };
   }
   active.kept.set(snapshotId, { tab: tab.id, options: optionsKey(options), text: snapshot });
-  active.latest.set(tab.id, snapshotId);
+  active.latest.set(latestKey(tab.id, options), snapshotId);
   for (const id of active.kept.keys()) {
     if (active.kept.size <= KEPT_SNAPSHOTS) {
       break;
@@ -319,6 +319,10 @@ export async function capture(
     active.kept.delete(id);
   }
   return { snapshotId, snapshot };
+}
+
+export function latestKey(tab: string, options: SnapshotOptions): string {
+  return `${tab} ${optionsKey(options)}`;
 }
 
 export function optionsKey(options: SnapshotOptions): string {

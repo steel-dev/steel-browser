@@ -26,6 +26,33 @@ const TICK = `function () {
 
 const TICK_MS = 1_000;
 
+const QUIET = `function (quietMs, limitMs) {
+  return new Promise((resolve) => {
+    let timer;
+    const finish = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      clearTimeout(limit);
+      resolve();
+    };
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(finish, quietMs);
+    });
+    const limit = setTimeout(finish, limitMs);
+    observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    timer = setTimeout(finish, quietMs);
+  });
+}`;
+
+const QUIET_MS = 100;
+
+const QUIET_LIMIT_MS = 500;
+
+const REQUESTS_MS = 1_500;
+
+const REQUEST_POLL_MS = 50;
+
 const FRAME_HISTORY_MS = 1_000;
 
 const SWITCH_WAIT_MS = 2_000;
@@ -105,7 +132,11 @@ async function historyOf(
   }
 }
 
-export async function settle(ctx: Context, result: CommandResult): Promise<CommandResult> {
+export async function settle(
+  ctx: Context,
+  result: CommandResult,
+  since: number,
+): Promise<CommandResult> {
   const tab = ctx.job.tab ? ctx.active.tabs.get(ctx.job.tab) : undefined;
   if (!tab || tab.closed || tab.blocking) {
     return result;
@@ -117,6 +148,9 @@ export async function settle(ctx: Context, result: CommandResult): Promise<Comma
     watch.stop();
   }
   await navigationDone(ctx, tab);
+  if (ctx.job.observe) {
+    await requestsDone(ctx, tab, since);
+  }
   if (tab.blocking) {
     return { ...result, ...dialogNote(ctx.active, tab) };
   }
@@ -126,13 +160,50 @@ export async function settle(ctx: Context, result: CommandResult): Promise<Comma
   return tab.navigating && !halted(ctx.job) ? { ...result, loading: true } : result;
 }
 
-async function tick(tab: Tab) {
+async function requestsDone(ctx: Context, tab: Tab, since: number) {
+  if (tab.navigating || !tab.requestedSince(since)) {
+    return;
+  }
+  const until = ctx.now() + REQUESTS_MS;
+  while (
+    tab.requestedSince(since) &&
+    ctx.now() < until &&
+    !tab.closed &&
+    !tab.blocking &&
+    !ending(ctx)
+  ) {
+    await sleep(ctx, REQUEST_POLL_MS);
+  }
+  if (tab.closed || tab.blocking || ending(ctx)) {
+    return;
+  }
+  const watch = watchBlocking(tab);
+  try {
+    await waitWithin(
+      ctx,
+      Promise.race([
+        tick(tab, QUIET, [{ value: QUIET_MS }, { value: QUIET_LIMIT_MS }]).catch(() => undefined),
+        watch.promise,
+      ]),
+      QUIET_LIMIT_MS + TICK_MS,
+    );
+  } finally {
+    watch.stop();
+  }
+}
+
+async function tick(
+  tab: Tab,
+  functionDeclaration = TICK,
+  args: Protocol.Runtime.CallArgument[] = [],
+) {
   const session = await tab.session();
   const { frameTree } = await session.send("Page.getFrameTree");
   const contextId = await tab.world(session, frameTree.frame.id, frameTree.frame.loaderId);
   await session.send("Runtime.callFunctionOn", {
     executionContextId: contextId,
-    functionDeclaration: TICK,
+    functionDeclaration,
+    arguments: args,
     awaitPromise: true,
   });
 }

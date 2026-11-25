@@ -383,6 +383,19 @@ const fixtures: Record<string, (other: string) => string> = {
         }, { passive: false });
       }
     </script>`,
+  "/tidy": () => `<!doctype html><title>Tidy</title>
+    <form>
+      <label>Telephone: <input name="tel"></label>
+      <fieldset><legend>Size</legend><label><input type="radio" name="size"> Small</label></fieldset>
+    </form>
+    <ul><li>First</li><li>Second</li></ul>
+    <button>Register</button>
+    <p>one<br>two</p>
+    <a href="#pages" aria-label="Page 10 of 12">1</a>`,
+  "/search": () => `<!doctype html><title>Search</title>
+    <button onclick="fetch('/basic?ms=400').then((r) => r.text()).then(() => { document.getElementById('results').innerHTML = '<li>Result one</li><li>Result two</li>'; })">Search</button>
+    <button onclick="fetch('/stream').then((r) => r.text()).then(() => { document.title = 'streamed'; })">Slow</button>
+    <ul id="results"></ul>`,
   "/rows": () => `<!doctype html>
     <div id="list"></div>
     <script>
@@ -1130,6 +1143,24 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(text).toMatch(/- textbox "Name" \[ref=e\d+\]/);
       expect(text).toMatch(/- button "Save" \[ref=e\d+\]/);
       expect(text).toMatch(/- link "Next page" \[ref=e\d+\]/);
+    });
+
+    test("leaves out bullets, line breaks, and text its control already names", async () => {
+      await open("/tidy");
+      const text = await snapshot();
+      for (const noise of ["ListMarker", "LineBreak", "LabelText", "Legend"]) {
+        expect(text).not.toContain(noise);
+      }
+      expect(text).toMatch(/- textbox "Telephone:" \[ref=e\d+\]/);
+      expect(text).toMatch(/- group "Size"/);
+      expect(text).toMatch(/- radio "Small" \[checked=false, ref=e\d+\]/);
+      expect(text).toMatch(/- button "Register" \[ref=e\d+\]/);
+      for (const named of ["Telephone", "Size", "Small", "Register"]) {
+        expect(text.split(named)).toHaveLength(2);
+      }
+      for (const kept of ["First", "Second", "one", "two", "1"]) {
+        expect(text).toContain(`StaticText "${kept}"`);
+      }
     });
 
     test("does not press another control inside the element it clicks", async () => {
@@ -4667,9 +4698,37 @@ describe.skipIf(!chrome)("command engine", () => {
       ).toBe("hello");
     });
 
-    test("refuses to fill something that is not a text field", async () => {
+    test("fills selects and checkboxes too", async () => {
       await open("/forms");
-      const body = await run({ command: "fill", target: { label: "Size" }, value: "m" });
+      const body = await run([
+        { command: "fill", target: { label: "Size" }, value: "Medium" },
+        { command: "fill", target: { label: "Accept terms" }, value: "true" },
+      ]);
+      expect(body.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(body.results[1]).toMatchObject({ ok: true, effect: "applied" });
+      expect(await value('select[aria-label="Size"]')).toBe("m");
+      expect(
+        await page.evaluate(() => (document.getElementById("terms") as HTMLInputElement).checked),
+      ).toBe(true);
+      await run({ command: "fill", target: { label: "Accept terms" }, value: "false" });
+      expect(
+        await page.evaluate(() => (document.getElementById("terms") as HTMLInputElement).checked),
+      ).toBe(false);
+      const vague = await run({
+        command: "fill",
+        target: { label: "Accept terms" },
+        value: "maybe",
+      });
+      expect(vague.results[0]).toMatchObject({
+        ok: false,
+        effect: "none",
+        error: { code: "invalid_argument" },
+      });
+    });
+
+    test("refuses to fill something that is not a field", async () => {
+      await open("/forms");
+      const body = await run({ command: "fill", target: { text: "tall" }, value: "m" });
       expect(body.results[0]).toMatchObject({
         ok: false,
         effect: "none",
@@ -5592,6 +5651,62 @@ describe.skipIf(!chrome)("command engine", () => {
         { observe: { mode: "diff", base, interactive: true } },
       );
       expect(other.observe).toMatchObject({ full: true });
+    });
+
+    test("diffs against the last snapshot taken with the same options", async () => {
+      await open("/rows");
+      const first = await run({ command: "snapshot" });
+      await run({ command: "snapshot", interactive: true });
+      await page.evaluate(() => (window as unknown as { shift: () => void }).shift());
+      const changed = await run({ command: "tab", action: "list" }, { observe: { mode: "diff" } });
+      expect(changed.observe).toMatchObject({
+        base: first.results[0].snapshotId,
+        additions: 3,
+        removals: 3,
+      });
+    });
+
+    test("waits for the requests a click starts before observing", async () => {
+      await open("/search");
+      await run({ command: "snapshot" });
+      const clicked = await run(
+        { command: "click", target: { role: "button", name: "Search" } },
+        { observe: { mode: "diff" } },
+      );
+      expect(clicked.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(clicked.observe?.diff).toContain("Result one");
+    });
+
+    test("stops waiting for a slow request after a limit", async () => {
+      await open("/search");
+      const started = Date.now();
+      const clicked = await run(
+        { command: "click", target: { role: "button", name: "Slow" } },
+        { observe: { mode: "diff" } },
+      );
+      expect(clicked.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(Date.now() - started).toBeGreaterThan(1_000);
+      expect(Date.now() - started).toBeLessThan(2_400);
+    });
+
+    test("does not wait for requests when nothing is observed", async () => {
+      await open("/search");
+      const started = Date.now();
+      const clicked = await run({ command: "click", target: { role: "button", name: "Slow" } });
+      expect(clicked.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(Date.now() - started).toBeLessThan(1_000);
+    });
+
+    test("sends the whole snapshot when a diff would be longer", async () => {
+      await open("/rows");
+      await run({ command: "snapshot" });
+      const moved = await run(
+        { command: "navigate", url: `${base}/reads` },
+        { observe: { mode: "diff" } },
+      );
+      expect(moved.observe).toMatchObject({ full: true });
+      expect(moved.observe?.snapshot).toContain("Hello");
+      expect(moved.observe?.diff).toBeUndefined();
     });
 
     test("keeps the diff base when a snapshot ends after its execution", async () => {

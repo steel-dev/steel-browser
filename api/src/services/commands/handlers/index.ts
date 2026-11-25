@@ -54,9 +54,12 @@ const SETTLES = new Set([
 
 export async function execute(ctx: Context, command: Command): Promise<CommandResult> {
   const before = SETTLES.has(command.command) ? ctx.active.tabs.ids() : undefined;
+  const since = Date.now();
   try {
     const result = await dispatch(ctx, command);
-    return result.ok && before ? await arrivals(ctx, before, await settle(ctx, result)) : result;
+    return result.ok && before
+      ? await arrivals(ctx, before, await settle(ctx, result, since))
+      : result;
   } catch (error) {
     return failed(error, ctx.job.touched ? "unknown" : "none");
   } finally {

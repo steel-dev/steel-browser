@@ -24,6 +24,12 @@ const ARRIVAL_MS = 2_000;
 
 const ARRIVAL_POLL_MS = 20;
 
+const WATCHED_REQUESTS = new Set(["Document", "Fetch", "XHR", "Script"]);
+
+const FORGOTTEN_REQUEST_MS = 60_000;
+
+const MAX_TRACKED_REQUESTS = 1_000;
+
 type Hook = (session: CDPSession) => void;
 
 export interface BrowserHost {
@@ -103,6 +109,18 @@ export class Tab {
   private client: CDPSession | null = null;
   private navigation: Navigation | null = null;
   private dialogType: string | null = null;
+  private readonly requests = new Map<string, number>();
+  private readonly onRequest = (event: Protocol.Network.RequestWillBeSentEvent) => {
+    if (event.type && WATCHED_REQUESTS.has(event.type)) {
+      if (this.requests.size >= MAX_TRACKED_REQUESTS) {
+        this.requests.delete(this.requests.keys().next().value!);
+      }
+      this.requests.set(event.requestId, Date.now());
+    }
+  };
+  private readonly onRequestDone = (event: { requestId: string }) => {
+    this.requests.delete(event.requestId);
+  };
   private readonly onDialogOpening = (event: Protocol.Page.JavascriptDialogOpeningEvent) => {
     this.dialogType = event.type;
     this.events.dialogOpened(this, event);
@@ -208,6 +226,19 @@ export class Tab {
 
   navigated(): Promise<void> {
     return this.navigation?.done ?? Promise.resolve();
+  }
+
+  requestedSince(since: number): boolean {
+    const now = Date.now();
+    let found = false;
+    for (const [id, started] of this.requests) {
+      if (now - started > FORGOTTEN_REQUEST_MS) {
+        this.requests.delete(id);
+      } else if (started >= since) {
+        found = true;
+      }
+    }
+    return found;
   }
 
   async navigable(): Promise<Page> {
@@ -418,7 +449,11 @@ export class Tab {
     this.client?.off("Page.frameStoppedLoading", this.onStoppedLoading);
     this.client?.off("Page.lifecycleEvent", this.onLifecycle);
     this.client?.off("Inspector.targetCrashed", this.onCrashed);
+    this.client?.off("Network.requestWillBeSent", this.onRequest);
+    this.client?.off("Network.loadingFinished", this.onRequestDone);
+    this.client?.off("Network.loadingFailed", this.onRequestDone);
     this.client = null;
+    this.requests.clear();
     this.settle();
     void main?.detach().catch(() => undefined);
   }
@@ -435,6 +470,9 @@ export class Tab {
     client.on("Page.frameStoppedLoading", this.onStoppedLoading);
     client.on("Page.lifecycleEvent", this.onLifecycle);
     client.on("Inspector.targetCrashed", this.onCrashed);
+    client.on("Network.requestWillBeSent", this.onRequest);
+    client.on("Network.loadingFinished", this.onRequestDone);
+    client.on("Network.loadingFailed", this.onRequestDone);
     this.client = client;
   }
 

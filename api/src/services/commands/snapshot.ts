@@ -64,6 +64,10 @@ const NATIVE_CONTROLS = new Set([
 
 const ITEM_ROLES = new Set(["row", "LayoutTableRow", "listitem", "option", "treeitem", "article"]);
 
+const NOISE_ROLES = new Set(["ListMarker", "LineBreak"]);
+
+const WRAPPER_ROLES = new Set(["LabelText", "Legend"]);
+
 const CONTEXT_DEPTH = 4;
 
 const CONTEXT_LIMIT = 400;
@@ -995,21 +999,77 @@ class DomView {
   }
 }
 
+function echoKey(text: string): string {
+  return normalizeName(text)
+    .trim()
+    .replace(/[\s:*]+$/, "")
+    .toLowerCase();
+}
+
+const WORD = /[\p{L}\p{N}]/u;
+
+function containsWords(whole: string, part: string): boolean {
+  if (!WORD.test(part)) {
+    return true;
+  }
+  for (let at = whole.indexOf(part); at !== -1; at = whole.indexOf(part, at + 1)) {
+    if (!WORD.test(whole[at - 1] ?? "") && !WORD.test(whole[at + part.length] ?? "")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function echoes(node: Outline, parent?: Outline, before?: Outline, after?: Outline): boolean {
+  const text = echoKey(node.name);
+  if (!text) {
+    return false;
+  }
+  if (parent?.name && containsWords(echoKey(parent.name), text)) {
+    return true;
+  }
+  return [before, after].some(
+    (other) =>
+      other?.ref !== undefined && other.role !== "StaticText" && echoKey(other.name) === text,
+  );
+}
+
 function emit(
   node: Outline,
   indent: number,
   options: SnapshotOptions,
   lines: string[],
   shown: Outline[],
+  parent?: Outline,
+  before?: Outline,
+  after?: Outline,
 ): boolean {
-  const through = () =>
+  const children = (into: Outline | undefined, depth: number) =>
     node.children.reduce(
-      (kept, child) => emit(child, indent, options, lines, shown) || kept,
+      (kept, child, index) =>
+        emit(
+          child,
+          depth,
+          options,
+          lines,
+          shown,
+          into,
+          node.children[index - 1],
+          node.children[index + 1],
+        ) || kept,
       false,
     );
+  const through = () => children(parent, indent);
+  if (NOISE_ROLES.has(node.role)) {
+    return false;
+  }
+  if (node.role === "StaticText" && echoes(node, parent, before, after)) {
+    return false;
+  }
   if (
     (node.role === "generic" && !node.ref && node.size <= 1) ||
-    (node.role === "StaticText" && normalizeName(node.name).trim() === "")
+    (node.role === "StaticText" && normalizeName(node.name).trim() === "") ||
+    (WRAPPER_ROLES.has(node.role) && !node.ref && !node.name)
   ) {
     return through();
   }
@@ -1033,9 +1093,7 @@ function emit(
   for (const root of node.frame ?? []) {
     kept = emit(root, indent + 1, options, lines, shown) || kept;
   }
-  for (const child of node.children) {
-    kept = emit(child, indent + 1, options, lines, shown) || kept;
-  }
+  kept = children(node, indent + 1) || kept;
   if (options.compact && !kept) {
     lines.length = start;
   }
