@@ -26,7 +26,7 @@ export async function evaluate(
   ctx: Context,
   command: Extract<Command, { command: "eval" }>,
 ): Promise<CommandResult> {
-  const { expression, bodyError } = runnable(command.script);
+  const { expression, bodyError, replMode } = runnable(command.script);
   const tab = tabFor(ctx, command.tab);
   const session = await tab.session();
   const timeout = command.timeout ?? SCRIPT_TIMEOUT_MS;
@@ -38,6 +38,7 @@ export async function evaluate(
       session
         .send("Runtime.evaluate", {
           expression,
+          replMode,
           returnByValue: true,
           awaitPromise: true,
           userGesture: true,
@@ -122,13 +123,16 @@ export async function evaluate(
   return { ok: true, effect: "applied", value };
 }
 
-function runnable(script: string): { expression: string; bodyError?: string } {
+function runnable(script: string): { expression: string; bodyError?: string; replMode?: true } {
   if (!syntaxError(script)) {
     return { expression: script };
   }
   const body = `(async () => {\n${script}\n})()`;
   const bodyError = syntaxError(body);
-  return bodyError ? { expression: script, bodyError } : { expression: body };
+  if (bodyError) {
+    return { expression: script, bodyError };
+  }
+  return /\breturn\b/.test(script) ? { expression: body } : { expression: script, replMode: true };
 }
 
 function syntaxError(code: string): string | undefined {

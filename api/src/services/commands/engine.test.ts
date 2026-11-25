@@ -5495,6 +5495,15 @@ describe.skipIf(!chrome)("command engine", () => {
       expect(commented.results[0].value).toBe(4);
       const modern = await run({ command: "eval", script: "/(?i:a)/.test('A')" });
       expect(modern.results[0].value).toBe(true);
+      const last = await run({
+        command: "eval",
+        script: "await new Promise((r) => setTimeout(r, 50));\nlocation.pathname",
+      });
+      expect(last.results[0].value).toBe("/pad");
+      const first = await run({ command: "eval", script: "const b = 1;\nawait 0;\nb" });
+      expect(first.results[0].value).toBe(1);
+      const second = await run({ command: "eval", script: "const b = 2;\nawait 0;\nb" });
+      expect(second.results[0].value).toBe(2);
     });
 
     test("runs a script once when it throws a SyntaxError", async () => {
