@@ -3903,7 +3903,8 @@ describe.skipIf(!chrome)("command engine", () => {
         const inner = page
           .frames()
           .find((frame) => frame.url().includes("/busy-inner")) as unknown as
-          { client: { send(method: string): Promise<unknown> } } | undefined;
+          | { client: { send(method: string): Promise<unknown> } }
+          | undefined;
         await inner?.client.send("Runtime.terminateExecution").catch(() => undefined);
         quick.sessionEnded();
       }
@@ -5678,9 +5679,21 @@ describe.skipIf(!chrome)("command engine", () => {
     test("stops waiting for a slow request after a limit", async () => {
       await open("/search");
       const started = Date.now();
+      const clicked = await run(
+        { command: "click", target: { role: "button", name: "Slow" } },
+        { observe: { mode: "diff" } },
+      );
+      expect(clicked.results[0]).toMatchObject({ ok: true, effect: "applied" });
+      expect(Date.now() - started).toBeGreaterThan(1_000);
+      expect(Date.now() - started).toBeLessThan(2_400);
+    });
+
+    test("does not wait for requests when nothing is observed", async () => {
+      await open("/search");
+      const started = Date.now();
       const clicked = await run({ command: "click", target: { role: "button", name: "Slow" } });
       expect(clicked.results[0]).toMatchObject({ ok: true, effect: "applied" });
-      expect(Date.now() - started).toBeLessThan(2_400);
+      expect(Date.now() - started).toBeLessThan(1_000);
     });
 
     test("sends the whole snapshot when a diff would be longer", async () => {

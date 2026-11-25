@@ -140,7 +140,7 @@ export async function observe(ctx: Context, observe: Observe): Promise<Record<st
     const current = usable(ctx, tab);
     const { mode, base, tab: _, ...options } = observe;
     const baseId =
-      mode === "diff" ? (base ?? active.latest.get(latestKey(current.id, options))) : undefined;
+      mode === "diff" ? base ?? active.latest.get(latestKey(current.id, options)) : undefined;
     const before = baseId ? active.kept.get(baseId) : undefined;
     const captured = await capture(
       active,

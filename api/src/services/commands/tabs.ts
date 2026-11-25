@@ -28,6 +28,8 @@ const WATCHED_REQUESTS = new Set(["Document", "Fetch", "XHR", "Script"]);
 
 const FORGOTTEN_REQUEST_MS = 60_000;
 
+const MAX_TRACKED_REQUESTS = 1_000;
+
 type Hook = (session: CDPSession) => void;
 
 export interface BrowserHost {
@@ -110,6 +112,9 @@ export class Tab {
   private readonly requests = new Map<string, number>();
   private readonly onRequest = (event: Protocol.Network.RequestWillBeSentEvent) => {
     if (event.type && WATCHED_REQUESTS.has(event.type)) {
+      if (this.requests.size >= MAX_TRACKED_REQUESTS) {
+        this.requests.delete(this.requests.keys().next().value!);
+      }
       this.requests.set(event.requestId, Date.now());
     }
   };
@@ -375,7 +380,7 @@ export class Tab {
 
   async owners(session: CDPSession): Promise<Array<{ session: CDPSession; owner: number }>> {
     const chain: Array<{ session: CDPSession; owner: number }> = [];
-    for (let current = session; current.id() !== this.main?.id();) {
+    for (let current = session; current.id() !== this.main?.id(); ) {
       const link = this.links.get(current.id());
       if (!link) {
         throw new CommandError(

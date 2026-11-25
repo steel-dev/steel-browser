@@ -148,7 +148,9 @@ export async function settle(
     watch.stop();
   }
   await navigationDone(ctx, tab);
-  await requestsDone(ctx, tab, since);
+  if (ctx.job.observe) {
+    await requestsDone(ctx, tab, since);
+  }
   if (tab.blocking) {
     return { ...result, ...dialogNote(ctx.active, tab) };
   }

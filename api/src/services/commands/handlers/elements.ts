@@ -209,7 +209,7 @@ async function answer(
     return null;
   }
   useTab(ctx, tab.id);
-  const text = accept && open.type === "prompt" ? (open.defaultPrompt ?? "") : undefined;
+  const text = accept && open.type === "prompt" ? open.defaultPrompt ?? "" : undefined;
   await closeDialog(ctx, tab, open, accept, text);
   return { ok: true, effect: "applied", answered: open.id, ...dialogNote(ctx.active, tab) };
 }
@@ -239,7 +239,7 @@ export async function dialog(
   }
   const accept = command.action === "accept";
   const text =
-    accept && open.type === "prompt" ? (command.text ?? open.defaultPrompt ?? "") : undefined;
+    accept && open.type === "prompt" ? command.text ?? open.defaultPrompt ?? "" : undefined;
   await closeDialog(ctx, tab, open, accept, text);
   return { ok: true, effect: "applied", ...dialogNote(ctx.active, tab) };
 }
@@ -381,8 +381,8 @@ export async function toggleState(target: Element): Promise<Toggle | null> {
   const node = nodes.find((candidate) => candidate.backendDOMNodeId === target.backendNodeId);
   const state =
     node && !node.ignored
-      ? (node.properties?.find((property) => property.name === "checked") ??
-        node.properties?.find((property) => property.name === "pressed"))
+      ? node.properties?.find((property) => property.name === "checked") ??
+        node.properties?.find((property) => property.name === "pressed")
       : undefined;
   if (state) {
     const raw = String(state.value.value);

@@ -208,8 +208,8 @@ export async function refsFor(
         index === undefined
           ? null
           : valueInside(index)
-            ? null
-            : normalizeName(axString(axNodes[index].name)),
+          ? null
+          : normalizeName(axString(axNodes[index].name)),
       item:
         index === undefined
           ? null
@@ -927,7 +927,7 @@ class DomView {
 
   box(node: number): number[] | null {
     const layout = this.layoutOf[node];
-    return layout < 0 ? null : (this.document.layout.bounds[layout] ?? null);
+    return layout < 0 ? null : this.document.layout.bounds[layout] ?? null;
   }
 
   textWithin(node: number, limit: number): string {
@@ -995,7 +995,7 @@ class DomView {
   }
 
   private string(index: number | undefined): string {
-    return index === undefined || index < 0 ? "" : (this.strings[index] ?? "");
+    return index === undefined || index < 0 ? "" : this.strings[index] ?? "";
   }
 }
 
@@ -1093,7 +1093,7 @@ function lineOf(
   value: string | undefined,
 ): string {
   const parts = [`${"  ".repeat(indent)}- ${node.role}`];
-  const display = node.name || (options.interactive ? (node.affordance?.text ?? "") : "");
+  const display = node.name || (options.interactive ? node.affordance?.text ?? "" : "");
   if (display) {
     parts.push(JSON.stringify(normalizeName(display)));
   }
