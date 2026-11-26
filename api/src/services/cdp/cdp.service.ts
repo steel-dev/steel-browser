@@ -767,7 +767,7 @@ export class CDPService extends EventEmitter {
     };
 
     const launched = this.launchQueue.then(async () => {
-      if (this.browserInstance && this.reusePolicy) {
+      if (this.browserInstance && this.reusePolicy && this.isReadyForReuse(this.browserInstance)) {
         const reused = await this.launchInternal(config, this.reusePolicy);
         if (reused) return reused;
       }
@@ -836,6 +836,7 @@ export class CDPService extends EventEmitter {
             void next.timezone.catch(() => {});
             preparingBrowser = running;
             outgoingPages = await running.pages();
+            abandon.signal.throwIfAborted();
             await this.preparationContext.run(abandon.signal, () => policy.prepare(next, running));
             abandon.signal.throwIfAborted();
             if (!this.isReadyForReuse(running)) {
