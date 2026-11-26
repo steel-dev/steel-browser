@@ -5518,6 +5518,23 @@ describe.skipIf(!chrome)("command engine", () => {
         script: "const a = await Promise.resolve(1);\n({ a });",
       });
       expect(wrapped.results[0].value).toEqual({ a: 1 });
+      const branched = await run({
+        command: "eval",
+        script: "await 0;\nif (location.pathname === '/pad') { 'yes' } else { 'no' }",
+      });
+      expect(branched.results[0].value).toBe("yes");
+      const caught = await run({
+        command: "eval",
+        script: "try { await Promise.reject(new Error('nope')) } catch (e) { e.message }",
+      });
+      expect(caught.results[0].value).toBe("nope");
+      const finished = await run({
+        command: "eval",
+        script: "try { await 0; 7 } finally { 8 }",
+      });
+      expect(finished.results[0].value).toBe(7);
+      const modernAwait = await run({ command: "eval", script: "await 0;\n/(?i:a)/.test('A')" });
+      expect(modernAwait.results[0].value).toBe(true);
       const called = await run({ command: "eval", script: "await (async () => 6)()" });
       expect(called.results[0].value).toBe(6);
       const looped = await run({

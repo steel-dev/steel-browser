@@ -1,4 +1,4 @@
-import { parse, type Program } from "acorn";
+import { parse, type AnyNode, type Program } from "acorn";
 import { Script } from "node:vm";
 import type { Command } from "../commands.js";
 import { dialogHint } from "../dialogs.js";
@@ -124,19 +124,26 @@ export async function evaluate(
 }
 
 function runnable(script: string): { expression: string; bodyError?: string } {
-  const body = functionBody(script);
-  if (body === undefined && !syntaxError(script)) {
+  const program = parsed(script);
+  if (program) {
+    const body = functionBody(script, program);
+    return { expression: body === undefined ? script : wrap(body) };
+  }
+  if (!syntaxError(script)) {
     return { expression: script };
   }
-  const wrapped = `(async () => {\n${body ?? script}\n})()`;
+  const wrapped = wrap(script);
   const bodyError = syntaxError(wrapped);
   return bodyError ? { expression: script, bodyError } : { expression: wrapped };
 }
 
-function functionBody(script: string): string | undefined {
-  let program: Program;
+function wrap(body: string): string {
+  return `(async () => {\n${body}\n})()`;
+}
+
+function parsed(script: string): Program | undefined {
   try {
-    program = parse(script, {
+    return parse(script, {
       ecmaVersion: "latest",
       allowReturnOutsideFunction: true,
       allowAwaitOutsideFunction: true,
@@ -145,17 +152,45 @@ function functionBody(script: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function functionBody(script: string, program: Program): string | undefined {
   const found = new Set<string>();
   topLevel(program.body, found);
-  if (!found.has("await") && !found.has("return")) {
-    return undefined;
-  }
-  const last = program.body[program.body.length - 1];
-  if (found.has("return") || last?.type !== "ExpressionStatement") {
+  if (found.has("return")) {
     return script;
   }
-  const { start, end } = last.expression;
-  return `${script.slice(0, start)}return (${script.slice(start, end)})${script.slice(end)}`;
+  if (!found.has("await")) {
+    return undefined;
+  }
+  const ranges: Array<[number, number]> = [];
+  completions(program.body[program.body.length - 1], ranges);
+  return ranges
+    .sort((a, b) => b[0] - a[0])
+    .reduce(
+      (text, [from, to]) =>
+        `${text.slice(0, from)}return (${text.slice(from, to)})${text.slice(to)}`,
+      script,
+    );
+}
+
+function completions(node: AnyNode | null | undefined, ranges: Array<[number, number]>): void {
+  switch (node?.type) {
+    case "ExpressionStatement":
+      ranges.push([node.expression.start, node.expression.end]);
+      return;
+    case "BlockStatement":
+      completions(node.body[node.body.length - 1], ranges);
+      return;
+    case "IfStatement":
+      completions(node.consequent, ranges);
+      completions(node.alternate, ranges);
+      return;
+    case "TryStatement":
+      completions(node.block, ranges);
+      completions(node.handler?.body, ranges);
+      return;
+  }
 }
 
 function topLevel(node: unknown, found: Set<string>): void {
