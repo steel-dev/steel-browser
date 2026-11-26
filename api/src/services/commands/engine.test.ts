@@ -5530,6 +5530,96 @@ describe.skipIf(!chrome)("command engine", () => {
       });
     });
 
+    test("runs a function body with return and await", async () => {
+      await open("/pad");
+      const title = await run({ command: "eval", script: "return document.title" });
+      expect(title.results[0]).toMatchObject({ ok: true, value: expect.any(String) });
+      const awaited = await run({
+        command: "eval",
+        script:
+          "await new Promise((r) => setTimeout(r, 50));\nconst a = 1;\nreturn { a, url: location.href }",
+      });
+      expect(awaited.results[0].value).toMatchObject({
+        a: 1,
+        url: expect.stringContaining("/pad"),
+      });
+      const again = await run({ command: "eval", script: "const a = 2;\nreturn a" });
+      expect(again.results[0].value).toBe(2);
+      const nested = await run({
+        command: "eval",
+        script: "return (async () => { await new Promise((r) => setTimeout(r, 50)); return 3; })()",
+      });
+      expect(nested.results[0].value).toBe(3);
+      const commented = await run({ command: "eval", script: "return 4 // done" });
+      expect(commented.results[0].value).toBe(4);
+      const modern = await run({ command: "eval", script: "/(?i:a)/.test('A')" });
+      expect(modern.results[0].value).toBe(true);
+      const last = await run({
+        command: "eval",
+        script: "await new Promise((r) => setTimeout(r, 50));\nlocation.pathname",
+      });
+      expect(last.results[0].value).toBe("/pad");
+      const first = await run({ command: "eval", script: "const b = 1;\nawait 0;\nb" });
+      expect(first.results[0].value).toBe(1);
+      const second = await run({ command: "eval", script: "const b = 2;\nawait 0;\nb" });
+      expect(second.results[0].value).toBe(2);
+      const nestedReturn = await run({
+        command: "eval",
+        script: "const xs = [1, 2];\nxs.map((x) => { return x * 2 });\nawait 0;\nxs",
+      });
+      expect(nestedReturn.results[0].value).toEqual([1, 2]);
+      const quoted = await run({ command: "eval", script: "await 0;\n'return'" });
+      expect(quoted.results[0].value).toBe("return");
+      const promised = await run({ command: "eval", script: "await 0;\nPromise.resolve(5)" });
+      expect(promised.results[0].value).toBe(5);
+      const wrapped = await run({
+        command: "eval",
+        script: "const a = await Promise.resolve(1);\n({ a });",
+      });
+      expect(wrapped.results[0].value).toEqual({ a: 1 });
+      const branched = await run({
+        command: "eval",
+        script: "await 0;\nif (location.pathname === '/pad') { 'yes' } else { 'no' }",
+      });
+      expect(branched.results[0].value).toBe("yes");
+      const caught = await run({
+        command: "eval",
+        script: "try { await Promise.reject(new Error('nope')) } catch (e) { e.message }",
+      });
+      expect(caught.results[0].value).toBe("nope");
+      const finished = await run({
+        command: "eval",
+        script: "try { await 0; 7 } finally { 8 }",
+      });
+      expect(finished.results[0].value).toBe(7);
+      const modernAwait = await run({ command: "eval", script: "await 0;\n/(?i:a)/.test('A')" });
+      expect(modernAwait.results[0].value).toBe(true);
+      const called = await run({ command: "eval", script: "await (async () => 6)()" });
+      expect(called.results[0].value).toBe(6);
+      const looped = await run({
+        command: "eval",
+        script: "let n = 0;\nfor await (const x of [1, 2]) n += x;\nn",
+      });
+      expect(looped.results[0].value).toBe(3);
+    });
+
+    test("runs a script once when it throws a SyntaxError", async () => {
+      await open("/pad");
+      const thrown = await run({
+        command: "eval",
+        script: "window.runs = (window.runs || 0) + 1; JSON.parse('{')",
+      });
+      expect(thrown.results[0]).toMatchObject({ ok: false, error: { code: "script_error" } });
+      expect(thrown.results[0].error!.message).toContain("SyntaxError");
+      expect((await run({ command: "eval", script: "window.runs" })).results[0].value).toBe(1);
+      const invalid = await run({ command: "eval", script: "return (" });
+      expect(invalid.results[0]).toMatchObject({ ok: false, error: { code: "script_error" } });
+      expect(invalid.results[0].error!.message).toContain("Illegal return statement");
+      expect(invalid.results[0].error!.message).toContain("As a function body");
+      const runtime = await run({ command: "eval", script: "null.x" });
+      expect(runtime.results[0].error!.message).not.toContain("As a function body");
+    });
+
     test("hides secrets in script results", async () => {
       await open("/article");
       const body = await run({

@@ -1,3 +1,5 @@
+import { parse, type AnyNode, type Program } from "acorn";
+import { Script } from "node:vm";
 import type { Command } from "../commands.js";
 import { dialogHint } from "../dialogs.js";
 import { CommandError } from "../errors.js";
@@ -25,6 +27,7 @@ export async function evaluate(
   ctx: Context,
   command: Extract<Command, { command: "eval" }>,
 ): Promise<CommandResult> {
+  const { expression, bodyError } = runnable(command.script);
   const tab = tabFor(ctx, command.tab);
   const session = await tab.session();
   const timeout = command.timeout ?? SCRIPT_TIMEOUT_MS;
@@ -35,7 +38,7 @@ export async function evaluate(
     Promise.race([
       session
         .send("Runtime.evaluate", {
-          expression: command.script,
+          expression,
           returnByValue: true,
           awaitPromise: true,
           userGesture: true,
@@ -89,9 +92,12 @@ export async function evaluate(
   }
   const { result, exceptionDetails } = outcome.response;
   if (exceptionDetails) {
+    const thrown = exceptionDetails.exception?.description ?? exceptionDetails.text;
     throw new CommandError(
       "script_error",
-      `The script threw: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`,
+      bodyError && exceptionDetails.exception?.className === "SyntaxError"
+        ? `The script threw: ${thrown}. As a function body: ${bodyError}`
+        : `The script threw: ${thrown}`,
       undefined,
       "applied",
     );
@@ -115,6 +121,110 @@ export async function evaluate(
     );
   }
   return { ok: true, effect: "applied", value };
+}
+
+function runnable(script: string): { expression: string; bodyError?: string } {
+  const program = parsed(script);
+  if (program) {
+    const body = functionBody(script, program);
+    return { expression: body === undefined ? script : wrap(body) };
+  }
+  if (!syntaxError(script)) {
+    return { expression: script };
+  }
+  const wrapped = wrap(script);
+  const bodyError = syntaxError(wrapped);
+  return bodyError ? { expression: script, bodyError } : { expression: wrapped };
+}
+
+function wrap(body: string): string {
+  return `(async () => {\n${body}\n})()`;
+}
+
+function parsed(script: string): Program | undefined {
+  try {
+    return parse(script, {
+      ecmaVersion: "latest",
+      allowReturnOutsideFunction: true,
+      allowAwaitOutsideFunction: true,
+      preserveParens: true,
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function functionBody(script: string, program: Program): string | undefined {
+  const found = new Set<string>();
+  topLevel(program.body, found);
+  if (found.has("return")) {
+    return script;
+  }
+  if (!found.has("await")) {
+    return undefined;
+  }
+  const ranges: Array<[number, number]> = [];
+  completions(program.body[program.body.length - 1], ranges);
+  return ranges
+    .sort((a, b) => b[0] - a[0])
+    .reduce(
+      (text, [from, to]) =>
+        `${text.slice(0, from)}return (${text.slice(from, to)})${text.slice(to)}`,
+      script,
+    );
+}
+
+function completions(node: AnyNode | null | undefined, ranges: Array<[number, number]>): void {
+  switch (node?.type) {
+    case "ExpressionStatement":
+      ranges.push([node.expression.start, node.expression.end]);
+      return;
+    case "BlockStatement":
+      completions(node.body[node.body.length - 1], ranges);
+      return;
+    case "IfStatement":
+      completions(node.consequent, ranges);
+      completions(node.alternate, ranges);
+      return;
+    case "TryStatement":
+      completions(node.block, ranges);
+      completions(node.handler?.body, ranges);
+      return;
+  }
+}
+
+function topLevel(node: unknown, found: Set<string>): void {
+  if (Array.isArray(node)) {
+    node.forEach((item) => topLevel(item, found));
+    return;
+  }
+  if (!node || typeof node !== "object" || !("type" in node)) {
+    return;
+  }
+  const type = node.type;
+  if (
+    type === "FunctionDeclaration" ||
+    type === "FunctionExpression" ||
+    type === "ArrowFunctionExpression"
+  ) {
+    return;
+  }
+  if (type === "ReturnStatement") {
+    found.add("return");
+  }
+  if (type === "AwaitExpression" || (type === "ForOfStatement" && "await" in node && node.await)) {
+    found.add("await");
+  }
+  Object.values(node).forEach((value) => topLevel(value, found));
+}
+
+function syntaxError(code: string): string | undefined {
+  try {
+    new Script(code);
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 function masked(value: unknown, hide: (text: string) => string): unknown {
