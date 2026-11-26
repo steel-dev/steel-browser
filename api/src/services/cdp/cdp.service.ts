@@ -274,6 +274,7 @@ export class CDPService extends EventEmitter {
     const session = await browser.target().createCDPSession();
     try {
       for (const path of paths) {
+        this.preparationContext.getStore()?.throwIfAborted();
         await session.send("Extensions.loadUnpacked", { path });
         loadedPaths.add(path);
       }
@@ -354,6 +355,16 @@ export class CDPService extends EventEmitter {
     this.primaryPage = newPage;
     if (previous && !previous.isClosed()) {
       await previous.close();
+    }
+  }
+
+  private async closeRetainedPages(pages: Page[]): Promise<void> {
+    for (const page of pages) {
+      if (page === this.primaryPage || page.isClosed()) continue;
+      await this.pluginManager.onBeforePageClose(page);
+      await page.close().catch((error) => {
+        if (!page.isClosed()) throw error;
+      });
     }
   }
 
@@ -809,10 +820,13 @@ export class CDPService extends EventEmitter {
           current &&
           (policy
             ? await policy.canReuse(current, next)
-            : this.isReadyForReuse(running) && (await isSimilarConfig(current, next)));
+            : this.isReadyForReuse(running) &&
+              !current.runtimeSettingsApplied &&
+              (await isSimilarConfig(current, next)));
         abandon.signal.throwIfAborted();
 
         if (canReuseBrowser && this.isReadyForReuse(running)) {
+          let outgoingPages: Page[] = [];
           if (policy) {
             validateLaunchConfig(next);
             next.timezone = validateTimezone(
@@ -821,6 +835,7 @@ export class CDPService extends EventEmitter {
             );
             void next.timezone.catch(() => {});
             preparingBrowser = running;
+            outgoingPages = await running.pages();
             await this.preparationContext.run(abandon.signal, () => policy.prepare(next, running));
             abandon.signal.throwIfAborted();
             if (!this.isReadyForReuse(running)) {
@@ -852,7 +867,10 @@ export class CDPService extends EventEmitter {
                     error,
                   ),
           );
-          if (policy) await this.launchConfig.timezone;
+          if (policy) {
+            await this.closeRetainedPages(outgoingPages);
+            await this.launchConfig.timezone;
+          }
           abandon.signal.throwIfAborted();
 
           // Session context injection - should throw error if it fails

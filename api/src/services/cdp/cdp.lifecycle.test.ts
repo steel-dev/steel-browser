@@ -167,6 +167,35 @@ describe("CDPService lifecycle hook ownership", () => {
     await service.shutdown(ShutdownReason.SESSION_END);
   });
 
+  test("relaunches when the policy declines a browser an earlier session configured", async () => {
+    const { service } = lifecycleFixture();
+    const canReuse = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    service.setReusePolicy({ canReuse, prepare: vi.fn() });
+    const browser = await service.launch();
+    const idle = service.getLaunchConfig()!;
+    const session = () => ({ ...idle, extra: { session: { id: "session" } } });
+    await service.startNewSession(session());
+    expect(service.getBrowserInstance()).toBe(browser);
+    await service.startNewSession(session());
+    expect(service.getBrowserInstance()).not.toBe(browser);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("closes tabs left open by the previous session when reusing the browser", async () => {
+    const { service } = lifecycleFixture();
+    service.setReusePolicy(forSessions(vi.fn()));
+    const browser = await service.launch();
+    const tab = { close: vi.fn().mockResolvedValue(undefined), isClosed: () => false };
+    vi.mocked(browser.pages).mockResolvedValue([await service.getPrimaryPage(), tab as never]);
+    await service.startNewSession({
+      ...service.getLaunchConfig()!,
+      extra: { session: { id: "session" } },
+    });
+    expect(service.getBrowserInstance()).toBe(browser);
+    expect(tab.close).toHaveBeenCalledOnce();
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
   test("replaces the browser on the next session after a partial extension load", async () => {
     const { service, events } = lifecycleFixture();
     const configure = vi.fn((next: BrowserLauncherOptions) => service.loadSessionExtensions(next));

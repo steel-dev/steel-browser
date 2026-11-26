@@ -418,6 +418,7 @@ export const handleSearch = async (
       page = await browserService.getPrimaryPage();
       times.pageTime = Date.now() - startTime - times.proxyTime;
     }
+    await waitForPageSetup(browserService, page);
 
     await page.evaluate(() => {
       (window as any).__name = (func: Function) => func;

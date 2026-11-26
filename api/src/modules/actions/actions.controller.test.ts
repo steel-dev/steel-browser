@@ -5,6 +5,7 @@ import type { SessionService } from "../../services/session.service.js";
 import {
   handlePDF,
   handleScrape,
+  handleSearch,
   handleScreenshot,
   PAGE_LOAD_TIMEOUT_MS,
   PAGE_SETUP_TIMEOUT_MS,
@@ -260,5 +261,28 @@ describe("quick action failures", () => {
 
     expect(status).toHaveBeenCalledWith(500);
     expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("makes search wait for page setup before using the page", async () => {
+    const page = { evaluate: vi.fn(), goto: vi.fn() };
+    const browserService = {
+      isRunning: () => true,
+      getPrimaryPage: vi.fn().mockResolvedValue(page),
+      getLaunchConfig: () => ({ runtimeSettingsApplied: true }),
+      waitForPageSetup: vi.fn().mockRejectedValue(new Error("setup failed")),
+      refreshPrimaryPage: vi.fn().mockResolvedValue(undefined),
+    };
+    const reply = { code: vi.fn().mockReturnThis(), send: vi.fn() };
+
+    await handleSearch(
+      {} as never,
+      browserService as never,
+      { body: { query: "steel" } } as never,
+      reply as never,
+    );
+
+    expect(browserService.waitForPageSetup).toHaveBeenCalledWith(page);
+    expect(page.evaluate).not.toHaveBeenCalled();
+    expect(page.goto).not.toHaveBeenCalled();
   });
 });
