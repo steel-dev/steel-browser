@@ -3,7 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { BrowserLauncherOptions } from "../../types/browser.js";
+import type { BrowserLauncherOptions, SessionReusePolicy } from "../../types/browser.js";
 import { getExtensionPaths } from "../../utils/extensions.js";
 import { CDPService } from "./cdp.service.js";
 import { LaunchTimeoutError, ResourceError } from "./errors/launch-errors.js";
@@ -76,8 +76,10 @@ function fakeBrowser(): Browser {
   };
   const page = {
     target: () => target,
+    createCDPSession: vi.fn().mockResolvedValue(cdp),
     close: vi.fn().mockResolvedValue(undefined),
     isClosed: () => false,
+    setExtraHTTPHeaders: vi.fn().mockResolvedValue(undefined),
   };
   return Object.assign(new EventEmitter(), {
     close: vi.fn().mockResolvedValue(undefined),
@@ -110,6 +112,11 @@ function lifecycleFixture() {
   return { service, events };
 }
 
+const forSessions = (prepare: SessionReusePolicy["prepare"]): SessionReusePolicy => ({
+  canReuse: (_current, next) => Boolean(next.extra?.session),
+  prepare,
+});
+
 describe("CDPService lifecycle hook ownership", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -122,6 +129,216 @@ describe("CDPService lifecycle hook ownership", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.clearAllMocks();
+  });
+
+  test("fails the launch without restarting Chrome or running cleanup hooks when the policy refuses", async () => {
+    const { service, events } = lifecycleFixture();
+    const prepare = vi.fn();
+    service.setReusePolicy({
+      canReuse: () => {
+        throw new Error("this browser cannot serve the session");
+      },
+      prepare,
+    });
+    const browser = await service.launch();
+    const next = { ...service.getLaunchConfig()!, extra: { session: { id: "session" } } };
+    await expect(service.startNewSession(next)).rejects.toThrow("cannot serve the session");
+    expect(prepare).not.toHaveBeenCalled();
+    expect(puppeteer.launch).toHaveBeenCalledTimes(1);
+    expect(browser.close).not.toHaveBeenCalled();
+    expect(events.map((event) => event.phase)).toEqual(["launch"]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("relaunches as usual when the policy declines a config that differs", async () => {
+    const { service } = lifecycleFixture();
+    const prepare = vi.fn();
+    service.setReusePolicy({ canReuse: () => false, prepare });
+    const browser = await service.launch();
+    await service.startNewSession({
+      ...service.getLaunchConfig()!,
+      userPreferences: { startup: "only" },
+      extra: { session: { id: "session" } },
+    });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(puppeteer.launch).toHaveBeenCalledTimes(2);
+    expect(service.getBrowserInstance()).not.toBe(browser);
+    expect(service.getLaunchConfig()?.runtimeSettingsApplied).toBeUndefined();
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("relaunches when the policy declines a browser an earlier session configured", async () => {
+    const { service } = lifecycleFixture();
+    const canReuse = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    service.setReusePolicy({ canReuse, prepare: vi.fn() });
+    const browser = await service.launch();
+    const idle = service.getLaunchConfig()!;
+    const session = () => ({ ...idle, extra: { session: { id: "session" } } });
+    await service.startNewSession(session());
+    expect(service.getBrowserInstance()).toBe(browser);
+    await service.startNewSession(session());
+    expect(service.getBrowserInstance()).not.toBe(browser);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("closes tabs left open by the previous session when reusing the browser", async () => {
+    const { service } = lifecycleFixture();
+    service.setReusePolicy(forSessions(vi.fn()));
+    const browser = await service.launch();
+    const tab = { close: vi.fn().mockResolvedValue(undefined), isClosed: () => false };
+    vi.mocked(browser.pages).mockResolvedValue([await service.getPrimaryPage(), tab as never]);
+    await service.startNewSession({
+      ...service.getLaunchConfig()!,
+      extra: { session: { id: "session" } },
+    });
+    expect(service.getBrowserInstance()).toBe(browser);
+    expect(tab.close).toHaveBeenCalledOnce();
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("replaces the browser on the next session after a partial extension load", async () => {
+    const { service, events } = lifecycleFixture();
+    const configure = vi.fn((next: BrowserLauncherOptions) => service.loadSessionExtensions(next));
+    service.setReusePolicy({ canReuse: () => true, prepare: configure });
+    const browser = await service.launch();
+    const cdp = await browser.target().createCDPSession();
+    vi.mocked(cdp.send)
+      .mockResolvedValueOnce({ id: "first" })
+      .mockRejectedValueOnce(new Error("extension failed"));
+    await expect(
+      service.startNewSession({
+        ...service.getLaunchConfig()!,
+        extra: { orgExtensions: { paths: ["/first", "/second"] } },
+      }),
+    ).rejects.toThrow("extension failed");
+    expect(configure).toHaveBeenCalledTimes(1);
+    expect(puppeteer.launch).toHaveBeenCalledTimes(1);
+    expect(browser.close).not.toHaveBeenCalled();
+    expect(events.map((event) => event.phase)).toEqual(["launch"]);
+    expect(service.getLaunchConfig()?.runtimeSettingsApplied).toBeUndefined();
+    expect(await service.startNewSession({ ...service.getLaunchConfig()! })).not.toBe(browser);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("applies runtime settings for a prepared session and clears them for a fresh browser", async () => {
+    const { service } = lifecycleFixture();
+    const preparePage = vi.fn().mockResolvedValue(undefined);
+    service.setReusePolicy({ ...forSessions(vi.fn()), preparePage });
+    const browser = await service.launch({
+      options: { headless: false },
+      skipFingerprintInjection: true,
+      timezone: Promise.resolve("UTC"),
+      runtimeSettingsApplied: true,
+    });
+    expect(service.getLaunchConfig()?.runtimeSettingsApplied).toBeUndefined();
+
+    await service.startNewSession({
+      ...service.getLaunchConfig()!,
+      timezone: Promise.resolve("Asia/Tokyo"),
+      customHeaders: { "X-Session": "restored" },
+      extra: { session: { id: "restored" } },
+    });
+
+    const page = await service.getPrimaryPage();
+    expect(service.getBrowserInstance()).toBe(browser);
+    expect(puppeteer.launch).toHaveBeenCalledOnce();
+    expect(preparePage).toHaveBeenCalledExactlyOnceWith(page, service.getLaunchConfig());
+    expect(await service.getLaunchConfig()!.timezone).toBe("Asia/Tokyo");
+    expect(page.setExtraHTTPHeaders).toHaveBeenCalledWith(
+      expect.objectContaining({ "X-Session": "restored" }),
+    );
+    expect(service.getLaunchConfig()?.runtimeSettingsApplied).toBe(true);
+
+    await service.endSession();
+
+    expect(puppeteer.launch).toHaveBeenCalledTimes(2);
+    expect(service.getBrowserInstance()).not.toBe(browser);
+    expect(service.getLaunchConfig()?.runtimeSettingsApplied).toBeUndefined();
+    expect(preparePage).toHaveBeenCalledOnce();
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("loads session extensions into the running browser when the policy asks", async () => {
+    const { service } = lifecycleFixture();
+    service.setReusePolicy(
+      forSessions(async (config) => {
+        config.extra = { ...config.extra, orgExtensions: { paths: ["/session/org-extension"] } };
+        await service.loadSessionExtensions(config);
+      }),
+    );
+    const browser = await service.launch();
+    vi.mocked(getExtensionPaths).mockResolvedValue(["/extensions/secret-manager"]);
+    await service.startNewSession({
+      ...service.getLaunchConfig()!,
+      extensions: ["secret-manager"],
+      extra: { session: { id: "session" } },
+    });
+
+    const cdp = await browser.target().createCDPSession();
+    const sent = vi.mocked(cdp.send).mock.calls;
+    expect(sent.filter(([method]) => method === "Extensions.loadUnpacked")).toEqual([
+      ["Extensions.loadUnpacked", { path: "/extensions/secret-manager" }],
+      ["Extensions.loadUnpacked", { path: "/session/org-extension" }],
+    ]);
+    expect(service.getBrowserInstance()).toBe(browser);
+    expect(puppeteer.launch).toHaveBeenCalledOnce();
+
+    await service.loadSessionExtensions(service.getLaunchConfig()!);
+    expect(sent.filter(([method]) => method === "Extensions.loadUnpacked")).toHaveLength(2);
+
+    await service.loadSessionExtensions({ options: { headless: true } });
+    expect(vi.mocked(getExtensionPaths)).toHaveBeenLastCalledWith(["recorder"]);
+    await service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("launches with extra disabled features and without an extension allow-list on request", async () => {
+    const launched = () => vi.mocked(puppeteer.launch).mock.lastCall![0]!;
+    const plain = lifecycleFixture();
+    vi.mocked(getExtensionPaths).mockResolvedValue(["/extensions/recorder"]);
+    await plain.service.launch();
+    expect(launched().args).toContain("--disable-extensions-except=/extensions/recorder");
+    expect(launched().args!.join(" ")).not.toContain("SpareRendererForSitePerProcess");
+    expect(launched().ignoreDefaultArgs).toEqual(["--enable-automation"]);
+    await plain.service.shutdown(ShutdownReason.SESSION_END);
+
+    const reusable = lifecycleFixture();
+    await reusable.service.launch({
+      options: {
+        runtimeExtensions: true,
+        disableFeatures: ["SpareRendererForSitePerProcess", "UseBoringSSLForRandBytes"],
+      },
+    });
+    const features = launched().args!.find((arg) => arg.startsWith("--disable-features="));
+    expect(features).toMatch(/,SpareRendererForSitePerProcess,UseBoringSSLForRandBytes$/);
+    expect(launched().args).toContain("--load-extension=/extensions/recorder");
+    expect(launched().args!.join(" ")).not.toContain("--disable-extensions-except");
+    expect(launched().ignoreDefaultArgs).toContain("--disable-extensions");
+    expect(launched()).not.toHaveProperty("runtimeExtensions");
+    expect(launched()).not.toHaveProperty("disableFeatures");
+    await reusable.service.shutdown(ShutdownReason.SESSION_END);
+  });
+
+  test("keeps pool fingerprint headers off sessions that skip fingerprint injection", async () => {
+    const { service } = lifecycleFixture();
+    service.setReusePolicy(
+      forSessions(async (config) => {
+        config.fingerprint = {
+          fingerprint: { navigator: { userAgent: "Pool/1" } },
+          headers: { "user-agent": "Pool/1", "sec-ch-ua": '"Pool";v="1"' },
+        } as never;
+        config.skipFingerprintInjection = true;
+      }),
+    );
+    await service.launch({ options: { headless: false }, skipFingerprintInjection: true });
+    await service.startNewSession({
+      ...service.getLaunchConfig()!,
+      customHeaders: { "X-Session": "native" },
+      extra: { session: { id: "native" } },
+    });
+
+    const page = await service.getPrimaryPage();
+    expect(page.setExtraHTTPHeaders).toHaveBeenCalledWith({ "X-Session": "native" });
+    await service.shutdown(ShutdownReason.SESSION_END);
   });
 
   test("tears down the idle browser before running incoming launch hooks", async () => {
@@ -423,6 +640,40 @@ describe("CDPService overlapping launches", () => {
     expect(service.getBrowserInstance()).toBe(browser);
     await service.shutdown(ShutdownReason.SESSION_END);
   });
+
+  test.each(["canReuse", "prepare"])(
+    "releases the launch queue when %s times out",
+    async (hook) => {
+      const { service } = lifecycleFixture();
+      const options = sessionConfig("idle", "shared");
+      await service.launch(options);
+      const stalled = Promise.withResolvers<void>();
+      const canReuse = vi.fn().mockReturnValue(true);
+      const prepare = vi.fn().mockResolvedValue(undefined);
+      if (hook === "canReuse") {
+        canReuse.mockReturnValueOnce(stalled.promise.then(() => true));
+      } else {
+        prepare.mockImplementationOnce(async (next) => {
+          await stalled.promise;
+          await service.loadSessionExtensions(next);
+        });
+      }
+      service.setReusePolicy({ canReuse, prepare });
+
+      const expired = { ...options, extra: { orgExtensions: { paths: ["/expired"] } } };
+      const timeout = expect(service.startNewSession(expired)).rejects.toThrow(LaunchTimeoutError);
+      const queued = service.startNewSession({ ...options });
+      await vi.advanceTimersByTimeAsync(60_000);
+      await timeout;
+      const browser = await queued;
+      stalled.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(expired.runtimeSettingsApplied).toBeUndefined();
+      const cdp = await browser.target().createCDPSession();
+      expect(cdp.send).not.toHaveBeenCalledWith("Extensions.loadUnpacked", { path: "/expired" });
+      await service.shutdown(ShutdownReason.SESSION_END);
+    },
+  );
 
   test("closes a browser that starts after its launch attempt timed out", async () => {
     const { service } = lifecycleFixture();

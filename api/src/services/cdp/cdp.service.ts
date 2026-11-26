@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "async_hooks";
 import { EventEmitter } from "events";
 import { FastifyBaseLogger } from "fastify";
 import {
@@ -26,6 +27,7 @@ import { env } from "../../env.js";
 import { loadFingerprintScript } from "../../scripts/index.js";
 import { traceable, tracer } from "../../telemetry/tracer.js";
 import { BrowserEventType, BrowserLauncherOptions, EmitEvent } from "../../types/index.js";
+import type { SessionReusePolicy } from "../../types/browser.js";
 import {
   tryParseUrl,
   isAdRequest,
@@ -59,6 +61,7 @@ import {
   BrowserProcessState,
   CleanupError,
   CleanupType,
+  ConfigurationError,
   FingerprintError,
   FingerprintStage,
   LaunchTimeoutError,
@@ -109,7 +112,7 @@ export class CDPService extends EventEmitter {
   private pluginManager: PluginManager;
   private trackedOrigins: Set<string> = new Set<string>();
   private crashedPages: WeakSet<Page> = new WeakSet<Page>();
-  private emulationSessions: WeakMap<Page, CDPSession> = new WeakMap<Page, CDPSession>();
+  private emulationSessions: WeakMap<Page, Promise<CDPSession>> = new WeakMap();
   private chromeSessionService: ChromeContextService;
   private retryManager: RetryManager;
   private targetInstrumentationManager: TargetInstrumentationManager;
@@ -119,6 +122,11 @@ export class CDPService extends EventEmitter {
   private compiledUrlPatterns: RegExp[] = [];
   private pageSetups = new Map<string, Promise<void>>();
   private launchQueue: Promise<unknown> = Promise.resolve();
+  private reusePolicy?: SessionReusePolicy;
+  private sessionPageSettings = new WeakMap<Page, Promise<void>>();
+  private readonly preparationContext = new AsyncLocalStorage<AbortSignal>();
+  private readonly browsersRequiringRelaunch = new WeakSet<Browser>();
+  private loadedExtensionPaths = new Set<string>();
   private launchMutators: ((config: BrowserLauncherOptions) => Promise<void> | void)[] = [];
   private shutdownMutators: ((config: BrowserLauncherOptions | null) => Promise<void> | void)[] =
     [];
@@ -239,6 +247,43 @@ export class CDPService extends EventEmitter {
     this.launchMutators.push(fn);
   }
 
+  /**
+   * If canReuse returns false, launch falls back to its usual configuration comparison.
+   * If canReuse throws or outlasts the launch timeout, the launch fails without that fallback.
+   */
+  public setReusePolicy(policy: SessionReusePolicy): void {
+    this.reusePolicy = policy;
+  }
+
+  /** Loads requested extensions that are missing from the running browser. */
+  public async loadSessionExtensions(config: BrowserLauncherOptions): Promise<void> {
+    this.preparationContext.getStore()?.throwIfAborted();
+    const browser = this.browserInstance;
+    if (!browser || this.shuttingDown) {
+      throw new Error("There is no running browser to load extensions into");
+    }
+    const loadedPaths = this.loadedExtensionPaths;
+    const requested = [
+      ...(await getExtensionPaths([
+        ...(config.options?.headless ? ["recorder"] : []),
+        ...(config.extensions ?? []),
+      ])),
+      ...(config.extra?.orgExtensions?.paths ?? []),
+    ];
+    const paths = [...new Set(requested)].filter((path) => !loadedPaths.has(path));
+    if (paths.length === 0) return;
+    const session = await browser.target().createCDPSession();
+    try {
+      for (const path of paths) {
+        this.preparationContext.getStore()?.throwIfAborted();
+        await session.send("Extensions.loadUnpacked", { path });
+        loadedPaths.add(path);
+      }
+    } finally {
+      await session.detach().catch(() => {});
+    }
+  }
+
   public registerShutdownHook(fn: (config: BrowserLauncherOptions | null) => Promise<void> | void) {
     this.shutdownMutators.push(fn);
   }
@@ -291,6 +336,15 @@ export class CDPService extends EventEmitter {
     const previous = this.primaryPage;
     const isCurrent = () => !signal?.aborted && this.primaryPage === previous;
     const newPage = await this.createPage();
+    if (isCurrent() && this.launchConfig?.runtimeSettingsApplied) {
+      try {
+        await this.applySessionSettings(newPage);
+        await this.waitForPageSetup(newPage);
+      } catch (error) {
+        await newPage.close().catch(() => {});
+        throw error;
+      }
+    }
     if (isCurrent() && previous && !previous.isClosed()) {
       // Notify plugins before page close
       await this.pluginManager.onBeforePageClose(previous);
@@ -302,6 +356,16 @@ export class CDPService extends EventEmitter {
     this.primaryPage = newPage;
     if (previous && !previous.isClosed()) {
       await previous.close();
+    }
+  }
+
+  private async closeRetainedPages(pages: Page[]): Promise<void> {
+    for (const page of pages) {
+      if (page === this.primaryPage || page.isClosed()) continue;
+      await this.pluginManager.onBeforePageClose(page);
+      await page.close().catch((error) => {
+        if (!page.isClosed()) throw error;
+      });
     }
   }
 
@@ -345,7 +409,8 @@ export class CDPService extends EventEmitter {
 
   private setUpTarget(target: Target): Promise<void> {
     const targetId = (target as any)._targetId as string;
-    const setup: Promise<void> = this.handleNewTarget(target)
+    const setup = this.handleNewTarget(target);
+    const handledSetup: Promise<void> = setup
       .catch((error) => {
         if (isTargetClosedError(error)) {
           this.logger.debug(
@@ -357,16 +422,21 @@ export class CDPService extends EventEmitter {
         this.logger.error({ err: error }, "[CDPService] Unhandled error in handleNewTarget");
       })
       .finally(() => {
-        if (this.pageSetups.get(targetId) === setup) {
+        if (this.pageSetups.get(targetId) === pendingSetup) {
           this.pageSetups.delete(targetId);
         }
       });
-    this.pageSetups.set(targetId, setup);
-    return setup;
+    const pendingSetup = this.launchConfig?.runtimeSettingsApplied ? setup : handledSetup;
+    this.pageSetups.set(targetId, pendingSetup);
+    return handledSetup;
   }
 
   public async waitForPageSetup(page: Page): Promise<void> {
     await this.pageSetups.get(this.getTargetId(page));
+    if (this.launchConfig?.runtimeSettingsApplied) {
+      await this.sessionPageSettings.get(page);
+      if (page.isClosed()) throw new Error("The session page closed during configuration");
+    }
   }
 
   private async handleNewTarget(target: Target) {
@@ -429,22 +499,35 @@ export class CDPService extends EventEmitter {
 
         // Only install mouse helper in headless mode
         if (this.launchConfig?.options?.headless) {
-          await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+          try {
+            await installMouseHelper(page, this.launchConfig?.deviceConfig?.device || "desktop");
+          } catch (error) {
+            if (isTargetClosedError(error) || page.isClosed()) throw error;
+            this.logger.warn({ err: error }, "[CDPService] Could not install the mouse helper");
+          }
         }
 
-        if (this.launchConfig?.customHeaders) {
+        if (!this.launchConfig?.runtimeSettingsApplied && this.launchConfig?.customHeaders) {
           await page.setExtraHTTPHeaders({
             ...env.DEFAULT_HEADERS,
             ...this.launchConfig.customHeaders,
           });
-        } else if (env.DEFAULT_HEADERS) {
+        } else if (!this.launchConfig?.runtimeSettingsApplied && env.DEFAULT_HEADERS) {
           await page.setExtraHTTPHeaders(env.DEFAULT_HEADERS);
         }
 
-        await this.applyDeviceMetricsOverride(page);
+        if (this.launchConfig?.runtimeSettingsApplied) {
+          await this.applySessionSettings(page);
+        } else {
+          await this.applyDeviceMetricsOverride(page);
+        }
 
         // Inject fingerprint only if it's not skipped
-        if (!env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection) {
+        if (
+          !this.launchConfig?.runtimeSettingsApplied &&
+          !env.SKIP_FINGERPRINT_INJECTION &&
+          !this.launchConfig?.skipFingerprintInjection
+        ) {
           // Use our safer fingerprint injection method instead of FingerprintInjector
           await this.injectFingerprintSafely(page, this.fingerprintData);
           this.logger.debug("[CDPService] Injected fingerprint into page");
@@ -470,6 +553,10 @@ export class CDPService extends EventEmitter {
           }
         });
       } catch (error) {
+        if (this.launchConfig?.runtimeSettingsApplied) {
+          if (!page.isClosed()) await page.close().catch(() => {});
+          throw error;
+        }
         if (isTargetClosedError(error) || page.isClosed()) {
           this.logger.debug(
             { err: error },
@@ -620,6 +707,9 @@ export class CDPService extends EventEmitter {
       }
 
       this.fingerprintData = null;
+      delete this.launchConfig?.runtimeSettingsApplied;
+      this.sessionPageSettings = new WeakMap();
+      this.loadedExtensionPaths = new Set();
       this.currentSessionConfig = null;
       this.browserInstance = null;
       this.wsEndpoint = null;
@@ -677,18 +767,41 @@ export class CDPService extends EventEmitter {
       }
     };
 
-    // Use retry mechanism for the launch process
-    const launched = this.launchQueue.then(() =>
-      this.retryManager.executeWithRetry(operation, "Browser Launch", retryOptions),
-    );
+    const launched = this.launchQueue.then(async () => {
+      if (this.browserInstance && this.reusePolicy && this.isReadyForReuse(this.browserInstance)) {
+        const reused = await this.launchInternal(config, this.reusePolicy);
+        if (reused) return reused;
+      }
+      const result = await this.retryManager.executeWithRetry(
+        operation,
+        "Browser Launch",
+        retryOptions,
+      );
+      return result.result;
+    });
     this.launchQueue = launched.catch(() => undefined);
-    const result = await launched;
-
-    return result.result;
+    return launched;
   }
 
+  private isReadyForReuse(browser: Browser): boolean {
+    return (
+      browser === this.browserInstance &&
+      !this.shuttingDown &&
+      !this.browsersRequiringRelaunch.has(browser)
+    );
+  }
+
+  private launchInternal(config?: BrowserLauncherOptions): Promise<Browser>;
+  private launchInternal(
+    config: BrowserLauncherOptions | undefined,
+    policy: SessionReusePolicy,
+  ): Promise<Browser | null>;
   @traceable
-  private async launchInternal(config?: BrowserLauncherOptions): Promise<Browser> {
+  private async launchInternal(
+    config?: BrowserLauncherOptions,
+    policy?: SessionReusePolicy,
+  ): Promise<Browser | null> {
+    let preparingBrowser: Browser | undefined;
     const abandon = new AbortController();
     let timer: NodeJS.Timeout | undefined;
     try {
@@ -700,15 +813,40 @@ export class CDPService extends EventEmitter {
       });
 
       const launchProcess = (async () => {
-        const shouldReuseInstance =
-          this.browserInstance &&
-          (await isSimilarConfig(this.launchConfig, config || this.defaultLaunchConfig));
+        const next = config || this.defaultLaunchConfig;
+        const running = this.browserInstance;
+        const current = this.launchConfig;
+        const canReuseBrowser =
+          running &&
+          current &&
+          (policy
+            ? await policy.canReuse(current, next)
+            : this.isReadyForReuse(running) &&
+              !current.runtimeSettingsApplied &&
+              (await isSimilarConfig(current, next)));
         abandon.signal.throwIfAborted();
 
-        if (shouldReuseInstance) {
-          this.logger.info(
-            "[CDPService] Reusing existing browser instance with default configuration.",
-          );
+        if (canReuseBrowser && this.isReadyForReuse(running)) {
+          let outgoingPages: Page[] = [];
+          if (policy) {
+            validateLaunchConfig(next);
+            next.timezone = validateTimezone(
+              this.logger,
+              next.timezone ?? Promise.resolve(this.defaultTimezone),
+            );
+            void next.timezone.catch(() => {});
+            preparingBrowser = running;
+            outgoingPages = await running.pages();
+            abandon.signal.throwIfAborted();
+            await this.preparationContext.run(abandon.signal, () => policy.prepare(next, running));
+            abandon.signal.throwIfAborted();
+            if (!this.isReadyForReuse(running)) {
+              throw new Error("Browser preparation did not complete");
+            }
+            this.fingerprintData = next.fingerprint ?? null;
+            next.runtimeSettingsApplied = true;
+          }
+          this.logger.info("[CDPService] Reusing existing browser instance.");
           this.launchConfig = config || this.defaultLaunchConfig;
           this.currentSessionConfig = this.launchConfig;
 
@@ -721,14 +859,21 @@ export class CDPService extends EventEmitter {
           this.blockedHosts = reuseHosts?.length ? normalizeHosts(reuseHosts) : [];
 
           await executeCritical(
-            async () => this.refreshPrimaryPage(),
+            async () => this.refreshPrimaryPage(policy ? abandon.signal : undefined),
             (error) =>
-              new BrowserProcessError(
-                "Failed to refresh primary page when reusing browser instance",
-                BrowserProcessState.PAGE_REFRESH,
-                error,
-              ),
+              error instanceof ConfigurationError
+                ? error
+                : new BrowserProcessError(
+                    "Failed to refresh primary page when reusing browser instance",
+                    BrowserProcessState.PAGE_REFRESH,
+                    error,
+                  ),
           );
+          if (policy) {
+            await this.closeRetainedPages(outgoingPages);
+            await this.launchConfig.timezone;
+          }
+          abandon.signal.throwIfAborted();
 
           // Session context injection - should throw error if it fails
           if (this.launchConfig?.sessionContext) {
@@ -749,6 +894,7 @@ export class CDPService extends EventEmitter {
               },
             );
           }
+          abandon.signal.throwIfAborted();
           if (!this.shuttingDown && this.browserInstance) {
             await this.pluginManager.onBrowserReady(this.launchConfig);
           } else {
@@ -758,8 +904,13 @@ export class CDPService extends EventEmitter {
               }, browserInstance=${!!this.browserInstance}`,
             );
           }
-
-          return this.browserInstance!;
+          abandon.signal.throwIfAborted();
+          if (!this.isReadyForReuse(running)) {
+            throw new Error("Browser configuration changed during reuse");
+          }
+          return running;
+        } else if (policy) {
+          return null;
         } else if (this.browserInstance) {
           this.logger.info(
             "[CDPService] Existing browser instance detected. Closing it before launching a new one.",
@@ -773,6 +924,7 @@ export class CDPService extends EventEmitter {
         }
 
         this.launchConfig = config || this.defaultLaunchConfig;
+        delete this.launchConfig.runtimeSettingsApplied;
 
         const optimize = this.launchConfig.optimizeBandwidth;
         const rawPatterns = typeof optimize === "object" ? optimize.blockUrlPatterns : undefined;
@@ -961,9 +1113,12 @@ export class CDPService extends EventEmitter {
         const extensionArgs = extensionPaths.length
           ? [
               `--load-extension=${extensionPaths.join(",")}`,
-              `--disable-extensions-except=${extensionPaths.join(",")}`,
+              ...(options.runtimeExtensions
+                ? []
+                : [`--disable-extensions-except=${extensionPaths.join(",")}`]),
             ]
           : [];
+        this.loadedExtensionPaths = new Set(extensionPaths);
 
         const shouldDisableSandbox =
           env.DISABLE_CHROME_SANDBOX ||
@@ -973,7 +1128,8 @@ export class CDPService extends EventEmitter {
           "--remote-allow-origins=*",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync,DisableLoadExtensionCommandLineSwitch,DisableDisableExtensionsExceptCommandLineSwitch",
+          "--disable-features=TranslateUI,BlinkGenPropertyTrees,LinuxNonClientFrame,PermissionPromptSurvey,IsolateOrigins,site-per-process,TouchpadAndWheelScrollLatching,TrackingProtection3pcd,InterestFeedContentSuggestions,PrivacySandboxSettings4,AutofillServerCommunication,OptimizationHints,MediaRouter,DialMediaRouteProvider,CertificateTransparencyComponentUpdater,GlobalMediaControls,AudioServiceOutOfProcess,LazyFrameLoading,AvoidUnnecessaryBeforeUnloadCheckSync,DisableLoadExtensionCommandLineSwitch,DisableDisableExtensionsExceptCommandLineSwitch" +
+            (options.disableFeatures ?? []).map((feature) => `,${feature}`).join(""),
           "--enable-features=Clipboard",
           "--no-default-browser-check",
           "--disable-sync",
@@ -1050,12 +1206,16 @@ export class CDPService extends EventEmitter {
           ...(env.CHROME_ARGS || []),
         ]).filter((arg) => !env.FILTER_CHROME_ARGS.includes(arg));
 
+        const { runtimeExtensions, disableFeatures: _disableFeatures, ...launchOptions } = options;
         const finalLaunchOptions = {
-          ...options,
+          ...launchOptions,
           defaultViewport: null,
           args: launchArgs,
           executablePath: this.chromeExecPath,
-          ignoreDefaultArgs: ["--enable-automation"],
+          ignoreDefaultArgs: [
+            "--enable-automation",
+            ...(runtimeExtensions ? ["--disable-extensions"] : []),
+          ],
           timeout: LAUNCH_TIMEOUT_MS,
           env: {
             HOME: os.userInfo().homedir,
@@ -1244,8 +1404,10 @@ export class CDPService extends EventEmitter {
         return this.browserInstance;
       })();
 
-      return (await Promise.race([launchProcess, launchTimeout])) as Browser;
+      return await Promise.race([launchProcess, launchTimeout]);
     } catch (error: unknown) {
+      if (policy && !preparingBrowser) throw error;
+      if (preparingBrowser) this.browsersRequiringRelaunch.add(preparingBrowser);
       const categorizedError =
         error instanceof BaseLaunchError ? error : categorizeError(error, "browser launch");
 
@@ -1263,6 +1425,7 @@ export class CDPService extends EventEmitter {
       throw categorizedError;
     } finally {
       clearTimeout(timer);
+      if (policy) abandon.abort();
     }
   }
 
@@ -1550,6 +1713,31 @@ export class CDPService extends EventEmitter {
     this.logger.debug("[CDPService] Session context injection setup complete");
   }
 
+  private applySessionSettings(page: Page): Promise<void> {
+    const existing = this.sessionPageSettings.get(page);
+    if (existing) return existing;
+    const setup = (async () => {
+      const injected =
+        !env.SKIP_FINGERPRINT_INJECTION && !this.launchConfig?.skipFingerprintInjection;
+      await Promise.all([
+        this.fingerprintData ? this.applyDeviceMetricsOverride(page) : undefined,
+        (async () => {
+          if (injected) await this.injectFingerprintSafely(page, this.fingerprintData);
+          await page.setExtraHTTPHeaders({
+            ...(injected ? filterHeaders(this.fingerprintData?.headers ?? {}) : {}),
+            ...env.DEFAULT_HEADERS,
+            ...this.launchConfig?.customHeaders,
+          });
+        })(),
+        this.reusePolicy?.preparePage?.(page, this.launchConfig!),
+      ]);
+      if (page.isClosed()) throw new Error("The session page closed during configuration");
+    })();
+    this.sessionPageSettings.set(page, setup);
+    void setup.catch(() => {});
+    return setup;
+  }
+
   @traceable
   private async injectFingerprintSafely(
     page: Page,
@@ -1569,34 +1757,39 @@ export class CDPService extends EventEmitter {
         await page.setUserAgent(override.userAgent);
       }
 
-      await this.withEmulationSession(page, isMobile, async (session) => {
-        await page.setExtraHTTPHeaders(filterHeaders(headers));
-        await session.send("Emulation.setUserAgentOverride", override);
-      });
-
-      await page.evaluateOnNewDocument(
-        loadFingerprintScript({
-          fixedPlatform: navigatorPlatform,
-          fixedUaPlatform: uaPlatform,
-          fixedMobile: Boolean(userAgentMetadata.mobile),
-          fixedVendor: (fingerprint.videoCard as VideoCard | null)?.vendor,
-          fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
-          fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
-          fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
-          fixedArchitecture: userAgentMetadata.architecture ?? "x86",
-          fixedBitness: userAgentMetadata.bitness ?? "64",
-          fixedModel: userAgentMetadata.model ?? "",
-          fixedPlatformVersion: userAgentMetadata.platformVersion ?? "15.0.0",
-          fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
-          fixedBrands:
-            userAgentMetadata.brands ||
-            ([] as unknown as Array<{
-              brand: string;
-              version: string;
-            }>),
-        }),
+      await this.withEmulationSession(
+        page,
+        this.launchConfig?.runtimeSettingsApplied || isMobile,
+        async (session) => {
+          await page.setExtraHTTPHeaders(filterHeaders(headers));
+          await session.send("Emulation.setUserAgentOverride", override);
+        },
       );
+
+      const script = loadFingerprintScript({
+        fixedPlatform: navigatorPlatform,
+        fixedUaPlatform: uaPlatform,
+        fixedMobile: Boolean(userAgentMetadata.mobile),
+        fixedVendor: (fingerprint.videoCard as VideoCard | null)?.vendor,
+        fixedRenderer: (fingerprint.videoCard as VideoCard | null)?.renderer,
+        fixedDeviceMemory: fingerprint.navigator.deviceMemory || 8,
+        fixedHardwareConcurrency: fingerprint.navigator.hardwareConcurrency || 8,
+        fixedArchitecture: userAgentMetadata.architecture ?? "x86",
+        fixedBitness: userAgentMetadata.bitness ?? "64",
+        fixedModel: userAgentMetadata.model ?? "",
+        fixedPlatformVersion: userAgentMetadata.platformVersion ?? "15.0.0",
+        fixedUaFullVersion: userAgentMetadata.uaFullVersion || "131.0.6778.86",
+        fixedBrands:
+          userAgentMetadata.brands ||
+          ([] as unknown as Array<{
+            brand: string;
+            version: string;
+          }>),
+      });
+      await page.evaluateOnNewDocument(script);
+      if (this.launchConfig?.runtimeSettingsApplied) await page.evaluate(script);
     } catch (error) {
+      if (this.launchConfig?.runtimeSettingsApplied) throw error;
       if (isTargetClosedError(error) || page.isClosed()) {
         this.logger.debug({ err: error }, "[Fingerprint] Skipping injection; target closed");
         return;
@@ -1620,7 +1813,9 @@ export class CDPService extends EventEmitter {
 
     const isMobile = this.isMobileUserAgent(this.getUserAgent());
     const { metrics, touch } = this.buildDeviceMetrics(screen, isMobile);
-    const persist = isMobile && this.isFingerprintInjectionEnabled();
+    const persist =
+      this.launchConfig?.runtimeSettingsApplied ||
+      (isMobile && this.isFingerprintInjectionEnabled());
     await this.withEmulationSession(page, persist, async (session) => {
       await session.send("Page.setDeviceMetricsOverride", metrics);
       if (touch) {
@@ -1752,10 +1947,11 @@ export class CDPService extends EventEmitter {
 
     let session = this.emulationSessions.get(page);
     if (!session) {
-      session = await page.createCDPSession();
+      session = page.createCDPSession();
       this.emulationSessions.set(page, session);
+      session.catch(() => this.emulationSessions.delete(page));
     }
-    await apply(session);
+    await apply(await session);
   }
 
   private async releaseProfileLock(userDataDir: string) {

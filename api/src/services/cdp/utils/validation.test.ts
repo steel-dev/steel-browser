@@ -70,6 +70,13 @@ describe("isSimilarConfig", () => {
     });
   });
 
+  it.each([{ runtimeExtensions: true }, { disableFeatures: ["Translate"] }])(
+    "returns false when startup flags change to %j",
+    async (options) => {
+      expect(await isSimilarConfig(base, { ...base, options })).toBe(false);
+    },
+  );
+
   describe("existing fields are unaffected", () => {
     it("headless mismatch is not similar", async () => {
       const headless: BrowserLauncherOptions = { options: { headless: true } };
