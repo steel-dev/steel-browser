@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FastifyBaseLogger } from "fastify";
 import type { Page } from "puppeteer-core";
-import { extractStorageForPage, extractStorageForPageWithTimeout, safePageUrl } from "./context.js";
+import {
+  extractStorageForPage,
+  extractStorageForPageWithTimeout,
+  handleFrameNavigated,
+  injectStorageOnNewDocument,
+  safePageUrl,
+} from "./context.js";
 
 const logger = () =>
   ({
@@ -138,5 +144,59 @@ it("captures each storage area with its complete origin, including an empty loca
   expect(await extractStorageForPage(page, logger())).toMatchObject({
     localStorage: { [origin]: {} },
     sessionStorage: { [origin]: { step: "2" } },
+  });
+});
+
+describe("restored storage", () => {
+  const origin = "https://example.com";
+
+  it("seeds a storage area only while it is empty", async () => {
+    let seed: (storage: unknown) => void = () => {};
+    const page = {
+      evaluateOnNewDocument: async (fn: typeof seed, arg: unknown) => {
+        seed = () => fn(arg);
+      },
+    } as unknown as Page;
+    await injectStorageOnNewDocument(
+      page,
+      new Map([[origin, { localStorage: { token: "saved" }, sessionStorage: { step: "1" } }]]),
+    );
+    const area = () => {
+      const items = new Map<string, string>();
+      return {
+        items,
+        get length() {
+          return items.size;
+        },
+        setItem: (key: string, value: string) => items.set(key, value),
+      };
+    };
+    const window = { localStorage: area(), sessionStorage: area() } as any;
+    window.top = window;
+    vi.stubGlobal("window", window);
+    vi.stubGlobal("location", { origin });
+    try {
+      seed(undefined);
+      window.sessionStorage.items.set("step", "2");
+      window.localStorage.items.set("token", "rotated");
+      seed(undefined);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(window.sessionStorage.items.get("step")).toBe("2");
+    expect(window.localStorage.items.get("token")).toBe("rotated");
+  });
+
+  it("seeds IndexedDB once per origin, and again after a failed seed", async () => {
+    const evaluate = vi.fn().mockRejectedValueOnce(new Error("navigated")).mockResolvedValue(true);
+    const frame = { parentFrame: () => null, url: () => origin + "/", evaluate };
+    const storageByOrigin = new Map([
+      [
+        origin,
+        { indexedDB: [{ name: "db", data: [{ name: "s", records: [{ key: "1", value: "2" }] }] }] },
+      ],
+    ]) as Parameters<typeof handleFrameNavigated>[1];
+    for (let i = 0; i < 3; i++) await handleFrameNavigated(frame, storageByOrigin, logger());
+    expect(evaluate).toHaveBeenCalledTimes(2);
   });
 });

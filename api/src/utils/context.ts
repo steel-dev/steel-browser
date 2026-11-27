@@ -266,6 +266,12 @@ export const injectStorageOnNewDocument = async (
       ["localStorage", items.localStorage],
       ["sessionStorage", items.sessionStorage],
     ] as const) {
+      // Seed only empty storage: every later document would otherwise revert the page's own writes.
+      try {
+        if (window[area].length > 0) continue;
+      } catch {
+        continue;
+      }
       for (const [key, value] of Object.entries(values ?? {})) {
         try {
           if (typeof value === "string") {
@@ -304,13 +310,15 @@ export const handleFrameNavigated = async (
 
     // Check if we have storage for this origin
     const storage = storageByOrigin.get(origin);
-    if (!storage) return;
+    if (!storage?.indexedDB?.length) return;
 
     logger.debug(`[CDPService] Injecting storage for navigated origin: ${origin}`);
 
-    // Set IndexedDB if available
-    if (storage.indexedDB && storage.indexedDB.length > 0) {
-      for (const database of storage.indexedDB) {
+    // Seed IndexedDB once per origin; later navigations would overwrite the page's own writes.
+    const { indexedDB: databases, ...rest } = storage;
+    storageByOrigin.set(origin, rest);
+    try {
+      for (const database of databases) {
         if (!database.name || !database.data) continue;
 
         // Create a store map for this database
@@ -411,6 +419,9 @@ export const handleFrameNavigated = async (
           storeMap,
         );
       }
+    } catch (err) {
+      storageByOrigin.set(origin, storage);
+      throw err;
     }
   } catch (err) {
     logger.error(`[CDPService] Error injecting storage during navigation: ${err}`);
