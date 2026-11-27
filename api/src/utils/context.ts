@@ -98,9 +98,7 @@ export async function extractStorageForPage(
     return result;
   }
 
-  // Extract origin and domain from URL
   const origin = new URL(url).origin;
-  const domain = new URL(url).hostname;
 
   const client = await page.target().createCDPSession();
 
@@ -108,7 +106,7 @@ export async function extractStorageForPage(
     // Check if the page has a valid main frame
     const { frameTree } = await client.send("Page.getFrameTree").catch(() => ({ frameTree: null }));
     if (!frameTree) {
-      logger.debug(`[CDPService] Page has no valid frame tree for ${domain}`);
+      logger.debug(`[CDPService] Page has no valid frame tree for ${origin}`);
       return result;
     }
 
@@ -118,15 +116,12 @@ export async function extractStorageForPage(
         storageId: { securityOrigin: origin, isLocalStorage: true },
       });
 
-      if (localStorageResponse?.entries?.length) {
-        result.localStorage![domain] = {};
-        for (const [key, value] of localStorageResponse.entries) {
-          result.localStorage![domain][key] = value;
-        }
+      if (localStorageResponse?.entries) {
+        result.localStorage![origin] = Object.fromEntries(localStorageResponse.entries);
       }
     } catch (err) {
       // Lower log level to avoid flooding logs with expected errors
-      logger.trace(`[CDPService] Could not get localStorage for ${domain}: ${err}`);
+      logger.trace(`[CDPService] Could not get localStorage for ${origin}: ${err}`);
     }
 
     // Get sessionStorage (note: only works for active pages)
@@ -135,15 +130,12 @@ export async function extractStorageForPage(
         storageId: { securityOrigin: origin, isLocalStorage: false },
       });
 
-      if (sessionStorageResponse?.entries?.length) {
-        result.sessionStorage![domain] = {};
-        for (const [key, value] of sessionStorageResponse.entries) {
-          result.sessionStorage![domain][key] = value;
-        }
+      if (sessionStorageResponse?.entries) {
+        result.sessionStorage![origin] = Object.fromEntries(sessionStorageResponse.entries);
       }
     } catch (err) {
       // Lower log level to avoid flooding logs with expected errors
-      logger.trace(`[CDPService] Could not get sessionStorage for ${domain}: ${err}`);
+      logger.trace(`[CDPService] Could not get sessionStorage for ${origin}: ${err}`);
     }
 
     // Get IndexedDB databases
@@ -155,7 +147,7 @@ export async function extractStorageForPage(
       const databaseNames = dbResponse?.databaseNames || [];
 
       if (databaseNames.length) {
-        result.indexedDB![domain] = [];
+        result.indexedDB![origin] = [];
 
         // Process each database
         for (let dbIndex = 0; dbIndex < databaseNames.length; dbIndex++) {
@@ -229,12 +221,12 @@ export async function extractStorageForPage(
           }
 
           // Add the database to the result
-          result.indexedDB![domain].push(database);
+          result.indexedDB![origin].push(database);
         }
       }
     } catch (err) {
       // Lower log level to avoid flooding logs with expected errors
-      logger.trace(`[CDPService] Could not get IndexedDB for ${domain}: ${err}`);
+      logger.trace(`[CDPService] Could not get IndexedDB for ${origin}: ${err}`);
     }
   } finally {
     // Always ensure the client session is detached

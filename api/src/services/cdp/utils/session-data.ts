@@ -57,10 +57,7 @@ export function mergePageStorage(results: PageStorage[], crashed = 0): PagesStor
     pages[outcome]++;
 
     for (const domain in item.localStorage) {
-      data.localStorage![domain] = {
-        ...(data.localStorage![domain] || {}),
-        ...item.localStorage[domain],
-      };
+      data.localStorage![domain] = item.localStorage[domain];
     }
     for (const domain in item.sessionStorage) {
       data.sessionStorage![domain] = {
@@ -122,6 +119,8 @@ export async function collectSessionData(
     sessionStorage: { ...(fromDisk.sessionStorage || {}), ...(fromPages.sessionStorage || {}) },
     indexedDB: { ...(fromDisk.indexedDB || {}), ...(fromPages.indexedDB || {}) },
   };
+  const liveOrigins = Object.keys(fromPages.localStorage ?? {});
+  if (liveOrigins.length > 0) result.liveLocalStorageOrigins = liveOrigins;
   if (cookies.status === "ok") result.cookies = cookies.value;
 
   const steps = [

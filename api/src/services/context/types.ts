@@ -56,6 +56,7 @@ export interface StorageProviderDataMap {
 export type ProviderDataType<T extends StorageProviderName> = StorageProviderDataMap[T];
 
 export type SessionData = {
+  liveLocalStorageOrigins?: string[];
   [StorageProviderName.Cookies]?: CookieData[];
   [StorageProviderName.LocalStorage]?: Record<string, LocalStorageData>;
   [StorageProviderName.SessionStorage]?: Record<string, SessionStorageData>;

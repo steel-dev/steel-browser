@@ -1346,12 +1346,24 @@ export class CDPService extends EventEmitter {
     if (!this.browserInstance) {
       throw new Error("Browser not initialized");
     }
-    const session = await this.browserInstance.target().createCDPSession();
+    const browser = this.browserInstance;
+    const read = async (target: Pick<Target, "createCDPSession">) => {
+      const session = await target.createCDPSession();
+      try {
+        return (await session.send("Storage.getCookies")).cookies;
+      } finally {
+        void session.detach().catch(() => undefined);
+      }
+    };
     try {
-      const { cookies } = await session.send("Storage.getCookies");
+      return await read(browser.target());
+    } catch (error) {
+      if (!browser.connected) throw error;
+      const target = browser.defaultBrowserContext().targets().find((item) => item.type() === "page");
+      if (!target) throw error;
+      const cookies = await read(target);
+      this.logger.info({ cookieCount: cookies.length }, "[CDPService] Recovered cookie capture from a page target");
       return cookies;
-    } finally {
-      await session.detach().catch(() => undefined);
     }
   }
 
@@ -1387,7 +1399,12 @@ export class CDPService extends EventEmitter {
       return mergePageStorage([]);
     }
 
-    const pages = await this.browserInstance.pages();
+    const profile = this.currentSessionConfig?.extra?.profile as
+      | { persist?: boolean; overwrite?: boolean }
+      | undefined;
+    const pages = profile?.persist || profile?.overwrite
+      ? await this.browserInstance.defaultBrowserContext().pages()
+      : await this.browserInstance.pages();
 
     let crashedCount = 0;
     const validPages = pages.filter((page) => {
@@ -1512,9 +1529,20 @@ export class CDPService extends EventEmitter {
     try {
       if (context.cookies?.length) {
         await client.send("Network.setCookies", {
-          cookies: context.cookies.map((cookie) => ({
-            ...cookie,
-            partitionKey: cookie.partitionKey as unknown as Protocol.Network.Cookie["partitionKey"],
+          cookies: context.cookies.map((cookie): Protocol.Network.CookieParam => ({
+            name: cookie.name,
+            value: cookie.value,
+            url: cookie.url,
+            domain: cookie.domain,
+            path: cookie.path,
+            secure: cookie.secure,
+            httpOnly: cookie.httpOnly,
+            sameSite: cookie.sameSite,
+            expires: cookie.session || cookie.expires === -1 ? undefined : cookie.expires,
+            priority: cookie.priority,
+            sourceScheme: cookie.sourceScheme,
+            sourcePort: cookie.sourcePort,
+            partitionKey: cookie.partitionKey,
           })),
         });
         this.logger.info(`[CDPService] Set ${context.cookies.length} cookies`);

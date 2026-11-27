@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FastifyBaseLogger } from "fastify";
 import type { Page } from "puppeteer-core";
-import { extractStorageForPageWithTimeout, safePageUrl } from "./context.js";
+import { extractStorageForPage, extractStorageForPageWithTimeout, safePageUrl } from "./context.js";
 
 const logger = () =>
   ({
@@ -119,5 +119,24 @@ describe("safePageUrl", () => {
         },
       } as unknown as Page),
     ).toBe("unknown");
+  });
+});
+
+it("captures each storage area with its complete origin, including an empty localStorage", async () => {
+  const origin = "https://example.com:8443";
+  const send = vi.fn(async (method: string, args?: { storageId: { isLocalStorage: boolean } }) => {
+    if (method === "Page.getFrameTree") return { frameTree: {} };
+    if (method === "DOMStorage.getDOMStorageItems") {
+      return { entries: args?.storageId.isLocalStorage ? [] : [["step", "2"]] };
+    }
+    return { databaseNames: [] };
+  });
+  const page = {
+    url: () => origin + "/",
+    target: () => ({ createCDPSession: async () => ({ send, detach: async () => undefined }) }),
+  } as unknown as Page;
+  expect(await extractStorageForPage(page, logger())).toMatchObject({
+    localStorage: { [origin]: {} },
+    sessionStorage: { [origin]: { step: "2" } },
   });
 });

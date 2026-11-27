@@ -90,7 +90,7 @@ describe("settleWithin", () => {
 });
 
 describe("mergePageStorage", () => {
-  it("merges storage across pages and counts each outcome", () => {
+  it("uses the last localStorage snapshot per origin and counts each outcome", () => {
     const empty = { localStorage: {}, sessionStorage: {}, indexedDB: {} };
 
     const merged = mergePageStorage(
@@ -103,7 +103,7 @@ describe("mergePageStorage", () => {
       1,
     );
 
-    expect(merged.data.localStorage).toEqual({ "a.com": { x: "1", y: "2" } });
+    expect(merged.data.localStorage).toEqual({ "a.com": { y: "2" } });
     expect(merged.pages).toEqual({ ok: 2, gone: 1, failed: 0, timed_out: 1, crashed: 1 });
   });
 });
@@ -116,6 +116,7 @@ describe("collectSessionData", () => {
 
     expect(result).toEqual({
       cookies: [cookie],
+      liveLocalStorageOrigins: ["example.com", "other.com"],
       localStorage: {
         "example.com": { theme: "light" },
         "other.com": { a: "1" },

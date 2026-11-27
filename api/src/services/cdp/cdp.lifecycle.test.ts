@@ -518,6 +518,28 @@ describe("CDPService cookies", () => {
     expect(browser.detach).toHaveBeenCalled();
     expect(foreign.send).not.toHaveBeenCalled();
   });
+  test("falls back to a public CDP session on a default-context page", async () => {
+    const service = new CDPService({}, logger as unknown as FastifyBaseLogger);
+    const cookies = [{ name: "synthetic", value: "cookie" }];
+    const send = vi.fn(async () => ({ cookies }));
+    const detach = vi.fn(async () => undefined);
+    Object.assign(service, {
+      browserInstance: {
+        connected: true,
+        target: () => ({ createCDPSession: async () => { throw new Error("target closed"); } }),
+        defaultBrowserContext: () => ({
+          targets: () => [
+            { type: () => "other" },
+            { type: () => "page", createCDPSession: async () => ({ send, detach }) },
+          ],
+        }),
+      },
+    });
+    expect(await service.getCookies()).toEqual(cookies);
+    expect(send).toHaveBeenCalledExactlyOnceWith("Storage.getCookies");
+    expect(detach).toHaveBeenCalledOnce();
+  });
+
 });
 
 describe("CDPService session data", () => {
