@@ -39,9 +39,7 @@ export class FileService {
   private debouncedCreateArchive: DebouncedFunc<() => void>;
 
   public constructor(options: FileServiceOptions = {}) {
-    this.baseFilesPath =
-      options.baseFilesPath ??
-      (env.NODE_ENV === "development" ? path.join(tmpdir(), "files") : "/files");
+    this.baseFilesPath = options.baseFilesPath ?? path.join(tmpdir(), "steel-files");
     this.prebuiltArchiveDir = options.prebuiltArchiveDir ?? "/tmp/.steel";
     this.prebuiltArchivePath = path.join(this.prebuiltArchiveDir, "files.zip");
 
