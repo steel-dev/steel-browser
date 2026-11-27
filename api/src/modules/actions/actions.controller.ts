@@ -17,6 +17,7 @@ import { normalizeUrl } from "../../utils/url.js";
 import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
 import { DefuddleResponse } from "defuddle";
 import { fetchPdf } from "../../utils/scrape/fetchPdf.js";
+import type { PdfConversion } from "../../utils/scrape/pdfToHtml.js";
 import { safeGoto } from "../../utils/scrape/safeGoTo.js";
 
 export const PRIMARY_PAGE_RESET_TIMEOUT_MS = 5_000;
@@ -155,18 +156,36 @@ export const handleScrape = async (
 
     if (isPdf || contentType.includes("application/pdf")) {
       const targetUrl = normalizedUrl || url!;
+      const downloadStart = Date.now();
       const download = await fetchPdf(page, (pdfResponse ?? response)?.url() || targetUrl, {
         proxyUrl: pageProxyUrl(sessionService, proxy),
         timeoutMs: pageLoadTimeLeft(navigationMs),
       });
+      times.pdfDownloadTime = Date.now() - downloadStart;
       const pdfBuffer = download.buffer;
 
       const { buildHtmlLikeMetadataFromPdf, convertPdfWithMupdf } =
         await import("../../utils/scrape/pdfToHtml.js");
       const convertStart = Date.now();
-      const { html, links, meta } = convertPdfWithMupdf(pdfBuffer);
+      let conversion: PdfConversion | undefined;
+      try {
+        conversion = convertPdfWithMupdf(pdfBuffer);
+      } finally {
+        times.pdfHtmlConvertTime = Date.now() - convertStart;
+        request.log.info(
+          {
+            pdfDownloadMs: times.pdfDownloadTime,
+            pdfConversionMs: times.pdfHtmlConvertTime,
+            pdfBytes: pdfBuffer.length,
+            pdfConverted: conversion !== undefined,
+            statusCode: download.status,
+            contentType: download.contentType,
+          },
+          "Scrape PDF phases",
+        );
+      }
+      const { html, links, meta } = conversion;
       htmlContent = html;
-      times.pdfHtmlConvertTime = Date.now() - convertStart;
 
       const htmlMeta = buildHtmlLikeMetadataFromPdf(meta, {
         urlSource: targetUrl,
