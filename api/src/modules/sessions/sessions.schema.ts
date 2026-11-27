@@ -68,6 +68,14 @@ const CreateSession = z.object({
   extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
   persist: z.boolean().optional().describe("Flag to indicate if session should be persisted"),
   userDataDir: z.string().optional().describe("User data directory path to use for the session"),
+  timeout: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Session timeout duration in milliseconds. Once it elapses the session is released automatically.",
+    ),
   timezone: z.string().optional().describe("Timezone to use for the session"),
   dimensions: z
     .object({
