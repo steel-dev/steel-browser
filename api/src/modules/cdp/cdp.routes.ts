@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { $ref } from "../../plugins/schemas.js";
 import cdpSchemas from "./cdp.schemas.js";
+import { buildDevtoolsFrontendUrl } from "../../utils/url.js";
 
 async function routes(server: FastifyInstance) {
   server.get(
@@ -20,9 +21,10 @@ async function routes(server: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       return reply.redirect(
-        `${server.cdpService.getDebuggerUrl()}?ws=${server.cdpService
-          .getDebuggerWsUrl(request.query.pageId)
-          .replace("ws:", "")}`,
+        buildDevtoolsFrontendUrl(
+          server.cdpService.getDebuggerUrl(),
+          server.cdpService.getDebuggerWsUrl(request.query.pageId),
+        ),
       );
     },
   );
