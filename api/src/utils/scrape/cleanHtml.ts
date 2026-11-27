@@ -59,7 +59,7 @@ export const cleanHtml = async (html: string): Promise<string> => {
     }
   });
 
-  const sourceCode = document.documentElement.outerHTML;
+  const sourceCode = document.documentElement?.outerHTML ?? "";
 
   return sourceCode;
 };

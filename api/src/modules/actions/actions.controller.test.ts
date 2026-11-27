@@ -1,5 +1,6 @@
 import type { FastifyReply } from "fastify";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import puppeteer, { type Browser } from "puppeteer-core";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CDPService } from "../../services/cdp/cdp.service.js";
 import type { SessionService } from "../../services/session.service.js";
 import {
@@ -14,6 +15,7 @@ import {
   resetPrimaryPage,
   waitForPageSetup,
 } from "./actions.controller.js";
+import { ScrapeFormat } from "../../types/index.js";
 
 function fakePage() {
   return { close: vi.fn().mockResolvedValue(undefined), isClosed: () => false };
@@ -284,5 +286,54 @@ describe("quick action failures", () => {
     expect(browserService.waitForPageSetup).toHaveBeenCalledWith(page);
     expect(page.evaluate).not.toHaveBeenCalled();
     expect(page.goto).not.toHaveBeenCalled();
+  });
+});
+
+const chrome = process.env.CHROME_EXECUTABLE_PATH;
+
+describe.skipIf(!chrome)("scrape extraction", () => {
+  let browser: Browser;
+
+  beforeAll(async () => {
+    browser = await puppeteer.launch({
+      executablePath: chrome,
+      headless: true,
+      args: ["--no-sandbox"],
+    });
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+  });
+
+  it("returns empty content when the page has no root element", async () => {
+    const page = await browser.newPage();
+    await page.setContent("<title>Gone</title><p>hello</p>");
+    await page.evaluate(() => document.documentElement.remove());
+    const browserService = {
+      isRunning: () => true,
+      getPrimaryPage: vi.fn().mockResolvedValue(page),
+      getLaunchConfig: () => undefined,
+      waitForPageSetup: vi.fn().mockResolvedValue(undefined),
+      refreshPrimaryPage: vi.fn().mockResolvedValue(undefined),
+    };
+    const reply = { code: vi.fn().mockReturnThis(), send: vi.fn() };
+    const format = [ScrapeFormat.HTML, ScrapeFormat.CLEANED_HTML, ScrapeFormat.MARKDOWN];
+
+    await handleScrape(
+      {} as never,
+      browserService as never,
+      { body: { format } } as never,
+      reply as never,
+    );
+
+    expect(reply.code).not.toHaveBeenCalled();
+    const result = reply.send.mock.calls[0][0];
+    expect(result.content.html).toBe("");
+    expect(result.content.cleaned_html).toBe("");
+    expect(result.content.markdown).toBe("");
+    expect(result.metadata.statusCode).toBe(200);
+    expect(result.links).toEqual([]);
+    await page.close();
   });
 });

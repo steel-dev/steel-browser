@@ -253,14 +253,14 @@ export const handleScrape = async (
           };
 
           return {
-            html: document.documentElement.outerHTML,
+            html: document.documentElement?.outerHTML ?? "",
             links: [...document.links].map((l) => ({
               url: l.href,
               text: l.textContent?.trim() || "",
             })),
             metadata: {
               title: document.title,
-              language: document.documentElement.lang,
+              language: document.documentElement?.lang,
               urlSource: window.location.href,
               timestamp: new Date().toISOString(),
 
