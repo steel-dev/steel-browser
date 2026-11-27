@@ -32,10 +32,12 @@ export const getPageFavicon = async (page: Page): Promise<string | null> => {
       const iconLink = document.querySelector('link[rel="icon"], link[rel="shortcut icon"]');
       if (iconLink) {
         const href = iconLink.getAttribute("href");
-        if (href?.startsWith("http")) return href;
-        if (href?.startsWith("//")) return window.location.protocol + href;
-        if (href?.startsWith("/")) return window.location.origin + href;
-        return window.location.origin + "/" + href;
+        if (!href) return null;
+        try {
+          return new URL(href, document.baseURI).href;
+        } catch {
+          return null;
+        }
       }
       return null;
     });
