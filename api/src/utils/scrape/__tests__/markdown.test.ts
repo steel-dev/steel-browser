@@ -147,6 +147,13 @@ describe("extraction fallback", () => {
     expect(markdown).not.toContain("About Us");
     expect(markdown).not.toContain("Privacy Policy");
   });
+
+  it("returns empty content for an empty document", async () => {
+    const result = await getDefuddleContent("");
+
+    expect(result.contentMarkdown).toBe("");
+    expect(result.wordCount).toBe(0);
+  });
 });
 
 describe("network isolation", () => {
