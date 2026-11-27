@@ -108,15 +108,16 @@ export class SessionStoreDb {
       const value: Buffer = valueBuf as Buffer;
 
       if (key.indexOf(MAP_PREFIX) === 0) {
-        const withoutPrefix = key.subarray(MAP_PREFIX.length);
-        const parts = withoutPrefix.toString().split("-", 2);
+        // Format: "map-<mapId>-<key>". Split at the first dash only, since the key can contain dashes.
+        const withoutPrefix = key.subarray(MAP_PREFIX.length).toString();
+        const dash = withoutPrefix.indexOf("-");
 
-        if (parts.length !== 2) continue;
+        if (dash === -1) continue;
 
-        const mapId = parseInt(parts[0], 10);
+        const mapId = parseInt(withoutPrefix.slice(0, dash), 10);
         if (isNaN(mapId)) continue;
 
-        const keyStr = parts[1];
+        const keyStr = withoutPrefix.slice(dash + 1);
         let valueDecoded: string;
 
         try {
