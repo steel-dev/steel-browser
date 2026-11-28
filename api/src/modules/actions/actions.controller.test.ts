@@ -1,4 +1,5 @@
 import type { FastifyReply } from "fastify";
+import * as mupdf from "mupdf";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CDPService } from "../../services/cdp/cdp.service.js";
@@ -16,6 +17,12 @@ import {
   waitForPageSetup,
 } from "./actions.controller.js";
 import { ScrapeFormat } from "../../types/index.js";
+import { fetchPdf } from "../../utils/scrape/fetchPdf.js";
+
+vi.mock("../../utils/scrape/safeGoTo.js", () => ({
+  safeGoto: vi.fn().mockResolvedValue({ response: null, isPdf: true, pdfResponse: null }),
+}));
+vi.mock("../../utils/scrape/fetchPdf.js", () => ({ fetchPdf: vi.fn() }));
 
 function fakePage() {
   return { close: vi.fn().mockResolvedValue(undefined), isClosed: () => false };
@@ -335,5 +342,90 @@ describe.skipIf(!chrome)("scrape extraction", () => {
     expect(result.metadata.statusCode).toBe(200);
     expect(result.links).toEqual([]);
     await page.close();
+  });
+});
+
+function onePagePdf() {
+  const doc = new mupdf.PDFDocument();
+  try {
+    const page = doc.addPage([0, 0, 612, 792], 0, {}, "");
+    doc.insertPage(-1, page);
+    return Buffer.from(doc.saveToBuffer("").asUint8Array());
+  } finally {
+    doc.destroy();
+  }
+}
+
+async function scrapePdf(buffer: ReturnType<typeof onePagePdf>) {
+  vi.mocked(fetchPdf).mockResolvedValue({
+    buffer,
+    status: 200,
+    headers: { "set-cookie": "token=secret" },
+    contentType: "application/pdf",
+  });
+  const browserService = {
+    isRunning: () => true,
+    getPrimaryPage: vi.fn().mockResolvedValue({}),
+    getLaunchConfig: () => undefined,
+    waitForPageSetup: vi.fn().mockResolvedValue(undefined),
+    refreshPrimaryPage: vi.fn().mockResolvedValue(undefined),
+  };
+  const sessionService = { activeSession: { proxyServer: { url: "http://user:pass@proxy.test" } } };
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const reply = { code: vi.fn().mockReturnThis(), send: vi.fn() };
+  const request = { body: { url: "https://docs.test/report.pdf?token=secret" }, log };
+
+  await handleScrape(
+    sessionService as never,
+    browserService as never,
+    request as never,
+    reply as never,
+  );
+
+  return { log, reply };
+}
+
+describe("scrape PDF phase log", () => {
+  it("logs download time, conversion time and size", async () => {
+    const pdf = onePagePdf();
+    const { log, reply } = await scrapePdf(pdf);
+
+    expect(reply.code).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledOnce();
+    expect(log.info).toHaveBeenCalledWith(
+      {
+        pdfDownloadMs: expect.any(Number),
+        pdfConversionMs: expect.any(Number),
+        pdfBytes: pdf.length,
+        pdfConverted: true,
+        statusCode: 200,
+        contentType: "application/pdf",
+      },
+      "Scrape PDF phases",
+    );
+  });
+
+  it("logs the phases when conversion fails", async () => {
+    const { log, reply } = await scrapePdf(Buffer.from("not a pdf"));
+
+    expect(reply.code).toHaveBeenCalledWith(500);
+    expect(log.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pdfDownloadMs: expect.any(Number),
+        pdfConversionMs: expect.any(Number),
+        pdfBytes: 9,
+        pdfConverted: false,
+      }),
+      "Scrape PDF phases",
+    );
+  });
+
+  it("keeps the URL, headers and proxy out of the log", async () => {
+    const { log } = await scrapePdf(onePagePdf());
+
+    const logged = JSON.stringify([log.info.mock.calls, log.warn.mock.calls, log.error.mock.calls]);
+    expect(logged).not.toContain("docs.test");
+    expect(logged).not.toContain("secret");
+    expect(logged).not.toContain("proxy.test");
   });
 });
