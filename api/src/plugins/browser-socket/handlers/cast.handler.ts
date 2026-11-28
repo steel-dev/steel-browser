@@ -4,7 +4,7 @@ import { WebSocketHandler, WebSocketHandlerContext } from "../../../types/websoc
 import { handleCastSession } from "../casting.handler.js";
 
 export const castHandler: WebSocketHandler = {
-  path: "/v1/sessions/cast",
+  path: "/v1/sessions/",
   handler: async (
     request: IncomingMessage,
     socket: Duplex,

@@ -177,8 +177,9 @@ export async function handleCastSession(
     };
 
     try {
+      const cdpHost = env.CDP_DOMAIN ?? `127.0.0.1:${env.CDP_REDIRECT_PORT}`;
       browser = await puppeteer.connect({
-        browserWSEndpoint: `ws://${env.HOST}:${env.PORT}`,
+        browserURL: `http://${cdpHost}`,
       });
 
       if (!browser) {
