@@ -12,13 +12,18 @@ export class WebSocketRegistryService implements WebSocketHandlerRegistry {
   }
 
   matchHandler(url: string): WebSocketHandler | undefined {
-    // TODO: use path-to-regexp or find-my-way to match the path
-    // Find the first handler whose path matches the start of the URL
+    // Prefer the longest matching prefix so static routes (for example
+    // /v1/sessions/logs) win over the generic /v1/sessions/ cast route.
+    let matched: WebSocketHandler | undefined;
+    let matchedLength = -1;
+
     for (const [path, handler] of this.handlers.entries()) {
-      if (url.startsWith(path)) {
-        return handler;
+      if (url.startsWith(path) && path.length > matchedLength) {
+        matched = handler;
+        matchedLength = path.length;
       }
     }
-    return undefined;
+
+    return matched;
   }
 }
